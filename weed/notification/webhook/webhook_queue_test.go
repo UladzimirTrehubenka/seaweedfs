@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -402,9 +403,9 @@ func TestQueueNoDuplicateWebhooks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			callCount := 0
+			var callCount atomic.Uint32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				callCount++
+				callCount.Add(1)
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer server.Close()
@@ -453,8 +454,8 @@ func TestQueueNoDuplicateWebhooks(t *testing.T) {
 			// Wait for message processing
 			time.Sleep(500 * time.Millisecond)
 
-			if callCount != tt.expected {
-				t.Errorf("Expected %d webhook call(s), got %d with %d workers", tt.expected, callCount, tt.nWorkers)
+			if count := int(callCount.Load()); count != tt.expected {
+				t.Errorf("Expected %d webhook call(s), got %d with %d workers", tt.expected, count, tt.nWorkers)
 			}
 		})
 	}

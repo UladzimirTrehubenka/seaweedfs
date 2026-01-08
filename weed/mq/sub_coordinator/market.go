@@ -93,7 +93,6 @@ func NewMarket(partitions []topic.Partition, inflightAdjustmentTTL time.Duration
 
 func (m *Market) ShutdownMarket() {
 	close(m.stopChan)
-	close(m.AdjustmentChan)
 }
 
 func (m *Market) AddConsumerInstance(consumer *ConsumerGroupInstance) error {
@@ -194,6 +193,8 @@ func (m *Market) loopBalanceLoad() {
 		case <-m.balanceRequestChan:
 			m.hasBalanceRequest = true
 		case <-m.stopChan:
+			close(m.AdjustmentChan)
+
 			return
 		}
 	}

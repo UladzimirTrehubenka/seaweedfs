@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync/atomic"
 	"testing"
 )
 
@@ -17,15 +18,15 @@ func TestUploadReaderInChunksReturnsPartialResultsOnError(t *testing.T) {
 	testData := bytes.Repeat([]byte("test data for chunk upload failure testing"), 1000) // ~40KB
 	reader := bytes.NewReader(testData)
 
-	uploadAttempts := 0
+	var uploadAttempts atomic.Uint32
 
 	// Create a mock assign function that succeeds for first chunk, then fails
-	assignFunc := func(ctx context.Context, count int) (*VolumeAssignRequest, *AssignResult, error) {
-		uploadAttempts++
+	assignFunc := func(ctx context.Context, count int) (*AssignResult, error) {
+		newUploadAttempts := uploadAttempts.Add(1)
 
-		if uploadAttempts == 1 {
+		if newUploadAttempts == 1 {
 			// First chunk succeeds
-			return nil, &AssignResult{
+			return &AssignResult{
 				Fid:       "test-fid-1,1234",
 				Url:       "http://test-volume-1:8080",
 				PublicUrl: "http://test-volume-1:8080",
@@ -34,7 +35,7 @@ func TestUploadReaderInChunksReturnsPartialResultsOnError(t *testing.T) {
 		}
 
 		// Second chunk fails (simulating volume server down or network error)
-		return nil, nil, errors.New("simulated volume assignment failure")
+		return nil, errors.New("simulated volume assignment failure")
 	}
 
 	// Mock upload function that simulates successful upload
@@ -97,8 +98,8 @@ func TestUploadReaderInChunksSuccessPath(t *testing.T) {
 	reader := bytes.NewReader(testData)
 
 	// Mock assign function that always succeeds
-	assignFunc := func(ctx context.Context, count int) (*VolumeAssignRequest, *AssignResult, error) {
-		return nil, &AssignResult{
+	assignFunc := func(ctx context.Context, count int) (*AssignResult, error) {
+		return &AssignResult{
 			Fid:       "test-fid,1234",
 			Url:       "http://test-volume:8080",
 			PublicUrl: "http://test-volume:8080",
@@ -187,8 +188,8 @@ func TestUploadReaderInChunksContextCancellation(t *testing.T) {
 	// Cancel immediately to trigger cancellation handling
 	cancel()
 
-	assignFunc := func(ctx context.Context, count int) (*VolumeAssignRequest, *AssignResult, error) {
-		return nil, &AssignResult{
+	assignFunc := func(ctx context.Context, count int) (*AssignResult, error) {
+		return &AssignResult{
 			Fid:       "test-fid,1234",
 			Url:       "http://test-volume:8080",
 			PublicUrl: "http://test-volume:8080",
@@ -263,8 +264,8 @@ func TestUploadReaderInChunksReaderFailure(t *testing.T) {
 		failAfter: 10000, // Fail after 10KB
 	}
 
-	assignFunc := func(ctx context.Context, count int) (*VolumeAssignRequest, *AssignResult, error) {
-		return nil, &AssignResult{
+	assignFunc := func(ctx context.Context, count int) (*AssignResult, error) {
+		return &AssignResult{
 			Fid:       "test-fid,1234",
 			Url:       "http://test-volume:8080",
 			PublicUrl: "http://test-volume:8080",

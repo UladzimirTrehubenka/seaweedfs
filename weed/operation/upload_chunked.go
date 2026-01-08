@@ -35,7 +35,7 @@ type ChunkedUploadOption struct {
 	Jwt             security.EncodedJwt
 	MimeType        string
 	Cipher          bool // encrypt data on volume servers
-	AssignFunc      func(ctx context.Context, count int) (*VolumeAssignRequest, *AssignResult, error)
+	AssignFunc      func(ctx context.Context, count int) (*AssignResult, error)
 	UploadFunc      func(ctx context.Context, data []byte, option *UploadOption) (*UploadResult, error) // Optional: for testing
 }
 
@@ -153,7 +153,7 @@ uploadLoop:
 			}()
 
 			// Assign volume for this chunk
-			_, assignResult, assignErr := opt.AssignFunc(ctx, 1)
+			assignResult, assignErr := opt.AssignFunc(ctx, 1)
 			if assignErr != nil {
 				uploadErrLock.Lock()
 				if uploadErr == nil {
