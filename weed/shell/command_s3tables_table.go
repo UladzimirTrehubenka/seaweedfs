@@ -2,6 +2,7 @@ package shell
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -82,13 +83,13 @@ func (c *commandS3TablesTable) Do(args []string, commandEnv *CommandEnv, writer 
 		}
 	}
 	if count != 1 {
-		return fmt.Errorf("exactly one action must be specified")
+		return errors.New("exactly one action must be specified")
 	}
 	if *bucketName == "" {
-		return fmt.Errorf("-bucket is required")
+		return errors.New("-bucket is required")
 	}
 	if *account == "" {
-		return fmt.Errorf("-account is required")
+		return errors.New("-account is required")
 	}
 
 	bucketArn, err := buildS3TablesBucketARN(*bucketName, *account)
@@ -98,10 +99,10 @@ func (c *commandS3TablesTable) Do(args []string, commandEnv *CommandEnv, writer 
 
 	ns := strings.TrimSpace(*namespace)
 	if (*create || *get || *deleteTable || *putPolicy || *getPolicy || *deletePolicy) && ns == "" {
-		return fmt.Errorf("-namespace is required")
+		return errors.New("-namespace is required")
 	}
 	if (*create || *get || *deleteTable || *putPolicy || *getPolicy || *deletePolicy) && *name == "" {
-		return fmt.Errorf("-name is required")
+		return errors.New("-name is required")
 	}
 
 	switch {
@@ -142,6 +143,7 @@ func (c *commandS3TablesTable) Do(args []string, commandEnv *CommandEnv, writer 
 		}
 		if len(resp.Tables) == 0 {
 			fmt.Fprintln(writer, "No tables found")
+
 			return nil
 		}
 		for _, table := range resp.Tables {
@@ -176,7 +178,7 @@ func (c *commandS3TablesTable) Do(args []string, commandEnv *CommandEnv, writer 
 		fmt.Fprintln(writer, "Table deleted")
 	case *putPolicy:
 		if *policyFile == "" {
-			return fmt.Errorf("-file is required")
+			return errors.New("-file is required")
 		}
 		content, err := os.ReadFile(*policyFile)
 		if err != nil {
@@ -201,5 +203,6 @@ func (c *commandS3TablesTable) Do(args []string, commandEnv *CommandEnv, writer 
 		}
 		fmt.Fprintln(writer, "Table policy deleted")
 	}
+
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/layout"
 )
@@ -28,6 +29,7 @@ func (a *AuthHandlers) ShowLogin(c *gin.Context) {
 	// If already authenticated, redirect to admin
 	if session.Get("authenticated") == true {
 		c.Redirect(http.StatusSeeOther, "/admin")
+
 		return
 	}
 
@@ -39,6 +41,7 @@ func (a *AuthHandlers) ShowLogin(c *gin.Context) {
 	err := loginComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render login template: " + err.Error()})
+
 		return
 	}
 }

@@ -43,11 +43,12 @@ func (a *RoleStoreAdapter) List(ctx context.Context, filerAddress string) ([]str
 // GenericCachedRoleStore implements RoleStore using the generic cache
 type GenericCachedRoleStore struct {
 	*util.CachedStore[*RoleDefinition]
+
 	adapter *RoleStoreAdapter
 }
 
 // NewGenericCachedRoleStore creates a new cached role store using generics
-func NewGenericCachedRoleStore(config map[string]interface{}, filerAddressProvider func() string) (*GenericCachedRoleStore, error) {
+func NewGenericCachedRoleStore(config map[string]any, filerAddressProvider func() string) (*GenericCachedRoleStore, error) {
 	// Create underlying filer store
 	filerStore, err := NewFilerRoleStore(config, filerAddressProvider)
 	if err != nil {
@@ -133,11 +134,13 @@ func genericCopyRoleDefinition(role *RoleDefinition) *RoleDefinition {
 		trustPolicyData, err := json.Marshal(role.TrustPolicy)
 		if err != nil {
 			glog.Errorf("Failed to marshal trust policy for deep copy: %v", err)
+
 			return nil
 		}
 		var trustPolicyCopy policy.PolicyDocument
 		if err := json.Unmarshal(trustPolicyData, &trustPolicyCopy); err != nil {
 			glog.Errorf("Failed to unmarshal trust policy for deep copy: %v", err)
+
 			return nil
 		}
 		result.TrustPolicy = &trustPolicyCopy

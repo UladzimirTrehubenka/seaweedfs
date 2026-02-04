@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"sync"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
-	"google.golang.org/grpc"
 )
 
 type VolumeAssignRequest struct {
@@ -50,11 +51,12 @@ func NewAssignProxy(masterFn GetMasterFn, grpcDialOption grpc.DialOption, concur
 	}
 	ap.grpcConnection, err = pb.GrpcDial(context.Background(), masterFn(context.Background()).ToGrpcAddress(), true, grpcDialOption)
 	if err != nil {
-		return nil, fmt.Errorf("fail to dial %s: %v", masterFn(context.Background()).ToGrpcAddress(), err)
+		return nil, fmt.Errorf("fail to dial %s: %w", masterFn(context.Background()).ToGrpcAddress(), err)
 	}
-	for i := 0; i < concurrency; i++ {
+	for range concurrency {
 		ap.pool <- &singleThreadAssignProxy{}
 	}
+
 	return ap, nil
 }
 
@@ -81,6 +83,7 @@ func (ap *singleThreadAssignProxy) doAssign(grpcConnection *grpc.ClientConn, pri
 		ap.assignClient, err = client.StreamAssign(context.Background())
 		if err != nil {
 			ap.assignClient = nil
+
 			return nil, fmt.Errorf("fail to create stream assign client: %w", err)
 		}
 	}
@@ -112,36 +115,36 @@ func (ap *singleThreadAssignProxy) doAssign(grpcConnection *grpc.ClientConn, pri
 		if grpcErr != nil {
 			return nil, grpcErr
 		}
-		if resp.Error != "" {
-			return nil, fmt.Errorf("StreamAssignRecv: %v", resp.Error)
+		if resp.GetError() != "" {
+			return nil, fmt.Errorf("StreamAssignRecv: %v", resp.GetError())
 		}
 
-		ret.Count = resp.Count
-		ret.Fid = resp.Fid
-		ret.Url = resp.Location.Url
-		ret.PublicUrl = resp.Location.PublicUrl
-		ret.GrpcPort = int(resp.Location.GrpcPort)
-		ret.Error = resp.Error
-		ret.Auth = security.EncodedJwt(resp.Auth)
-		for _, r := range resp.Replicas {
+		ret.Count = resp.GetCount()
+		ret.Fid = resp.GetFid()
+		ret.Url = resp.GetLocation().GetUrl()
+		ret.PublicUrl = resp.GetLocation().GetPublicUrl()
+		ret.GrpcPort = int(resp.GetLocation().GetGrpcPort())
+		ret.Error = resp.GetError()
+		ret.Auth = security.EncodedJwt(resp.GetAuth())
+		for _, r := range resp.GetReplicas() {
 			ret.Replicas = append(ret.Replicas, Location{
-				Url:        r.Url,
-				PublicUrl:  r.PublicUrl,
-				DataCenter: r.DataCenter,
+				Url:        r.GetUrl(),
+				PublicUrl:  r.GetPublicUrl(),
+				DataCenter: r.GetDataCenter(),
 			})
 		}
 
 		if ret.Count <= 0 {
 			continue
 		}
+
 		break
 	}
 
-	return
+	return ret, err
 }
 
 func Assign(ctx context.Context, masterFn GetMasterFn, grpcDialOption grpc.DialOption, primaryRequest *VolumeAssignRequest, alternativeRequests ...*VolumeAssignRequest) (*AssignResult, error) {
-
 	var requests []*VolumeAssignRequest
 	requests = append(requests, primaryRequest)
 	requests = append(requests, alternativeRequests...)
@@ -171,36 +174,37 @@ func Assign(ctx context.Context, masterFn GetMasterFn, grpcDialOption grpc.DialO
 				return grpcErr
 			}
 
-			if resp.Error != "" {
-				return fmt.Errorf("assignRequest: %v", resp.Error)
+			if resp.GetError() != "" {
+				return fmt.Errorf("assignRequest: %v", resp.GetError())
 			}
 
-			ret.Count = resp.Count
-			ret.Fid = resp.Fid
-			ret.Url = resp.Location.Url
-			ret.PublicUrl = resp.Location.PublicUrl
-			ret.GrpcPort = int(resp.Location.GrpcPort)
-			ret.Error = resp.Error
-			ret.Auth = security.EncodedJwt(resp.Auth)
-			for _, r := range resp.Replicas {
+			ret.Count = resp.GetCount()
+			ret.Fid = resp.GetFid()
+			ret.Url = resp.GetLocation().GetUrl()
+			ret.PublicUrl = resp.GetLocation().GetPublicUrl()
+			ret.GrpcPort = int(resp.GetLocation().GetGrpcPort())
+			ret.Error = resp.GetError()
+			ret.Auth = security.EncodedJwt(resp.GetAuth())
+			for _, r := range resp.GetReplicas() {
 				ret.Replicas = append(ret.Replicas, Location{
-					Url:        r.Url,
-					PublicUrl:  r.PublicUrl,
-					DataCenter: r.DataCenter,
+					Url:        r.GetUrl(),
+					PublicUrl:  r.GetPublicUrl(),
+					DataCenter: r.GetDataCenter(),
 				})
 			}
 
 			return nil
-
 		})
 
 		if lastError != nil {
 			stats.FilerHandlerCounter.WithLabelValues(stats.ErrorChunkAssign).Inc()
+
 			continue
 		}
 
 		if ret.Count <= 0 {
 			lastError = fmt.Errorf("assign failure %d: %v", i+1, ret.Error)
+
 			continue
 		}
 
@@ -211,9 +215,7 @@ func Assign(ctx context.Context, masterFn GetMasterFn, grpcDialOption grpc.DialO
 }
 
 func LookupJwt(master pb.ServerAddress, grpcDialOption grpc.DialOption, fileId string) (token security.EncodedJwt) {
-
 	WithMasterServerClient(false, master, grpcDialOption, func(masterClient master_pb.SeaweedClient) error {
-
 		resp, grpcErr := masterClient.LookupVolume(context.Background(), &master_pb.LookupVolumeRequest{
 			VolumeOrFileIds: []string{fileId},
 		})
@@ -221,14 +223,13 @@ func LookupJwt(master pb.ServerAddress, grpcDialOption grpc.DialOption, fileId s
 			return grpcErr
 		}
 
-		if len(resp.VolumeIdLocations) == 0 {
+		if len(resp.GetVolumeIdLocations()) == 0 {
 			return nil
 		}
 
-		token = security.EncodedJwt(resp.VolumeIdLocations[0].Auth)
+		token = security.EncodedJwt(resp.GetVolumeIdLocations()[0].GetAuth())
 
 		return nil
-
 	})
 
 	return
@@ -277,5 +278,6 @@ func (so *StorageOption) ToAssignRequests(count int) (ar *VolumeAssignRequest, a
 			WritableVolumeCount: so.VolumeGrowthCount,
 		}
 	}
+
 	return
 }

@@ -3,6 +3,7 @@ package maintenance
 import (
 	"crypto/rand"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -17,6 +18,7 @@ func NewMaintenanceQueue(policy *MaintenancePolicy) *MaintenanceQueue {
 		pendingTasks: make([]*MaintenanceTask, 0),
 		policy:       policy,
 	}
+
 	return queue
 }
 
@@ -36,6 +38,7 @@ func (mq *MaintenanceQueue) SetPersistence(persistence TaskPersistence) {
 func (mq *MaintenanceQueue) LoadTasksFromPersistence() error {
 	if mq.persistence == nil {
 		glog.V(1).Infof("No task persistence configured, skipping task loading")
+
 		return nil
 	}
 
@@ -97,10 +100,12 @@ func (mq *MaintenanceQueue) LoadTasksFromPersistence() error {
 		if mq.pendingTasks[i].Priority != mq.pendingTasks[j].Priority {
 			return mq.pendingTasks[i].Priority > mq.pendingTasks[j].Priority
 		}
+
 		return mq.pendingTasks[i].ScheduledAt.Before(mq.pendingTasks[j].ScheduledAt)
 	})
 
 	glog.Infof("Loaded %d tasks from persistence (%d pending)", len(tasks), len(mq.pendingTasks))
+
 	return nil
 }
 
@@ -131,6 +136,7 @@ func (mq *MaintenanceQueue) AddTask(task *MaintenanceTask) {
 	if mq.hasDuplicateTask(task) {
 		glog.V(1).Infof("Task skipped (duplicate): %s for volume %d on %s (already queued or running)",
 			task.Type, task.VolumeID, task.Server)
+
 		return
 	}
 
@@ -159,6 +165,7 @@ func (mq *MaintenanceQueue) AddTask(task *MaintenanceTask) {
 		if mq.pendingTasks[i].Priority != mq.pendingTasks[j].Priority {
 			return mq.pendingTasks[i].Priority > mq.pendingTasks[j].Priority
 		}
+
 		return mq.pendingTasks[i].ScheduledAt.Before(mq.pendingTasks[j].ScheduledAt)
 	})
 
@@ -186,6 +193,7 @@ func (mq *MaintenanceQueue) hasDuplicateTask(newTask *MaintenanceTask) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -196,6 +204,7 @@ func (mq *MaintenanceQueue) AddTasksFromResults(results []*TaskDetectionResult) 
 		if result.TypedParams == nil {
 			glog.Warningf("Rejecting invalid task: %s for volume %d on %s - no typed parameters (insufficient destinations or planning failed)",
 				result.TaskType, result.VolumeID, result.Server)
+
 			continue
 		}
 
@@ -223,6 +232,7 @@ func (mq *MaintenanceQueue) GetNextTask(workerID string, capabilities []Maintena
 	if !exists {
 		mq.mutex.RUnlock()
 		glog.V(2).Infof("Task assignment failed for worker %s: worker not registered", workerID)
+
 		return nil
 	}
 
@@ -230,24 +240,27 @@ func (mq *MaintenanceQueue) GetNextTask(workerID string, capabilities []Maintena
 	if worker.CurrentLoad >= worker.MaxConcurrent {
 		mq.mutex.RUnlock()
 		glog.V(2).Infof("Task assignment failed for worker %s: at capacity (%d/%d)", workerID, worker.CurrentLoad, worker.MaxConcurrent)
+
 		return nil
 	}
 
 	now := time.Now()
 	var selectedTask *MaintenanceTask
-	var selectedIndex int = -1
+	var selectedIndex = -1
 
 	// Find the next suitable task (using read lock)
 	for i, task := range mq.pendingTasks {
 		// Check if it's time to execute the task
 		if task.ScheduledAt.After(now) {
 			glog.V(3).Infof("Task %s skipped for worker %s: scheduled for future (%v)", task.ID, workerID, task.ScheduledAt)
+
 			continue
 		}
 
 		// Check if worker can handle this task type
 		if !mq.workerCanHandle(task.Type, capabilities) {
 			glog.V(3).Infof("Task %s (%s) skipped for worker %s: capability mismatch (worker has: %v)", task.ID, task.Type, workerID, capabilities)
+
 			continue
 		}
 
@@ -258,12 +271,14 @@ func (mq *MaintenanceQueue) GetNextTask(workerID string, capabilities []Maintena
 			maxConcurrent := mq.getMaxConcurrentForTaskType(task.Type)
 			glog.V(2).Infof("Task %s (%s) skipped for worker %s: scheduling constraints not met (running: %d, max: %d)",
 				task.ID, task.Type, workerID, runningCount, maxConcurrent)
+
 			continue
 		}
 
 		// Found a suitable task
 		selectedTask = task
 		selectedIndex = i
+
 		break
 	}
 
@@ -273,6 +288,7 @@ func (mq *MaintenanceQueue) GetNextTask(workerID string, capabilities []Maintena
 	// If no task found, return nil
 	if selectedTask == nil {
 		glog.V(2).Infof("No suitable tasks available for worker %s (checked %d pending tasks)", workerID, len(mq.pendingTasks))
+
 		return nil
 	}
 
@@ -283,6 +299,7 @@ func (mq *MaintenanceQueue) GetNextTask(workerID string, capabilities []Maintena
 	// Re-check that the task is still available (it might have been assigned to another worker)
 	if selectedIndex >= len(mq.pendingTasks) || mq.pendingTasks[selectedIndex].ID != selectedTask.ID {
 		glog.V(2).Infof("Task %s no longer available for worker %s: assigned to another worker", selectedTask.ID, workerID)
+
 		return nil
 	}
 
@@ -339,6 +356,7 @@ func (mq *MaintenanceQueue) CompleteTask(taskID string, error string) {
 	task, exists := mq.tasks[taskID]
 	if !exists {
 		glog.Warningf("Attempted to complete non-existent task: %s", taskID)
+
 		return
 	}
 
@@ -520,6 +538,7 @@ func (mq *MaintenanceQueue) GetRunningTaskCount(taskType MaintenanceTaskType) in
 			count++
 		}
 	}
+
 	return count
 }
 
@@ -542,6 +561,7 @@ func (mq *MaintenanceQueue) WasTaskRecentlyCompleted(taskType MaintenanceTaskTyp
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -553,6 +573,7 @@ func (mq *MaintenanceQueue) getRepeatPreventionInterval(taskType MaintenanceTask
 			defaultInterval := scheduler.GetDefaultRepeatInterval()
 			if defaultInterval > 0 {
 				glog.V(3).Infof("Using task scheduler default repeat interval for %s: %v", taskType, defaultInterval)
+
 				return defaultInterval
 			}
 		}
@@ -564,12 +585,14 @@ func (mq *MaintenanceQueue) getRepeatPreventionInterval(taskType MaintenanceTask
 		if repeatIntervalHours > 0 {
 			interval := time.Duration(repeatIntervalHours) * time.Hour
 			glog.V(3).Infof("Using policy configuration repeat interval for %s: %v", taskType, interval)
+
 			return interval
 		}
 	}
 
 	// Ultimate fallback - but avoid hardcoded values where possible
 	glog.V(2).Infof("No scheduler or policy configuration found for task type %s, using minimal default: 1h", taskType)
+
 	return time.Hour // Minimal safe default
 }
 
@@ -609,6 +632,7 @@ func (mq *MaintenanceQueue) GetWorkers() []*MaintenanceWorker {
 	for _, worker := range mq.workers {
 		workers = append(workers, worker)
 	}
+
 	return workers
 }
 
@@ -622,6 +646,7 @@ func generateTaskID() string {
 	if _, err := rand.Read(randBytes); err != nil {
 		// Fallback to timestamp-based ID if crypto/rand fails
 		timestamp := time.Now().UnixNano()
+
 		return fmt.Sprintf("task-%d", timestamp)
 	}
 
@@ -632,6 +657,7 @@ func generateTaskID() string {
 
 	// Add timestamp suffix to ensure uniqueness
 	timestamp := time.Now().Unix() % 10000 // last 4 digits of timestamp
+
 	return fmt.Sprintf("%s-%04d", string(b), timestamp)
 }
 
@@ -653,6 +679,7 @@ func (mq *MaintenanceQueue) CleanupOldTasks(retention time.Duration) int {
 	}
 
 	glog.V(2).Infof("Cleaned up %d old maintenance tasks", removed)
+
 	return removed
 }
 
@@ -716,9 +743,10 @@ func (mq *MaintenanceQueue) GetStats() *MaintenanceStats {
 		stats.TasksByType[task.Type]++
 
 		if task.CompletedAt != nil && task.CompletedAt.After(today) {
-			if task.Status == TaskStatusCompleted {
+			switch task.Status {
+			case TaskStatusCompleted:
 				stats.CompletedToday++
-			} else if task.Status == TaskStatusFailed {
+			case TaskStatusFailed:
 				stats.FailedToday++
 			}
 
@@ -745,12 +773,7 @@ func (mq *MaintenanceQueue) GetStats() *MaintenanceStats {
 
 // workerCanHandle checks if a worker can handle a specific task type
 func (mq *MaintenanceQueue) workerCanHandle(taskType MaintenanceTaskType, capabilities []MaintenanceTaskType) bool {
-	for _, capability := range capabilities {
-		if capability == taskType {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(capabilities, taskType)
 }
 
 // canScheduleTaskNow determines if a task can be scheduled using task schedulers or fallback logic
@@ -762,6 +785,7 @@ func (mq *MaintenanceQueue) canScheduleTaskNow(task *MaintenanceTask) bool {
 	glog.V(2).Infof("Using fallback logic for task scheduling")
 	canExecute := mq.canExecuteTaskType(task.Type)
 	glog.V(2).Infof("Fallback decision for task %s: %v", task.ID, canExecute)
+
 	return canExecute
 
 	// NOTE: Original integration code disabled temporarily
@@ -801,6 +825,7 @@ func (mq *MaintenanceQueue) getMaxConcurrentForTaskType(taskType MaintenanceTask
 			maxConcurrent := scheduler.GetMaxConcurrent()
 			if maxConcurrent > 0 {
 				glog.V(3).Infof("Using task scheduler max concurrent for %s: %d", taskType, maxConcurrent)
+
 				return maxConcurrent
 			}
 		}
@@ -811,12 +836,14 @@ func (mq *MaintenanceQueue) getMaxConcurrentForTaskType(taskType MaintenanceTask
 		maxConcurrent := GetMaxConcurrent(mq.policy, taskType)
 		if maxConcurrent > 0 {
 			glog.V(3).Infof("Using policy configuration max concurrent for %s: %d", taskType, maxConcurrent)
+
 			return maxConcurrent
 		}
 	}
 
 	// Ultimate fallback - minimal safe default
 	glog.V(2).Infof("No scheduler or policy configuration found for task type %s, using minimal default: 1", taskType)
+
 	return 1
 }
 
@@ -828,6 +855,7 @@ func (mq *MaintenanceQueue) getRunningTasks() []*MaintenanceTask {
 			runningTasks = append(runningTasks, task)
 		}
 	}
+
 	return runningTasks
 }
 
@@ -839,6 +867,7 @@ func (mq *MaintenanceQueue) getAvailableWorkers() []*MaintenanceWorker {
 			availableWorkers = append(availableWorkers, worker)
 		}
 	}
+
 	return availableWorkers
 }
 
@@ -856,6 +885,7 @@ func (mq *MaintenanceQueue) trackPendingOperation(task *MaintenanceTask) {
 	// Skip tracking for tasks without proper typed parameters
 	if task.TypedParams == nil {
 		glog.V(2).Infof("Skipping pending operation tracking for task %s - no typed parameters", task.ID)
+
 		return
 	}
 
@@ -879,17 +909,17 @@ func (mq *MaintenanceQueue) trackPendingOperation(task *MaintenanceTask) {
 	estimatedSize := uint64(1024 * 1024 * 1024) // Default 1GB estimate
 
 	// Use unified targets array - the only source of truth
-	if len(task.TypedParams.Targets) > 0 {
-		destNode = task.TypedParams.Targets[0].Node
-		if task.TypedParams.Targets[0].EstimatedSize > 0 {
-			estimatedSize = task.TypedParams.Targets[0].EstimatedSize
+	if len(task.TypedParams.GetTargets()) > 0 {
+		destNode = task.TypedParams.GetTargets()[0].GetNode()
+		if task.TypedParams.GetTargets()[0].GetEstimatedSize() > 0 {
+			estimatedSize = task.TypedParams.GetTargets()[0].GetEstimatedSize()
 		}
 	}
 
 	// Determine source node from unified sources
 	sourceNode := ""
-	if len(task.TypedParams.Sources) > 0 {
-		sourceNode = task.TypedParams.Sources[0].Node
+	if len(task.TypedParams.GetSources()) > 0 {
+		sourceNode = task.TypedParams.GetSources()[0].GetNode()
 	}
 
 	operation := &PendingOperation{

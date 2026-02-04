@@ -1,25 +1,27 @@
 package cors
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 )
 
 // CORSRule represents a single CORS rule
 type CORSRule struct {
-	AllowedHeaders []string `xml:"AllowedHeader,omitempty" json:"AllowedHeaders,omitempty"`
-	AllowedMethods []string `xml:"AllowedMethod" json:"AllowedMethods"`
-	AllowedOrigins []string `xml:"AllowedOrigin" json:"AllowedOrigins"`
-	ExposeHeaders  []string `xml:"ExposeHeader,omitempty" json:"ExposeHeaders,omitempty"`
-	MaxAgeSeconds  *int     `xml:"MaxAgeSeconds,omitempty" json:"MaxAgeSeconds,omitempty"`
-	ID             string   `xml:"ID,omitempty" json:"ID,omitempty"`
+	AllowedHeaders []string `json:"AllowedHeaders,omitempty" xml:"AllowedHeader,omitempty"`
+	AllowedMethods []string `json:"AllowedMethods"           xml:"AllowedMethod"`
+	AllowedOrigins []string `json:"AllowedOrigins"           xml:"AllowedOrigin"`
+	ExposeHeaders  []string `json:"ExposeHeaders,omitempty"  xml:"ExposeHeader,omitempty"`
+	MaxAgeSeconds  *int     `json:"MaxAgeSeconds,omitempty"  xml:"MaxAgeSeconds,omitempty"`
+	ID             string   `json:"ID,omitempty"             xml:"ID,omitempty"`
 }
 
 // CORSConfiguration represents the CORS configuration for a bucket
 type CORSConfiguration struct {
-	CORSRules []CORSRule `xml:"CORSRule" json:"CORSRules"`
+	CORSRules []CORSRule `json:"CORSRules" xml:"CORSRule"`
 }
 
 // CORSRequest represents a CORS request
@@ -45,20 +47,20 @@ type CORSResponse struct {
 // ValidateConfiguration validates a CORS configuration
 func ValidateConfiguration(config *CORSConfiguration) error {
 	if config == nil {
-		return fmt.Errorf("CORS configuration cannot be nil")
+		return errors.New("CORS configuration cannot be nil")
 	}
 
 	if len(config.CORSRules) == 0 {
-		return fmt.Errorf("CORS configuration must have at least one rule")
+		return errors.New("CORS configuration must have at least one rule")
 	}
 
 	if len(config.CORSRules) > 100 {
-		return fmt.Errorf("CORS configuration cannot have more than 100 rules")
+		return errors.New("CORS configuration cannot have more than 100 rules")
 	}
 
 	for i, rule := range config.CORSRules {
 		if err := validateRule(&rule); err != nil {
-			return fmt.Errorf("invalid CORS rule at index %d: %v", i, err)
+			return fmt.Errorf("invalid CORS rule at index %d: %w", i, err)
 		}
 	}
 
@@ -73,7 +75,7 @@ func ParseRequest(r *http.Request) *CORSRequest {
 	}
 
 	// Check if this is a preflight request
-	if r.Method == "OPTIONS" {
+	if r.Method == http.MethodOptions {
 		corsReq.IsPreflightRequest = true
 		corsReq.AccessControlRequestMethod = r.Header.Get("Access-Control-Request-Method")
 
@@ -91,11 +93,11 @@ func ParseRequest(r *http.Request) *CORSRequest {
 // validateRule validates a single CORS rule
 func validateRule(rule *CORSRule) error {
 	if len(rule.AllowedMethods) == 0 {
-		return fmt.Errorf("AllowedMethods cannot be empty")
+		return errors.New("AllowedMethods cannot be empty")
 	}
 
 	if len(rule.AllowedOrigins) == 0 {
-		return fmt.Errorf("AllowedOrigins cannot be empty")
+		return errors.New("AllowedOrigins cannot be empty")
 	}
 
 	// Validate allowed methods
@@ -119,13 +121,13 @@ func validateRule(rule *CORSRule) error {
 			continue
 		}
 		if err := validateOrigin(origin); err != nil {
-			return fmt.Errorf("invalid origin %s: %v", origin, err)
+			return fmt.Errorf("invalid origin %s: %w", origin, err)
 		}
 	}
 
 	// Validate MaxAgeSeconds
 	if rule.MaxAgeSeconds != nil && *rule.MaxAgeSeconds < 0 {
-		return fmt.Errorf("MaxAgeSeconds cannot be negative")
+		return errors.New("MaxAgeSeconds cannot be negative")
 	}
 
 	return nil
@@ -134,7 +136,7 @@ func validateRule(rule *CORSRule) error {
 // validateOrigin validates an origin string
 func validateOrigin(origin string) error {
 	if origin == "" {
-		return fmt.Errorf("origin cannot be empty")
+		return errors.New("origin cannot be empty")
 	}
 
 	// Special case: "*" is always valid
@@ -145,14 +147,14 @@ func validateOrigin(origin string) error {
 	// Count wildcards
 	wildcardCount := strings.Count(origin, "*")
 	if wildcardCount > 1 {
-		return fmt.Errorf("origin can contain at most one wildcard")
+		return errors.New("origin can contain at most one wildcard")
 	}
 
 	// If there's a wildcard, it should be in a valid position
 	if wildcardCount == 1 {
 		// Must be in the format: http://*.example.com or https://*.example.com
 		if !strings.HasPrefix(origin, "http://") && !strings.HasPrefix(origin, "https://") {
-			return fmt.Errorf("origin with wildcard must start with http:// or https://")
+			return errors.New("origin with wildcard must start with http:// or https://")
 		}
 	}
 
@@ -162,11 +164,11 @@ func validateOrigin(origin string) error {
 // EvaluateRequest evaluates a CORS request against a CORS configuration
 func EvaluateRequest(config *CORSConfiguration, corsReq *CORSRequest) (*CORSResponse, error) {
 	if config == nil || corsReq == nil {
-		return nil, fmt.Errorf("config and corsReq cannot be nil")
+		return nil, errors.New("config and corsReq cannot be nil")
 	}
 
 	if corsReq.Origin == "" {
-		return nil, fmt.Errorf("origin header is required for CORS requests")
+		return nil, errors.New("origin header is required for CORS requests")
 	}
 
 	// Find the first rule that matches the origin
@@ -184,7 +186,7 @@ func EvaluateRequest(config *CORSConfiguration, corsReq *CORSRequest) (*CORSResp
 		}
 	}
 
-	return nil, fmt.Errorf("no matching CORS rule found")
+	return nil, errors.New("no matching CORS rule found")
 }
 
 // buildPreflightResponse builds a CORS response for preflight requests
@@ -202,13 +204,7 @@ func buildPreflightResponse(rule *CORSRule, corsReq *CORSRequest) *CORSResponse 
 
 	if len(corsReq.AccessControlRequestHeaders) > 0 {
 		// Check if wildcard is allowed
-		hasWildcard := false
-		for _, header := range rule.AllowedHeaders {
-			if header == "*" {
-				hasWildcard = true
-				break
-			}
-		}
+		hasWildcard := slices.Contains(rule.AllowedHeaders, "*")
 
 		if hasWildcard {
 			// All requested headers are allowed with wildcard
@@ -292,6 +288,7 @@ func matchesOrigin(allowedOrigins []string, origin string) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -300,12 +297,15 @@ func matchWildcard(pattern, text string) bool {
 	// Simple wildcard matching - only supports single * at the beginning
 	if strings.HasPrefix(pattern, "http://*") {
 		suffix := pattern[8:] // Remove "http://*"
+
 		return strings.HasPrefix(text, "http://") && strings.HasSuffix(text, suffix)
 	}
 	if strings.HasPrefix(pattern, "https://*") {
 		suffix := pattern[9:] // Remove "https://*"
+
 		return strings.HasPrefix(text, "https://") && strings.HasSuffix(text, suffix)
 	}
+
 	return false
 }
 
@@ -333,24 +333,20 @@ func matchesHeader(allowedHeaders []string, header string) bool {
 		}
 
 		// Prefix wildcard match (e.g., "x-amz-*" matches "x-amz-date")
-		if strings.HasSuffix(allowedHeaderLower, "*") {
-			prefix := strings.TrimSuffix(allowedHeaderLower, "*")
+		if before, ok := strings.CutSuffix(allowedHeaderLower, "*"); ok {
+			prefix := before
 			if strings.HasPrefix(header, prefix) {
 				return true
 			}
 		}
 	}
+
 	return false
 }
 
 // containsString checks if a slice contains a specific string
 func containsString(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 // ApplyHeaders applies CORS headers to an HTTP response

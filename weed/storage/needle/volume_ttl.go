@@ -44,6 +44,7 @@ func ReadTTL(ttlString string) (*TTL, error) {
 	}
 	count, err := strconv.Atoi(string(countBytes))
 	unit := toStoredByte(unitByte)
+
 	return fitTtlCount(count, unit), err
 }
 
@@ -85,6 +86,7 @@ func fitTtlCount(count int, unit byte) *TTL {
 	if seconds/(3600*24*365) < 256 {
 		return &TTL{Count: byte(seconds / (3600 * 24 * 365)), Unit: Year}
 	}
+
 	return EMPTY_TTL
 }
 
@@ -93,6 +95,7 @@ func LoadTTLFromBytes(input []byte) (t *TTL) {
 	if input[0] == 0 && input[1] == 0 {
 		return EMPTY_TTL
 	}
+
 	return &TTL{Count: input[0], Unit: input[1]}
 }
 
@@ -101,6 +104,7 @@ func LoadTTLFromUint32(ttl uint32) (t *TTL) {
 	input := make([]byte, 2)
 	input[1] = byte(ttl)
 	input[0] = byte(ttl >> 8)
+
 	return LoadTTLFromBytes(input)
 }
 
@@ -116,6 +120,7 @@ func (t *TTL) ToUint32() (output uint32) {
 	}
 	output = uint32(t.Count) << 8
 	output += uint32(t.Unit)
+
 	return output
 }
 
@@ -141,6 +146,7 @@ func (t *TTL) String() string {
 	case Year:
 		return countString + "y"
 	}
+
 	return ""
 }
 
@@ -165,6 +171,7 @@ func ToSeconds(count int, unit byte) uint64 {
 	case Year:
 		return uint64(count) * 60 * 24 * 365 * 60
 	}
+
 	return 0
 }
 
@@ -183,6 +190,7 @@ func toStoredByte(readableUnitByte byte) byte {
 	case 'y':
 		return Year
 	}
+
 	return 0
 }
 
@@ -203,6 +211,7 @@ func (t TTL) Minutes() uint32 {
 	case Year:
 		return uint32(t.Count) * 60 * 24 * 365
 	}
+
 	return 0
 }
 
@@ -243,5 +252,6 @@ func SecondsToTTL(seconds int32) string {
 	if seconds/(3600*24*365) < 256 {
 		return fmt.Sprintf("%dy", seconds/(3600*24*365))
 	}
+
 	return ""
 }

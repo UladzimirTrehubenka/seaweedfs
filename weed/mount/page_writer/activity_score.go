@@ -16,10 +16,7 @@ func (as ActivityScore) MarkRead() {
 	deltaTime := (now - as.lastActiveTsNs) >> 30 // about number of seconds
 	as.lastActiveTsNs = now
 
-	as.decayedActivenessScore = as.decayedActivenessScore>>deltaTime + 256
-	if as.decayedActivenessScore < 0 {
-		as.decayedActivenessScore = 0
-	}
+	as.decayedActivenessScore = max(as.decayedActivenessScore>>deltaTime+256, 0)
 }
 
 func (as ActivityScore) MarkWrite() {
@@ -27,13 +24,11 @@ func (as ActivityScore) MarkWrite() {
 	deltaTime := (now - as.lastActiveTsNs) >> 30 // about number of seconds
 	as.lastActiveTsNs = now
 
-	as.decayedActivenessScore = as.decayedActivenessScore>>deltaTime + 1024
-	if as.decayedActivenessScore < 0 {
-		as.decayedActivenessScore = 0
-	}
+	as.decayedActivenessScore = max(as.decayedActivenessScore>>deltaTime+1024, 0)
 }
 
 func (as ActivityScore) ActivityScore() int64 {
 	deltaTime := (time.Now().UnixNano() - as.lastActiveTsNs) >> 30 // about number of seconds
+
 	return as.decayedActivenessScore >> deltaTime
 }

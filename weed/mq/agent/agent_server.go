@@ -3,11 +3,12 @@ package agent
 import (
 	"sync"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/client/pub_client"
 	"github.com/seaweedfs/seaweedfs/weed/mq/client/sub_client"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_agent_pb"
-	"google.golang.org/grpc"
 )
 
 type SessionId int64
@@ -21,6 +22,7 @@ type MessageQueueAgentOptions struct {
 
 type MessageQueueAgent struct {
 	mq_agent_pb.UnimplementedSeaweedMessagingAgentServer
+
 	option          *MessageQueueAgentOptions
 	brokers         []pb.ServerAddress
 	grpcDialOption  grpc.DialOption
@@ -31,12 +33,9 @@ type MessageQueueAgent struct {
 }
 
 func NewMessageQueueAgent(option *MessageQueueAgentOptions, grpcDialOption grpc.DialOption) *MessageQueueAgent {
-
 	// initialize brokers which may change later
 	var brokers []pb.ServerAddress
-	for _, broker := range option.SeedBrokers {
-		brokers = append(brokers, broker)
-	}
+	brokers = append(brokers, option.SeedBrokers...)
 
 	return &MessageQueueAgent{
 		option:         option,
@@ -52,5 +51,6 @@ func (a *MessageQueueAgent) brokersList() []string {
 	for _, broker := range a.brokers {
 		brokers = append(brokers, broker.String())
 	}
+
 	return brokers
 }

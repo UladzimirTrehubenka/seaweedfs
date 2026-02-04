@@ -116,6 +116,7 @@ func (m *BalanceMetrics) GetSuccessRate() float64 {
 	if total == 0 {
 		return 100.0
 	}
+
 	return float64(m.SuccessfulOperations) / float64(total) * 100.0
 }
 

@@ -40,6 +40,7 @@ func (s3a *S3ApiServer) GetBucketPolicyHandler(w http.ResponseWriter, r *http.Re
 			glog.Errorf("Failed to check bucket existence for %s: %v", bucket, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		}
+
 		return
 	}
 
@@ -54,6 +55,7 @@ func (s3a *S3ApiServer) GetBucketPolicyHandler(w http.ResponseWriter, r *http.Re
 			glog.Errorf("Failed to get bucket policy for %s: %v", bucket, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		}
+
 		return
 	}
 
@@ -77,6 +79,7 @@ func (s3a *S3ApiServer) PutBucketPolicyHandler(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		glog.Errorf("Failed to read bucket policy request body: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidPolicyDocument)
+
 		return
 	}
 	defer r.Body.Close()
@@ -86,6 +89,7 @@ func (s3a *S3ApiServer) PutBucketPolicyHandler(w http.ResponseWriter, r *http.Re
 	if err := json.Unmarshal(body, &policyDoc); err != nil {
 		glog.Errorf("Failed to parse bucket policy JSON: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedPolicy)
+
 		return
 	}
 
@@ -93,6 +97,7 @@ func (s3a *S3ApiServer) PutBucketPolicyHandler(w http.ResponseWriter, r *http.Re
 	if err := policy_engine.ValidatePolicy(&policyDoc); err != nil {
 		glog.Errorf("Policy validation failed: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidPolicyDocument)
+
 		return
 	}
 
@@ -100,6 +105,7 @@ func (s3a *S3ApiServer) PutBucketPolicyHandler(w http.ResponseWriter, r *http.Re
 	if err := s3a.validateBucketPolicy(&policyDoc, bucket); err != nil {
 		glog.Errorf("Bucket policy validation failed: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidPolicyDocument)
+
 		return
 	}
 
@@ -107,6 +113,7 @@ func (s3a *S3ApiServer) PutBucketPolicyHandler(w http.ResponseWriter, r *http.Re
 	if err := s3a.setBucketPolicy(bucket, &policyDoc); err != nil {
 		glog.Errorf("Failed to store bucket policy for %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -145,6 +152,7 @@ func (s3a *S3ApiServer) DeleteBucketPolicyHandler(w http.ResponseWriter, r *http
 			glog.Errorf("Failed to check bucket existence for %s: %v", bucket, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		}
+
 		return
 	}
 
@@ -157,6 +165,7 @@ func (s3a *S3ApiServer) DeleteBucketPolicyHandler(w http.ResponseWriter, r *http
 		} else {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		}
+
 		return
 	}
 
@@ -164,6 +173,7 @@ func (s3a *S3ApiServer) DeleteBucketPolicyHandler(w http.ResponseWriter, r *http
 	if err := s3a.deleteBucketPolicy(bucket); err != nil {
 		glog.Errorf("Failed to delete bucket policy for %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -192,7 +202,6 @@ func (s3a *S3ApiServer) DeleteBucketPolicyHandler(w http.ResponseWriter, r *http
 // getBucketPolicy retrieves a bucket policy from filer metadata
 // getBucketPolicy retrieves the bucket policy from filer
 func (s3a *S3ApiServer) getBucketPolicy(bucket string) (*policy_engine.PolicyDocument, error) {
-
 	var policyDoc policy_engine.PolicyDocument
 	err := s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		resp, err := client.LookupDirectoryEntry(context.Background(), &filer_pb.LookupDirectoryEntryRequest{
@@ -201,20 +210,20 @@ func (s3a *S3ApiServer) getBucketPolicy(bucket string) (*policy_engine.PolicyDoc
 		})
 		if err != nil {
 			// Return sentinel error for bucket not found
-			return fmt.Errorf("%w: %v", ErrBucketNotFound, err)
+			return fmt.Errorf("%w: %w", ErrBucketNotFound, err)
 		}
 
-		if resp.Entry == nil {
+		if resp.GetEntry() == nil {
 			return ErrPolicyNotFound
 		}
 
-		policyJSON, exists := resp.Entry.Extended[BUCKET_POLICY_METADATA_KEY]
+		policyJSON, exists := resp.GetEntry().GetExtended()[BUCKET_POLICY_METADATA_KEY]
 		if !exists || len(policyJSON) == 0 {
 			return ErrPolicyNotFound
 		}
 
 		if err := json.Unmarshal(policyJSON, &policyDoc); err != nil {
-			return fmt.Errorf("failed to parse stored bucket policy: %v", err)
+			return fmt.Errorf("failed to parse stored bucket policy: %w", err)
 		}
 
 		return nil
@@ -232,7 +241,7 @@ func (s3a *S3ApiServer) setBucketPolicy(bucket string, policyDoc *policy_engine.
 	// Serialize policy to JSON
 	policyJSON, err := json.Marshal(policyDoc)
 	if err != nil {
-		return fmt.Errorf("failed to serialize policy: %v", err)
+		return fmt.Errorf("failed to serialize policy: %w", err)
 	}
 
 	return s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
@@ -242,10 +251,10 @@ func (s3a *S3ApiServer) setBucketPolicy(bucket string, policyDoc *policy_engine.
 			Name:      bucket,
 		})
 		if err != nil {
-			return fmt.Errorf("bucket not found: %v", err)
+			return fmt.Errorf("bucket not found: %w", err)
 		}
 
-		entry := resp.Entry
+		entry := resp.GetEntry()
 		if entry.Extended == nil {
 			entry.Extended = make(map[string][]byte)
 		}
@@ -272,16 +281,16 @@ func (s3a *S3ApiServer) deleteBucketPolicy(bucket string) error {
 			Name:      bucket,
 		})
 		if err != nil {
-			return fmt.Errorf("bucket not found: %v", err)
+			return fmt.Errorf("bucket not found: %w", err)
 		}
 
-		entry := resp.Entry
+		entry := resp.GetEntry()
 		if entry.Extended == nil {
 			return nil // No policy to delete
 		}
 
 		// Remove the bucket policy metadata
-		delete(entry.Extended, BUCKET_POLICY_METADATA_KEY)
+		delete(entry.GetExtended(), BUCKET_POLICY_METADATA_KEY)
 
 		// Update the entry
 		_, err = client.UpdateEntry(context.Background(), &filer_pb.UpdateEntryRequest{
@@ -300,7 +309,7 @@ func (s3a *S3ApiServer) validateBucketPolicy(policyDoc *policy_engine.PolicyDocu
 	}
 
 	if len(policyDoc.Statement) == 0 {
-		return fmt.Errorf("policy document must contain at least one statement")
+		return errors.New("policy document must contain at least one statement")
 	}
 
 	for i, statement := range policyDoc.Statement {

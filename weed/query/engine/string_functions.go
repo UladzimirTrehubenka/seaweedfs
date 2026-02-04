@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -15,15 +16,16 @@ import (
 // Length returns the length of a string
 func (e *SQLEngine) Length(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("LENGTH function requires non-null value")
+		return nil, errors.New("LENGTH function requires non-null value")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("LENGTH function conversion error: %v", err)
+		return nil, fmt.Errorf("LENGTH function conversion error: %w", err)
 	}
 
 	length := int64(len(str))
+
 	return &schema_pb.Value{
 		Kind: &schema_pb.Value_Int64Value{Int64Value: length},
 	}, nil
@@ -32,12 +34,12 @@ func (e *SQLEngine) Length(value *schema_pb.Value) (*schema_pb.Value, error) {
 // Upper converts a string to uppercase
 func (e *SQLEngine) Upper(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("UPPER function requires non-null value")
+		return nil, errors.New("UPPER function requires non-null value")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("UPPER function conversion error: %v", err)
+		return nil, fmt.Errorf("UPPER function conversion error: %w", err)
 	}
 
 	return &schema_pb.Value{
@@ -48,12 +50,12 @@ func (e *SQLEngine) Upper(value *schema_pb.Value) (*schema_pb.Value, error) {
 // Lower converts a string to lowercase
 func (e *SQLEngine) Lower(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("LOWER function requires non-null value")
+		return nil, errors.New("LOWER function requires non-null value")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("LOWER function conversion error: %v", err)
+		return nil, fmt.Errorf("LOWER function conversion error: %w", err)
 	}
 
 	return &schema_pb.Value{
@@ -64,12 +66,12 @@ func (e *SQLEngine) Lower(value *schema_pb.Value) (*schema_pb.Value, error) {
 // Trim removes leading and trailing whitespace from a string
 func (e *SQLEngine) Trim(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("TRIM function requires non-null value")
+		return nil, errors.New("TRIM function requires non-null value")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("TRIM function conversion error: %v", err)
+		return nil, fmt.Errorf("TRIM function conversion error: %w", err)
 	}
 
 	return &schema_pb.Value{
@@ -80,12 +82,12 @@ func (e *SQLEngine) Trim(value *schema_pb.Value) (*schema_pb.Value, error) {
 // LTrim removes leading whitespace from a string
 func (e *SQLEngine) LTrim(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("LTRIM function requires non-null value")
+		return nil, errors.New("LTRIM function requires non-null value")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("LTRIM function conversion error: %v", err)
+		return nil, fmt.Errorf("LTRIM function conversion error: %w", err)
 	}
 
 	return &schema_pb.Value{
@@ -96,12 +98,12 @@ func (e *SQLEngine) LTrim(value *schema_pb.Value) (*schema_pb.Value, error) {
 // RTrim removes trailing whitespace from a string
 func (e *SQLEngine) RTrim(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("RTRIM function requires non-null value")
+		return nil, errors.New("RTRIM function requires non-null value")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("RTRIM function conversion error: %v", err)
+		return nil, fmt.Errorf("RTRIM function conversion error: %w", err)
 	}
 
 	return &schema_pb.Value{
@@ -112,17 +114,17 @@ func (e *SQLEngine) RTrim(value *schema_pb.Value) (*schema_pb.Value, error) {
 // Substring extracts a substring from a string
 func (e *SQLEngine) Substring(value *schema_pb.Value, start *schema_pb.Value, length ...*schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil || start == nil {
-		return nil, fmt.Errorf("SUBSTRING function requires non-null value and start position")
+		return nil, errors.New("SUBSTRING function requires non-null value and start position")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("SUBSTRING function value conversion error: %v", err)
+		return nil, fmt.Errorf("SUBSTRING function value conversion error: %w", err)
 	}
 
 	startPos, err := e.valueToInt64(start)
 	if err != nil {
-		return nil, fmt.Errorf("SUBSTRING function start position conversion error: %v", err)
+		return nil, fmt.Errorf("SUBSTRING function start position conversion error: %w", err)
 	}
 
 	// Convert to 0-based indexing (SQL uses 1-based)
@@ -141,7 +143,7 @@ func (e *SQLEngine) Substring(value *schema_pb.Value, start *schema_pb.Value, le
 	if len(length) > 0 && length[0] != nil {
 		lengthVal, err := e.valueToInt64(length[0])
 		if err != nil {
-			return nil, fmt.Errorf("SUBSTRING function length conversion error: %v", err)
+			return nil, fmt.Errorf("SUBSTRING function length conversion error: %w", err)
 		}
 
 		if lengthVal <= 0 {
@@ -152,10 +154,7 @@ func (e *SQLEngine) Substring(value *schema_pb.Value, start *schema_pb.Value, le
 				result = str[startIdx:]
 			} else {
 				// Safe conversion after bounds check
-				endIdx := startIdx + int(lengthVal)
-				if endIdx > len(str) {
-					endIdx = len(str)
-				}
+				endIdx := min(startIdx+int(lengthVal), len(str))
 				result = str[startIdx:endIdx]
 			}
 		}
@@ -184,7 +183,7 @@ func (e *SQLEngine) Concat(values ...*schema_pb.Value) (*schema_pb.Value, error)
 
 		str, err := e.valueToString(value)
 		if err != nil {
-			return nil, fmt.Errorf("CONCAT function value %d conversion error: %v", i, err)
+			return nil, fmt.Errorf("CONCAT function value %d conversion error: %w", i, err)
 		}
 		result.WriteString(str)
 	}
@@ -197,22 +196,22 @@ func (e *SQLEngine) Concat(values ...*schema_pb.Value) (*schema_pb.Value, error)
 // Replace replaces all occurrences of a substring with another substring
 func (e *SQLEngine) Replace(value, oldStr, newStr *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil || oldStr == nil || newStr == nil {
-		return nil, fmt.Errorf("REPLACE function requires non-null values")
+		return nil, errors.New("REPLACE function requires non-null values")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("REPLACE function value conversion error: %v", err)
+		return nil, fmt.Errorf("REPLACE function value conversion error: %w", err)
 	}
 
 	old, err := e.valueToString(oldStr)
 	if err != nil {
-		return nil, fmt.Errorf("REPLACE function old string conversion error: %v", err)
+		return nil, fmt.Errorf("REPLACE function old string conversion error: %w", err)
 	}
 
 	new, err := e.valueToString(newStr)
 	if err != nil {
-		return nil, fmt.Errorf("REPLACE function new string conversion error: %v", err)
+		return nil, fmt.Errorf("REPLACE function new string conversion error: %w", err)
 	}
 
 	result := strings.ReplaceAll(str, old, new)
@@ -225,17 +224,17 @@ func (e *SQLEngine) Replace(value, oldStr, newStr *schema_pb.Value) (*schema_pb.
 // Position returns the position of a substring in a string (1-based, 0 if not found)
 func (e *SQLEngine) Position(substring, value *schema_pb.Value) (*schema_pb.Value, error) {
 	if substring == nil || value == nil {
-		return nil, fmt.Errorf("POSITION function requires non-null values")
+		return nil, errors.New("POSITION function requires non-null values")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("POSITION function string conversion error: %v", err)
+		return nil, fmt.Errorf("POSITION function string conversion error: %w", err)
 	}
 
 	substr, err := e.valueToString(substring)
 	if err != nil {
-		return nil, fmt.Errorf("POSITION function substring conversion error: %v", err)
+		return nil, fmt.Errorf("POSITION function substring conversion error: %w", err)
 	}
 
 	pos := strings.Index(str, substr)
@@ -253,17 +252,17 @@ func (e *SQLEngine) Position(substring, value *schema_pb.Value) (*schema_pb.Valu
 // Left returns the leftmost characters of a string
 func (e *SQLEngine) Left(value *schema_pb.Value, length *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil || length == nil {
-		return nil, fmt.Errorf("LEFT function requires non-null values")
+		return nil, errors.New("LEFT function requires non-null values")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("LEFT function string conversion error: %v", err)
+		return nil, fmt.Errorf("LEFT function string conversion error: %w", err)
 	}
 
 	lengthVal, err := e.valueToInt64(length)
 	if err != nil {
-		return nil, fmt.Errorf("LEFT function length conversion error: %v", err)
+		return nil, fmt.Errorf("LEFT function length conversion error: %w", err)
 	}
 
 	if lengthVal <= 0 {
@@ -293,17 +292,17 @@ func (e *SQLEngine) Left(value *schema_pb.Value, length *schema_pb.Value) (*sche
 // Right returns the rightmost characters of a string
 func (e *SQLEngine) Right(value *schema_pb.Value, length *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil || length == nil {
-		return nil, fmt.Errorf("RIGHT function requires non-null values")
+		return nil, errors.New("RIGHT function requires non-null values")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("RIGHT function string conversion error: %v", err)
+		return nil, fmt.Errorf("RIGHT function string conversion error: %w", err)
 	}
 
 	lengthVal, err := e.valueToInt64(length)
 	if err != nil {
-		return nil, fmt.Errorf("RIGHT function length conversion error: %v", err)
+		return nil, fmt.Errorf("RIGHT function length conversion error: %w", err)
 	}
 
 	if lengthVal <= 0 {
@@ -326,6 +325,7 @@ func (e *SQLEngine) Right(value *schema_pb.Value, length *schema_pb.Value) (*sch
 
 	// Safe conversion after bounds check
 	startPos := len(str) - int(lengthVal)
+
 	return &schema_pb.Value{
 		Kind: &schema_pb.Value_StringValue{StringValue: str[startPos:]},
 	}, nil
@@ -334,12 +334,12 @@ func (e *SQLEngine) Right(value *schema_pb.Value, length *schema_pb.Value) (*sch
 // Reverse reverses a string
 func (e *SQLEngine) Reverse(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("REVERSE function requires non-null value")
+		return nil, errors.New("REVERSE function requires non-null value")
 	}
 
 	str, err := e.valueToString(value)
 	if err != nil {
-		return nil, fmt.Errorf("REVERSE function conversion error: %v", err)
+		return nil, fmt.Errorf("REVERSE function conversion error: %w", err)
 	}
 
 	// Reverse the string rune by rune to handle Unicode correctly

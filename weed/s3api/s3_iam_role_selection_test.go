@@ -3,8 +3,9 @@ package s3api
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
 
 func TestSelectPrimaryRole(t *testing.T) {
@@ -13,7 +14,7 @@ func TestSelectPrimaryRole(t *testing.T) {
 	t.Run("empty_roles_returns_empty", func(t *testing.T) {
 		identity := &providers.ExternalIdentity{Attributes: make(map[string]string)}
 		result := s3iam.selectPrimaryRole([]string{}, identity)
-		assert.Equal(t, "", result)
+		assert.Empty(t, result)
 	})
 
 	t.Run("single_role_returns_that_role", func(t *testing.T) {

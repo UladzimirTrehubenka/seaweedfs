@@ -26,7 +26,7 @@ func TestDistributedSTSService(t *testing.T) {
 				Name:    "keycloak-oidc",
 				Type:    "oidc",
 				Enabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"issuer":   "http://keycloak:8080/realms/seaweedfs-test",
 					"clientId": "seaweedfs-s3",
 					"jwksUri":  "http://keycloak:8080/realms/seaweedfs-test/protocol/openid-connect/certs",
@@ -37,7 +37,7 @@ func TestDistributedSTSService(t *testing.T) {
 				Name:    "disabled-ldap",
 				Type:    "oidc", // Use OIDC as placeholder since LDAP isn't implemented
 				Enabled: false,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"issuer":   "ldap://company.com",
 					"clientId": "ldap-client",
 				},
@@ -61,7 +61,7 @@ func TestDistributedSTSService(t *testing.T) {
 	require.NoError(t, err, "Instance 3 should initialize successfully")
 
 	// Manually register mock providers for testing (not available in production)
-	mockProviderConfig := map[string]interface{}{
+	mockProviderConfig := map[string]any{
 		"issuer":   "http://localhost:9999",
 		"clientId": "test-client",
 	}
@@ -278,7 +278,7 @@ func TestProviderFactoryDistributed(t *testing.T) {
 			Name:    "production-keycloak",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":       "https://keycloak.company.com/realms/seaweedfs",
 				"clientId":     "seaweedfs-prod",
 				"clientSecret": "super-secret-key",
@@ -290,7 +290,7 @@ func TestProviderFactoryDistributed(t *testing.T) {
 			Name:    "backup-oidc",
 			Type:    "oidc",
 			Enabled: false, // Disabled by default
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":   "https://backup-oidc.company.com",
 				"clientId": "seaweedfs-backup",
 			},

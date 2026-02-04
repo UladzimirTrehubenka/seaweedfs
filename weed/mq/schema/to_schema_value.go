@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/parquet-go/parquet-go"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -17,11 +18,12 @@ func ToRecordValue(recordType *schema_pb.RecordType, parquetLevels *ParquetLevel
 	if err != nil {
 		return nil, err
 	}
+
 	return recordValue.GetRecordValue(), nil
 }
 
 func ToValue(t *schema_pb.Type, levels *ParquetLevels, values []parquet.Value, valueIndex int) (value *schema_pb.Value, endValueIndex int, err error) {
-	switch t.Kind.(type) {
+	switch t.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		return toScalarValue(t.GetScalarType(), levels, values, valueIndex)
 	case *schema_pb.Type_ListType:
@@ -29,20 +31,22 @@ func ToValue(t *schema_pb.Type, levels *ParquetLevels, values []parquet.Value, v
 	case *schema_pb.Type_RecordType:
 		return toRecordValue(t.GetRecordType(), levels, values, valueIndex)
 	}
+
 	return nil, valueIndex, fmt.Errorf("unsupported type: %v", t)
 }
 
 func toRecordValue(recordType *schema_pb.RecordType, levels *ParquetLevels, values []parquet.Value, valueIndex int) (*schema_pb.Value, int, error) {
 	recordValue := schema_pb.RecordValue{Fields: make(map[string]*schema_pb.Value)}
-	for _, field := range recordType.Fields {
-		fieldLevels := levels.levels[field.Name]
-		fieldValue, endValueIndex, err := ToValue(field.Type, fieldLevels, values, valueIndex)
+	for _, field := range recordType.GetFields() {
+		fieldLevels := levels.levels[field.GetName()]
+		fieldValue, endValueIndex, err := ToValue(field.GetType(), fieldLevels, values, valueIndex)
 		if err != nil {
 			return nil, 0, err
 		}
 		valueIndex = endValueIndex
-		recordValue.Fields[field.Name] = fieldValue
+		recordValue.Fields[field.GetName()] = fieldValue
 	}
+
 	return &schema_pb.Value{Kind: &schema_pb.Value_RecordValue{RecordValue: &recordValue}}, valueIndex, nil
 }
 
@@ -53,12 +57,13 @@ func toListValue(listType *schema_pb.ListType, levels *ParquetLevels, values []p
 		if values[valueIndex].Column() != levels.startColumnIndex {
 			break
 		}
-		value, valueIndex, err = ToValue(listType.ElementType, levels, values, valueIndex)
+		value, valueIndex, err = ToValue(listType.GetElementType(), levels, values, valueIndex)
 		if err != nil {
 			return nil, valueIndex, err
 		}
 		listValues = append(listValues, value)
 	}
+
 	return &schema_pb.Value{Kind: &schema_pb.Value_ListValue{ListValue: &schema_pb.ListValue{Values: listValues}}}, valueIndex, nil
 }
 
@@ -84,6 +89,7 @@ func toScalarValue(scalarType schema_pb.ScalarType, levels *ParquetLevels, value
 		if byteData == nil {
 			byteData = []byte{} // Use empty slice instead of nil
 		}
+
 		return &schema_pb.Value{Kind: &schema_pb.Value_BytesValue{BytesValue: byteData}}, valueIndex + 1, nil
 	case schema_pb.ScalarType_STRING:
 		// Handle nil byte arrays from parquet to prevent string conversion issues
@@ -91,6 +97,7 @@ func toScalarValue(scalarType schema_pb.ScalarType, levels *ParquetLevels, value
 		if byteData == nil {
 			byteData = []byte{} // Use empty slice instead of nil
 		}
+
 		return &schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: string(byteData)}}, valueIndex + 1, nil
 	// Parquet logical types - convert from their physical storage back to logical values
 	case schema_pb.ScalarType_TIMESTAMP:
@@ -123,6 +130,7 @@ func toScalarValue(scalarType schema_pb.ScalarType, levels *ParquetLevels, value
 		if len(trimmedBytes) == 0 {
 			trimmedBytes = []byte{0} // Ensure we have at least one byte for zero
 		}
+
 		return &schema_pb.Value{
 			Kind: &schema_pb.Value_DecimalValue{
 				DecimalValue: &schema_pb.DecimalValue{
@@ -142,5 +150,6 @@ func toScalarValue(scalarType schema_pb.ScalarType, levels *ParquetLevels, value
 			},
 		}, valueIndex + 1, nil
 	}
+
 	return nil, valueIndex, fmt.Errorf("unsupported scalar type: %v", scalarType)
 }

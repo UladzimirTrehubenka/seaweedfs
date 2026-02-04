@@ -9,7 +9,7 @@ import (
 )
 
 type idleHandle struct {
-	handle    interface{}
+	handle    any
 	keepUntil *time.Time
 }
 
@@ -18,7 +18,7 @@ type TooManyHandles struct {
 }
 
 func (t TooManyHandles) Error() string {
-	return fmt.Sprintf("Too many handles to %s", t.location)
+	return "Too many handles to " + t.location
 }
 
 type OpenHandleError struct {
@@ -87,6 +87,7 @@ func (p *simpleResourcePool) ActiveHighWaterMark() int32 {
 func (p *simpleResourcePool) NumIdle() int {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+
 	return len(p.idleHandles)
 }
 
@@ -108,14 +109,17 @@ func (p *simpleResourcePool) Register(resourceLocation string) error {
 
 	if p.location == "" {
 		p.location = resourceLocation
+
 		return nil
 	}
+
 	return errors.New("SimpleResourcePool can only register one location")
 }
 
 // SimpleResourcePool will enter lame duck mode upon calling Unregister.
 func (p *simpleResourcePool) Unregister(resourceLocation string) error {
 	p.EnterLameDuckMode()
+
 	return nil
 }
 
@@ -126,6 +130,7 @@ func (p *simpleResourcePool) ListRegistered() []string {
 	if p.location != "" {
 		return []string{p.location}
 	}
+
 	return []string{}
 }
 
@@ -134,8 +139,7 @@ func (p *simpleResourcePool) getLocation() (string, error) {
 	defer p.mutex.Unlock()
 
 	if p.location == "" {
-		return "", fmt.Errorf(
-			"resource location is not set for SimpleResourcePool")
+		return "", errors.New("resource location is not set for SimpleResourcePool")
 	}
 
 	if p.isLameDuck {
@@ -154,8 +158,8 @@ func (p *simpleResourcePool) Get(unused string) (ManagedHandle, error) {
 	activeCount := atomic.AddInt32(p.numActive, 1)
 	if p.options.MaxActiveHandles > 0 &&
 		activeCount > p.options.MaxActiveHandles {
-
 		atomic.AddInt32(p.numActive, -1)
+
 		return nil, TooManyHandles{p.location}
 	}
 
@@ -165,7 +169,6 @@ func (p *simpleResourcePool) Get(unused string) (ManagedHandle, error) {
 			p.activeHighWaterMark,
 			highest,
 			activeCount) {
-
 		highest = atomic.LoadInt32(p.activeHighWaterMark)
 	}
 
@@ -176,6 +179,7 @@ func (p *simpleResourcePool) Get(unused string) (ManagedHandle, error) {
 	location, err := p.getLocation()
 	if err != nil {
 		atomic.AddInt32(p.numActive, -1)
+
 		return nil, err
 	}
 
@@ -189,6 +193,7 @@ func (p *simpleResourcePool) Get(unused string) (ManagedHandle, error) {
 			// We could not immediately acquire a token.
 			// Instead of waiting
 			atomic.AddInt32(p.numActive, -1)
+
 			return nil, OpenHandleError{
 				p.location, errors.New("Open Error: reached OpenMaxConcurrency")}
 		}
@@ -197,6 +202,7 @@ func (p *simpleResourcePool) Get(unused string) (ManagedHandle, error) {
 	handle, err := p.options.Open(location)
 	if err != nil {
 		atomic.AddInt32(p.numActive, -1)
+
 		return nil, OpenHandleError{p.location, err}
 	}
 
@@ -241,6 +247,7 @@ func (p *simpleResourcePool) Discard(handle ManagedHandle) error {
 			return fmt.Errorf("failed to close resource handle: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -284,17 +291,19 @@ func (p *simpleResourcePool) getIdleHandle() ManagedHandle {
 	if i < len(p.idleHandles) {
 		idle := p.idleHandles[i]
 		p.idleHandles = p.idleHandles[i+1:]
+
 		return NewManagedHandle(p.location, idle.handle, p, p.options)
 	}
 
 	if len(p.idleHandles) > 0 {
 		p.idleHandles = []*idleHandle{}
 	}
+
 	return nil
 }
 
 // This adds an idle resource to the pool.
-func (p *simpleResourcePool) queueIdleHandles(handle interface{}) {
+func (p *simpleResourcePool) queueIdleHandles(handle any) {
 	var toClose []*idleHandle
 	defer func() {
 		// NOTE: Must keep the closure around to late bind the toClose slice.
@@ -316,6 +325,7 @@ func (p *simpleResourcePool) queueIdleHandles(handle interface{}) {
 		toClose = []*idleHandle{
 			{handle: handle},
 		}
+
 		return
 	}
 

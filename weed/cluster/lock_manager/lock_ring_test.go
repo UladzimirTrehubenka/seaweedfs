@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 )
 
 func TestAddServer(t *testing.T) {
@@ -20,7 +21,7 @@ func TestAddServer(t *testing.T) {
 
 	// Verify all servers are present
 	servers := r.GetSnapshot()
-	assert.Equal(t, 5, len(servers))
+	assert.Len(t, servers, 5)
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8080"))
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8081"))
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8082"))
@@ -37,7 +38,7 @@ func TestAddServer(t *testing.T) {
 
 	// Verify only 2 servers remain (localhost:8081 and localhost:8083)
 	servers = r.GetSnapshot()
-	assert.Equal(t, 2, len(servers))
+	assert.Len(t, servers, 2)
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8081"))
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8083"))
 
@@ -57,7 +58,7 @@ func TestLockRing(t *testing.T) {
 	r.SetSnapshot([]pb.ServerAddress{"localhost:8080", "localhost:8081"})
 	assert.Equal(t, 1, r.GetSnapshotCount())
 	servers := r.GetSnapshot()
-	assert.Equal(t, 2, len(servers))
+	assert.Len(t, servers, 2)
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8080"))
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8081"))
 
@@ -65,7 +66,7 @@ func TestLockRing(t *testing.T) {
 	r.SetSnapshot([]pb.ServerAddress{"localhost:8080", "localhost:8081", "localhost:8082"})
 	assert.Equal(t, 2, r.GetSnapshotCount())
 	servers = r.GetSnapshot()
-	assert.Equal(t, 3, len(servers))
+	assert.Len(t, servers, 3)
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8082"))
 
 	// Wait for cleanup interval and add another server
@@ -74,7 +75,7 @@ func TestLockRing(t *testing.T) {
 	r.SetSnapshot([]pb.ServerAddress{"localhost:8080", "localhost:8081", "localhost:8082", "localhost:8083"})
 	assert.LessOrEqual(t, r.GetSnapshotCount(), 3)
 	servers = r.GetSnapshot()
-	assert.Equal(t, 4, len(servers))
+	assert.Len(t, servers, 4)
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8083"))
 
 	// Wait for cleanup and verify compaction
@@ -85,7 +86,7 @@ func TestLockRing(t *testing.T) {
 	// Add final server
 	r.SetSnapshot([]pb.ServerAddress{"localhost:8080", "localhost:8081", "localhost:8082", "localhost:8083", "localhost:8084"})
 	servers = r.GetSnapshot()
-	assert.Equal(t, 5, len(servers))
+	assert.Len(t, servers, 5)
 	assert.Contains(t, servers, pb.ServerAddress("localhost:8084"))
 	assert.LessOrEqual(t, r.GetSnapshotCount(), 3)
 }

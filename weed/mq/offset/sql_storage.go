@@ -2,6 +2,7 @@ package offset
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -99,10 +100,10 @@ func (s *SQLOffsetStorage) SaveCheckpoint(namespace, topicName string, partition
 
 	_, err := s.db.Exec(query,
 		partitionKey,
-		partition.RingSize,
-		partition.RangeStart,
-		partition.RangeStop,
-		partition.UnixTimeNs,
+		partition.GetRingSize(),
+		partition.GetRangeStart(),
+		partition.GetRangeStop(),
+		partition.GetUnixTimeNs(),
 		offset,
 		now,
 	)
@@ -128,8 +129,8 @@ func (s *SQLOffsetStorage) LoadCheckpoint(namespace, topicName string, partition
 	var checkpointOffset int64
 	err := s.db.QueryRow(query, partitionKey).Scan(&checkpointOffset)
 
-	if err == sql.ErrNoRows {
-		return -1, fmt.Errorf("no checkpoint found")
+	if errors.Is(err, sql.ErrNoRows) {
+		return -1, errors.New("no checkpoint found")
 	}
 
 	if err != nil {
@@ -160,7 +161,7 @@ func (s *SQLOffsetStorage) GetHighestOffset(namespace, topicName string, partiti
 	}
 
 	if !highestOffset.Valid {
-		return -1, fmt.Errorf("no records found")
+		return -1, errors.New("no records found")
 	}
 
 	return highestOffset.Int64, nil
@@ -340,6 +341,7 @@ func (s *SQLOffsetStorage) Close() error {
 	if s.db != nil {
 		return s.db.Close()
 	}
+
 	return nil
 }
 

@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -30,12 +31,12 @@ const (
 // NewCopySizeCalculator creates a new size calculator for copy operations
 func NewCopySizeCalculator(entry *filer_pb.Entry, r *http.Request) *CopySizeCalculator {
 	calc := &CopySizeCalculator{
-		srcSize:      int64(entry.Attributes.FileSize),
+		srcSize:      int64(entry.GetAttributes().GetFileSize()),
 		isCompressed: isCompressedEntry(entry),
 	}
 
 	// Determine source encryption type
-	calc.srcType, calc.srcEncrypted = getSourceEncryptionType(entry.Extended)
+	calc.srcType, calc.srcEncrypted = getSourceEncryptionType(entry.GetExtended())
 
 	// Determine destination encryption type
 	calc.dstType, calc.dstEncrypted = getDestinationEncryptionType(r)
@@ -95,6 +96,7 @@ func getSourceEncryptionType(metadata map[string][]byte) (EncryptionType, bool) 
 	if IsSSES3EncryptedInternal(metadata) {
 		return EncryptionTypeSSES3, true
 	}
+
 	return EncryptionTypeNone, false
 }
 
@@ -109,18 +111,19 @@ func getDestinationEncryptionType(r *http.Request) (EncryptionType, bool) {
 	if IsSSES3RequestInternal(r) {
 		return EncryptionTypeSSES3, true
 	}
+
 	return EncryptionTypeNone, false
 }
 
 // isCompressedEntry checks if the entry represents a compressed object
 func isCompressedEntry(entry *filer_pb.Entry) bool {
 	// Check for compression indicators in metadata
-	if compressionType, exists := entry.Extended["compression"]; exists {
+	if compressionType, exists := entry.GetExtended()["compression"]; exists {
 		return string(compressionType) != ""
 	}
 
 	// Check MIME type for compressed formats
-	mimeType := entry.Attributes.Mime
+	mimeType := entry.GetAttributes().GetMime()
 	compressedMimeTypes := []string{
 		"application/gzip",
 		"application/x-gzip",
@@ -129,13 +132,7 @@ func isCompressedEntry(entry *filer_pb.Entry) bool {
 		"application/x-compressed",
 	}
 
-	for _, compressedType := range compressedMimeTypes {
-		if mimeType == compressedType {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(compressedMimeTypes, mimeType)
 }
 
 // SizeTransitionInfo provides detailed information about size changes during copy

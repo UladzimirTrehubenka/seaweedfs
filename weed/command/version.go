@@ -23,5 +23,6 @@ func runVersion(cmd *Command, args []string) bool {
 	println()
 	println("For enterprise users, please visit https://seaweedfs.com for SeaweedFS Enterprise Edition,")
 	println("which has a self-healing storage format with better data protection.")
+
 	return true
 }

@@ -12,18 +12,18 @@ type ExecutionNode interface {
 	GetNodeType() string
 	GetChildren() []ExecutionNode
 	GetDescription() string
-	GetDetails() map[string]interface{}
+	GetDetails() map[string]any
 }
 
 // FileSourceNode represents a leaf node - an actual data source file
 type FileSourceNode struct {
-	FilePath         string                 `json:"file_path"`
-	SourceType       string                 `json:"source_type"`       // "parquet", "live_log", "broker_buffer"
-	Predicates       []string               `json:"predicates"`        // Pushed down predicates
-	Operations       []string               `json:"operations"`        // "sequential_scan", "statistics_skip", etc.
-	EstimatedRows    int64                  `json:"estimated_rows"`    // Estimated rows to process
-	OptimizationHint string                 `json:"optimization_hint"` // "fast_path", "full_scan", etc.
-	Details          map[string]interface{} `json:"details"`
+	FilePath         string         `json:"file_path"`
+	SourceType       string         `json:"source_type"`       // "parquet", "live_log", "broker_buffer"
+	Predicates       []string       `json:"predicates"`        // Pushed down predicates
+	Operations       []string       `json:"operations"`        // "sequential_scan", "statistics_skip", etc.
+	EstimatedRows    int64          `json:"estimated_rows"`    // Estimated rows to process
+	OptimizationHint string         `json:"optimization_hint"` // "fast_path", "full_scan", etc.
+	Details          map[string]any `json:"details"`
 }
 
 func (f *FileSourceNode) GetNodeType() string          { return "file_source" }
@@ -32,36 +32,37 @@ func (f *FileSourceNode) GetDescription() string {
 	if f.OptimizationHint != "" {
 		return fmt.Sprintf("%s (%s)", f.FilePath, f.OptimizationHint)
 	}
+
 	return f.FilePath
 }
-func (f *FileSourceNode) GetDetails() map[string]interface{} { return f.Details }
+func (f *FileSourceNode) GetDetails() map[string]any { return f.Details }
 
 // MergeOperationNode represents a branch node - combines data from multiple sources
 type MergeOperationNode struct {
-	OperationType string                 `json:"operation_type"` // "chronological_merge", "union", etc.
-	Children      []ExecutionNode        `json:"children"`
-	Description   string                 `json:"description"`
-	Details       map[string]interface{} `json:"details"`
+	OperationType string          `json:"operation_type"` // "chronological_merge", "union", etc.
+	Children      []ExecutionNode `json:"children"`
+	Description   string          `json:"description"`
+	Details       map[string]any  `json:"details"`
 }
 
-func (m *MergeOperationNode) GetNodeType() string                { return "merge_operation" }
-func (m *MergeOperationNode) GetChildren() []ExecutionNode       { return m.Children }
-func (m *MergeOperationNode) GetDescription() string             { return m.Description }
-func (m *MergeOperationNode) GetDetails() map[string]interface{} { return m.Details }
+func (m *MergeOperationNode) GetNodeType() string          { return "merge_operation" }
+func (m *MergeOperationNode) GetChildren() []ExecutionNode { return m.Children }
+func (m *MergeOperationNode) GetDescription() string       { return m.Description }
+func (m *MergeOperationNode) GetDetails() map[string]any   { return m.Details }
 
 // ScanOperationNode represents an intermediate node - a scanning strategy
 type ScanOperationNode struct {
-	ScanType    string                 `json:"scan_type"` // "parquet_scan", "live_log_scan", "hybrid_scan"
-	Children    []ExecutionNode        `json:"children"`
-	Predicates  []string               `json:"predicates"` // Predicates applied at this level
-	Description string                 `json:"description"`
-	Details     map[string]interface{} `json:"details"`
+	ScanType    string          `json:"scan_type"` // "parquet_scan", "live_log_scan", "hybrid_scan"
+	Children    []ExecutionNode `json:"children"`
+	Predicates  []string        `json:"predicates"` // Predicates applied at this level
+	Description string          `json:"description"`
+	Details     map[string]any  `json:"details"`
 }
 
-func (s *ScanOperationNode) GetNodeType() string                { return "scan_operation" }
-func (s *ScanOperationNode) GetChildren() []ExecutionNode       { return s.Children }
-func (s *ScanOperationNode) GetDescription() string             { return s.Description }
-func (s *ScanOperationNode) GetDetails() map[string]interface{} { return s.Details }
+func (s *ScanOperationNode) GetNodeType() string          { return "scan_operation" }
+func (s *ScanOperationNode) GetChildren() []ExecutionNode { return s.Children }
+func (s *ScanOperationNode) GetDescription() string       { return s.Description }
+func (s *ScanOperationNode) GetDetails() map[string]any   { return s.Details }
 
 // QueryExecutionPlan contains information about how a query was executed
 type QueryExecutionPlan struct {
@@ -70,16 +71,16 @@ type QueryExecutionPlan struct {
 	RootNode          ExecutionNode `json:"root_node,omitempty"` // Root of execution tree
 
 	// Legacy fields (kept for compatibility)
-	DataSources         []string               `json:"data_sources"` // parquet_files, live_logs, broker_buffer
-	PartitionsScanned   int                    `json:"partitions_scanned"`
-	ParquetFilesScanned int                    `json:"parquet_files_scanned"`
-	LiveLogFilesScanned int                    `json:"live_log_files_scanned"`
-	TotalRowsProcessed  int64                  `json:"total_rows_processed"`
-	OptimizationsUsed   []string               `json:"optimizations_used"` // parquet_stats, predicate_pushdown, etc.
-	TimeRangeFilters    map[string]interface{} `json:"time_range_filters,omitempty"`
-	Aggregations        []string               `json:"aggregations,omitempty"`
-	ExecutionTimeMs     float64                `json:"execution_time_ms"`
-	Details             map[string]interface{} `json:"details,omitempty"`
+	DataSources         []string       `json:"data_sources"` // parquet_files, live_logs, broker_buffer
+	PartitionsScanned   int            `json:"partitions_scanned"`
+	ParquetFilesScanned int            `json:"parquet_files_scanned"`
+	LiveLogFilesScanned int            `json:"live_log_files_scanned"`
+	TotalRowsProcessed  int64          `json:"total_rows_processed"`
+	OptimizationsUsed   []string       `json:"optimizations_used"` // parquet_stats, predicate_pushdown, etc.
+	TimeRangeFilters    map[string]any `json:"time_range_filters,omitempty"`
+	Aggregations        []string       `json:"aggregations,omitempty"`
+	ExecutionTimeMs     float64        `json:"execution_time_ms"`
+	Details             map[string]any `json:"details,omitempty"`
 
 	// Broker buffer information
 	BrokerBufferQueried  bool  `json:"broker_buffer_queried"`
@@ -118,5 +119,6 @@ func (e NoSchemaError) Error() string {
 // IsNoSchemaError checks if an error is a NoSchemaError
 func IsNoSchemaError(err error) bool {
 	var noSchemaErr NoSchemaError
+
 	return errors.As(err, &noSchemaErr)
 }

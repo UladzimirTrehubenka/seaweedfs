@@ -15,9 +15,10 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
 
 // TestOIDCProviderInitialization tests OIDC provider initialization
@@ -81,8 +82,8 @@ func TestOIDCProviderJWTValidation(t *testing.T) {
 	// Set up test server with JWKS endpoint
 	privateKey, publicKey := generateTestKeys(t)
 
-	jwks := map[string]interface{}{
-		"keys": []map[string]interface{}{
+	jwks := map[string]any{
+		"keys": []map[string]any{
 			{
 				"kty": "RSA",
 				"kid": "test-key-id",
@@ -95,13 +96,14 @@ func TestOIDCProviderJWTValidation(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/.well-known/openid_configuration" {
-			config := map[string]interface{}{
+		switch r.URL.Path {
+		case "/.well-known/openid_configuration":
+			config := map[string]any{
 				"issuer":   "http://" + r.Host,
 				"jwks_uri": "http://" + r.Host + "/jwks",
 			}
 			json.NewEncoder(w).Encode(config)
-		} else if r.URL.Path == "/jwks" {
+		case "/jwks":
 			json.NewEncoder(w).Encode(jwks)
 		}
 	}))
@@ -199,8 +201,8 @@ func TestOIDCProviderJWTValidationECDSA(t *testing.T) {
 	privateKey, publicKey := generateTestECKeys(t)
 	x, y := encodeECPublicKey(t, publicKey)
 
-	jwks := map[string]interface{}{
-		"keys": []map[string]interface{}{
+	jwks := map[string]any{
+		"keys": []map[string]any{
 			{
 				"kty": "EC",
 				"kid": "test-ec-key-id",
@@ -214,13 +216,14 @@ func TestOIDCProviderJWTValidationECDSA(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/.well-known/openid_configuration" {
-			config := map[string]interface{}{
+		switch r.URL.Path {
+		case "/.well-known/openid_configuration":
+			config := map[string]any{
 				"issuer":   "http://" + r.Host,
 				"jwks_uri": "http://" + r.Host + "/jwks",
 			}
 			json.NewEncoder(w).Encode(config)
-		} else if r.URL.Path == "/jwks" {
+		case "/jwks":
 			json.NewEncoder(w).Encode(jwks)
 		}
 	}))
@@ -376,11 +379,11 @@ func TestOIDCProviderAuthentication(t *testing.T) {
 			"email":              "user@example.com",
 			"name":               "Test User",
 			"groups":             []string{"users"},
-			"preferred_username": "myusername",                              // Extra claim
-			"department":         "engineering",                             // Extra claim
-			"custom_number":      42,                                        // Non-string claim
-			"custom_avg":         98.6,                                      // Non-string claim
-			"custom_object":      map[string]interface{}{"nested": "value"}, // Nested object claim
+			"preferred_username": "myusername",                      // Extra claim
+			"department":         "engineering",                     // Extra claim
+			"custom_number":      42,                                // Non-string claim
+			"custom_avg":         98.6,                              // Non-string claim
+			"custom_object":      map[string]any{"nested": "value"}, // Nested object claim
 		})
 
 		identity, err := provider.Authenticate(context.Background(), token)
@@ -436,6 +439,7 @@ func TestOIDCProviderUserInfo(t *testing.T) {
 			if !strings.HasPrefix(authHeader, "Bearer ") {
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error": "unauthorized"}`))
+
 				return
 			}
 
@@ -445,11 +449,12 @@ func TestOIDCProviderUserInfo(t *testing.T) {
 			if accessToken == "invalid-token" {
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error": "invalid_token"}`))
+
 				return
 			}
 
 			// Mock user info response
-			userInfo := map[string]interface{}{
+			userInfo := map[string]any{
 				"sub":    "user123",
 				"email":  "user@example.com",
 				"name":   "Test User",
@@ -550,12 +555,14 @@ func TestOIDCProviderUserInfo(t *testing.T) {
 func generateTestKeys(t *testing.T) (*rsa.PrivateKey, *rsa.PublicKey) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
+
 	return privateKey, &privateKey.PublicKey
 }
 
 func generateTestECKeys(t *testing.T) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
+
 	return privateKey, &privateKey.PublicKey
 }
 
@@ -565,6 +572,7 @@ func createTestJWT(t *testing.T, privateKey *rsa.PrivateKey, claims jwt.MapClaim
 
 	tokenString, err := token.SignedString(privateKey)
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -574,6 +582,7 @@ func createTestECDSAJWT(t *testing.T, privateKey *ecdsa.PrivateKey, claims jwt.M
 
 	tokenString, err := token.SignedString(privateKey)
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -584,7 +593,7 @@ func encodePublicKey(t *testing.T, publicKey *rsa.PublicKey) string {
 
 func encodeECPublicKey(t *testing.T, publicKey *ecdsa.PublicKey) (string, string) {
 	// RFC 7518 §6.2.1.2 requires EC coordinates to be zero-padded to the full field size
-	curveParams := publicKey.Curve.Params()
+	curveParams := publicKey.Params()
 	size := (curveParams.BitSize + 7) / 8
 	xBytes := publicKey.X.Bytes()
 	yBytes := publicKey.Y.Bytes()
@@ -593,13 +602,14 @@ func encodeECPublicKey(t *testing.T, publicKey *ecdsa.PublicKey) (string, string
 	// Right-align the coordinate bytes and leave leading zeros for padding
 	copy(xPadded[size-len(xBytes):], xBytes)
 	copy(yPadded[size-len(yBytes):], yBytes)
+
 	return base64.RawURLEncoding.EncodeToString(xPadded),
 		base64.RawURLEncoding.EncodeToString(yPadded)
 }
 
 func setupOIDCTestServer(t *testing.T, publicKey *rsa.PublicKey) *httptest.Server {
-	jwks := map[string]interface{}{
-		"keys": []map[string]interface{}{
+	jwks := map[string]any{
+		"keys": []map[string]any{
 			{
 				"kty": "RSA",
 				"kid": "test-key-id",
@@ -614,7 +624,7 @@ func setupOIDCTestServer(t *testing.T, publicKey *rsa.PublicKey) *httptest.Serve
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/openid_configuration":
-			config := map[string]interface{}{
+			config := map[string]any{
 				"issuer":            "http://" + r.Host,
 				"jwks_uri":          "http://" + r.Host + "/jwks",
 				"userinfo_endpoint": "http://" + r.Host + "/userinfo",
@@ -628,6 +638,7 @@ func setupOIDCTestServer(t *testing.T, publicKey *rsa.PublicKey) *httptest.Serve
 			if !strings.HasPrefix(authHeader, "Bearer ") {
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error": "unauthorized"}`))
+
 				return
 			}
 
@@ -637,11 +648,12 @@ func setupOIDCTestServer(t *testing.T, publicKey *rsa.PublicKey) *httptest.Serve
 			if accessToken == "invalid-token" {
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error": "invalid_token"}`))
+
 				return
 			}
 
 			// Mock user info response based on access token
-			userInfo := map[string]interface{}{
+			userInfo := map[string]any{
 				"sub":    "user123",
 				"email":  "user@example.com",
 				"name":   "Test User",

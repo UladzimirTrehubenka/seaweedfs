@@ -78,6 +78,7 @@ func makeNeedleMapEntry(key types.NeedleId, offset types.Offset, size types.Size
 	types.NeedleIdToBytes(b[0:types.NeedleIdSize], key)
 	types.OffsetToBytes(b[types.NeedleIdSize:types.NeedleIdSize+types.OffsetSize], offset)
 	types.SizeToBytes(b[types.NeedleIdSize+types.OffsetSize:types.NeedleIdSize+types.OffsetSize+types.SizeSize], size)
+
 	return b
 }
 

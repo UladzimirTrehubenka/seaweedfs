@@ -25,6 +25,7 @@ func TestNewECConfig(t *testing.T) {
 			config, err := NewECConfig(tt.dataShards, tt.parityShards)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewECConfig() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !tt.wantErr {
@@ -256,7 +257,7 @@ func TestTopologyAnalysis(t *testing.T) {
 	analysis.AddNode(node3)
 
 	// Add shard locations (all on node1)
-	for i := 0; i < 14; i++ {
+	for i := range 14 {
 		analysis.AddShardLocation(ShardLocation{
 			ShardID:    i,
 			NodeID:     "node1",
@@ -300,7 +301,7 @@ func TestRebalancer(t *testing.T) {
 	}
 
 	// Add all 14 shards to first node
-	for i := 0; i < 14; i++ {
+	for i := range 14 {
 		analysis.AddShardLocation(ShardLocation{
 			ShardID:    i,
 			NodeID:     "dc1-rack1-node1",
@@ -388,7 +389,7 @@ func TestShardClassification(t *testing.T) {
 	ec := DefaultECConfig() // 10+4
 
 	// Test IsDataShard
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if !ec.IsDataShard(i) {
 			t.Errorf("Shard %d should be a data shard", i)
 		}
@@ -409,7 +410,7 @@ func TestShardClassification(t *testing.T) {
 
 	// Test with custom 8+4 EC
 	ec84, _ := NewECConfig(8, 4)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if !ec84.IsDataShard(i) {
 			t.Errorf("8+4 EC: Shard %d should be a data shard", i)
 		}
@@ -432,7 +433,7 @@ func TestSortShardsDataFirst(t *testing.T) {
 	t.Logf("Sorted (data first): %v", sorted)
 
 	// First 4 should be data shards (0, 5, 2, 7)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if !ec.IsDataShard(sorted[i]) {
 			t.Errorf("Position %d should be a data shard, got %d", i, sorted[i])
 		}
@@ -457,7 +458,7 @@ func TestSortShardsParityFirst(t *testing.T) {
 	t.Logf("Sorted (parity first): %v", sorted)
 
 	// First 4 should be parity shards (10, 11, 12, 13)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if !ec.IsParityShard(sorted[i]) {
 			t.Errorf("Position %d should be a parity shard, got %d", i, sorted[i])
 		}
@@ -494,7 +495,7 @@ func TestRebalancerPrefersMovingParityShards(t *testing.T) {
 	analysis.AddNode(node2)
 
 	// Add all 14 shards to node1
-	for i := 0; i < 14; i++ {
+	for i := range 14 {
 		analysis.AddShardLocation(ShardLocation{
 			ShardID:    i,
 			NodeID:     "node1",

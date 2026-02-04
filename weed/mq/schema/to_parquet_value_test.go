@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/parquet-go/parquet-go"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -79,6 +80,7 @@ func TestToParquetValue_BasicTypes(t *testing.T) {
 			result, err := toParquetValue(tt.value)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("toParquetValue() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !parquetValuesEqual(result, tt.expected) {
@@ -159,6 +161,7 @@ func TestToParquetValue_TimestampValue(t *testing.T) {
 			result, err := toParquetValue(tt.value)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("toParquetValue() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !parquetValuesEqual(result, tt.expected) {
@@ -224,6 +227,7 @@ func TestToParquetValue_DateValue(t *testing.T) {
 			result, err := toParquetValue(tt.value)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("toParquetValue() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !parquetValuesEqual(result, tt.expected) {
@@ -362,6 +366,7 @@ func TestToParquetValue_DecimalValue(t *testing.T) {
 							// Create a number larger than int64 max
 							bigNum := new(big.Int)
 							bigNum.SetString("99999999999999999999999999999", 10)
+
 							return encodeBigIntToBytes(bigNum)
 						}(),
 						Precision: 15, // Says int64 but value is too large
@@ -372,6 +377,7 @@ func TestToParquetValue_DecimalValue(t *testing.T) {
 			expected: createFixedLenByteArray(func() []byte {
 				bigNum := new(big.Int)
 				bigNum.SetString("99999999999999999999999999999", 10)
+
 				return encodeBigIntToBytes(bigNum)
 			}()), // Large number as FixedLenByteArray (truncated to 16 bytes)
 		},
@@ -396,6 +402,7 @@ func TestToParquetValue_DecimalValue(t *testing.T) {
 			result, err := toParquetValue(tt.value)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("toParquetValue() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !parquetValuesEqual(result, tt.expected) {
@@ -461,6 +468,7 @@ func TestToParquetValue_TimeValue(t *testing.T) {
 			result, err := toParquetValue(tt.value)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("toParquetValue() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !parquetValuesEqual(result, tt.expected) {
@@ -503,6 +511,7 @@ func TestToParquetValue_EdgeCases(t *testing.T) {
 			result, err := toParquetValue(tt.value)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("toParquetValue() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !tt.wantErr && !parquetValuesEqual(result, tt.expected) {
@@ -545,6 +554,7 @@ func encodeBigIntToBytes(n *big.Int) []byte {
 	if len(bytes) < byteLen {
 		padded := make([]byte, byteLen)
 		copy(padded[byteLen-len(bytes):], bytes)
+
 		return padded
 	}
 
@@ -561,6 +571,7 @@ func createFixedLenByteArray(inputBytes []byte) parquet.Value {
 		// Truncate if too large, taking the least significant bytes
 		copy(fixedBytes, inputBytes[len(inputBytes)-16:])
 	}
+
 	return parquet.FixedLenByteArrayValue(fixedBytes)
 }
 
@@ -602,6 +613,7 @@ func parquetValuesEqual(a, b parquet.Value) bool {
 				return false
 			}
 		}
+
 		return true
 	case parquet.FixedLenByteArray:
 		aBytes := a.ByteArray() // FixedLenByteArray also uses ByteArray() method
@@ -614,6 +626,7 @@ func parquetValuesEqual(a, b parquet.Value) bool {
 				return false
 			}
 		}
+
 		return true
 	default:
 		return false
@@ -626,8 +639,7 @@ func BenchmarkToParquetValue_BasicTypes(b *testing.B) {
 		Kind: &schema_pb.Value_Int64Value{Int64Value: 12345678901234},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = toParquetValue(value)
 	}
 }
@@ -642,8 +654,7 @@ func BenchmarkToParquetValue_TimestampValue(b *testing.B) {
 		},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = toParquetValue(value)
 	}
 }
@@ -659,8 +670,7 @@ func BenchmarkToParquetValue_DecimalValue(b *testing.B) {
 		},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = toParquetValue(value)
 	}
 }

@@ -39,28 +39,28 @@ type TaskWithLogging interface {
 
 // Logger defines standard logging interface
 type Logger interface {
-	Info(msg string, args ...interface{})
-	Warning(msg string, args ...interface{})
-	Error(msg string, args ...interface{})
-	Debug(msg string, args ...interface{})
-	WithFields(fields map[string]interface{}) Logger
+	Info(msg string, args ...any)
+	Warning(msg string, args ...any)
+	Error(msg string, args ...any)
+	Debug(msg string, args ...any)
+	WithFields(fields map[string]any) Logger
 }
 
 // NoOpLogger is a logger that does nothing (silent)
 type NoOpLogger struct{}
 
-func (l *NoOpLogger) Info(msg string, args ...interface{})    {}
-func (l *NoOpLogger) Warning(msg string, args ...interface{}) {}
-func (l *NoOpLogger) Error(msg string, args ...interface{})   {}
-func (l *NoOpLogger) Debug(msg string, args ...interface{})   {}
-func (l *NoOpLogger) WithFields(fields map[string]interface{}) Logger {
+func (l *NoOpLogger) Info(msg string, args ...any)    {}
+func (l *NoOpLogger) Warning(msg string, args ...any) {}
+func (l *NoOpLogger) Error(msg string, args ...any)   {}
+func (l *NoOpLogger) Debug(msg string, args ...any)   {}
+func (l *NoOpLogger) WithFields(fields map[string]any) Logger {
 	return l // Return self since we're doing nothing anyway
 }
 
 // GlogFallbackLogger is a logger that falls back to glog
 type GlogFallbackLogger struct{}
 
-func (l *GlogFallbackLogger) Info(msg string, args ...interface{}) {
+func (l *GlogFallbackLogger) Info(msg string, args ...any) {
 	if len(args) > 0 {
 		glog.Infof(msg, args...)
 	} else {
@@ -68,7 +68,7 @@ func (l *GlogFallbackLogger) Info(msg string, args ...interface{}) {
 	}
 }
 
-func (l *GlogFallbackLogger) Warning(msg string, args ...interface{}) {
+func (l *GlogFallbackLogger) Warning(msg string, args ...any) {
 	if len(args) > 0 {
 		glog.Warningf(msg, args...)
 	} else {
@@ -76,7 +76,7 @@ func (l *GlogFallbackLogger) Warning(msg string, args ...interface{}) {
 	}
 }
 
-func (l *GlogFallbackLogger) Error(msg string, args ...interface{}) {
+func (l *GlogFallbackLogger) Error(msg string, args ...any) {
 	if len(args) > 0 {
 		glog.Errorf(msg, args...)
 	} else {
@@ -84,7 +84,7 @@ func (l *GlogFallbackLogger) Error(msg string, args ...interface{}) {
 	}
 }
 
-func (l *GlogFallbackLogger) Debug(msg string, args ...interface{}) {
+func (l *GlogFallbackLogger) Debug(msg string, args ...any) {
 	if len(args) > 0 {
 		glog.V(1).Infof(msg, args...)
 	} else {
@@ -92,7 +92,7 @@ func (l *GlogFallbackLogger) Debug(msg string, args ...interface{}) {
 	}
 }
 
-func (l *GlogFallbackLogger) WithFields(fields map[string]interface{}) Logger {
+func (l *GlogFallbackLogger) WithFields(fields map[string]any) Logger {
 	// For glog fallback, we'll just return self and ignore fields for simplicity
 	// A more sophisticated implementation could format the fields into the message
 	return l
@@ -184,6 +184,7 @@ func (t *UnifiedBaseTask) GetCurrentStage() string {
 // Cancel marks the task as cancelled
 func (t *UnifiedBaseTask) Cancel() error {
 	t.cancelled = true
+
 	return nil
 }
 

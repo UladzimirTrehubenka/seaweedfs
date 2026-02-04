@@ -15,6 +15,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/filer/abstract_sql"
 	"github.com/seaweedfs/seaweedfs/weed/filer/postgres"
@@ -59,7 +60,6 @@ func (store *PostgresStore2) Initialize(configuration util.Configuration, prefix
 }
 
 func (store *PostgresStore2) initialize(createTable, upsertQuery string, enableUpsert bool, user, password, hostname string, port int, database, schema, sslmode, sslcert, sslkey, sslrootcert, sslcrl string, pgbouncerCompatible bool, maxIdle, maxOpen, maxLifetimeSeconds int) (err error) {
-
 	store.SupportBucketTable = true
 	if !enableUpsert {
 		upsertQuery = ""
@@ -125,7 +125,8 @@ func (store *PostgresStore2) initialize(createTable, upsertQuery string, enableU
 			store.DB.Close()
 		}
 		store.DB = nil
-		return fmt.Errorf("can not connect to %s error:%v", adaptedSqlUrl, dbErr)
+
+		return fmt.Errorf("can not connect to %s error:%w", adaptedSqlUrl, dbErr)
 	}
 
 	store.DB.SetMaxIdleConns(maxIdle)
@@ -133,11 +134,11 @@ func (store *PostgresStore2) initialize(createTable, upsertQuery string, enableU
 	store.DB.SetConnMaxLifetime(time.Duration(maxLifetimeSeconds) * time.Second)
 
 	if err = store.DB.Ping(); err != nil {
-		return fmt.Errorf("connect to %s error:%v", adaptedSqlUrl, err)
+		return fmt.Errorf("connect to %s error:%w", adaptedSqlUrl, err)
 	}
 
 	if err = store.CreateTable(context.Background(), abstract_sql.DEFAULT_TABLE); err != nil {
-		return fmt.Errorf("init table %s: %v", abstract_sql.DEFAULT_TABLE, err)
+		return fmt.Errorf("init table %s: %w", abstract_sql.DEFAULT_TABLE, err)
 	}
 
 	return nil

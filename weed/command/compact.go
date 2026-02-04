@@ -33,7 +33,6 @@ var (
 )
 
 func runCompact(cmd *Command, args []string) bool {
-
 	if *compactVolumeId == -1 {
 		return false
 	}

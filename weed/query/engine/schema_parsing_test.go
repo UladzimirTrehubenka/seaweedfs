@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
@@ -44,38 +45,38 @@ func TestSchemaAwareParsing(t *testing.T) {
 		}
 
 		// Verify user_id as int32
-		if userIdVal := result.Fields["user_id"]; userIdVal == nil {
+		if userIdVal := result.GetFields()["user_id"]; userIdVal == nil {
 			t.Error("user_id field missing")
 		} else if userIdVal.GetInt32Value() != 1234 {
 			t.Errorf("Expected user_id=1234, got %v", userIdVal.GetInt32Value())
 		}
 
 		// Verify event_type as string
-		if eventTypeVal := result.Fields["event_type"]; eventTypeVal == nil {
+		if eventTypeVal := result.GetFields()["event_type"]; eventTypeVal == nil {
 			t.Error("event_type field missing")
 		} else if eventTypeVal.GetStringValue() != "login" {
 			t.Errorf("Expected event_type='login', got %v", eventTypeVal.GetStringValue())
 		}
 
 		// Verify cpu_usage as double
-		if cpuVal := result.Fields["cpu_usage"]; cpuVal == nil {
+		if cpuVal := result.GetFields()["cpu_usage"]; cpuVal == nil {
 			t.Error("cpu_usage field missing")
 		} else if cpuVal.GetDoubleValue() != 75.5 {
 			t.Errorf("Expected cpu_usage=75.5, got %v", cpuVal.GetDoubleValue())
 		}
 
 		// Verify is_active as bool
-		if isActiveVal := result.Fields["is_active"]; isActiveVal == nil {
+		if isActiveVal := result.GetFields()["is_active"]; isActiveVal == nil {
 			t.Error("is_active field missing")
 		} else if !isActiveVal.GetBoolValue() {
 			t.Errorf("Expected is_active=true, got %v", isActiveVal.GetBoolValue())
 		}
 
 		t.Logf("JSON parsing correctly converted types: int32=%d, string='%s', double=%.1f, bool=%v",
-			result.Fields["user_id"].GetInt32Value(),
-			result.Fields["event_type"].GetStringValue(),
-			result.Fields["cpu_usage"].GetDoubleValue(),
-			result.Fields["is_active"].GetBoolValue())
+			result.GetFields()["user_id"].GetInt32Value(),
+			result.GetFields()["event_type"].GetStringValue(),
+			result.GetFields()["cpu_usage"].GetDoubleValue(),
+			result.GetFields()["is_active"].GetBoolValue())
 	})
 
 	t.Run("Raw Data Type Conversion", func(t *testing.T) {
@@ -145,13 +146,7 @@ func TestSchemaAwareParsingIntegration(t *testing.T) {
 	}
 
 	// Check that _source column is still present (hybrid functionality)
-	foundSourceColumn := false
-	for _, col := range result.Columns {
-		if col == "_source" {
-			foundSourceColumn = true
-			break
-		}
-	}
+	foundSourceColumn := slices.Contains(result.Columns, "_source")
 
 	if !foundSourceColumn {
 		t.Log("_source column missing - running in fallback mode without real cluster")

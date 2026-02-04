@@ -1,12 +1,13 @@
 package auth
 
 import (
-	"fmt"
+	"errors"
 	"math/rand/v2"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 )
 
 // PasswordAuthenticator handles password-based authentication
@@ -34,7 +35,7 @@ func (a *PasswordAuthenticator) Authenticate(conn ssh.ConnMetadata, password []b
 
 	// Check if password auth is enabled
 	if !a.enabled {
-		return nil, fmt.Errorf("password authentication disabled")
+		return nil, errors.New("password authentication disabled")
 	}
 
 	// Validate password against user store
@@ -49,5 +50,5 @@ func (a *PasswordAuthenticator) Authenticate(conn ssh.ConnMetadata, password []b
 	// Add delay to prevent brute force attacks
 	time.Sleep(time.Duration(100+rand.IntN(100)) * time.Millisecond)
 
-	return nil, fmt.Errorf("authentication failed")
+	return nil, errors.New("authentication failed")
 }

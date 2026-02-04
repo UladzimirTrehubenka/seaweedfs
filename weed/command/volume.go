@@ -168,7 +168,6 @@ func runVolume(cmd *Command, args []string) bool {
 }
 
 func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, volumeWhiteListOption string, minFreeSpaces []util.MinFreeSpace) {
-
 	// Set multiple folders and each folder's max volume count limit'
 	v.folders = strings.Split(volumeFolders, ",")
 	for _, folder := range v.folders {
@@ -178,8 +177,8 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 	}
 
 	// set max
-	maxCountStrings := strings.Split(maxVolumeCounts, ",")
-	for _, maxString := range maxCountStrings {
+	maxCountStrings := strings.SplitSeq(maxVolumeCounts, ",")
+	for maxString := range maxCountStrings {
 		if max, e := strconv.ParseInt(maxString, 10, 64); e == nil {
 			v.folderMaxLimits = append(v.folderMaxLimits, int32(max))
 		} else {
@@ -187,7 +186,7 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 		}
 	}
 	if len(v.folderMaxLimits) == 1 && len(v.folders) > 1 {
-		for i := 0; i < len(v.folders)-1; i++ {
+		for range len(v.folders) - 1 {
 			v.folderMaxLimits = append(v.folderMaxLimits, v.folderMaxLimits[0])
 		}
 	}
@@ -196,7 +195,7 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 	}
 
 	if len(minFreeSpaces) == 1 && len(v.folders) > 1 {
-		for i := 0; i < len(v.folders)-1; i++ {
+		for range len(v.folders) - 1 {
 			minFreeSpaces = append(minFreeSpaces, minFreeSpaces[0])
 		}
 	}
@@ -206,12 +205,12 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 
 	// set disk types
 	var diskTypes []types.DiskType
-	diskTypeStrings := strings.Split(*v.diskType, ",")
-	for _, diskTypeString := range diskTypeStrings {
+	diskTypeStrings := strings.SplitSeq(*v.diskType, ",")
+	for diskTypeString := range diskTypeStrings {
 		diskTypes = append(diskTypes, types.ToDiskType(diskTypeString))
 	}
 	if len(diskTypes) == 1 && len(v.folders) > 1 {
-		for i := 0; i < len(v.folders)-1; i++ {
+		for range len(v.folders) - 1 {
 			diskTypes = append(diskTypes, diskTypes[0])
 		}
 	}
@@ -331,11 +330,9 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 		case <-stopChan:
 		}
 	}
-
 }
 
 func shutdown(publicHttpDown httpdown.Server, clusterHttpServer httpdown.Server, grpcS *grpc.Server, volumeServer *weed_server.VolumeServer) {
-
 	// firstly, stop the public http service to prevent from receiving new user request
 	if nil != publicHttpDown {
 		glog.V(0).Infof("stop public http server ... ")
@@ -355,7 +352,6 @@ func shutdown(publicHttpDown httpdown.Server, clusterHttpServer httpdown.Server,
 	volumeServer.Shutdown()
 
 	pprof.StopCPUProfile()
-
 }
 
 // check whether configure the public port
@@ -377,6 +373,7 @@ func (v VolumeServerOptions) startGrpcService(vs volume_server_pb.VolumeServerSe
 			glog.Fatalf("start gRPC service failed, %s", err)
 		}
 	}()
+
 	return grpcS
 }
 
@@ -434,5 +431,6 @@ func (v VolumeServerOptions) startClusterHttpService(handler http.Handler) httpd
 			glog.Fatalf("Volume server fail to serve: %v", e)
 		}
 	}()
+
 	return clusterHttpServer
 }

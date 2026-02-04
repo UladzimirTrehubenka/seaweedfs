@@ -97,6 +97,7 @@ func TestGenerateBreadcrumbs(t *testing.T) {
 
 			if len(result) != len(tt.expected) {
 				t.Errorf("expected %d breadcrumbs, got %d", len(tt.expected), len(result))
+
 				return
 			}
 

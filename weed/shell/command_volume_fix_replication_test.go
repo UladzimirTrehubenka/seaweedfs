@@ -16,7 +16,6 @@ type testcase struct {
 }
 
 func TestSatisfyReplicaPlacementComplicated(t *testing.T) {
-
 	var tests = []testcase{
 		{
 			name:        "test 100 negative",
@@ -128,11 +127,9 @@ func TestSatisfyReplicaPlacementComplicated(t *testing.T) {
 	}
 
 	runTests(tests, t)
-
 }
 
 func TestSatisfyReplicaPlacement01x(t *testing.T) {
-
 	var tests = []testcase{
 		{
 			name:        "test 011 same existing rack",
@@ -193,11 +190,9 @@ func TestSatisfyReplicaPlacement01x(t *testing.T) {
 	}
 
 	runTests(tests, t)
-
 }
 
 func TestSatisfyReplicaPlacement00x(t *testing.T) {
-
 	var tests = []testcase{
 		{
 			name:        "test 001",
@@ -258,11 +253,9 @@ func TestSatisfyReplicaPlacement00x(t *testing.T) {
 	}
 
 	runTests(tests, t)
-
 }
 
 func TestSatisfyReplicaPlacement100(t *testing.T) {
-
 	var tests = []testcase{
 		{
 			name:        "test 100",
@@ -281,7 +274,6 @@ func TestSatisfyReplicaPlacement100(t *testing.T) {
 	}
 
 	runTests(tests, t)
-
 }
 
 func runTests(tests []testcase, t *testing.T) {
@@ -296,7 +288,6 @@ func runTests(tests []testcase, t *testing.T) {
 }
 
 func TestMisplacedChecking(t *testing.T) {
-
 	var tests = []testcase{
 		{
 			name:        "test 001",
@@ -379,11 +370,9 @@ func TestMisplacedChecking(t *testing.T) {
 				tt.name, tt.expected, tt.replication, tt.replicas)
 		}
 	}
-
 }
 
 func TestPickingMisplacedVolumeToDelete(t *testing.T) {
-
 	var tests = []testcase{
 		{
 			name:        "test 001",
@@ -428,19 +417,17 @@ func TestPickingMisplacedVolumeToDelete(t *testing.T) {
 	for _, tt := range tests {
 		replicaPlacement, _ := super_block.NewReplicaPlacementFromString(tt.replication)
 		println("replication:", tt.replication, "name:", tt.name)
-		if x := pickOneMisplacedVolume(tt.replicas, replicaPlacement); x.location.dataNode.Id != tt.possibleLocation.dataNode.Id {
+		if x := pickOneMisplacedVolume(tt.replicas, replicaPlacement); x.location.dataNode.GetId() != tt.possibleLocation.dataNode.GetId() {
 			t.Errorf("%s: picked %+v for replication %v",
-				tt.name, x.location.dataNode.Id, tt.replication)
+				tt.name, x.location.dataNode.GetId(), tt.replication)
 		} else {
 			t.Logf("%s: picked %+v %v",
-				tt.name, x.location.dataNode.Id, tt.replication)
+				tt.name, x.location.dataNode.GetId(), tt.replication)
 		}
 	}
-
 }
 
 func TestSatisfyReplicaCurrentLocation(t *testing.T) {
-
 	var tests = []testcase{
 		{
 			name:        "test 001",

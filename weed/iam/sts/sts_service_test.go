@@ -2,15 +2,17 @@ package sts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
 
 // createSTSTestJWT creates a test JWT token for STS service tests
@@ -25,6 +27,7 @@ func createSTSTestJWT(t *testing.T, issuer, subject string) string {
 
 	tokenString, err := token.SignedString([]byte("test-signing-key"))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -339,7 +342,7 @@ func setupTestSTSService(t *testing.T) *STSService {
 			createSTSTestJWT(t, "test-issuer", "test-user"): {
 				Subject: "test-user-id",
 				Issuer:  "test-issuer",
-				Claims: map[string]interface{}{
+				Claims: map[string]any{
 					"email": "test@example.com",
 					"name":  "Test User",
 				},
@@ -379,7 +382,7 @@ func (m *MockIdentityProvider) GetIssuer() string {
 	return "test-issuer" // This matches the issuer in the token claims
 }
 
-func (m *MockIdentityProvider) Initialize(config interface{}) error {
+func (m *MockIdentityProvider) Initialize(config any) error {
 	return nil
 }
 
@@ -449,7 +452,8 @@ func (m *MockIdentityProvider) ValidateToken(ctx context.Context, token string) 
 	if claims, exists := m.validTokens[token]; exists {
 		return claims, nil
 	}
-	return nil, fmt.Errorf("invalid token")
+
+	return nil, errors.New("invalid token")
 }
 
 // TestSessionDurationCappedByTokenExpiration tests that session duration is capped by the source token's exp claim
@@ -610,7 +614,7 @@ func (m *MockIdentityProviderWithExpiration) GetIssuer() string {
 	return m.name
 }
 
-func (m *MockIdentityProviderWithExpiration) Initialize(config interface{}) error {
+func (m *MockIdentityProviderWithExpiration) Initialize(config any) error {
 	return nil
 }
 
@@ -623,7 +627,7 @@ func (m *MockIdentityProviderWithExpiration) Authenticate(ctx context.Context, t
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, fmt.Errorf("invalid claims")
+		return nil, errors.New("invalid claims")
 	}
 
 	subject, _ := claims["sub"].(string)
@@ -654,6 +658,7 @@ func (m *MockIdentityProviderWithExpiration) ValidateToken(ctx context.Context, 
 	if m.tokenExpiration != nil {
 		claims.ExpiresAt = *m.tokenExpiration
 	}
+
 	return claims, nil
 }
 
@@ -729,7 +734,7 @@ func (m *MockIdentityProviderWithAttributes) GetIssuer() string {
 	return m.name
 }
 
-func (m *MockIdentityProviderWithAttributes) Initialize(config interface{}) error {
+func (m *MockIdentityProviderWithAttributes) Initialize(config any) error {
 	return nil
 }
 

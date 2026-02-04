@@ -2,15 +2,16 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
-	"fmt"
 	"io"
+
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
-	"google.golang.org/grpc"
 )
 
 func init() {
@@ -39,7 +40,6 @@ func (c *commandVolumeUnmount) HasTag(CommandTag) bool {
 }
 
 func (c *commandVolumeUnmount) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	volUnmountCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	volumeIdInt := volUnmountCommand.Int("volumeId", 0, "the volume id")
 	nodeStr := volUnmountCommand.String("node", "", "the volume server <host>:<port>")
@@ -47,10 +47,10 @@ func (c *commandVolumeUnmount) Do(args []string, commandEnv *CommandEnv, writer 
 		return nil
 	}
 	if *nodeStr == "" {
-		return fmt.Errorf("-node option is required")
+		return errors.New("-node option is required")
 	}
 	if *volumeIdInt == 0 {
-		return fmt.Errorf("-volumeId option is required")
+		return errors.New("-volumeId option is required")
 	}
 
 	if err = commandEnv.confirmIsLocked(args); err != nil {
@@ -62,7 +62,6 @@ func (c *commandVolumeUnmount) Do(args []string, commandEnv *CommandEnv, writer 
 	volumeId := needle.VolumeId(*volumeIdInt)
 
 	return unmountVolume(commandEnv.option.GrpcDialOption, volumeId, sourceVolumeServer)
-
 }
 
 func unmountVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sourceVolumeServer pb.ServerAddress) (err error) {
@@ -70,6 +69,7 @@ func unmountVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sou
 		_, unmountErr := volumeServerClient.VolumeUnmount(context.Background(), &volume_server_pb.VolumeUnmountRequest{
 			VolumeId: uint32(volumeId),
 		})
+
 		return unmountErr
 	})
 }

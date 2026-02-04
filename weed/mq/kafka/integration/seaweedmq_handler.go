@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
@@ -63,7 +64,7 @@ func (h *SeaweedMQHandler) GetStoredRecords(ctx context.Context, topic string, p
 		glog.Warningf("[FETCH] No per-connection BrokerClient, falling back to shared client")
 		brokerClient = h.brokerClient
 		if brokerClient == nil {
-			return nil, fmt.Errorf("no broker client available")
+			return nil, errors.New("no broker client available")
 		}
 	}
 
@@ -88,7 +89,8 @@ func (h *SeaweedMQHandler) GetStoredRecords(ctx context.Context, topic string, p
 	seaweedRecords, err := brokerClient.FetchMessagesStateless(ctx, topic, partition, fromOffset, maxRecords, consumerGroup, consumerID)
 	if err != nil {
 		glog.Errorf("[FETCH-STATELESS] Failed to fetch records: %v", err)
-		return nil, fmt.Errorf("failed to fetch records: %v", err)
+
+		return nil, fmt.Errorf("failed to fetch records: %w", err)
 	}
 
 	glog.V(4).Infof("[FETCH-STATELESS] Fetched %d records", len(seaweedRecords))
@@ -117,6 +119,7 @@ func (h *SeaweedMQHandler) GetStoredRecords(ctx context.Context, topic string, p
 		// This can happen when the subscriber cache returns old data
 		if kafkaOffset < fromOffset {
 			glog.V(4).Infof("[FETCH] Skipping record %d with offset %d (requested fromOffset=%d)", i, kafkaOffset, fromOffset)
+
 			continue
 		}
 
@@ -132,13 +135,13 @@ func (h *SeaweedMQHandler) GetStoredRecords(ctx context.Context, topic string, p
 	}
 
 	glog.V(4).Infof("[FETCH] Successfully read %d records from SMQ", len(smqRecords))
+
 	return smqRecords, nil
 }
 
 // GetEarliestOffset returns the earliest available offset for a topic partition
 // ALWAYS queries SMQ broker directly - no ledger involved
 func (h *SeaweedMQHandler) GetEarliestOffset(topic string, partition int32) (int64, error) {
-
 	// Check if topic exists
 	if !h.TopicExists(topic) {
 		return 0, nil // Empty topic starts at offset 0
@@ -150,11 +153,12 @@ func (h *SeaweedMQHandler) GetEarliestOffset(topic string, partition int32) (int
 		if err != nil {
 			return 0, err
 		}
+
 		return earliestOffset, nil
 	}
 
 	// No broker client - this shouldn't happen in production
-	return 0, fmt.Errorf("broker client not available")
+	return 0, errors.New("broker client not available")
 }
 
 // GetLatestOffset returns the latest available offset for a topic partition
@@ -173,6 +177,7 @@ func (h *SeaweedMQHandler) GetLatestOffset(topic string, partition int32) (int64
 			// Cache hit - return cached value
 			h.hwmCacheMu.RUnlock()
 			glog.V(2).Infof("[HWM] Cache HIT for %s: hwm=%d", cacheKey, entry.value)
+
 			return entry.value, nil
 		}
 	}
@@ -184,6 +189,7 @@ func (h *SeaweedMQHandler) GetLatestOffset(topic string, partition int32) (int64
 		latestOffset, err := h.brokerClient.GetHighWaterMark(topic, partition)
 		if err != nil {
 			glog.V(1).Infof("[HWM] ERROR querying broker for %s: %v", cacheKey, err)
+
 			return 0, err
 		}
 
@@ -201,14 +207,15 @@ func (h *SeaweedMQHandler) GetLatestOffset(topic string, partition int32) (int64
 	}
 
 	// No broker client - this shouldn't happen in production
-	return 0, fmt.Errorf("broker client not available")
+	return 0, errors.New("broker client not available")
 }
 
 // WithFilerClient executes a function with a filer client
 func (h *SeaweedMQHandler) WithFilerClient(streamingMode bool, fn func(client filer_pb.SeaweedFilerClient) error) error {
 	if h.brokerClient == nil {
-		return fmt.Errorf("no broker client available")
+		return errors.New("no broker client available")
 	}
+
 	return h.brokerClient.WithFilerClient(streamingMode, fn)
 }
 
@@ -217,6 +224,7 @@ func (h *SeaweedMQHandler) GetFilerAddress() string {
 	if h.brokerClient != nil {
 		return h.brokerClient.GetFilerAddress()
 	}
+
 	return ""
 }
 
@@ -241,13 +249,13 @@ func (h *SeaweedMQHandler) ProduceRecord(ctx context.Context, topic string, part
 	var smqOffset int64
 	var publishErr error
 	if h.brokerClient == nil {
-		publishErr = fmt.Errorf("no broker client available")
+		publishErr = errors.New("no broker client available")
 	} else {
 		smqOffset, publishErr = h.brokerClient.PublishRecord(ctx, topic, partition, key, value, timestamp)
 	}
 
 	if publishErr != nil {
-		return 0, fmt.Errorf("failed to publish to SeaweedMQ: %v", publishErr)
+		return 0, fmt.Errorf("failed to publish to SeaweedMQ: %w", publishErr)
 	}
 
 	// SMQ should have generated and returned the offset - use it directly as the Kafka offset
@@ -278,13 +286,13 @@ func (h *SeaweedMQHandler) ProduceRecordValue(ctx context.Context, topic string,
 	var smqOffset int64
 	var publishErr error
 	if h.brokerClient == nil {
-		publishErr = fmt.Errorf("no broker client available")
+		publishErr = errors.New("no broker client available")
 	} else {
 		smqOffset, publishErr = h.brokerClient.PublishRecordValue(ctx, topic, partition, key, recordValueBytes, timestamp)
 	}
 
 	if publishErr != nil {
-		return 0, fmt.Errorf("failed to publish RecordValue to SeaweedMQ: %v", publishErr)
+		return 0, fmt.Errorf("failed to publish RecordValue to SeaweedMQ: %w", publishErr)
 	}
 
 	// SMQ broker has assigned the offset - use it directly as the Kafka offset
@@ -324,19 +332,18 @@ func (h *SeaweedMQHandler) FetchRecords(topic string, partition int32, fetchOffs
 	var seaweedRecords []*SeaweedRecord
 
 	// Calculate how many records to fetch
-	recordsToFetch := int(highWaterMark - fetchOffset)
-	if recordsToFetch > 100 {
-		recordsToFetch = 100 // Limit batch size
-	}
+	recordsToFetch := min(int(highWaterMark-fetchOffset),
+		// Limit batch size
+		100)
 
 	// Read records using broker client
 	if h.brokerClient == nil {
-		return nil, fmt.Errorf("no broker client available")
+		return nil, errors.New("no broker client available")
 	}
 	// Use default consumer group/ID since this is a deprecated function
 	brokerSubscriber, subErr := h.brokerClient.GetOrCreateSubscriber(topic, partition, fetchOffset, "deprecated-consumer-group", "deprecated-consumer")
 	if subErr != nil {
-		return nil, fmt.Errorf("failed to get broker subscriber: %v", subErr)
+		return nil, fmt.Errorf("failed to get broker subscriber: %w", subErr)
 	}
 	// Use ReadRecordsFromOffset which handles caching and proper locking
 	seaweedRecords, err = h.brokerClient.ReadRecordsFromOffset(context.Background(), brokerSubscriber, fetchOffset, recordsToFetch)
@@ -349,7 +356,7 @@ func (h *SeaweedMQHandler) FetchRecords(topic string, partition int32, fetchOffs
 	// Map SeaweedMQ records to Kafka offsets and update ledger
 	kafkaRecords, err := h.mapSeaweedToKafkaOffsets(topic, partition, seaweedRecords, fetchOffset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to map offsets: %v", err)
+		return nil, fmt.Errorf("failed to map offsets: %w", err)
 	}
 
 	// Convert mapped records to Kafka record batch format
@@ -479,10 +486,9 @@ func (h *SeaweedMQHandler) convertSingleSeaweedRecord(seaweedRecord *SeaweedReco
 	record = append(record, 0)
 
 	// Timestamp delta (varint - simplified)
-	timestampDelta := seaweedRecord.Timestamp - baseOffset // Simple delta calculation
-	if timestampDelta < 0 {
-		timestampDelta = 0
-	}
+	timestampDelta := max(
+		// Simple delta calculation
+		seaweedRecord.Timestamp-baseOffset, 0)
 	record = append(record, byte(timestampDelta&0xFF)) // Simplified varint encoding
 
 	// Offset delta (varint - simplified)

@@ -3,6 +3,7 @@ package topology
 import (
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,9 +30,9 @@ type volumeState string
 
 const (
 	readOnlyState     volumeState = "ReadOnly"
-	oversizedState                = "Oversized"
-	crowdedState                  = "Crowded"
-	NoWritableVolumes             = "No writable volumes"
+	oversizedState    volumeState = "Oversized"
+	crowdedState      volumeState = "Crowded"
+	NoWritableVolumes volumeState = "No writable volumes"
 )
 
 type stateIndicator func(copyState) bool
@@ -66,18 +67,21 @@ func (v *volumesBinaryState) Dump() (res []uint32) {
 			res = append(res, uint32(vid))
 		}
 	}
+
 	return
 }
 
 func (v *volumesBinaryState) IsTrue(vid needle.VolumeId) bool {
-	list, _ := v.copyMap[vid]
+	list := v.copyMap[vid]
+
 	return v.indicator(v.copyState(list))
 }
 
 func (v *volumesBinaryState) Add(vid needle.VolumeId, dn *DataNode) {
-	list, _ := v.copyMap[vid]
+	list := v.copyMap[vid]
 	if list != nil {
 		list.Set(dn)
+
 		return
 	}
 	list = NewVolumeLocationList()
@@ -86,7 +90,7 @@ func (v *volumesBinaryState) Add(vid needle.VolumeId, dn *DataNode) {
 }
 
 func (v *volumesBinaryState) Remove(vid needle.VolumeId, dn *DataNode) {
-	list, _ := v.copyMap[vid]
+	list := v.copyMap[vid]
 	if list != nil {
 		list.Remove(dn)
 		if list.Length() == 0 {
@@ -102,6 +106,7 @@ func (v *volumesBinaryState) copyState(list *VolumeLocationList) copyState {
 	if list.Length() < v.rp.GetCopyCount() {
 		return insufficientCopies
 	}
+
 	return enoughCopies
 }
 
@@ -166,6 +171,7 @@ func (vl *VolumeLayout) RegisterVolume(v *storage.VolumeInfo, dn *DataNode) {
 				glog.V(1).Infof("vid %d removed from writable", v.Id)
 				vl.removeFromWritable(v.Id)
 				vl.readonlyVolumes.Add(v.Id, dn)
+
 				return
 			} else {
 				vl.readonlyVolumes.Remove(v.Id, dn)
@@ -174,10 +180,10 @@ func (vl *VolumeLayout) RegisterVolume(v *storage.VolumeInfo, dn *DataNode) {
 			glog.V(1).Infof("vid %d removed from writable", v.Id)
 			vl.removeFromWritable(v.Id)
 			vl.readonlyVolumes.Remove(v.Id, dn)
+
 			return
 		}
 	}
-
 }
 
 func (vl *VolumeLayout) rememberOversizedVolume(v *storage.VolumeInfo, dn *DataNode) {
@@ -199,7 +205,6 @@ func (vl *VolumeLayout) UnRegisterVolume(v *storage.VolumeInfo, dn *DataNode) {
 	}
 
 	if location.Remove(dn) {
-
 		vl.readonlyVolumes.Remove(v.Id, dn)
 		vl.oversizedVolumes.Remove(v.Id, dn)
 		vl.ensureCorrectWritables(v.Id)
@@ -208,7 +213,6 @@ func (vl *VolumeLayout) UnRegisterVolume(v *storage.VolumeInfo, dn *DataNode) {
 			delete(vl.vid2location, v.Id)
 			vl.removeFromCrowded(v.Id)
 		}
-
 	}
 }
 
@@ -284,6 +288,7 @@ func (vl *VolumeLayout) Lookup(vid needle.VolumeId) []*DataNode {
 	if location := vl.vid2location[vid]; location != nil {
 		return location.list
 	}
+
 	return nil
 }
 
@@ -294,6 +299,7 @@ func (vl *VolumeLayout) ListVolumeServers() (nodes []*DataNode) {
 	for _, location := range vl.vid2location {
 		nodes = append(nodes, location.list...)
 	}
+
 	return
 }
 
@@ -311,6 +317,7 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 		if locationList == nil || len(locationList.list) == 0 {
 			return 0, 0, nil, false, fmt.Errorf("Strangely vid %s is on no machine!", vid.String())
 		}
+
 		return vid, count, locationList.Copy(), false, nil
 	}
 
@@ -335,9 +342,11 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 				continue
 			}
 			vid, locationList, counter = writableVolumeId, volumeLocationList.Copy(), count
-			return
+
+			return vid, counter, locationList, shouldGrow, err
 		}
 	}
+
 	return vid, count, locationList, true, fmt.Errorf("%s in DataCenter:%v Rack:%v DataNode:%v", NoWritableVolumes, option.DataCenter, option.Rack, option.DataNode)
 }
 
@@ -363,6 +372,7 @@ func (vl *VolumeLayout) GetLastGrowCount() uint32 {
 
 func (vl *VolumeLayout) ShouldGrowVolumes() bool {
 	writable, crowded := vl.GetWritableVolumeCount()
+
 	return writable <= crowded
 }
 
@@ -376,12 +386,14 @@ func (vl *VolumeLayout) ShouldGrowVolumesByDcAndRack(writables *[]needle.VolumeI
 			}
 		}
 	}
+
 	return true
 }
 
 func (vl *VolumeLayout) GetWritableVolumeCount() (active, crowded int) {
 	vl.accessLock.RLock()
 	defer vl.accessLock.RUnlock()
+
 	return len(vl.writables), len(vl.crowded)
 }
 
@@ -390,6 +402,7 @@ func (vl *VolumeLayout) CloneWritableVolumes() (writables []needle.VolumeId) {
 	writables = make([]needle.VolumeId, len(vl.writables))
 	copy(writables, vl.writables)
 	vl.accessLock.RUnlock()
+
 	return writables
 }
 
@@ -398,24 +411,26 @@ func (vl *VolumeLayout) removeFromWritable(vid needle.VolumeId) bool {
 	for k, id := range vl.writables {
 		if id == vid {
 			toDeleteIndex = k
+
 			break
 		}
 	}
 	if toDeleteIndex >= 0 {
 		glog.V(0).Infoln("Volume", vid, "becomes unwritable")
 		vl.writables = append(vl.writables[0:toDeleteIndex], vl.writables[toDeleteIndex+1:]...)
+
 		return true
 	}
+
 	return false
 }
 func (vl *VolumeLayout) setVolumeWritable(vid needle.VolumeId) bool {
-	for _, v := range vl.writables {
-		if v == vid {
-			return false
-		}
+	if slices.Contains(vl.writables, vid) {
+		return false
 	}
 	glog.V(1).Infoln("Volume", vid, "becomes writable")
 	vl.writables = append(vl.writables, vid)
+
 	return true
 }
 
@@ -425,8 +440,10 @@ func (vl *VolumeLayout) SetVolumeReadOnly(dn *DataNode, vid needle.VolumeId) boo
 
 	if _, ok := vl.vid2location[vid]; ok {
 		vl.readonlyVolumes.Add(vid, dn)
+
 		return vl.removeFromWritable(vid)
 	}
+
 	return true
 }
 
@@ -441,6 +458,7 @@ func (vl *VolumeLayout) SetVolumeWritable(dn *DataNode, vid needle.VolumeId) boo
 	if vl.enoughCopies(vid) {
 		return vl.setVolumeWritable(vid)
 	}
+
 	return false
 }
 
@@ -454,10 +472,12 @@ func (vl *VolumeLayout) SetVolumeUnavailable(dn *DataNode, vid needle.VolumeId) 
 			vl.oversizedVolumes.Remove(vid, dn)
 			if location.Length() < vl.rp.GetCopyCount() {
 				glog.V(0).Infoln("Volume", vid, "has", location.Length(), "replica, less than required", vl.rp.GetCopyCount())
+
 				return vl.removeFromWritable(vid)
 			}
 		}
 	}
+
 	return false
 }
 func (vl *VolumeLayout) SetVolumeAvailable(dn *DataNode, vid needle.VolumeId, isReadOnly, isFullCapacity bool) bool {
@@ -478,12 +498,14 @@ func (vl *VolumeLayout) SetVolumeAvailable(dn *DataNode, vid needle.VolumeId, is
 	if vl.enoughCopies(vid) {
 		return vl.setVolumeWritable(vid)
 	}
+
 	return false
 }
 
 func (vl *VolumeLayout) enoughCopies(vid needle.VolumeId) bool {
 	locations := vl.vid2location[vid].Length()
 	desired := vl.rp.GetCopyCount()
+
 	return locations == desired || (vl.replicationAsMin && locations > desired)
 }
 
@@ -495,6 +517,7 @@ func (vl *VolumeLayout) SetVolumeCapacityFull(vid needle.VolumeId) bool {
 	if wasWritable {
 		glog.V(0).Infof("Volume %d reaches full capacity.", vid)
 	}
+
 	return wasWritable
 }
 
@@ -535,7 +558,7 @@ func (vl *VolumeLayout) ToInfo() (info VolumeLayoutInfo) {
 	info.TTL = vl.ttl.String()
 	info.Writables = vl.writables
 	info.DiskType = vl.diskType.ReadableString()
-	//m["locations"] = vl.vid2location
+	// m["locations"] = vl.vid2location
 	return
 }
 

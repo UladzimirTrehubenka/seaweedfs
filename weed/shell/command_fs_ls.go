@@ -39,7 +39,6 @@ func (c *commandFsLs) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsLs) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -72,18 +71,17 @@ func (c *commandFsLs) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 	entryCount := 0
 
 	err = filer_pb.ReadDirAllEntries(context.Background(), commandEnv, util.FullPath(dir), name, func(entry *filer_pb.Entry, isLast bool) error {
-
-		if !showHidden && strings.HasPrefix(entry.Name, ".") {
+		if !showHidden && strings.HasPrefix(entry.GetName(), ".") {
 			return nil
 		}
 
 		entryCount++
 
 		if isLongFormat {
-			fileMode := os.FileMode(entry.Attributes.FileMode)
-			userName, groupNames := entry.Attributes.UserName, entry.Attributes.GroupName
+			fileMode := os.FileMode(entry.GetAttributes().GetFileMode())
+			userName, groupNames := entry.GetAttributes().GetUserName(), entry.GetAttributes().GetGroupName()
 			if userName == "" {
-				if user, userErr := user.LookupId(strconv.Itoa(int(entry.Attributes.Uid))); userErr == nil {
+				if user, userErr := user.LookupId(strconv.Itoa(int(entry.GetAttributes().GetUid()))); userErr == nil {
 					userName = user.Username
 				}
 			}
@@ -92,7 +90,7 @@ func (c *commandFsLs) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 				groupName = groupNames[0]
 			}
 			if groupName == "" {
-				if group, groupErr := user.LookupGroupId(strconv.Itoa(int(entry.Attributes.Gid))); groupErr == nil {
+				if group, groupErr := user.LookupGroupId(strconv.Itoa(int(entry.GetAttributes().GetGid()))); groupErr == nil {
 					groupName = group.Name
 				}
 			}
@@ -104,9 +102,9 @@ func (c *commandFsLs) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 			fmt.Fprintf(writer, "%s %3d %s %s %6d %s/%s\n",
 				fileMode, len(entry.GetChunks()),
 				userName, groupName,
-				filer.FileSize(entry), dir, entry.Name)
+				filer.FileSize(entry), dir, entry.GetName())
 		} else {
-			fmt.Fprintf(writer, "%s\n", entry.Name)
+			fmt.Fprintf(writer, "%s\n", entry.GetName())
 		}
 
 		return nil
@@ -116,5 +114,5 @@ func (c *commandFsLs) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 		fmt.Fprintf(writer, "total %d\n", entryCount)
 	}
 
-	return
+	return err
 }

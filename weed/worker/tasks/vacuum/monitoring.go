@@ -118,6 +118,7 @@ func (m *VacuumMetrics) GetSuccessRate() float64 {
 	if total == 0 {
 		return 100.0
 	}
+
 	return float64(m.SuccessfulOperations) / float64(total) * 100.0
 }
 
@@ -129,6 +130,7 @@ func (m *VacuumMetrics) GetAverageSpaceReclaimed() float64 {
 	if m.VolumesVacuumed == 0 {
 		return 0
 	}
+
 	return float64(m.TotalSpaceReclaimed) / float64(m.VolumesVacuumed)
 }
 

@@ -21,7 +21,7 @@ func TestSwapFile_NewSwapFileChunk_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	var failures atomic.Uint32
 	numConcurrent := 10
-	for i := 0; i < numConcurrent; i++ {
+	for i := range numConcurrent {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

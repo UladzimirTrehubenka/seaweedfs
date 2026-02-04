@@ -27,16 +27,19 @@ func NewValue(typ Type, val []byte) (v Value, err error) {
 		if _, err := strconv.ParseInt(string(val), 0, 64); err != nil {
 			return NULL, err
 		}
+
 		return MakeTrusted(typ, val), nil
 	case IsUnsigned(typ):
 		if _, err := strconv.ParseUint(string(val), 0, 64); err != nil {
 			return NULL, err
 		}
+
 		return MakeTrusted(typ, val), nil
 	case IsFloat(typ) || typ == Decimal:
 		if _, err := strconv.ParseFloat(string(val), 64); err != nil {
 			return NULL, err
 		}
+
 		return MakeTrusted(typ, val), nil
 	case IsQuoted(typ) || typ == Bit || typ == Null:
 		return MakeTrusted(typ, val), nil
@@ -53,7 +56,6 @@ func NewValue(typ Type, val []byte) (v Value, err error) {
 // comments. Other packages can also use the function to create
 // VarBinary or VarChar values.
 func MakeTrusted(typ Type, val []byte) Value {
-
 	if typ == Null {
 		return NULL
 	}
@@ -108,6 +110,7 @@ func NewIntegral(val string) (n Value, err error) {
 	if err != nil {
 		return Value{}, err
 	}
+
 	return MakeTrusted(Uint64, strconv.AppendUint(nil, unsigned, 10)), nil
 }
 
@@ -118,7 +121,7 @@ func MakeString(val []byte) Value {
 
 // BuildValue builds a value from any go type. sqltype.Value is
 // also allowed.
-func BuildValue(goval interface{}) (v Value, err error) {
+func BuildValue(goval any) (v Value, err error) {
 	// Look for the most common types first.
 	switch goval := goval.(type) {
 	case nil:
@@ -160,6 +163,7 @@ func BuildValue(goval interface{}) (v Value, err error) {
 	default:
 		return v, fmt.Errorf("unexpected type %T: %v", goval, goval)
 	}
+
 	return v, nil
 }
 
@@ -167,7 +171,7 @@ func BuildValue(goval interface{}) (v Value, err error) {
 // convert a string or []byte to an integral if the target type
 // is an integral. We don't perform other implicit conversions
 // because they're unsafe.
-func BuildConverted(typ Type, goval interface{}) (v Value, err error) {
+func BuildConverted(typ Type, goval any) (v Value, err error) {
 	if IsIntegral(typ) {
 		switch goval := goval.(type) {
 		case []byte:
@@ -180,6 +184,7 @@ func BuildConverted(typ Type, goval interface{}) (v Value, err error) {
 			}
 		}
 	}
+
 	return BuildValue(goval)
 }
 
@@ -210,6 +215,7 @@ func ValueFromBytes(typ Type, val []byte) (v Value, err error) {
 	default:
 		v = MakeTrusted(typ, val)
 	}
+
 	return v, nil
 }
 
@@ -224,6 +230,7 @@ func BuildIntegral(val string) (n Value, err error) {
 	if err != nil {
 		return Value{}, err
 	}
+
 	return MakeTrusted(Uint64, strconv.AppendUint(nil, unsigned, 10)), nil
 }
 
@@ -253,6 +260,7 @@ func (vs Values) Len() int {
 	for _, v := range vs {
 		len += v.Len()
 	}
+
 	return len
 }
 
@@ -264,8 +272,8 @@ func (v Value) String() string {
 // ToNative converts Value to a native go type.
 // This does not work for sqltypes.Tuple. The function
 // panics if there are inconsistencies.
-func (v Value) ToNative() interface{} {
-	var out interface{}
+func (v Value) ToNative() any {
+	var out any
 	var err error
 	switch {
 	case v.typ == Null:
@@ -282,6 +290,7 @@ func (v Value) ToNative() interface{} {
 	if err != nil {
 		panic(err)
 	}
+
 	return out
 }
 

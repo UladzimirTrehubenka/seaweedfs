@@ -4,28 +4,28 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/viant/ptrie"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"github.com/viant/ptrie"
 )
 
 func (fs *FilerServer) TraverseBfsMetadata(req *filer_pb.TraverseBfsMetadataRequest, stream filer_pb.SeaweedFiler_TraverseBfsMetadataServer) error {
-
 	glog.V(0).Infof("TraverseBfsMetadata %v", req)
 
 	excludedTrie := ptrie.New[bool]()
-	for _, excluded := range req.ExcludedPrefixes {
+	for _, excluded := range req.GetExcludedPrefixes() {
 		excludedTrie.Put([]byte(excluded), true)
 	}
 
 	ctx := stream.Context()
 
 	queue := util.NewQueue[*filer.Entry]()
-	dirEntry, err := fs.filer.FindEntry(ctx, util.FullPath(req.Directory))
+	dirEntry, err := fs.filer.FindEntry(ctx, util.FullPath(req.GetDirectory()))
 	if err != nil {
-		return fmt.Errorf("find dir %s: %v", req.Directory, err)
+		return fmt.Errorf("find dir %s: %w", req.GetDirectory(), err)
 	}
 	queue.Enqueue(dirEntry)
 
@@ -36,7 +36,7 @@ func (fs *FilerServer) TraverseBfsMetadata(req *filer_pb.TraverseBfsMetadataRequ
 			// println("excluded", item.FullPath)
 			continue
 		}
-		parent, _ := item.FullPath.DirAndName()
+		parent, _ := item.DirAndName()
 		if err := stream.Send(&filer_pb.TraverseBfsMetadataResponse{
 			Directory: parent,
 			Entry:     item.ToProtoEntry(),
@@ -50,6 +50,7 @@ func (fs *FilerServer) TraverseBfsMetadata(req *filer_pb.TraverseBfsMetadataRequ
 
 		if err := fs.iterateDirectory(ctx, item.FullPath, func(entry *filer.Entry) error {
 			queue.Enqueue(entry)
+
 			return nil
 		}); err != nil {
 			return err
@@ -68,8 +69,10 @@ func (fs *FilerServer) iterateDirectory(ctx context.Context, dirPath util.FullPa
 			hasEntries = true
 			if fnErr := fn(entry); fnErr != nil {
 				err = fnErr
+
 				return false, err
 			}
+
 			return true, nil
 		})
 		if listErr != nil {

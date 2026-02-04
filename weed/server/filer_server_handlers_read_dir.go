@@ -19,8 +19,9 @@ import (
 // is empty.
 func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if fs.option.ExposeDirectoryData == false {
+	if !fs.option.ExposeDirectoryData {
 		writeJsonError(w, r, http.StatusForbidden, errors.New("ui is disabled"))
+
 		return
 	}
 
@@ -45,6 +46,7 @@ func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		glog.V(0).InfofCtx(ctx, "listDirectory %s %s %d: %s", path, lastFileName, limit, err)
 		w.WriteHeader(http.StatusNotFound)
+
 		return
 	}
 
@@ -64,7 +66,7 @@ func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Reque
 		writeJsonQuiet(w, r, http.StatusOK, struct {
 			Version               string
 			Path                  string
-			Entries               interface{}
+			Entries               any
 			Limit                 int
 			LastFileName          string
 			ShouldDisplayLoadMore bool
@@ -78,6 +80,7 @@ func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Reque
 			shouldDisplayLoadMore,
 			emptyFolder,
 		})
+
 		return
 	}
 
@@ -85,7 +88,7 @@ func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Reque
 		Version               string
 		Path                  string
 		Breadcrumbs           []ui.Breadcrumb
-		Entries               interface{}
+		Entries               any
 		Limit                 int
 		LastFileName          string
 		ShouldDisplayLoadMore bool
@@ -105,5 +108,4 @@ func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		glog.V(0).InfofCtx(ctx, "Template Execute Error: %v", err)
 	}
-
 }

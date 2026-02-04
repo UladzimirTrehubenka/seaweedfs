@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,10 +30,11 @@ func (v *Volume) GetVolumeSyncStatus() *volume_server_pb.VolumeSyncStatusRespons
 	syncStatus.VolumeId = uint32(v.Id)
 	syncStatus.Collection = v.Collection
 	syncStatus.IdxFileSize = v.nm.IndexFileSize()
-	syncStatus.CompactRevision = uint32(v.SuperBlock.CompactionRevision)
-	syncStatus.Ttl = v.SuperBlock.Ttl.String()
-	syncStatus.Replication = v.SuperBlock.ReplicaPlacement.String()
+	syncStatus.CompactRevision = uint32(v.CompactionRevision)
+	syncStatus.Ttl = v.Ttl.String()
+	syncStatus.Replication = v.ReplicaPlacement.String()
 	syncStatus.Version = uint32(v.SuperBlock.Version)
+
 	return syncStatus
 }
 
@@ -67,7 +69,6 @@ update needle map when receiving new .dat bytes. But seems not necessary now.)
 */
 
 func (v *Volume) IncrementalBackup(volumeServer pb.ServerAddress, grpcDialOption grpc.DialOption) error {
-
 	startFromOffset, _, _ := v.FileStat()
 	appendAtNs, err := v.findLastAppendAtNs()
 	if err != nil {
@@ -77,7 +78,6 @@ func (v *Volume) IncrementalBackup(volumeServer pb.ServerAddress, grpcDialOption
 	writeOffset := int64(startFromOffset)
 
 	err = operation.WithVolumeServerClient(false, volumeServer, grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
-
 		stream, err := client.VolumeIncrementalCopy(context.Background(), &volume_server_pb.VolumeIncrementalCopyRequest{
 			VolumeId: uint32(v.Id),
 			SinceNs:  appendAtNs,
@@ -89,14 +89,14 @@ func (v *Volume) IncrementalBackup(volumeServer pb.ServerAddress, grpcDialOption
 		for {
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break
 				} else {
 					return recvErr
 				}
 			}
 
-			n, writeErr := v.DataBackend.WriteAt(resp.FileContent, writeOffset)
+			n, writeErr := v.DataBackend.WriteAt(resp.GetFileContent(), writeOffset)
 			if writeErr != nil {
 				return writeErr
 			}
@@ -104,7 +104,6 @@ func (v *Volume) IncrementalBackup(volumeServer pb.ServerAddress, grpcDialOption
 		}
 
 		return nil
-
 	})
 
 	if err != nil {
@@ -113,7 +112,6 @@ func (v *Volume) IncrementalBackup(volumeServer pb.ServerAddress, grpcDialOption
 
 	// add to needle map
 	return ScanVolumeFileFrom(v.Version(), v.DataBackend, int64(startFromOffset), &VolumeFileScanner4GenIdx{v: v})
-
 }
 
 func (v *Volume) findLastAppendAtNs() (uint64, error) {
@@ -124,19 +122,20 @@ func (v *Volume) findLastAppendAtNs() (uint64, error) {
 	if offset.IsZero() {
 		return 0, nil
 	}
+
 	return v.readAppendAtNs(offset)
 }
 
 func (v *Volume) locateLastAppendEntry() (Offset, error) {
 	indexFile, e := os.OpenFile(v.FileName(".idx"), os.O_RDONLY, 0644)
 	if e != nil {
-		return Offset{}, fmt.Errorf("cannot read %s: %v", v.FileName(".idx"), e)
+		return Offset{}, fmt.Errorf("cannot read %s: %w", v.FileName(".idx"), e)
 	}
 	defer indexFile.Close()
 
 	fi, err := indexFile.Stat()
 	if err != nil {
-		return Offset{}, fmt.Errorf("file %s stat error: %v", indexFile.Name(), err)
+		return Offset{}, fmt.Errorf("file %s stat error: %w", indexFile.Name(), err)
 	}
 	fileSize := fi.Size()
 	if fileSize%NeedleMapEntrySize != 0 {
@@ -149,7 +148,7 @@ func (v *Volume) locateLastAppendEntry() (Offset, error) {
 	bytes := make([]byte, NeedleMapEntrySize)
 	n, e := indexFile.ReadAt(bytes, fileSize-NeedleMapEntrySize)
 	if n != NeedleMapEntrySize {
-		return Offset{}, fmt.Errorf("file %s read error: %v", indexFile.Name(), e)
+		return Offset{}, fmt.Errorf("file %s read error: %w", indexFile.Name(), e)
 	}
 	_, offset, _ := idx.IdxFileEntry(bytes)
 
@@ -157,26 +156,25 @@ func (v *Volume) locateLastAppendEntry() (Offset, error) {
 }
 
 func (v *Volume) readAppendAtNs(offset Offset) (uint64, error) {
-
 	n, _, bodyLength, err := needle.ReadNeedleHeader(v.DataBackend, v.SuperBlock.Version, offset.ToActualOffset())
 	if err != nil {
-		return 0, fmt.Errorf("ReadNeedleHeader %s [%d,%d): %v", v.DataBackend.Name(), offset.ToActualOffset(), offset.ToActualOffset()+NeedleHeaderSize, err)
+		return 0, fmt.Errorf("ReadNeedleHeader %s [%d,%d): %w", v.DataBackend.Name(), offset.ToActualOffset(), offset.ToActualOffset()+NeedleHeaderSize, err)
 	}
 	_, err = n.ReadNeedleBody(v.DataBackend, v.SuperBlock.Version, offset.ToActualOffset()+NeedleHeaderSize, bodyLength)
 	if err != nil {
-		return 0, fmt.Errorf("ReadNeedleBody offset %d, bodyLength %d: %v", offset.ToActualOffset(), bodyLength, err)
+		return 0, fmt.Errorf("ReadNeedleBody offset %d, bodyLength %d: %w", offset.ToActualOffset(), bodyLength, err)
 	}
-	return n.AppendAtNs, nil
 
+	return n.AppendAtNs, nil
 }
 
 // on server side
 func (v *Volume) BinarySearchByAppendAtNs(sinceNs uint64) (offset Offset, isLast bool, err error) {
-
 	fileSize := int64(v.IndexFileSize())
 	if fileSize%NeedleMapEntrySize != 0 {
 		err = fmt.Errorf("unexpected file %s.idx size: %d", v.IndexFileName(), fileSize)
-		return
+
+		return offset, isLast, err
 	}
 
 	entryCount := fileSize / NeedleMapEntrySize
@@ -184,7 +182,6 @@ func (v *Volume) BinarySearchByAppendAtNs(sinceNs uint64) (offset Offset, isLast
 	h := entryCount
 
 	for l < h {
-
 		m := (l + h) / 2
 
 		if m == entryCount {
@@ -194,19 +191,22 @@ func (v *Volume) BinarySearchByAppendAtNs(sinceNs uint64) (offset Offset, isLast
 		// read the appendAtNs for entry m
 		offset, err = v.readOffsetFromIndex(m)
 		if err != nil {
-			err = fmt.Errorf("read entry %d: %v", m, err)
-			return
+			err = fmt.Errorf("read entry %d: %w", m, err)
+
+			return offset, isLast, err
 		}
 		if offset.IsZero() {
 			leftIndex, _, leftNs, leftErr := v.readLeftNs(m)
 			if leftErr != nil {
 				err = leftErr
-				return
+
+				return offset, isLast, err
 			}
 			rightIndex, rightOffset, rightNs, rightErr := v.readRightNs(m, entryCount)
 			if rightErr != nil {
 				err = rightErr
-				return
+
+				return offset, isLast, err
 			}
 			if rightNs <= sinceNs {
 				l = rightIndex
@@ -218,10 +218,11 @@ func (v *Volume) BinarySearchByAppendAtNs(sinceNs uint64) (offset Offset, isLast
 			}
 			if sinceNs < leftNs {
 				h = leftIndex + 1
+
 				continue
 			}
-			return rightOffset, false, nil
 
+			return rightOffset, false, nil
 		}
 		if offset.IsZero() {
 			return Offset{}, true, nil
@@ -229,8 +230,9 @@ func (v *Volume) BinarySearchByAppendAtNs(sinceNs uint64) (offset Offset, isLast
 
 		mNs, nsReadErr := v.readAppendAtNs(offset)
 		if nsReadErr != nil {
-			err = fmt.Errorf("read entry %d offset %d: %v", m, offset.ToActualOffset(), nsReadErr)
-			return
+			err = fmt.Errorf("read entry %d offset %d: %w", m, offset.ToActualOffset(), nsReadErr)
+
+			return offset, isLast, err
 		}
 
 		// move the boundary
@@ -239,7 +241,6 @@ func (v *Volume) BinarySearchByAppendAtNs(sinceNs uint64) (offset Offset, isLast
 		} else {
 			h = m
 		}
-
 	}
 
 	if l == entryCount {
@@ -249,7 +250,6 @@ func (v *Volume) BinarySearchByAppendAtNs(sinceNs uint64) (offset Offset, isLast
 	offset, err = v.readOffsetFromIndex(l)
 
 	return offset, false, err
-
 }
 
 func (v *Volume) readRightNs(m, max int64) (index int64, offset Offset, ts uint64, err error) {
@@ -261,13 +261,15 @@ func (v *Volume) readRightNs(m, max int64) (index int64, offset Offset, ts uint6
 		}
 		offset, err = v.readOffsetFromIndex(index)
 		if err != nil {
-			err = fmt.Errorf("read left entry at %d: %v", index, err)
+			err = fmt.Errorf("read left entry at %d: %w", index, err)
+
 			return
 		}
 	}
 	if !offset.IsZero() {
 		ts, err = v.readAppendAtNs(offset)
 	}
+
 	return
 }
 
@@ -280,13 +282,15 @@ func (v *Volume) readLeftNs(m int64) (index int64, offset Offset, ts uint64, err
 		}
 		offset, err = v.readOffsetFromIndex(index)
 		if err != nil {
-			err = fmt.Errorf("read right entry at %d: %v", index, err)
+			err = fmt.Errorf("read right entry at %d: %w", index, err)
+
 			return
 		}
 	}
 	if !offset.IsZero() {
 		ts, err = v.readAppendAtNs(offset)
 	}
+
 	return
 }
 
@@ -298,6 +302,7 @@ func (v *Volume) readOffsetFromIndex(m int64) (Offset, error) {
 		return Offset{}, io.EOF
 	}
 	_, offset, _, err := v.nm.ReadIndexEntry(m)
+
 	return offset, err
 }
 
@@ -308,7 +313,6 @@ type VolumeFileScanner4GenIdx struct {
 
 func (scanner *VolumeFileScanner4GenIdx) VisitSuperBlock(superBlock super_block.SuperBlock) error {
 	return nil
-
 }
 func (scanner *VolumeFileScanner4GenIdx) ReadNeedleBody() bool {
 	return false
@@ -318,5 +322,6 @@ func (scanner *VolumeFileScanner4GenIdx) VisitNeedle(n *needle.Needle, offset in
 	if n.Size > 0 && n.Size.IsValid() {
 		return scanner.v.nm.Put(n.Id, ToOffset(offset), n.Size)
 	}
+
 	return scanner.v.nm.Delete(n.Id, ToOffset(offset))
 }

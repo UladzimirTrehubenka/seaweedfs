@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -21,6 +22,7 @@ import (
 
 type OptionalString struct {
 	string
+
 	set bool
 }
 
@@ -28,6 +30,7 @@ func (o OptionalString) MarshalXML(e *xml.Encoder, startElement xml.StartElement
 	if !o.set {
 		return nil
 	}
+
 	return e.EncodeElement(o.string, startElement)
 }
 
@@ -48,7 +51,6 @@ type ListBucketResultV2 struct {
 }
 
 func (s3a *S3ApiServer) ListObjectsV2Handler(w http.ResponseWriter, r *http.Request) {
-
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html
 
 	// collect parameters
@@ -59,6 +61,7 @@ func (s3a *S3ApiServer) ListObjectsV2Handler(w http.ResponseWriter, r *http.Requ
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -67,6 +70,7 @@ func (s3a *S3ApiServer) ListObjectsV2Handler(w http.ResponseWriter, r *http.Requ
 	// AWS S3 compatibility: allow-unordered cannot be used with delimiter
 	if allowUnordered && delimiter != "" {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidUnorderedWithDelimiter)
+
 		return
 	}
 
@@ -82,12 +86,14 @@ func (s3a *S3ApiServer) ListObjectsV2Handler(w http.ResponseWriter, r *http.Requ
 
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
 	if len(response.Contents) == 0 {
 		if exists, existErr := s3a.exists(s3a.option.BucketsPath, bucket, true); existErr == nil && !exists {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 	}
@@ -113,7 +119,6 @@ func (s3a *S3ApiServer) ListObjectsV2Handler(w http.ResponseWriter, r *http.Requ
 }
 
 func (s3a *S3ApiServer) ListObjectsV1Handler(w http.ResponseWriter, r *http.Request) {
-
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjects.html
 
 	// collect parameters
@@ -124,17 +129,20 @@ func (s3a *S3ApiServer) ListObjectsV1Handler(w http.ResponseWriter, r *http.Requ
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
 	if maxKeys < 0 {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidMaxKeys)
+
 		return
 	}
 
 	// AWS S3 compatibility: allow-unordered cannot be used with delimiter
 	if allowUnordered && delimiter != "" {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidUnorderedWithDelimiter)
+
 		return
 	}
 
@@ -145,12 +153,14 @@ func (s3a *S3ApiServer) ListObjectsV1Handler(w http.ResponseWriter, r *http.Requ
 
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
 	if len(response.Contents) == 0 {
 		if exists, existErr := s3a.exists(s3a.option.BucketsPath, bucket, true); existErr == nil && !exists {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 	}
@@ -192,7 +202,8 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 		if encodingTypeUrl {
 			response.EncodingType = s3.EncodingTypeUrl
 		}
-		return
+
+		return response, err
 	}
 
 	// check filer
@@ -205,15 +216,15 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 
 			nextMarker, doErr = s3a.doListFilerEntries(client, reqDir, prefix, cursor, marker, delimiter, false, bucket, func(dir string, entry *filer_pb.Entry) {
 				empty = false
-				dirName, entryName, _ := entryUrlEncode(dir, entry.Name, encodingTypeUrl)
-				if entry.IsDirectory {
+				dirName, entryName, _ := entryUrlEncode(dir, entry.GetName(), encodingTypeUrl)
+				if entry.GetIsDirectory() {
 					// When delimiter is specified, apply delimiter logic to directory key objects too
 					if delimiter != "" && entry.IsDirectoryKeyObject() {
 						// Apply the same delimiter logic as for regular files
 						var delimiterFound bool
 						// Use raw dir and entry.Name (not encoded) to ensure consistent handling
 						// Encoding will be applied after sorting if encodingTypeUrl is set
-						undelimitedPath := fmt.Sprintf("%s/%s/", dir, entry.Name)[len(bucketPrefix):]
+						undelimitedPath := fmt.Sprintf("%s/%s/", dir, entry.GetName())[len(bucketPrefix):]
 
 						// take into account a prefix if supplied while delimiting.
 						undelimitedPath = strings.TrimPrefix(undelimitedPath, originalPrefix)
@@ -227,6 +238,7 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 							for i := range commonPrefixes {
 								if commonPrefixes[i].Prefix == delimitedPrefix {
 									delimiterFound = true
+
 									break
 								}
 							}
@@ -261,19 +273,19 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 						// Use raw dir and entry.Name (not encoded) to ensure consistent handling
 						// Encoding will be applied after sorting if encodingTypeUrl is set
 						commonPrefixes = append(commonPrefixes, PrefixEntry{
-							Prefix: fmt.Sprintf("%s/%s/", dir, entry.Name)[len(bucketPrefix):],
+							Prefix: fmt.Sprintf("%s/%s/", dir, entry.GetName())[len(bucketPrefix):],
 						})
-						//All of the keys (up to 1,000) rolled up into a common prefix count as a single return when calculating the number of returns.
+						// All of the keys (up to 1,000) rolled up into a common prefix count as a single return when calculating the number of returns.
 						cursor.maxKeys--
 						lastEntryWasCommonPrefix = true
-						lastCommonPrefixName = entry.Name
+						lastCommonPrefixName = entry.GetName()
 					}
 				} else {
 					var delimiterFound bool
 					if delimiter != "" {
 						// keys that contain the same string between the prefix and the first occurrence of the delimiter are grouped together as a commonPrefix.
 						// extract the string between the prefix and the delimiter and add it to the commonPrefixes if it's unique.
-						undelimitedPath := fmt.Sprintf("%s/%s", dir, entry.Name)[len(bucketPrefix):]
+						undelimitedPath := fmt.Sprintf("%s/%s", dir, entry.GetName())[len(bucketPrefix):]
 
 						// take into account a prefix if supplied while delimiting.
 						undelimitedPath = strings.TrimPrefix(undelimitedPath, originalPrefix)
@@ -287,6 +299,7 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 							for i := range commonPrefixes {
 								if commonPrefixes[i].Prefix == delimitedPrefix {
 									delimiterFound = true
+
 									break
 								}
 							}
@@ -344,6 +357,7 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 				break
 			} else if empty || strings.HasSuffix(originalPrefix, "/") {
 				nextMarker = ""
+
 				break
 			} else {
 				// start next loop
@@ -378,10 +392,11 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 				response.CommonPrefixes[i].Prefix = urlPathEscape(response.CommonPrefixes[i].Prefix)
 			}
 		}
+
 		return nil
 	})
 
-	return
+	return response, err
 }
 
 type ListingCursor struct {
@@ -406,7 +421,8 @@ func normalizePrefixMarker(prefix, marker string) (alignedDir, alignedPrefix, al
 	}
 	if marker == "" {
 		alignedDir, alignedPrefix = toDirAndName(prefix)
-		return
+
+		return alignedDir, alignedPrefix, alignedMarker
 	}
 	if !strings.HasPrefix(marker, prefix) {
 		// something wrong
@@ -416,7 +432,8 @@ func normalizePrefixMarker(prefix, marker string) (alignedDir, alignedPrefix, al
 		alignedDir = prefix
 		alignedPrefix = ""
 		alignedMarker = marker[len(alignedDir)+1:]
-		return
+
+		return alignedDir, alignedPrefix, alignedMarker
 	}
 
 	alignedDir, alignedPrefix = toDirAndName(prefix)
@@ -425,7 +442,8 @@ func normalizePrefixMarker(prefix, marker string) (alignedDir, alignedPrefix, al
 	} else {
 		alignedMarker = marker
 	}
-	return
+
+	return alignedDir, alignedPrefix, alignedMarker
 }
 
 func toDirAndName(dirAndName string) (dir, name string) {
@@ -435,6 +453,7 @@ func toDirAndName(dirAndName string) (dir, name string) {
 	} else {
 		name = dirAndName
 	}
+
 	return
 }
 
@@ -445,6 +464,7 @@ func toParentAndDescendants(dirAndName string) (dir, name string) {
 	} else {
 		name = dirAndName
 	}
+
 	return
 }
 
@@ -456,7 +476,7 @@ func (s3a *S3ApiServer) doListFilerEntries(client filer_pb.SeaweedFilerClient, d
 	// When listing at bucket root with delimiter '/', prefix can be "/" after normalization.
 	// Returning early here would incorrectly hide all top-level entries (folders like "Veeam/").
 	if cursor.maxKeys <= 0 {
-		return // Don't set isTruncated here - let caller decide based on whether more entries exist
+		return nextMarker, err // Don't set isTruncated here - let caller decide based on whether more entries exist
 	}
 
 	if strings.Contains(marker, "/") {
@@ -465,14 +485,15 @@ func (s3a *S3ApiServer) doListFilerEntries(client filer_pb.SeaweedFilerClient, d
 		subNextMarker, subErr := s3a.doListFilerEntries(client, dir+"/"+subDir, "", cursor, subMarker, delimiter, false, bucket, eachEntryFn)
 		if subErr != nil {
 			err = subErr
-			return
+
+			return nextMarker, err
 		}
 		nextMarker = subDir + "/" + subNextMarker
 		// finished processing this subdirectory
 		marker = subDir
 	}
 	if cursor.isTruncated {
-		return
+		return nextMarker, err
 	}
 
 	// now marker is also a direct child of dir
@@ -491,31 +512,34 @@ func (s3a *S3ApiServer) doListFilerEntries(client filer_pb.SeaweedFilerClient, d
 	defer cancel()
 	stream, listErr := client.ListEntries(ctx, request)
 	if listErr != nil {
-		err = fmt.Errorf("list entires %+v: %v", request, listErr)
-		return
+		err = fmt.Errorf("list entires %+v: %w", request, listErr)
+
+		return nextMarker, err
 	}
 
 	for {
 		resp, recvErr := stream.Recv()
 		if recvErr != nil {
-			if recvErr == io.EOF {
+			if errors.Is(recvErr, io.EOF) {
 				break
 			} else {
-				err = fmt.Errorf("iterating entires %+v: %v", request, recvErr)
-				return
+				err = fmt.Errorf("iterating entires %+v: %w", request, recvErr)
+
+				return nextMarker, err
 			}
 		}
-		entry := resp.Entry
+		entry := resp.GetEntry()
 
 		if cursor.maxKeys <= 0 {
 			cursor.isTruncated = true
+
 			break
 		}
 
 		// Set nextMarker only when we have quota to process this entry
-		nextMarker = entry.Name
+		nextMarker = entry.GetName()
 		if cursor.prefixEndsOnDelimiter {
-			if entry.Name == prefix && entry.IsDirectory {
+			if entry.GetName() == prefix && entry.GetIsDirectory() {
 				if delimiter != "/" {
 					cursor.prefixEndsOnDelimiter = false
 				}
@@ -523,17 +547,17 @@ func (s3a *S3ApiServer) doListFilerEntries(client filer_pb.SeaweedFilerClient, d
 				continue
 			}
 		}
-		if entry.IsDirectory {
+		if entry.GetIsDirectory() {
 			// glog.V(4).Infof("List Dir Entries %s, file: %s, maxKeys %d", dir, entry.Name, cursor.maxKeys)
-			if entry.Name == s3_constants.MultipartUploadsFolder { // FIXME no need to apply to all directories. this extra also affects maxKeys
+			if entry.GetName() == s3_constants.MultipartUploadsFolder { // FIXME no need to apply to all directories. this extra also affects maxKeys
 				continue
 			}
 
 			// Process .versions directories immediately to create logical versioned object entries
 			// These directories are never traversed (we continue here), so each is only encountered once
-			if strings.HasSuffix(entry.Name, s3_constants.VersionsFolder) {
+			if before, ok := strings.CutSuffix(entry.GetName(), s3_constants.VersionsFolder); ok {
 				// Extract object name from .versions directory name
-				baseObjectName := strings.TrimSuffix(entry.Name, s3_constants.VersionsFolder)
+				baseObjectName := before
 				// Construct full object path relative to bucket
 				bucketFullPath := s3a.option.BucketsPath + "/" + bucket
 				bucketRelativePath := strings.TrimPrefix(dir, bucketFullPath)
@@ -551,6 +575,7 @@ func (s3a *S3ApiServer) doListFilerEntries(client filer_pb.SeaweedFilerClient, d
 					// Log unexpected errors (delete markers are expected)
 					glog.V(2).Infof("Skipping versioned object %s due to error: %v", fullObjectPath, err)
 				}
+
 				continue
 			}
 
@@ -564,15 +589,16 @@ func (s3a *S3ApiServer) doListFilerEntries(client filer_pb.SeaweedFilerClient, d
 					}
 				}
 				// Recurse into subdirectory - don't add the directory itself to results
-				subNextMarker, subErr := s3a.doListFilerEntries(client, dir+"/"+entry.Name, "", cursor, "", delimiter, false, bucket, eachEntryFn)
+				subNextMarker, subErr := s3a.doListFilerEntries(client, dir+"/"+entry.GetName(), "", cursor, "", delimiter, false, bucket, eachEntryFn)
 				if subErr != nil {
 					err = fmt.Errorf("doListFilerEntries2: %w", subErr)
-					return
+
+					return nextMarker, err
 				}
 				// println("doListFilerEntries2 dir", dir+"/"+entry.Name, "subNextMarker", subNextMarker)
-				nextMarker = entry.Name + "/" + subNextMarker
+				nextMarker = entry.GetName() + "/" + subNextMarker
 				if cursor.isTruncated {
-					return
+					return nextMarker, err
 				}
 				// println("doListFilerEntries2 nextMarker", nextMarker)
 			} else {
@@ -588,7 +614,7 @@ func (s3a *S3ApiServer) doListFilerEntries(client filer_pb.SeaweedFilerClient, d
 	}
 
 	// Versioned directories are processed above (lines 524-546)
-	return
+	return nextMarker, err
 }
 
 func getListObjectsV2Args(values url.Values) (prefix, startAfter, delimiter string, token OptionalString, encodingTypeUrl bool, fetchOwner bool, maxkeys uint16, allowUnordered bool, errCode s3err.ErrorCode) {
@@ -603,6 +629,7 @@ func getListObjectsV2Args(values url.Values) (prefix, startAfter, delimiter stri
 		} else {
 			// Invalid max-keys value (non-numeric)
 			errCode = s3err.ErrInvalidMaxKeys
+
 			return
 		}
 	} else {
@@ -611,6 +638,7 @@ func getListObjectsV2Args(values url.Values) (prefix, startAfter, delimiter stri
 	fetchOwner = values.Get("fetch-owner") == "true"
 	allowUnordered = values.Get("allow-unordered") == "true"
 	errCode = s3err.ErrNone
+
 	return
 }
 
@@ -625,6 +653,7 @@ func getListObjectsV1Args(values url.Values) (prefix, marker, delimiter string, 
 		} else {
 			// Invalid max-keys value (non-numeric)
 			errCode = s3err.ErrInvalidMaxKeys
+
 			return
 		}
 	} else {
@@ -632,6 +661,7 @@ func getListObjectsV1Args(values url.Values) (prefix, marker, delimiter string, 
 	}
 	allowUnordered = values.Get("allow-unordered") == "true"
 	errCode = s3err.ErrNone
+
 	return
 }
 
@@ -649,13 +679,14 @@ func (s3a *S3ApiServer) ensureDirectoryAllEmpty(filerClient filer_pb.SeaweedFile
 		err = filer_pb.SeaweedList(context.Background(), filerClient, currentDir, "", func(entry *filer_pb.Entry, isLast bool) error {
 			foundEntry = true
 			if entry.IsOlderDir() {
-				subDirs = append(subDirs, entry.Name)
+				subDirs = append(subDirs, entry.GetName())
 			} else {
 				fileCounter++
 			}
-			startFrom = entry.Name
+			startFrom = entry.GetName()
 			isExhausted = isExhausted || isLast
 			glog.V(4).Infof("    * %s/%s isLast: %t", currentDir, startFrom, isLast)
+
 			return nil
 		}, startFrom, false, 8)
 		if !foundEntry {
@@ -683,7 +714,7 @@ func (s3a *S3ApiServer) ensureDirectoryAllEmpty(filerClient filer_pb.SeaweedFile
 
 	glog.V(1).Infof("deleting empty folder %s", currentDir)
 	if err = doDeleteEntry(filerClient, parentDir, name, true, false); err != nil {
-		return
+		return isEmpty, err
 	}
 
 	return true, nil
@@ -705,13 +736,10 @@ func compareWithDelimiter(a, b, delimiter string) bool {
 	}
 
 	delimByte := delimiter[0]
-	minLen := len(a)
-	if len(b) < minLen {
-		minLen = len(b)
-	}
+	minLen := min(len(b), len(a))
 
 	// Compare character by character
-	for i := 0; i < minLen; i++ {
+	for i := range minLen {
 		charA := a[i]
 		charB := b[i]
 

@@ -142,7 +142,7 @@ func TestClassifyDomainNamesOrder(t *testing.T) {
 
 			// Children should be path-style
 			if len(tt.domainNames) > 1 {
-				assert.Greater(t, len(pathStyle), 0,
+				assert.NotEmpty(t, pathStyle,
 					"Should have at least one path-style domain: %s", tt.description)
 			}
 		})

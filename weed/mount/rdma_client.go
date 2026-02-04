@@ -3,6 +3,7 @@ package mount
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -113,9 +114,10 @@ func (c *RDMAMountClient) lookupVolumeLocationByFileID(ctx context.Context, file
 	if len(parts) < 3 {
 		return "", fmt.Errorf("invalid target URL format: %s", targetUrl)
 	}
-	bestAddress := fmt.Sprintf("http://%s", parts[2])
+	bestAddress := "http://" + parts[2]
 
 	glog.V(4).Infof("File %s located at %s", fileID, bestAddress)
+
 	return bestAddress, nil
 }
 
@@ -123,6 +125,7 @@ func (c *RDMAMountClient) lookupVolumeLocationByFileID(ctx context.Context, file
 func (c *RDMAMountClient) lookupVolumeLocation(ctx context.Context, volumeID uint32, needleID uint64, cookie uint32) (string, error) {
 	// Create a file ID for lookup (format: volumeId,needleId,cookie)
 	fileID := fmt.Sprintf("%d,%x,%d", volumeID, needleID, cookie)
+
 	return c.lookupVolumeLocationByFileID(ctx, fileID)
 }
 
@@ -131,7 +134,7 @@ func (c *RDMAMountClient) healthCheck() error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET",
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		fmt.Sprintf("http://%s/health", c.sidecarAddr), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create health check request: %w", err)
@@ -158,7 +161,7 @@ func (c *RDMAMountClient) healthCheck() error {
 	}
 
 	if !health.RDMA.Enabled {
-		return fmt.Errorf("RDMA is not enabled on sidecar")
+		return errors.New("RDMA is not enabled on sidecar")
 	}
 
 	if !health.RDMA.Connected {
@@ -185,6 +188,7 @@ func (c *RDMAMountClient) ReadNeedle(ctx context.Context, fileID string, offset,
 	volumeServer, err := c.lookupVolumeLocationByFileID(ctx, fileID)
 	if err != nil {
 		c.failedReads.Add(1)
+
 		return nil, false, fmt.Errorf("failed to lookup volume for file %s: %w", fileID, err)
 	}
 
@@ -192,9 +196,10 @@ func (c *RDMAMountClient) ReadNeedle(ctx context.Context, fileID string, offset,
 	reqURL := fmt.Sprintf("http://%s/read?file_id=%s&offset=%d&size=%d&volume_server=%s",
 		c.sidecarAddr, fileID, offset, size, volumeServer)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		c.failedReads.Add(1)
+
 		return nil, false, fmt.Errorf("failed to create RDMA request: %w", err)
 	}
 
@@ -202,6 +207,7 @@ func (c *RDMAMountClient) ReadNeedle(ctx context.Context, fileID string, offset,
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.failedReads.Add(1)
+
 		return nil, false, fmt.Errorf("RDMA request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -212,6 +218,7 @@ func (c *RDMAMountClient) ReadNeedle(ctx context.Context, fileID string, offset,
 	if resp.StatusCode != http.StatusOK {
 		c.failedReads.Add(1)
 		body, _ := io.ReadAll(resp.Body)
+
 		return nil, false, fmt.Errorf("RDMA read failed with status %s: %s", resp.Status, string(body))
 	}
 
@@ -257,6 +264,7 @@ func (c *RDMAMountClient) ReadNeedle(ctx context.Context, fileID string, offset,
 
 	if err != nil {
 		c.failedReads.Add(1)
+
 		return nil, false, fmt.Errorf("failed to read RDMA response: %w", err)
 	}
 
@@ -286,15 +294,17 @@ func (c *RDMAMountClient) cleanupTempFile(tempFilePath string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", cleanupURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, cleanupURL, nil)
 	if err != nil {
 		glog.V(2).Infof("Failed to create cleanup request for %s: %v", tempFilePath, err)
+
 		return
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		glog.V(2).Infof("Failed to cleanup temp file %s: %v", tempFilePath, err)
+
 		return
 	}
 	defer resp.Body.Close()
@@ -307,7 +317,7 @@ func (c *RDMAMountClient) cleanupTempFile(tempFilePath string) {
 }
 
 // GetStats returns current RDMA client statistics
-func (c *RDMAMountClient) GetStats() map[string]interface{} {
+func (c *RDMAMountClient) GetStats() map[string]any {
 	totalRequests := c.totalRequests.Load()
 	successfulReads := c.successfulReads.Load()
 	failedReads := c.failedReads.Load()
@@ -322,7 +332,7 @@ func (c *RDMAMountClient) GetStats() map[string]interface{} {
 		avgLatencyNs = totalLatencyNs / totalRequests
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"sidecar_addr":     c.sidecarAddr,
 		"max_concurrent":   c.maxConcurrent,
 		"timeout_ms":       int(c.timeout / time.Millisecond),
@@ -351,13 +361,14 @@ func (c *RDMAMountClient) Close() error {
 // IsHealthy checks if the RDMA sidecar is currently healthy
 func (c *RDMAMountClient) IsHealthy() bool {
 	err := c.healthCheck()
+
 	return err == nil
 }
 
 // readFromTempFile performs zero-copy read from temp file using page cache
 func (c *RDMAMountClient) readFromTempFile(tempFilePath string, buffer []byte) (int, error) {
 	if tempFilePath == "" {
-		return 0, fmt.Errorf("empty temp file path")
+		return 0, errors.New("empty temp file path")
 	}
 
 	// Open temp file for reading
@@ -369,7 +380,7 @@ func (c *RDMAMountClient) readFromTempFile(tempFilePath string, buffer []byte) (
 
 	// Read from temp file (this should be served from page cache)
 	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return n, fmt.Errorf("failed to read from temp file: %w", err)
 	}
 

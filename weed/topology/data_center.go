@@ -18,7 +18,8 @@ func NewDataCenter(id string) *DataCenter {
 	dc.diskUsages = newDiskUsages()
 	dc.children = make(map[NodeId]Node)
 	dc.capacityReservations = newCapacityReservations()
-	dc.NodeImpl.value = dc
+	dc.value = dc
+
 	return dc
 }
 
@@ -33,6 +34,7 @@ func (dc *DataCenter) GetOrCreateRack(rackName string) *Rack {
 	}
 	rack := NewRack(rackName)
 	dc.doLinkChildNode(rack)
+
 	return rack
 }
 
@@ -53,6 +55,7 @@ func (dc *DataCenter) ToInfo() (info DataCenterInfo) {
 		return strings.Compare(string(a.Id), string(b.Id))
 	})
 	info.Racks = racks
+
 	return
 }
 
@@ -65,5 +68,6 @@ func (dc *DataCenter) ToDataCenterInfo() *master_pb.DataCenterInfo {
 		rack := c.(*Rack)
 		m.RackInfos = append(m.RackInfos, rack.ToRackInfo())
 	}
+
 	return m
 }

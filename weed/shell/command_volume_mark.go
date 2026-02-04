@@ -1,8 +1,8 @@
 package shell
 
 import (
+	"errors"
 	"flag"
-	"fmt"
 	"io"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -33,7 +33,6 @@ func (c *commandVolumeMark) HasTag(CommandTag) bool {
 }
 
 func (c *commandVolumeMark) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	volMarkCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	volumeIdInt := volMarkCommand.Int("volumeId", 0, "the volume id")
 	nodeStr := volMarkCommand.String("node", "", "the volume server <host>:<port>")
@@ -44,7 +43,7 @@ func (c *commandVolumeMark) Do(args []string, commandEnv *CommandEnv, writer io.
 	}
 	markWritable := false
 	if (*writable && *readonly) || (!*writable && !*readonly) {
-		return fmt.Errorf("use -readonly or -writable")
+		return errors.New("use -readonly or -writable")
 	} else if *writable {
 		markWritable = true
 	}

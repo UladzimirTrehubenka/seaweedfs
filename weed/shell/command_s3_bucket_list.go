@@ -33,7 +33,6 @@ func (c *commandS3BucketList) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3BucketList) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	if err = bucketCommand.Parse(args); err != nil {
 		return nil
@@ -59,26 +58,27 @@ func (c *commandS3BucketList) Do(args []string, commandEnv *CommandEnv, writer i
 	}
 
 	err = filer_pb.List(context.Background(), commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
-		if !entry.IsDirectory {
+		if !entry.GetIsDirectory() {
 			return nil
 		}
-		collection := getCollectionName(commandEnv, entry.Name)
+		collection := getCollectionName(commandEnv, entry.GetName())
 		var collectionSize, fileCount float64
 		if collectionInfo, found := collectionInfos[collection]; found {
 			collectionSize = collectionInfo.Size
 			fileCount = collectionInfo.FileCount - collectionInfo.DeleteCount
 		}
-		fmt.Fprintf(writer, "  %s\tsize:%.0f\tchunk:%.0f", entry.Name, collectionSize, fileCount)
-		if entry.Quota > 0 {
-			fmt.Fprintf(writer, "\tquota:%d\tusage:%.2f%%", entry.Quota, float64(collectionSize)*100/float64(entry.Quota))
+		fmt.Fprintf(writer, "  %s\tsize:%.0f\tchunk:%.0f", entry.GetName(), collectionSize, fileCount)
+		if entry.GetQuota() > 0 {
+			fmt.Fprintf(writer, "\tquota:%d\tusage:%.2f%%", entry.GetQuota(), float64(collectionSize)*100/float64(entry.GetQuota()))
 		}
 		// Show bucket owner (use %q to escape special characters)
 		if entry.Extended != nil {
-			if owner, ok := entry.Extended[s3_constants.AmzIdentityId]; ok && len(owner) > 0 {
+			if owner, ok := entry.GetExtended()[s3_constants.AmzIdentityId]; ok && len(owner) > 0 {
 				fmt.Fprintf(writer, "\towner:%q", string(owner))
 			}
 		}
 		fmt.Fprintln(writer)
+
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
@@ -86,20 +86,17 @@ func (c *commandS3BucketList) Do(args []string, commandEnv *CommandEnv, writer i
 	}
 
 	return err
-
 }
 
 func readFilerBucketsPath(filerClient filer_pb.FilerClient) (filerBucketsPath string, err error) {
 	err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
 			return fmt.Errorf("get filer configuration: %w", err)
 		}
-		filerBucketsPath = resp.DirBuckets
+		filerBucketsPath = resp.GetDirBuckets()
 
 		return nil
-
 	})
 
 	return filerBucketsPath, err

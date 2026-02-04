@@ -3,7 +3,7 @@ package s3api
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
+	"errors"
 	"strconv"
 	"time"
 
@@ -29,7 +29,7 @@ func StoreVersioningInExtended(entry *filer_pb.Entry, enabled bool) error {
 		entry.Extended[s3_constants.ExtVersioningKey] = []byte(s3_constants.VersioningEnabled)
 	} else {
 		// Don't set the header when versioning is not enabled
-		delete(entry.Extended, s3_constants.ExtVersioningKey)
+		delete(entry.GetExtended(), s3_constants.ExtVersioningKey)
 	}
 
 	return nil
@@ -42,8 +42,9 @@ func LoadVersioningFromExtended(entry *filer_pb.Entry) (bool, bool) {
 	}
 
 	// Check for S3 API compatible key
-	if versioningBytes, exists := entry.Extended[s3_constants.ExtVersioningKey]; exists {
+	if versioningBytes, exists := entry.GetExtended()[s3_constants.ExtVersioningKey]; exists {
 		enabled := string(versioningBytes) == s3_constants.VersioningEnabled
+
 		return enabled, true
 	}
 
@@ -57,7 +58,7 @@ func GetVersioningStatus(entry *filer_pb.Entry) string {
 		return "" // Never enabled
 	}
 
-	if versioningBytes, exists := entry.Extended[s3_constants.ExtVersioningKey]; exists {
+	if versioningBytes, exists := entry.GetExtended()[s3_constants.ExtVersioningKey]; exists {
 		return string(versioningBytes) // "Enabled" or "Suspended"
 	}
 
@@ -93,7 +94,7 @@ func CreateObjectLockConfiguration(enabled bool, mode string, days int, years in
 // ObjectLockConfigurationToXML converts ObjectLockConfiguration to XML bytes
 func ObjectLockConfigurationToXML(config *ObjectLockConfiguration) ([]byte, error) {
 	if config == nil {
-		return nil, fmt.Errorf("object lock configuration is nil")
+		return nil, errors.New("object lock configuration is nil")
 	}
 
 	return xml.Marshal(config)
@@ -107,10 +108,11 @@ func StoreObjectLockConfigurationInExtended(entry *filer_pb.Entry, config *Objec
 
 	if config == nil {
 		// Remove Object Lock configuration
-		delete(entry.Extended, s3_constants.ExtObjectLockEnabledKey)
-		delete(entry.Extended, s3_constants.ExtObjectLockDefaultModeKey)
-		delete(entry.Extended, s3_constants.ExtObjectLockDefaultDaysKey)
-		delete(entry.Extended, s3_constants.ExtObjectLockDefaultYearsKey)
+		delete(entry.GetExtended(), s3_constants.ExtObjectLockEnabledKey)
+		delete(entry.GetExtended(), s3_constants.ExtObjectLockDefaultModeKey)
+		delete(entry.GetExtended(), s3_constants.ExtObjectLockDefaultDaysKey)
+		delete(entry.GetExtended(), s3_constants.ExtObjectLockDefaultYearsKey)
+
 		return nil
 	}
 
@@ -137,9 +139,9 @@ func StoreObjectLockConfigurationInExtended(entry *filer_pb.Entry, config *Objec
 		}
 	} else {
 		// Remove default retention if not present
-		delete(entry.Extended, s3_constants.ExtObjectLockDefaultModeKey)
-		delete(entry.Extended, s3_constants.ExtObjectLockDefaultDaysKey)
-		delete(entry.Extended, s3_constants.ExtObjectLockDefaultYearsKey)
+		delete(entry.GetExtended(), s3_constants.ExtObjectLockDefaultModeKey)
+		delete(entry.GetExtended(), s3_constants.ExtObjectLockDefaultDaysKey)
+		delete(entry.GetExtended(), s3_constants.ExtObjectLockDefaultYearsKey)
 	}
 
 	return nil
@@ -152,7 +154,7 @@ func LoadObjectLockConfigurationFromExtended(entry *filer_pb.Entry) (*ObjectLock
 	}
 
 	// Check if Object Lock is enabled
-	enabledBytes, exists := entry.Extended[s3_constants.ExtObjectLockEnabledKey]
+	enabledBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockEnabledKey]
 	if !exists {
 		return nil, false
 	}
@@ -168,17 +170,17 @@ func LoadObjectLockConfigurationFromExtended(entry *filer_pb.Entry) (*ObjectLock
 	}
 
 	// Load default retention configuration if present
-	if modeBytes, exists := entry.Extended[s3_constants.ExtObjectLockDefaultModeKey]; exists {
+	if modeBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockDefaultModeKey]; exists {
 		mode := string(modeBytes)
 
 		// Parse days and years
 		var days, years int
-		if daysBytes, exists := entry.Extended[s3_constants.ExtObjectLockDefaultDaysKey]; exists {
+		if daysBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockDefaultDaysKey]; exists {
 			if parsed, err := strconv.Atoi(string(daysBytes)); err == nil {
 				days = parsed
 			}
 		}
-		if yearsBytes, exists := entry.Extended[s3_constants.ExtObjectLockDefaultYearsKey]; exists {
+		if yearsBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockDefaultYearsKey]; exists {
 			if parsed, err := strconv.Atoi(string(yearsBytes)); err == nil {
 				years = parsed
 			}
@@ -316,6 +318,7 @@ func ValidateObjectLockConfiguration(config *ObjectLockConfiguration) error {
 		if config.Rule.DefaultRetention == nil {
 			return ErrRuleMissingDefaultRetention
 		}
+
 		return validateDefaultRetention(config.Rule.DefaultRetention)
 	}
 

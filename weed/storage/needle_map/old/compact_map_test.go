@@ -16,14 +16,13 @@ func TestSnowflakeSequencer(t *testing.T) {
 	m := NewCompactMap()
 	seq, _ := sequence.NewSnowflakeSequencer("for_test", 1)
 
-	for i := 0; i < 200000; i++ {
+	for range 200000 {
 		id := seq.NextFileId(1)
 		oldOffset, oldSize := m.Set(NeedleId(id), ToOffset(8), 3000073)
 		if oldSize != 0 {
 			t.Errorf("id %d oldOffset %v oldSize %d", id, oldOffset, oldSize)
 		}
 	}
-
 }
 
 func TestOverflow2(t *testing.T) {
@@ -48,6 +47,7 @@ func TestOverflow2(t *testing.T) {
 
 	m.AscendingVisit(func(value new_map.NeedleValue) error {
 		println("needle key:", value.Key)
+
 		return nil
 	})
 }
@@ -86,7 +86,7 @@ func TestCompactMap(t *testing.T) {
 	//		}
 	//	}
 
-	for i := uint32(0); i < 10*MaxSectionBucketSize; i++ {
+	for i := range uint32(10 * MaxSectionBucketSize) {
 		v, ok := m.Get(NeedleId(i))
 		if i%3 == 0 {
 			if !ok {
@@ -121,7 +121,6 @@ func TestCompactMap(t *testing.T) {
 			}
 		}
 	}
-
 }
 
 func TestOverflow(t *testing.T) {
@@ -182,7 +181,6 @@ func TestOverflow(t *testing.T) {
 		println("overflow[", i, "]:", x.Key)
 	}
 	println()
-
 }
 
 func TestCompactSection_Get(t *testing.T) {

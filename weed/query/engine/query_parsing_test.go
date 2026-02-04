@@ -132,11 +132,13 @@ func TestParseSQL_COUNT_Functions(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error, but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
@@ -225,11 +227,13 @@ func TestParseSQL_SELECT_Expressions(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error, but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
@@ -309,11 +313,13 @@ func TestParseSQL_WHERE_Clauses(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error, but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
@@ -467,11 +473,13 @@ func TestParseSQL_LIMIT_Clauses(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error, but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
@@ -548,11 +556,13 @@ func TestParseSQL_SHOW_Statements(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error, but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 

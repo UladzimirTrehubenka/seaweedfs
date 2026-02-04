@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
@@ -21,7 +22,6 @@ type testMoveCase struct {
 }
 
 func TestIsGoodMove(t *testing.T) {
-
 	var tests = []testMoveCase{
 
 		{
@@ -247,7 +247,6 @@ func TestIsGoodMove(t *testing.T) {
 				tt.name, tt.expected, tt.sourceLocation, tt.targetLocation, tt.replication)
 		}
 	}
-
 }
 
 func TestBalance(t *testing.T) {
@@ -259,31 +258,28 @@ func TestBalance(t *testing.T) {
 	if err := c.balanceVolumeServers(diskTypes, volumeReplicas, volumeServers, nil, "ALL_COLLECTIONS"); err != nil {
 		t.Errorf("balance: %v", err)
 	}
-
 }
 
 func TestVolumeSelection(t *testing.T) {
 	topologyInfo := parseOutput(topoData)
 
-	vids, err := collectVolumeIdsForTierChange(topologyInfo, 1000, types.ToDiskType(types.HddType), "", 20.0, 0)
+	vids, err := collectVolumeIdsForTierChange(topologyInfo, 1000, types.HardDriveType, "", 20.0, 0)
 	if err != nil {
 		t.Errorf("collectVolumeIdsForTierChange: %v", err)
 	}
-	assert.Equal(t, 378, len(vids))
-
+	assert.Len(t, vids, 378)
 }
 
 func TestDeleteEmptySelection(t *testing.T) {
 	topologyInfo := parseOutput(topoData)
 
 	eachDataNode(topologyInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
-		for _, diskInfo := range dn.DiskInfos {
-			for _, v := range diskInfo.VolumeInfos {
-				if v.Size <= super_block.SuperBlockSize && v.ModifiedAtSecond > 0 {
-					fmt.Printf("empty volume %d from %s\n", v.Id, dn.Id)
+		for _, diskInfo := range dn.GetDiskInfos() {
+			for _, v := range diskInfo.GetVolumeInfos() {
+				if v.GetSize() <= super_block.SuperBlockSize && v.GetModifiedAtSecond() > 0 {
+					fmt.Printf("empty volume %d from %s\n", v.GetId(), dn.GetId())
 				}
 			}
 		}
 	})
-
 }

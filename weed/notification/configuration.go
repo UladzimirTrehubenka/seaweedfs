@@ -1,9 +1,10 @@
 package notification
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 type MessageQueue interface {
@@ -21,7 +22,6 @@ var (
 )
 
 func LoadConfiguration(config *util.ViperProxy, prefix string) {
-
 	if config == nil {
 		return
 	}
@@ -36,10 +36,10 @@ func LoadConfiguration(config *util.ViperProxy, prefix string) {
 			}
 			Queue = queue
 			glog.V(0).Infof("Configure notification message queue for %s", queue.GetName())
+
 			return
 		}
 	}
-
 }
 
 func validateOneEnabledQueue(config *util.ViperProxy) {

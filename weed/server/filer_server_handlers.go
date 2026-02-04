@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -39,6 +40,7 @@ func (fs *FilerServer) filerHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if !originFound {
 				writeJsonError(w, r, http.StatusForbidden, errors.New("origin not allowed"))
+
 				return
 			}
 		}
@@ -52,6 +54,7 @@ func (fs *FilerServer) filerHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodOptions {
 		OptionsHandler(w, r, false)
+
 		return
 	}
 
@@ -64,6 +67,7 @@ func (fs *FilerServer) filerHandler(w http.ResponseWriter, r *http.Request) {
 		fs.proxyToVolumeServer(w, r, fileId)
 		stats.FilerHandlerCounter.WithLabelValues(stats.ChunkProxy).Inc()
 		stats.FilerRequestHistogram.WithLabelValues(stats.ChunkProxy).Observe(time.Since(start).Seconds())
+
 		return
 	}
 	requestMethod := r.Method
@@ -75,6 +79,7 @@ func (fs *FilerServer) filerHandler(w http.ResponseWriter, r *http.Request) {
 	isReadHttpCall := r.Method == http.MethodGet || r.Method == http.MethodHead
 	if !fs.maybeCheckJwtAuthorization(r, !isReadHttpCall) {
 		writeJsonError(w, r, http.StatusUnauthorized, errors.New("wrong jwt"))
+
 		return
 	}
 
@@ -142,7 +147,6 @@ func (fs *FilerServer) filerHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fs *FilerServer) readonlyFilerHandler(w http.ResponseWriter, r *http.Request) {
-
 	start := time.Now()
 	statusRecorder := stats.NewStatusResponseWriter(w)
 	w = statusRecorder
@@ -162,6 +166,7 @@ func (fs *FilerServer) readonlyFilerHandler(w http.ResponseWriter, r *http.Reque
 			}
 			if !originFound {
 				writeJsonError(w, r, http.StatusForbidden, errors.New("origin not allowed"))
+
 				return
 			}
 		}
@@ -178,11 +183,13 @@ func (fs *FilerServer) readonlyFilerHandler(w http.ResponseWriter, r *http.Reque
 	// We handle OPTIONS first because it never should be authenticated
 	if r.Method == http.MethodOptions {
 		OptionsHandler(w, r, true)
+
 		return
 	}
 
 	if !fs.maybeCheckJwtAuthorization(r, false) {
 		writeJsonError(w, r, http.StatusUnauthorized, errors.New("wrong jwt"))
+
 		return
 	}
 
@@ -210,7 +217,6 @@ func OptionsHandler(w http.ResponseWriter, r *http.Request, isReadOnly bool) {
 
 // maybeCheckJwtAuthorization returns true if access should be granted, false if it should be denied
 func (fs *FilerServer) maybeCheckJwtAuthorization(r *http.Request, isWrite bool) bool {
-
 	if !isWrite && r.URL.Path == "/" {
 		return true
 	}
@@ -234,22 +240,26 @@ func (fs *FilerServer) maybeCheckJwtAuthorization(r *http.Request, isWrite bool)
 	tokenStr := security.GetJwt(r)
 	if tokenStr == "" {
 		glog.V(1).Infof("missing jwt from %s", r.RemoteAddr)
+
 		return false
 	}
 
 	token, err := security.DecodeJwt(signingKey, tokenStr, &security.SeaweedFilerClaims{})
 	if err != nil {
 		glog.V(1).Infof("jwt verification error from %s: %v", r.RemoteAddr, err)
+
 		return false
 	}
 	if !token.Valid {
 		glog.V(1).Infof("jwt invalid from %s: %v", r.RemoteAddr, tokenStr)
+
 		return false
 	}
 
 	claims, ok := token.Claims.(*security.SeaweedFilerClaims)
 	if !ok {
 		glog.V(1).Infof("jwt claims not of type *SeaweedFilerClaims from %s", r.RemoteAddr)
+
 		return false
 	}
 
@@ -258,24 +268,21 @@ func (fs *FilerServer) maybeCheckJwtAuthorization(r *http.Request, isWrite bool)
 		for _, prefix := range claims.AllowedPrefixes {
 			if strings.HasPrefix(r.URL.Path, prefix) {
 				hasPrefix = true
+
 				break
 			}
 		}
 		if !hasPrefix {
 			glog.V(1).Infof("jwt path not allowed from %s: %v", r.RemoteAddr, r.URL.Path)
+
 			return false
 		}
 	}
 	if len(claims.AllowedMethods) > 0 {
-		hasMethod := false
-		for _, method := range claims.AllowedMethods {
-			if method == r.Method {
-				hasMethod = true
-				break
-			}
-		}
+		hasMethod := slices.Contains(claims.AllowedMethods, r.Method)
 		if !hasMethod {
 			glog.V(1).Infof("jwt method not allowed from %s: %v", r.RemoteAddr, r.Method)
+
 			return false
 		}
 	}
@@ -285,7 +292,7 @@ func (fs *FilerServer) maybeCheckJwtAuthorization(r *http.Request, isWrite bool)
 
 func (fs *FilerServer) filerHealthzHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "SeaweedFS "+version.VERSION)
-	if _, err := fs.filer.Store.FindEntry(context.Background(), filer.TopicsDir); err != nil && err != filer_pb.ErrNotFound {
+	if _, err := fs.filer.Store.FindEntry(context.Background(), filer.TopicsDir); err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 		glog.Warningf("filerHealthzHandler FindEntry: %+v", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {

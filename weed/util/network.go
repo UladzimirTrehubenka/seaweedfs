@@ -12,6 +12,7 @@ func DetectedHostAddress() string {
 	netInterfaces, err := net.Interfaces()
 	if err != nil {
 		glog.V(0).Infof("failed to detect net interfaces: %v", err)
+
 		return ""
 	}
 
@@ -54,6 +55,7 @@ func selectIpV4(netInterfaces []net.Interface, isIpV4 bool) string {
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -62,6 +64,7 @@ func JoinHostPort(host string, port int) string {
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
 		return host + ":" + portStr
 	}
+
 	return net.JoinHostPort(host, portStr)
 }
 
@@ -73,5 +76,6 @@ func GetVolumeServerId(id, ip string, port int) string {
 	if volumeServerId == "" {
 		volumeServerId = JoinHostPort(ip, port)
 	}
+
 	return volumeServerId
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
 	"github.com/seaweedfs/seaweedfs/weed/remote_storage"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -28,12 +29,12 @@ func (s WasabiRemoteStorageMaker) Make(conf *remote_pb.RemoteConf) (remote_stora
 		supportTagging: true,
 		conf:           conf,
 	}
-	accessKey := util.Nvl(conf.WasabiAccessKey)
-	secretKey := util.Nvl(conf.WasabiSecretKey)
+	accessKey := util.Nvl(conf.GetWasabiAccessKey())
+	secretKey := util.Nvl(conf.GetWasabiSecretKey())
 
 	config := &aws.Config{
-		Endpoint:                      aws.String(conf.WasabiEndpoint),
-		Region:                        aws.String(conf.WasabiRegion),
+		Endpoint:                      aws.String(conf.GetWasabiEndpoint()),
+		Region:                        aws.String(conf.GetWasabiRegion()),
 		S3ForcePathStyle:              aws.Bool(true),
 		S3DisableContentMD5Validation: aws.Bool(true),
 	}
@@ -47,6 +48,7 @@ func (s WasabiRemoteStorageMaker) Make(conf *remote_pb.RemoteConf) (remote_stora
 	}
 	sess.Handlers.Build.PushFront(skipSha256PayloadSigning)
 	client.conn = s3.New(sess)
+
 	return client, nil
 }
 

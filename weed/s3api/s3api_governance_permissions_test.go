@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -265,7 +266,7 @@ func TestGovernanceBypassHeader(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("DELETE", "/bucket/object", nil)
+			req := httptest.NewRequest(http.MethodDelete, "/bucket/object", nil)
 			if tt.headerValue != "" {
 				req.Header.Set("x-amz-bypass-governance-retention", tt.headerValue)
 			}
@@ -335,10 +336,11 @@ func TestGovernanceRetentionModeChecking(t *testing.T) {
 			var hasError bool
 			var errorType string
 
-			if tt.retentionMode == s3_constants.RetentionModeCompliance {
+			switch tt.retentionMode {
+			case s3_constants.RetentionModeCompliance:
 				hasError = true
 				errorType = "compliance mode"
-			} else if tt.retentionMode == s3_constants.RetentionModeGovernance {
+			case s3_constants.RetentionModeGovernance:
 				if !tt.bypassGovernance {
 					hasError = true
 					errorType = "governance mode"
@@ -448,7 +450,7 @@ func TestGovernancePermissionHTTPFlow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock HTTP request
-			req, _ := http.NewRequest("DELETE", "/bucket/test-object", nil)
+			req, _ := http.NewRequest(http.MethodDelete, "/bucket/test-object", nil)
 			if tt.headerValue != "" {
 				req.Header.Set("x-amz-bypass-governance-retention", tt.headerValue)
 			}
@@ -469,7 +471,7 @@ func TestGovernancePermissionMethodCalls(t *testing.T) {
 
 	// This is the pattern used in DeleteObjectHandler:
 	t.Run("delete_object_handler_pattern", func(t *testing.T) {
-		req, _ := http.NewRequest("DELETE", "/bucket/test-object", nil)
+		req, _ := http.NewRequest(http.MethodDelete, "/bucket/test-object", nil)
 		req.Header.Set("x-amz-bypass-governance-retention", "true")
 
 		// Extract parameters as done in the handler
@@ -490,7 +492,7 @@ func TestGovernancePermissionMethodCalls(t *testing.T) {
 
 	// This is the pattern used in PutObjectHandler:
 	t.Run("put_object_handler_pattern", func(t *testing.T) {
-		req, _ := http.NewRequest("PUT", "/bucket/test-object", nil)
+		req, _ := http.NewRequest(http.MethodPut, "/bucket/test-object", nil)
 		req.Header.Set("x-amz-bypass-governance-retention", "true")
 
 		// Extract parameters as done in the handler
@@ -586,12 +588,12 @@ func TestGovernanceBypassNotPermittedError(t *testing.T) {
 				}
 			}
 
-			if simulatedError != tc.expectedError {
+			if !errors.Is(simulatedError, tc.expectedError) {
 				t.Errorf("expected error %v, got %v. %s", tc.expectedError, simulatedError, tc.description)
 			}
 
 			// Verify ErrGovernanceBypassNotPermitted is returned in the right case
-			if tc.name == "governance_bypass_without_permission" && simulatedError != ErrGovernanceBypassNotPermitted {
+			if tc.name == "governance_bypass_without_permission" && !errors.Is(simulatedError, ErrGovernanceBypassNotPermitted) {
 				t.Errorf("Test case should return ErrGovernanceBypassNotPermitted but got %v", simulatedError)
 			}
 		})

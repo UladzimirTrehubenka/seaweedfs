@@ -19,8 +19,7 @@ type KeyedTimestamp struct {
 
 func (sub *TopicSubscriber) onEachPartition(assigned *mq_pb.BrokerPartitionAssignment, stopCh chan struct{}, onDataMessageFn OnDataMessageFn) error {
 	// connect to the partition broker
-	return pb.WithBrokerGrpcClient(true, assigned.LeaderBroker, sub.SubscriberConfig.GrpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
-
+	return pb.WithBrokerGrpcClient(true, assigned.GetLeaderBroker(), sub.SubscriberConfig.GrpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
 		subscribeClient, err := client.SubscribeMessage(context.Background())
 		if err != nil {
 			return fmt.Errorf("create subscribe client: %w", err)
@@ -31,10 +30,10 @@ func (sub *TopicSubscriber) onEachPartition(assigned *mq_pb.BrokerPartitionAssig
 			slidingWindowSize = 1
 		}
 
-		po := findPartitionOffset(sub.ContentConfig.PartitionOffsets, assigned.Partition)
+		po := findPartitionOffset(sub.ContentConfig.PartitionOffsets, assigned.GetPartition())
 		if po == nil {
 			po = &schema_pb.PartitionOffset{
-				Partition: assigned.Partition,
+				Partition: assigned.GetPartition(),
 				StartTsNs: sub.ContentConfig.OffsetTsNs,
 			}
 		}
@@ -48,15 +47,15 @@ func (sub *TopicSubscriber) onEachPartition(assigned *mq_pb.BrokerPartitionAssig
 					PartitionOffset:   po,
 					OffsetType:        sub.ContentConfig.OffsetType,
 					Filter:            sub.ContentConfig.Filter,
-					FollowerBroker:    assigned.FollowerBroker,
+					FollowerBroker:    assigned.GetFollowerBroker(),
 					SlidingWindowSize: slidingWindowSize,
 				},
 			},
 		}); err != nil {
-			glog.V(0).Infof("subscriber %s connected to partition %+v at %v: %v", sub.ContentConfig.Topic, assigned.Partition, assigned.LeaderBroker, err)
+			glog.V(0).Infof("subscriber %s connected to partition %+v at %v: %v", sub.ContentConfig.Topic, assigned.GetPartition(), assigned.GetLeaderBroker(), err)
 		}
 
-		glog.V(0).Infof("subscriber %s connected to partition %+v at %v", sub.ContentConfig.Topic, assigned.Partition, assigned.LeaderBroker)
+		glog.V(0).Infof("subscriber %s connected to partition %+v at %v", sub.ContentConfig.Topic, assigned.GetPartition(), assigned.GetLeaderBroker())
 
 		if sub.OnCompletionFunc != nil {
 			defer sub.OnCompletionFunc()
@@ -67,13 +66,16 @@ func (sub *TopicSubscriber) onEachPartition(assigned *mq_pb.BrokerPartitionAssig
 				select {
 				case <-sub.ctx.Done():
 					subscribeClient.CloseSend()
+
 					return
 				case <-stopCh:
 					subscribeClient.CloseSend()
+
 					return
 				case ack, ok := <-sub.PartitionOffsetChan:
 					if !ok {
 						subscribeClient.CloseSend()
+
 						return
 					}
 					subscribeClient.SendMsg(&mq_pb.SubscribeMessageRequest{
@@ -95,10 +97,12 @@ func (sub *TopicSubscriber) onEachPartition(assigned *mq_pb.BrokerPartitionAssig
 				if errors.Is(err, io.EOF) {
 					return nil
 				}
+
 				return fmt.Errorf("subscribe recv: %w", err)
 			}
 			if resp.Message == nil {
 				glog.V(0).Infof("subscriber %s/%s received nil message", sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup)
+
 				continue
 			}
 
@@ -110,33 +114,34 @@ func (sub *TopicSubscriber) onEachPartition(assigned *mq_pb.BrokerPartitionAssig
 			default:
 			}
 
-			switch m := resp.Message.(type) {
+			switch m := resp.GetMessage().(type) {
 			case *mq_pb.SubscribeMessageResponse_Data:
-				if m.Data.Ctrl != nil {
-					glog.V(2).Infof("subscriber %s received control from producer:%s isClose:%v", sub.SubscriberConfig.ConsumerGroup, m.Data.Ctrl.PublisherName, m.Data.Ctrl.IsClose)
+				if m.Data.GetCtrl() != nil {
+					glog.V(2).Infof("subscriber %s received control from producer:%s isClose:%v", sub.SubscriberConfig.ConsumerGroup, m.Data.GetCtrl().GetPublisherName(), m.Data.GetCtrl().GetIsClose())
+
 					continue
 				}
-				if len(m.Data.Key) == 0 {
+				if len(m.Data.GetKey()) == 0 {
 					// fmt.Printf("empty key %+v, type %v\n", m, reflect.TypeOf(m))
 					continue
 				}
 				onDataMessageFn(m)
 			case *mq_pb.SubscribeMessageResponse_Ctrl:
 				// glog.V(0).Infof("subscriber %s/%s/%s received control %+v", sub.ContentConfig.Namespace, sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup, m.Ctrl)
-				if m.Ctrl.IsEndOfStream || m.Ctrl.IsEndOfTopic {
+				if m.Ctrl.GetIsEndOfStream() || m.Ctrl.GetIsEndOfTopic() {
 					return io.EOF
 				}
 			}
 		}
-
 	})
 }
 
 func findPartitionOffset(partitionOffsets []*schema_pb.PartitionOffset, partition *schema_pb.Partition) *schema_pb.PartitionOffset {
 	for _, po := range partitionOffsets {
-		if po.Partition == partition {
+		if po.GetPartition() == partition {
 			return po
 		}
 	}
+
 	return nil
 }

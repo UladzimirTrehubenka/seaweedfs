@@ -17,8 +17,10 @@ func (b *MessageQueueBroker) FindBrokerLeader(c context.Context, request *mq_pb.
 		if err != nil {
 			return err
 		}
-		ret.Broker = resp.Owner
+		ret.Broker = resp.GetOwner()
+
 		return nil
 	})
+
 	return ret, err
 }

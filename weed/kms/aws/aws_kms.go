@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -49,7 +50,7 @@ type AWSKMSConfig struct {
 // NewAWSKMSProvider creates a new AWS KMS provider
 func NewAWSKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, error) {
 	if config == nil {
-		return nil, fmt.Errorf("AWS KMS configuration is required")
+		return nil, errors.New("AWS KMS configuration is required")
 	}
 
 	// Extract configuration
@@ -115,17 +116,18 @@ func NewAWSKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, error
 	}
 
 	glog.V(1).Infof("AWS KMS provider initialized for region %s", region)
+
 	return provider, nil
 }
 
 // GenerateDataKey generates a new data encryption key using AWS KMS
 func (p *AWSKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkms.GenerateDataKeyRequest) (*seaweedkms.GenerateDataKeyResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("GenerateDataKeyRequest cannot be nil")
+		return nil, errors.New("GenerateDataKeyRequest cannot be nil")
 	}
 
 	if req.KeyID == "" {
-		return nil, fmt.Errorf("KeyID is required")
+		return nil, errors.New("KeyID is required")
 	}
 
 	// Validate key spec
@@ -174,17 +176,18 @@ func (p *AWSKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkms.Ge
 	}
 
 	glog.V(4).Infof("AWS KMS: Generated data key for key ID %s (actual: %s)", req.KeyID, actualKeyID)
+
 	return response, nil
 }
 
 // Decrypt decrypts an encrypted data key using AWS KMS
 func (p *AWSKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.DecryptRequest) (*seaweedkms.DecryptResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("DecryptRequest cannot be nil")
+		return nil, errors.New("DecryptRequest cannot be nil")
 	}
 
 	if len(req.CiphertextBlob) == 0 {
-		return nil, fmt.Errorf("CiphertextBlob cannot be empty")
+		return nil, errors.New("CiphertextBlob cannot be empty")
 	}
 
 	// Parse the ciphertext envelope to extract key information
@@ -231,17 +234,18 @@ func (p *AWSKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.DecryptReq
 	}
 
 	glog.V(4).Infof("AWS KMS: Decrypted data key using key ID %s", keyID)
+
 	return response, nil
 }
 
 // DescribeKey validates that a key exists and returns its metadata
 func (p *AWSKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.DescribeKeyRequest) (*seaweedkms.DescribeKeyResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("DescribeKeyRequest cannot be nil")
+		return nil, errors.New("DescribeKeyRequest cannot be nil")
 	}
 
 	if req.KeyID == "" {
-		return nil, fmt.Errorf("KeyID is required")
+		return nil, errors.New("KeyID is required")
 	}
 
 	// Build KMS request
@@ -257,7 +261,7 @@ func (p *AWSKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.Descri
 	}
 
 	if result.KeyMetadata == nil {
-		return nil, fmt.Errorf("no key metadata returned from AWS KMS")
+		return nil, errors.New("no key metadata returned from AWS KMS")
 	}
 
 	metadata := result.KeyMetadata
@@ -304,13 +308,14 @@ func (p *AWSKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.Descri
 	}
 
 	glog.V(4).Infof("AWS KMS: Described key %s (actual: %s, state: %s)", req.KeyID, response.KeyID, response.KeyState)
+
 	return response, nil
 }
 
 // GetKeyID resolves a key alias or ARN to the actual key ID
 func (p *AWSKMSProvider) GetKeyID(ctx context.Context, keyIdentifier string) (string, error) {
 	if keyIdentifier == "" {
-		return "", fmt.Errorf("key identifier cannot be empty")
+		return "", errors.New("key identifier cannot be empty")
 	}
 
 	// Use DescribeKey to resolve the key identifier
@@ -327,12 +332,14 @@ func (p *AWSKMSProvider) GetKeyID(ctx context.Context, keyIdentifier string) (st
 func (p *AWSKMSProvider) Close() error {
 	// AWS SDK clients don't require explicit cleanup
 	glog.V(2).Infof("AWS KMS provider closed")
+
 	return nil
 }
 
 // convertAWSError converts AWS KMS errors to our standard KMS errors
 func (p *AWSKMSProvider) convertAWSError(err error, keyID string) error {
-	if awsErr, ok := err.(awserr.Error); ok {
+	var awsErr awserr.Error
+	if errors.As(err, &awsErr) {
 		switch awsErr.Code() {
 		case "NotFoundException":
 			return &seaweedkms.KMSError{

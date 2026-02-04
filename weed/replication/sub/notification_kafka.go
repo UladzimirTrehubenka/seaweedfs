@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -31,6 +32,7 @@ func (k *KafkaInput) GetName() string {
 func (k *KafkaInput) Initialize(configuration util.Configuration, prefix string) error {
 	glog.V(0).Infof("replication.notification.kafka.hosts: %v\n", configuration.GetStringSlice(prefix+"hosts"))
 	glog.V(0).Infof("replication.notification.kafka.topic: %v\n", configuration.GetString(prefix+"topic"))
+
 	return k.initialize(
 		configuration.GetStringSlice(prefix+"hosts"),
 		configuration.GetString(prefix+"topic"),
@@ -98,7 +100,6 @@ func (k *KafkaInput) initialize(hosts []string, topic string, offsetFile string,
 }
 
 func (k *KafkaInput) ReceiveMessage() (key string, message *filer_pb.EventNotification, onSuccessFn func(), onFailureFn func(), err error) {
-
 	msg := <-k.messageChan
 
 	key = string(msg.Key)
@@ -122,13 +123,16 @@ func loadProgress(offsetFile string) *KafkaProgress {
 	data, err := os.ReadFile(offsetFile)
 	if err != nil {
 		glog.Warningf("failed to read kafka progress file: %s", offsetFile)
+
 		return nil
 	}
 	err = json.Unmarshal(data, progress)
 	if err != nil {
 		glog.Warningf("failed to read kafka progress message: %s", string(data))
+
 		return nil
 	}
+
 	return progress
 }
 
@@ -139,10 +143,11 @@ func (progress *KafkaProgress) saveProgress() error {
 	}
 	err = util.WriteFile(progress.offsetFile, data, 0640)
 	if err != nil {
-		return fmt.Errorf("failed to save progress to %s: %v", progress.offsetFile, err)
+		return fmt.Errorf("failed to save progress to %s: %w", progress.offsetFile, err)
 	}
 
 	progress.lastSaveTime = time.Now()
+
 	return nil
 }
 
@@ -151,8 +156,9 @@ func (progress *KafkaProgress) setOffset(partition int32, offset int64) error {
 	defer progress.Unlock()
 
 	progress.PartitionOffsets[partition] = offset
-	if int(time.Now().Sub(progress.lastSaveTime).Seconds()) > progress.offsetSaveIntervalSeconds {
+	if int(time.Since(progress.lastSaveTime).Seconds()) > progress.offsetSaveIntervalSeconds {
 		return progress.saveProgress()
 	}
+
 	return nil
 }

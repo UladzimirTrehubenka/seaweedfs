@@ -22,7 +22,7 @@ func newSealedBuffers(size int) *SealedBuffers {
 	sbs := &SealedBuffers{}
 
 	sbs.buffers = make([]*MemBuffer, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		sbs.buffers[i] = &MemBuffer{
 			buf: make([]byte, BufferSize),
 		}
@@ -34,7 +34,7 @@ func newSealedBuffers(size int) *SealedBuffers {
 func (sbs *SealedBuffers) SealBuffer(startTime, stopTime time.Time, buf []byte, pos int, startOffset int64, endOffset int64) (newBuf []byte) {
 	oldMemBuffer := sbs.buffers[0]
 	size := len(sbs.buffers)
-	for i := 0; i < size-1; i++ {
+	for i := range size - 1 {
 		sbs.buffers[i].buf = sbs.buffers[i+1].buf
 		sbs.buffers[i].size = sbs.buffers[i+1].size
 		sbs.buffers[i].startTime = sbs.buffers[i+1].startTime
@@ -48,6 +48,7 @@ func (sbs *SealedBuffers) SealBuffer(startTime, stopTime time.Time, buf []byte, 
 	sbs.buffers[size-1].stopTime = stopTime
 	sbs.buffers[size-1].startOffset = startOffset
 	sbs.buffers[size-1].offset = endOffset
+
 	return oldMemBuffer.buf
 }
 
@@ -64,6 +65,7 @@ func (mb *MemBuffer) locateByTs(lastReadTime time.Time) (pos int, err error) {
 		}
 		pos += size + 4
 	}
+
 	return len(mb.buf), nil
 }
 

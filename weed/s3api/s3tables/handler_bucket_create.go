@@ -18,18 +18,21 @@ func (h *S3TablesHandler) handleCreateTableBucket(w http.ResponseWriter, r *http
 	principal := h.getAccountID(r)
 	if !CanCreateTableBucket(principal, principal, "") {
 		h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "not authorized to create table buckets")
+
 		return NewAuthError("CreateTableBucket", principal, "not authorized to create table buckets")
 	}
 
 	var req CreateTableBucketRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	// Validate bucket name
 	if err := validateBucketName(req.Name); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -43,7 +46,7 @@ func (h *S3TablesHandler) handleCreateTableBucket(w http.ResponseWriter, r *http
 		if err != nil {
 			return err
 		}
-		bucketsPath := resp.DirBuckets
+		bucketsPath := resp.GetDirBuckets()
 		if bucketsPath == "" {
 			bucketsPath = s3_constants.DefaultBucketsPath
 		}
@@ -66,26 +69,31 @@ func (h *S3TablesHandler) handleCreateTableBucket(w http.ResponseWriter, r *http
 			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 		tableBucketExists = true
+
 		return nil
 	})
 
 	if err != nil {
 		glog.Errorf("S3Tables: failed to check bucket existence: %v", err)
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to check bucket existence")
+
 		return err
 	}
 
 	if s3BucketExists {
 		h.writeError(w, http.StatusConflict, ErrCodeBucketAlreadyExists, fmt.Sprintf("bucket name %s is already used by an object store bucket", req.Name))
-		return fmt.Errorf("bucket name conflicts with object store bucket")
+
+		return errors.New("bucket name conflicts with object store bucket")
 	}
 
 	if tableBucketExists {
 		h.writeError(w, http.StatusConflict, ErrCodeBucketAlreadyExists, fmt.Sprintf("table bucket %s already exists", req.Name))
-		return fmt.Errorf("bucket already exists")
+
+		return errors.New("bucket already exists")
 	}
 
 	// Create the bucket directory and set metadata as extended attributes
@@ -100,6 +108,7 @@ func (h *S3TablesHandler) handleCreateTableBucket(w http.ResponseWriter, r *http
 	if err != nil {
 		glog.Errorf("S3Tables: failed to marshal metadata: %v", err)
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to marshal metadata")
+
 		return err
 	}
 
@@ -138,6 +147,7 @@ func (h *S3TablesHandler) handleCreateTableBucket(w http.ResponseWriter, r *http
 	if err != nil {
 		glog.Errorf("S3Tables: failed to create table bucket %s: %v", req.Name, err)
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to create table bucket")
+
 		return err
 	}
 
@@ -146,5 +156,6 @@ func (h *S3TablesHandler) handleCreateTableBucket(w http.ResponseWriter, r *http
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }

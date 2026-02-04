@@ -163,11 +163,11 @@ func runMaster(cmd *Command, args []string) bool {
 	go stats_collect.StartMetricsServer(*m.metricsHttpIp, *m.metricsHttpPort)
 	go stats_collect.LoopPushingMetric("masterServer", util.JoinHostPort(*m.ip, *m.port), *m.metricsAddress, *m.metricsIntervalSec)
 	startMaster(m, masterWhiteList)
+
 	return true
 }
 
 func startMaster(masterOption MasterOptions, masterWhiteList []string) {
-
 	backend.LoadConfiguration(util.GetViper())
 
 	if *masterOption.portGrpc == 0 {
@@ -323,6 +323,7 @@ func startMaster(masterOption MasterOptions, masterWhiteList []string) {
 
 func isSingleMasterMode(peers string) bool {
 	p := strings.ToLower(strings.TrimSpace(peers))
+
 	return p == "none"
 }
 
@@ -334,7 +335,8 @@ func checkPeers(masterIp string, masterPort int, masterGrpcPort int, peers strin
 	if isSingleMasterMode(peers) {
 		glog.V(0).Infof("Running in single-master mode (peers=none), no quorum required")
 		cleanedPeers = []pb.ServerAddress{masterAddress}
-		return
+
+		return masterAddress, cleanedPeers
 	}
 
 	peers = strings.TrimSpace(peers)
@@ -345,6 +347,7 @@ func checkPeers(masterIp string, masterPort int, masterGrpcPort int, peers strin
 	for _, peer := range cleanedPeers {
 		if peer.ToHttpAddress() == masterAddress.ToHttpAddress() {
 			hasSelf = true
+
 			break
 		}
 	}
@@ -355,7 +358,8 @@ func checkPeers(masterIp string, masterPort int, masterGrpcPort int, peers strin
 	if len(cleanedPeers)%2 == 0 {
 		glog.Fatalf("Only odd number of masters are supported: %+v", cleanedPeers)
 	}
-	return
+
+	return masterAddress, cleanedPeers
 }
 
 func isTheFirstOne(self pb.ServerAddress, peers []pb.ServerAddress) bool {
@@ -365,11 +369,13 @@ func isTheFirstOne(self pb.ServerAddress, peers []pb.ServerAddress) bool {
 	if len(peers) <= 0 {
 		return true
 	}
+
 	return self == peers[0]
 }
 
 func (m *MasterOptions) toMasterOption(whiteList []string) *weed_server.MasterOption {
 	masterAddress := pb.NewServerAddress(*m.ip, *m.port, *m.portGrpc)
+
 	return &weed_server.MasterOption{
 		Master:                     masterAddress,
 		MetaFolder:                 *m.metaFolder,

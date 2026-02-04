@@ -22,7 +22,6 @@ import (
  * correct directory type bits use  mode|S_IFDIR
  * */
 func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out *fuse.EntryOut) (code fuse.Status) {
-
 	if wfs.IsOverQuotaWithUncommitted() {
 		return fuse.Status(syscall.ENOSPC)
 	}
@@ -45,13 +44,12 @@ func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out
 
 	dirFullPath, code := wfs.inodeToPath.GetPath(in.NodeId)
 	if code != fuse.OK {
-		return
+		return code
 	}
 
 	entryFullPath := dirFullPath.Child(name)
 
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		wfs.mapPbIdFromLocalToFiler(newEntry)
 		defer wfs.mapPbIdFromFilerToLocal(newEntry)
 
@@ -65,6 +63,7 @@ func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out
 		glog.V(1).Infof("mkdir: %v", request)
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			glog.V(0).Infof("mkdir %s: %v", entryFullPath, err)
+
 			return err
 		}
 
@@ -72,7 +71,7 @@ func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out
 		// This avoids polluting the cache with partial directory data.
 		if wfs.metaCache.IsDirectoryCached(dirFullPath) {
 			wfs.inodeToPath.TouchDirectory(dirFullPath)
-			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, request.Entry)); err != nil {
+			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.GetDirectory(), request.GetEntry())); err != nil {
 				return fmt.Errorf("local mkdir dir %s: %w", entryFullPath, err)
 			}
 		}
@@ -86,17 +85,15 @@ func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out
 		return fuse.EIO
 	}
 
-	inode := wfs.inodeToPath.Lookup(entryFullPath, newEntry.Attributes.Crtime, true, false, 0, true)
+	inode := wfs.inodeToPath.Lookup(entryFullPath, newEntry.GetAttributes().GetCrtime(), true, false, 0, true)
 
 	wfs.outputPbEntry(out, inode, newEntry)
 
 	return fuse.OK
-
 }
 
 /** Remove a directory */
 func (wfs *WFS) Rmdir(cancel <-chan struct{}, header *fuse.InHeader, name string) (code fuse.Status) {
-
 	if name == "." {
 		return fuse.Status(syscall.EINVAL)
 	}
@@ -106,7 +103,7 @@ func (wfs *WFS) Rmdir(cancel <-chan struct{}, header *fuse.InHeader, name string
 
 	dirFullPath, code := wfs.inodeToPath.GetPath(header.NodeId)
 	if code != fuse.OK {
-		return
+		return code
 	}
 	entryFullPath := dirFullPath.Child(name)
 
@@ -118,6 +115,7 @@ func (wfs *WFS) Rmdir(cancel <-chan struct{}, header *fuse.InHeader, name string
 		if strings.Contains(err.Error(), filer.MsgFailDelNonEmptyFolder) {
 			return fuse.Status(syscall.ENOTEMPTY)
 		}
+
 		return fuse.ENOENT
 	}
 
@@ -126,5 +124,4 @@ func (wfs *WFS) Rmdir(cancel <-chan struct{}, header *fuse.InHeader, name string
 	wfs.inodeToPath.TouchDirectory(dirFullPath)
 
 	return fuse.OK
-
 }

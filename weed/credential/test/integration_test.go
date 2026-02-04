@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
@@ -29,6 +30,7 @@ func TestStoreRegistration(t *testing.T) {
 		for _, storeName := range storeNames {
 			if string(storeName) == expected {
 				found = true
+
 				break
 			}
 		}
@@ -85,8 +87,8 @@ func TestMemoryStoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUser failed: %v", err)
 	}
-	if user.Name != "testuser" {
-		t.Errorf("Expected user name 'testuser', got %s", user.Name)
+	if user.GetName() != "testuser" {
+		t.Errorf("Expected user name 'testuser', got %s", user.GetName())
 	}
 
 	// Test ListUsers
@@ -103,8 +105,8 @@ func TestMemoryStoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByAccessKey failed: %v", err)
 	}
-	if userByKey.Name != "testuser" {
-		t.Errorf("Expected user name 'testuser', got %s", userByKey.Name)
+	if userByKey.GetName() != "testuser" {
+		t.Errorf("Expected user name 'testuser', got %s", userByKey.GetName())
 	}
 
 	// Test DeleteUser
@@ -115,7 +117,7 @@ func TestMemoryStoreIntegration(t *testing.T) {
 
 	// Verify user was deleted
 	_, err = cm.GetUser(ctx, "testuser")
-	if err != credential.ErrUserNotFound {
+	if !errors.Is(err, credential.ErrUserNotFound) {
 		t.Errorf("Expected ErrUserNotFound, got %v", err)
 	}
 }

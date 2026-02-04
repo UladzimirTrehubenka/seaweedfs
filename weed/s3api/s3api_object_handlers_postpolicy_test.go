@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 )
 
 // TestPostPolicyKeyNormalization tests that object keys from presigned POST
@@ -159,7 +160,7 @@ func TestPostPolicyFilenameSubstitution(t *testing.T) {
 			// Simulate the substitution logic from PostPolicyBucketHandler
 			key := tt.keyTemplate
 			if tt.uploadedFilename != "" && strings.Contains(key, "${filename}") {
-				key = strings.Replace(key, "${filename}", tt.uploadedFilename, -1)
+				key = strings.ReplaceAll(key, "${filename}", tt.uploadedFilename)
 			}
 
 			// Normalize using the actual function
@@ -232,7 +233,7 @@ func TestExtractPostPolicyFormValues(t *testing.T) {
 				assert.NotNil(t, filePart)
 				assert.Equal(t, tt.fileName, fileName)
 				assert.NotEmpty(t, fileContentType)
-				assert.Greater(t, fileSize, int64(0))
+				assert.Positive(t, fileSize)
 				assert.Equal(t, tt.key, formValues.Get("Key"))
 
 				filePart.Close()

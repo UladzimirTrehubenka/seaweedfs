@@ -297,7 +297,7 @@ func TestExtractHostHeader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock request
-			req, err := http.NewRequest("GET", "http://"+tt.hostHeader+"/bucket/object", nil)
+			req, err := http.NewRequest(http.MethodGet, "http://"+tt.hostHeader+"/bucket/object", nil)
 			if err != nil {
 				t.Fatalf("Failed to create request: %v", err)
 			}

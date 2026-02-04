@@ -2,10 +2,11 @@ package kafka
 
 import (
 	"github.com/Shopify/sarama"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/notification"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -24,6 +25,7 @@ func (k *KafkaQueue) GetName() string {
 func (k *KafkaQueue) Initialize(configuration util.Configuration, prefix string) (err error) {
 	glog.V(0).Infof("filer.notification.kafka.hosts: %v\n", configuration.GetStringSlice(prefix+"hosts"))
 	glog.V(0).Infof("filer.notification.kafka.topic: %v\n", configuration.GetString(prefix+"topic"))
+
 	return k.initialize(
 		configuration.GetStringSlice(prefix+"hosts"),
 		configuration.GetString(prefix+"topic"),
@@ -43,6 +45,7 @@ func (k *KafkaQueue) initialize(hosts []string, topic string) (err error) {
 	k.topic = topic
 	go k.handleSuccess()
 	go k.handleError()
+
 	return nil
 }
 

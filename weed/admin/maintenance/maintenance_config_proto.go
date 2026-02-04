@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -104,151 +105,156 @@ func (mcm *MaintenanceConfigManager) GetReplicationConfig(taskType string) *work
 
 // GetVacuumTaskConfigForType returns vacuum configuration for a specific task type
 func (mcm *MaintenanceConfigManager) GetVacuumTaskConfigForType(taskType string) *worker_pb.VacuumTaskConfig {
-	return GetVacuumTaskConfig(mcm.config.Policy, MaintenanceTaskType(taskType))
+	return GetVacuumTaskConfig(mcm.config.GetPolicy(), MaintenanceTaskType(taskType))
 }
 
 // GetErasureCodingTaskConfigForType returns erasure coding configuration for a specific task type
 func (mcm *MaintenanceConfigManager) GetErasureCodingTaskConfigForType(taskType string) *worker_pb.ErasureCodingTaskConfig {
-	return GetErasureCodingTaskConfig(mcm.config.Policy, MaintenanceTaskType(taskType))
+	return GetErasureCodingTaskConfig(mcm.config.GetPolicy(), MaintenanceTaskType(taskType))
 }
 
 // GetBalanceTaskConfigForType returns balance configuration for a specific task type
 func (mcm *MaintenanceConfigManager) GetBalanceTaskConfigForType(taskType string) *worker_pb.BalanceTaskConfig {
-	return GetBalanceTaskConfig(mcm.config.Policy, MaintenanceTaskType(taskType))
+	return GetBalanceTaskConfig(mcm.config.GetPolicy(), MaintenanceTaskType(taskType))
 }
 
 // GetReplicationTaskConfigForType returns replication configuration for a specific task type
 func (mcm *MaintenanceConfigManager) GetReplicationTaskConfigForType(taskType string) *worker_pb.ReplicationTaskConfig {
-	return GetReplicationTaskConfig(mcm.config.Policy, MaintenanceTaskType(taskType))
+	return GetReplicationTaskConfig(mcm.config.GetPolicy(), MaintenanceTaskType(taskType))
 }
 
 // Helper methods
 
 func (mcm *MaintenanceConfigManager) getTaskPolicy(taskType string) *worker_pb.TaskPolicy {
-	if mcm.config.Policy != nil && mcm.config.Policy.TaskPolicies != nil {
-		return mcm.config.Policy.TaskPolicies[taskType]
+	if mcm.config.GetPolicy() != nil && mcm.config.Policy.TaskPolicies != nil {
+		return mcm.config.GetPolicy().GetTaskPolicies()[taskType]
 	}
+
 	return nil
 }
 
 // IsTaskEnabled returns whether a task type is enabled
 func (mcm *MaintenanceConfigManager) IsTaskEnabled(taskType string) bool {
 	if policy := mcm.getTaskPolicy(taskType); policy != nil {
-		return policy.Enabled
+		return policy.GetEnabled()
 	}
+
 	return false
 }
 
 // GetMaxConcurrent returns the max concurrent limit for a task type
 func (mcm *MaintenanceConfigManager) GetMaxConcurrent(taskType string) int32 {
 	if policy := mcm.getTaskPolicy(taskType); policy != nil {
-		return policy.MaxConcurrent
+		return policy.GetMaxConcurrent()
 	}
+
 	return 1 // Default
 }
 
 // GetRepeatInterval returns the repeat interval for a task type in seconds
 func (mcm *MaintenanceConfigManager) GetRepeatInterval(taskType string) int32 {
 	if policy := mcm.getTaskPolicy(taskType); policy != nil {
-		return policy.RepeatIntervalSeconds
+		return policy.GetRepeatIntervalSeconds()
 	}
-	return mcm.config.Policy.DefaultRepeatIntervalSeconds
+
+	return mcm.config.GetPolicy().GetDefaultRepeatIntervalSeconds()
 }
 
 // GetCheckInterval returns the check interval for a task type in seconds
 func (mcm *MaintenanceConfigManager) GetCheckInterval(taskType string) int32 {
 	if policy := mcm.getTaskPolicy(taskType); policy != nil {
-		return policy.CheckIntervalSeconds
+		return policy.GetCheckIntervalSeconds()
 	}
-	return mcm.config.Policy.DefaultCheckIntervalSeconds
+
+	return mcm.config.GetPolicy().GetDefaultCheckIntervalSeconds()
 }
 
 // Duration accessor methods
 
 // GetScanInterval returns the scan interval as a time.Duration
 func (mcm *MaintenanceConfigManager) GetScanInterval() time.Duration {
-	return time.Duration(mcm.config.ScanIntervalSeconds) * time.Second
+	return time.Duration(mcm.config.GetScanIntervalSeconds()) * time.Second
 }
 
 // GetWorkerTimeout returns the worker timeout as a time.Duration
 func (mcm *MaintenanceConfigManager) GetWorkerTimeout() time.Duration {
-	return time.Duration(mcm.config.WorkerTimeoutSeconds) * time.Second
+	return time.Duration(mcm.config.GetWorkerTimeoutSeconds()) * time.Second
 }
 
 // GetTaskTimeout returns the task timeout as a time.Duration
 func (mcm *MaintenanceConfigManager) GetTaskTimeout() time.Duration {
-	return time.Duration(mcm.config.TaskTimeoutSeconds) * time.Second
+	return time.Duration(mcm.config.GetTaskTimeoutSeconds()) * time.Second
 }
 
 // GetRetryDelay returns the retry delay as a time.Duration
 func (mcm *MaintenanceConfigManager) GetRetryDelay() time.Duration {
-	return time.Duration(mcm.config.RetryDelaySeconds) * time.Second
+	return time.Duration(mcm.config.GetRetryDelaySeconds()) * time.Second
 }
 
 // GetCleanupInterval returns the cleanup interval as a time.Duration
 func (mcm *MaintenanceConfigManager) GetCleanupInterval() time.Duration {
-	return time.Duration(mcm.config.CleanupIntervalSeconds) * time.Second
+	return time.Duration(mcm.config.GetCleanupIntervalSeconds()) * time.Second
 }
 
 // GetTaskRetention returns the task retention period as a time.Duration
 func (mcm *MaintenanceConfigManager) GetTaskRetention() time.Duration {
-	return time.Duration(mcm.config.TaskRetentionSeconds) * time.Second
+	return time.Duration(mcm.config.GetTaskRetentionSeconds()) * time.Second
 }
 
 // ValidateMaintenanceConfigWithSchema validates protobuf maintenance configuration using ConfigField rules
 func ValidateMaintenanceConfigWithSchema(config *worker_pb.MaintenanceConfig) error {
 	if config == nil {
-		return fmt.Errorf("configuration cannot be nil")
+		return errors.New("configuration cannot be nil")
 	}
 
 	// Get the schema to access field validation rules
 	schema := GetMaintenanceConfigSchema()
 
 	// Validate each field individually using the ConfigField rules
-	if err := validateFieldWithSchema(schema, "enabled", config.Enabled); err != nil {
+	if err := validateFieldWithSchema(schema, "enabled", config.GetEnabled()); err != nil {
 		return err
 	}
 
-	if err := validateFieldWithSchema(schema, "scan_interval_seconds", int(config.ScanIntervalSeconds)); err != nil {
+	if err := validateFieldWithSchema(schema, "scan_interval_seconds", int(config.GetScanIntervalSeconds())); err != nil {
 		return err
 	}
 
-	if err := validateFieldWithSchema(schema, "worker_timeout_seconds", int(config.WorkerTimeoutSeconds)); err != nil {
+	if err := validateFieldWithSchema(schema, "worker_timeout_seconds", int(config.GetWorkerTimeoutSeconds())); err != nil {
 		return err
 	}
 
-	if err := validateFieldWithSchema(schema, "task_timeout_seconds", int(config.TaskTimeoutSeconds)); err != nil {
+	if err := validateFieldWithSchema(schema, "task_timeout_seconds", int(config.GetTaskTimeoutSeconds())); err != nil {
 		return err
 	}
 
-	if err := validateFieldWithSchema(schema, "retry_delay_seconds", int(config.RetryDelaySeconds)); err != nil {
+	if err := validateFieldWithSchema(schema, "retry_delay_seconds", int(config.GetRetryDelaySeconds())); err != nil {
 		return err
 	}
 
-	if err := validateFieldWithSchema(schema, "max_retries", int(config.MaxRetries)); err != nil {
+	if err := validateFieldWithSchema(schema, "max_retries", int(config.GetMaxRetries())); err != nil {
 		return err
 	}
 
-	if err := validateFieldWithSchema(schema, "cleanup_interval_seconds", int(config.CleanupIntervalSeconds)); err != nil {
+	if err := validateFieldWithSchema(schema, "cleanup_interval_seconds", int(config.GetCleanupIntervalSeconds())); err != nil {
 		return err
 	}
 
-	if err := validateFieldWithSchema(schema, "task_retention_seconds", int(config.TaskRetentionSeconds)); err != nil {
+	if err := validateFieldWithSchema(schema, "task_retention_seconds", int(config.GetTaskRetentionSeconds())); err != nil {
 		return err
 	}
 
 	// Validate policy fields if present
-	if config.Policy != nil {
+	if config.GetPolicy() != nil {
 		// Note: These field names might need to be adjusted based on the actual schema
-		if err := validatePolicyField("global_max_concurrent", int(config.Policy.GlobalMaxConcurrent)); err != nil {
+		if err := validatePolicyField("global_max_concurrent", int(config.GetPolicy().GetGlobalMaxConcurrent())); err != nil {
 			return err
 		}
 
-		if err := validatePolicyField("default_repeat_interval_seconds", int(config.Policy.DefaultRepeatIntervalSeconds)); err != nil {
+		if err := validatePolicyField("default_repeat_interval_seconds", int(config.GetPolicy().GetDefaultRepeatIntervalSeconds())); err != nil {
 			return err
 		}
 
-		if err := validatePolicyField("default_check_interval_seconds", int(config.Policy.DefaultCheckIntervalSeconds)); err != nil {
+		if err := validatePolicyField("default_check_interval_seconds", int(config.GetPolicy().GetDefaultCheckIntervalSeconds())); err != nil {
 			return err
 		}
 	}
@@ -257,7 +263,7 @@ func ValidateMaintenanceConfigWithSchema(config *worker_pb.MaintenanceConfig) er
 }
 
 // validateFieldWithSchema validates a single field using its ConfigField definition
-func validateFieldWithSchema(schema *MaintenanceConfigSchema, fieldName string, value interface{}) error {
+func validateFieldWithSchema(schema *MaintenanceConfigSchema, fieldName string, value any) error {
 	field := schema.GetFieldByName(fieldName)
 	if field == nil {
 		// Field not in schema, skip validation
@@ -283,5 +289,6 @@ func validatePolicyField(fieldName string, value int) error {
 			return fmt.Errorf("Default Check Interval must be between 1 and 168 hours, got %d", value)
 		}
 	}
+
 	return nil
 }

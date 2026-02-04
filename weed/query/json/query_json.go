@@ -3,9 +3,10 @@ package json
 import (
 	"strconv"
 
-	"github.com/seaweedfs/seaweedfs/weed/query/sqltypes"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/match"
+
+	"github.com/seaweedfs/seaweedfs/weed/query/sqltypes"
 )
 
 type Query struct {
@@ -21,13 +22,14 @@ func QueryJson(jsonLine string, projections []string, query Query) (passedFilter
 		for _, f := range fields {
 			values = append(values, sqltypes.MakeTrusted(sqltypes.Type(f.Type), sqltypes.StringToBytes(f.Raw)))
 		}
+
 		return
 	}
+
 	return false, nil
 }
 
 func filterJson(jsonLine string, query Query) bool {
-
 	value := gjson.Get(jsonLine, query.Field)
 
 	// copied from gjson.go queryMatches() function
@@ -102,6 +104,6 @@ func filterJson(jsonLine string, query Query) bool {
 			return true
 		}
 	}
-	return false
 
+	return false
 }

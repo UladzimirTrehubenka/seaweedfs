@@ -2,18 +2,20 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
 	"github.com/seaweedfs/seaweedfs/weed/remote_storage"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -59,7 +61,6 @@ var (
 )
 
 func (c *commandRemoteConfigure) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	conf := &remote_pb.RemoteConf{}
 
 	remoteConfigureCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -119,63 +120,58 @@ func (c *commandRemoteConfigure) Do(args []string, commandEnv *CommandEnv, write
 		return nil
 	}
 
-	if conf.Type != "s3" {
+	if conf.GetType() != "s3" {
 		// clear out the default values
 		conf.S3Region = ""
 		conf.S3ForcePathStyle = false
 	}
 
-	if conf.Name == "" {
+	if conf.GetName() == "" {
 		return c.listExistingRemoteStorages(commandEnv, writer)
 	}
 
-	if !isAlpha(conf.Name) {
-		return fmt.Errorf("only letters and numbers allowed in name: %v", conf.Name)
+	if !isAlpha(conf.GetName()) {
+		return fmt.Errorf("only letters and numbers allowed in name: %v", conf.GetName())
 	}
 
 	if *isDelete {
-		return c.deleteRemoteStorage(commandEnv, writer, conf.Name)
+		return c.deleteRemoteStorage(commandEnv, writer, conf.GetName())
 	}
 
 	return c.saveRemoteStorage(commandEnv, writer, conf)
-
 }
 
 func (c *commandRemoteConfigure) listExistingRemoteStorages(commandEnv *CommandEnv, writer io.Writer) error {
-
 	return filer_pb.ReadDirAllEntries(context.Background(), commandEnv, util.FullPath(filer.DirectoryEtcRemote), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if len(entry.Content) == 0 {
-			fmt.Fprintf(writer, "skipping %s\n", entry.Name)
+		if len(entry.GetContent()) == 0 {
+			fmt.Fprintf(writer, "skipping %s\n", entry.GetName())
+
 			return nil
 		}
-		if !strings.HasSuffix(entry.Name, filer.REMOTE_STORAGE_CONF_SUFFIX) {
+		if !strings.HasSuffix(entry.GetName(), filer.REMOTE_STORAGE_CONF_SUFFIX) {
 			return nil
 		}
 		conf := &remote_pb.RemoteConf{}
 
-		if err := proto.Unmarshal(entry.Content, conf); err != nil {
-			return fmt.Errorf("unmarshal %s/%s: %v", filer.DirectoryEtcRemote, entry.Name, err)
+		if err := proto.Unmarshal(entry.GetContent(), conf); err != nil {
+			return fmt.Errorf("unmarshal %s/%s: %w", filer.DirectoryEtcRemote, entry.GetName(), err)
 		}
 
 		// change secret key to stars
-		conf.S3SecretKey = strings.Repeat("*", len(conf.S3SecretKey))
-		conf.AliyunSecretKey = strings.Repeat("*", len(conf.AliyunSecretKey))
-		conf.BaiduAccessKey = strings.Repeat("*", len(conf.BaiduAccessKey))
-		conf.FilebaseSecretKey = strings.Repeat("*", len(conf.FilebaseSecretKey))
-		conf.StorjSecretKey = strings.Repeat("*", len(conf.StorjSecretKey))
-		conf.TencentSecretKey = strings.Repeat("*", len(conf.TencentSecretKey))
-		conf.WasabiSecretKey = strings.Repeat("*", len(conf.WasabiSecretKey))
+		conf.S3SecretKey = strings.Repeat("*", len(conf.GetS3SecretKey()))
+		conf.AliyunSecretKey = strings.Repeat("*", len(conf.GetAliyunSecretKey()))
+		conf.BaiduAccessKey = strings.Repeat("*", len(conf.GetBaiduAccessKey()))
+		conf.FilebaseSecretKey = strings.Repeat("*", len(conf.GetFilebaseSecretKey()))
+		conf.StorjSecretKey = strings.Repeat("*", len(conf.GetStorjSecretKey()))
+		conf.TencentSecretKey = strings.Repeat("*", len(conf.GetTencentSecretKey()))
+		conf.WasabiSecretKey = strings.Repeat("*", len(conf.GetWasabiSecretKey()))
 
 		return filer.ProtoToText(writer, conf)
-
 	})
-
 }
 
 func (c *commandRemoteConfigure) deleteRemoteStorage(commandEnv *CommandEnv, writer io.Writer, storageName string) error {
-
 	return commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.DeleteEntryRequest{
 			Directory:            filer.DirectoryEtcRemote,
 			Name:                 storageName + filer.REMOTE_STORAGE_CONF_SUFFIX,
@@ -192,24 +188,20 @@ func (c *commandRemoteConfigure) deleteRemoteStorage(commandEnv *CommandEnv, wri
 		}
 
 		return err
-
 	})
-
 }
 
 func (c *commandRemoteConfigure) saveRemoteStorage(commandEnv *CommandEnv, writer io.Writer, conf *remote_pb.RemoteConf) error {
-
 	data, err := proto.Marshal(conf)
 	if err != nil {
 		return err
 	}
 
 	if err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-		return filer.SaveInsideFiler(client, filer.DirectoryEtcRemote, conf.Name+filer.REMOTE_STORAGE_CONF_SUFFIX, data)
-	}); err != nil && err != filer_pb.ErrNotFound {
+		return filer.SaveInsideFiler(client, filer.DirectoryEtcRemote, conf.GetName()+filer.REMOTE_STORAGE_CONF_SUFFIX, data)
+	}); err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 		return err
 	}
 
 	return nil
-
 }

@@ -6,27 +6,31 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // Mock implementations for testing
 type MockHybridMessageScanner struct {
 	mock.Mock
+
 	topic topic.Topic
 }
 
 func (m *MockHybridMessageScanner) ReadParquetStatistics(partitionPath string) ([]*ParquetFileStats, error) {
 	args := m.Called(partitionPath)
+
 	return args.Get(0).([]*ParquetFileStats), args.Error(1)
 }
 
 type MockSQLEngine struct {
 	*SQLEngine
+
 	mockPartitions         map[string][]string
 	mockParquetSourceFiles map[string]map[string]bool
 	mockLiveLogRowCounts   map[string]int64
@@ -53,6 +57,7 @@ func (m *MockSQLEngine) discoverTopicPartitions(namespace, topicName string) ([]
 	if partitions, exists := m.mockPartitions[key]; exists {
 		return partitions, nil
 	}
+
 	return []string{"partition-1", "partition-2"}, nil
 }
 
@@ -60,6 +65,7 @@ func (m *MockSQLEngine) extractParquetSourceFiles(fileStats []*ParquetFileStats)
 	if len(fileStats) == 0 {
 		return make(map[string]bool)
 	}
+
 	return map[string]bool{"converted-log-1": true}
 }
 
@@ -67,10 +73,11 @@ func (m *MockSQLEngine) countLiveLogRowsExcludingParquetSources(ctx context.Cont
 	if count, exists := m.mockLiveLogRowCounts[partition]; exists {
 		return count, nil
 	}
+
 	return 25, nil
 }
 
-func (m *MockSQLEngine) computeLiveLogMinMax(partition, column string, parquetSources map[string]bool) (interface{}, interface{}, error) {
+func (m *MockSQLEngine) computeLiveLogMinMax(partition, column string, parquetSources map[string]bool) (any, any, error) {
 	switch column {
 	case "id":
 		return int64(1), int64(50), nil
@@ -81,15 +88,15 @@ func (m *MockSQLEngine) computeLiveLogMinMax(partition, column string, parquetSo
 	}
 }
 
-func (m *MockSQLEngine) getSystemColumnGlobalMin(column string, allFileStats map[string][]*ParquetFileStats) interface{} {
+func (m *MockSQLEngine) getSystemColumnGlobalMin(column string, allFileStats map[string][]*ParquetFileStats) any {
 	return int64(1000000000)
 }
 
-func (m *MockSQLEngine) getSystemColumnGlobalMax(column string, allFileStats map[string][]*ParquetFileStats) interface{} {
+func (m *MockSQLEngine) getSystemColumnGlobalMax(column string, allFileStats map[string][]*ParquetFileStats) any {
 	return int64(2000000000)
 }
 
-func createMockColumnStats(column string, minVal, maxVal interface{}) *ParquetColumnStats {
+func createMockColumnStats(column string, minVal, maxVal any) *ParquetColumnStats {
 	return &ParquetColumnStats{
 		ColumnName: column,
 		MinValue:   convertToSchemaValue(minVal),
@@ -98,7 +105,7 @@ func createMockColumnStats(column string, minVal, maxVal interface{}) *ParquetCo
 	}
 }
 
-func convertToSchemaValue(val interface{}) *schema_pb.Value {
+func convertToSchemaValue(val any) *schema_pb.Value {
 	switch v := val.(type) {
 	case int64:
 		return &schema_pb.Value{Kind: &schema_pb.Value_Int64Value{Int64Value: v}}
@@ -107,6 +114,7 @@ func convertToSchemaValue(val interface{}) *schema_pb.Value {
 	case string:
 		return &schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: v}}
 	}
+
 	return nil
 }
 
@@ -480,7 +488,7 @@ func TestAggregationComputer_MinMaxEmptyValuesBugFix(t *testing.T) {
 	tests := []struct {
 		name       string
 		aggregSpec AggregationSpec
-		expected   interface{}
+		expected   any
 	}{
 		{
 			name:       "MIN should return 0 not empty",
@@ -503,10 +511,11 @@ func TestAggregationComputer_MinMaxEmptyValuesBugFix(t *testing.T) {
 			assert.Len(t, results, 1)
 
 			// Verify the result is not nil/empty
-			if tt.aggregSpec.Function == FuncMIN {
+			switch tt.aggregSpec.Function {
+			case FuncMIN:
 				assert.NotNil(t, results[0].Min, "MIN result should not be nil")
 				assert.Equal(t, tt.expected, results[0].Min)
-			} else if tt.aggregSpec.Function == FuncMAX {
+			case FuncMAX:
 				assert.NotNil(t, results[0].Max, "MAX result should not be nil")
 				assert.Equal(t, tt.expected, results[0].Max)
 			}
@@ -865,8 +874,7 @@ func BenchmarkFastPathOptimizer_DetermineStrategy(b *testing.B) {
 		{Function: "MIN", Column: "value"},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		strategy := optimizer.DetermineStrategy(aggregations)
 		_ = strategy.CanUseFastPath
 	}
@@ -897,8 +905,7 @@ func BenchmarkAggregationComputer_ComputeFastPathAggregations(b *testing.B) {
 	partitions := []string{"partition-1"}
 	ctx := context.Background()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		results, err := computer.ComputeFastPathAggregations(ctx, aggregations, dataSources, partitions)
 		if err != nil {
 			b.Fatal(err)
@@ -939,21 +946,21 @@ func TestSQLEngine_ConvertLogEntryToRecordValue_ValidProtobuf(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "live_log", source)
 	assert.NotNil(t, result)
-	assert.NotNil(t, result.Fields)
+	assert.NotNil(t, result.GetFields())
 
 	// Verify system columns are added correctly
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_TIMESTAMP)
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_KEY)
-	assert.Equal(t, int64(1609459200000000000), result.Fields[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
-	assert.Equal(t, []byte("test-key-001"), result.Fields[SW_COLUMN_NAME_KEY].GetBytesValue())
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_TIMESTAMP)
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_KEY)
+	assert.Equal(t, int64(1609459200000000000), result.GetFields()[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
+	assert.Equal(t, []byte("test-key-001"), result.GetFields()[SW_COLUMN_NAME_KEY].GetBytesValue())
 
 	// Verify user data is preserved
-	assert.Contains(t, result.Fields, "id")
-	assert.Contains(t, result.Fields, "name")
-	assert.Contains(t, result.Fields, "score")
-	assert.Equal(t, int32(42), result.Fields["id"].GetInt32Value())
-	assert.Equal(t, "test-user", result.Fields["name"].GetStringValue())
-	assert.Equal(t, 95.5, result.Fields["score"].GetDoubleValue())
+	assert.Contains(t, result.GetFields(), "id")
+	assert.Contains(t, result.GetFields(), "name")
+	assert.Contains(t, result.GetFields(), "score")
+	assert.Equal(t, int32(42), result.GetFields()["id"].GetInt32Value())
+	assert.Equal(t, "test-user", result.GetFields()["name"].GetStringValue())
+	assert.Equal(t, 95.5, result.GetFields()["score"].GetDoubleValue())
 }
 
 func TestSQLEngine_ConvertLogEntryToRecordValue_InvalidProtobuf(t *testing.T) {
@@ -1001,17 +1008,17 @@ func TestSQLEngine_ConvertLogEntryToRecordValue_EmptyProtobuf(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "live_log", source)
 	assert.NotNil(t, result)
-	assert.NotNil(t, result.Fields)
+	assert.NotNil(t, result.GetFields())
 
 	// Should have system columns
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_TIMESTAMP)
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_KEY)
-	assert.Equal(t, int64(1609459200000000000), result.Fields[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
-	assert.Equal(t, []byte("empty-key"), result.Fields[SW_COLUMN_NAME_KEY].GetBytesValue())
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_TIMESTAMP)
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_KEY)
+	assert.Equal(t, int64(1609459200000000000), result.GetFields()[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
+	assert.Equal(t, []byte("empty-key"), result.GetFields()[SW_COLUMN_NAME_KEY].GetBytesValue())
 
 	// Should have no user fields
 	userFieldCount := 0
-	for fieldName := range result.Fields {
+	for fieldName := range result.GetFields() {
 		if fieldName != SW_COLUMN_NAME_TIMESTAMP && fieldName != SW_COLUMN_NAME_KEY {
 			userFieldCount++
 		}
@@ -1043,13 +1050,13 @@ func TestSQLEngine_ConvertLogEntryToRecordValue_NilFieldsMap(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "live_log", source)
 	assert.NotNil(t, result)
-	assert.NotNil(t, result.Fields) // Should be created by the function
+	assert.NotNil(t, result.GetFields()) // Should be created by the function
 
 	// Should have system columns
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_TIMESTAMP)
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_KEY)
-	assert.Equal(t, int64(1609459200000000000), result.Fields[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
-	assert.Equal(t, []byte("nil-fields-key"), result.Fields[SW_COLUMN_NAME_KEY].GetBytesValue())
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_TIMESTAMP)
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_KEY)
+	assert.Equal(t, int64(1609459200000000000), result.GetFields()[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
+	assert.Equal(t, []byte("nil-fields-key"), result.GetFields()[SW_COLUMN_NAME_KEY].GetBytesValue())
 }
 
 func TestSQLEngine_ConvertLogEntryToRecordValue_SystemColumnOverride(t *testing.T) {
@@ -1082,12 +1089,12 @@ func TestSQLEngine_ConvertLogEntryToRecordValue_SystemColumnOverride(t *testing.
 	assert.NotNil(t, result)
 
 	// System columns should use LogEntry values, not protobuf values
-	assert.Equal(t, int64(1609459200000000000), result.Fields[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
-	assert.Equal(t, []byte("actual-key"), result.Fields[SW_COLUMN_NAME_KEY].GetBytesValue())
+	assert.Equal(t, int64(1609459200000000000), result.GetFields()[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value())
+	assert.Equal(t, []byte("actual-key"), result.GetFields()[SW_COLUMN_NAME_KEY].GetBytesValue())
 
 	// User field should be preserved
-	assert.Contains(t, result.Fields, "user_field")
-	assert.Equal(t, "user-data", result.Fields["user_field"].GetStringValue())
+	assert.Contains(t, result.GetFields(), "user_field")
+	assert.Equal(t, "user-data", result.GetFields()["user_field"].GetStringValue())
 }
 
 func TestSQLEngine_ConvertLogEntryToRecordValue_ComplexDataTypes(t *testing.T) {
@@ -1124,17 +1131,17 @@ func TestSQLEngine_ConvertLogEntryToRecordValue_ComplexDataTypes(t *testing.T) {
 	assert.NotNil(t, result)
 
 	// Verify all data types are preserved
-	assert.Equal(t, int32(-42), result.Fields["int32_field"].GetInt32Value())
-	assert.Equal(t, int64(9223372036854775807), result.Fields["int64_field"].GetInt64Value())
-	assert.Equal(t, float32(3.14159), result.Fields["float_field"].GetFloatValue())
-	assert.Equal(t, 2.718281828, result.Fields["double_field"].GetDoubleValue())
-	assert.Equal(t, true, result.Fields["bool_field"].GetBoolValue())
-	assert.Equal(t, "test string with unicode party", result.Fields["string_field"].GetStringValue())
-	assert.Equal(t, []byte{0x01, 0x02, 0x03}, result.Fields["bytes_field"].GetBytesValue())
+	assert.Equal(t, int32(-42), result.GetFields()["int32_field"].GetInt32Value())
+	assert.Equal(t, int64(9223372036854775807), result.GetFields()["int64_field"].GetInt64Value())
+	assert.Equal(t, float32(3.14159), result.GetFields()["float_field"].GetFloatValue())
+	assert.Equal(t, 2.718281828, result.GetFields()["double_field"].GetDoubleValue())
+	assert.True(t, result.GetFields()["bool_field"].GetBoolValue())
+	assert.Equal(t, "test string with unicode party", result.GetFields()["string_field"].GetStringValue())
+	assert.Equal(t, []byte{0x01, 0x02, 0x03}, result.GetFields()["bytes_field"].GetBytesValue())
 
 	// System columns should still be present
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_TIMESTAMP)
-	assert.Contains(t, result.Fields, SW_COLUMN_NAME_KEY)
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_TIMESTAMP)
+	assert.Contains(t, result.GetFields(), SW_COLUMN_NAME_KEY)
 }
 
 // Tests for log buffer deduplication functionality
@@ -1268,6 +1275,7 @@ func TestBrokerClient_BinaryBufferStartFormat(t *testing.T) {
 				// Binary format: 8-byte BigEndian
 				buf := make([]byte, 8)
 				binary.BigEndian.PutUint64(buf, uint64(2000001))
+
 				return buf
 			}(),
 		},
@@ -1285,6 +1293,7 @@ func TestBrokerClient_BinaryBufferStartFormat(t *testing.T) {
 			"buffer_start": func() []byte {
 				buf := make([]byte, 8)
 				binary.BigEndian.PutUint64(buf, uint64(1500001))
+
 				return buf
 			}(),
 		},

@@ -1,11 +1,12 @@
 package shell
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
-	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/stretchr/testify/assert"
 
-	//"google.golang.org/protobuf/proto"
+	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
+
+	// "google.golang.org/protobuf/proto"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,16 +19,15 @@ import (
 func TestParsing(t *testing.T) {
 	topo := parseOutput(topoData)
 
-	assert.Equal(t, 5, len(topo.DataCenterInfos))
+	assert.Len(t, topo.GetDataCenterInfos(), 5)
 
 	topo = parseOutput(topoData2)
 
-	dataNodes := topo.DataCenterInfos[0].RackInfos[0].DataNodeInfos
-	assert.Equal(t, 14, len(dataNodes))
-	diskInfo := dataNodes[0].DiskInfos[""]
-	assert.Equal(t, 1559, len(diskInfo.VolumeInfos))
-	assert.Equal(t, 6740, len(diskInfo.EcShardInfos))
-
+	dataNodes := topo.GetDataCenterInfos()[0].GetRackInfos()[0].GetDataNodeInfos()
+	assert.Len(t, dataNodes, 14)
+	diskInfo := dataNodes[0].GetDiskInfos()[""]
+	assert.Len(t, diskInfo.GetVolumeInfos(), 1559)
+	assert.Len(t, diskInfo.GetEcShardInfos(), 6740)
 }
 
 // TODO: actually parsing all fields would be nice...
@@ -100,7 +100,7 @@ func parseOutput(output string) *master_pb.TopologyInfo {
 		case "ec":
 			ecVolumeLine := line[len("ec volume "):]
 			ecShard := &master_pb.VolumeEcShardInformationMessage{}
-			for _, part := range strings.Split(ecVolumeLine, " ") {
+			for part := range strings.SplitSeq(ecVolumeLine, " ") {
 				if strings.HasPrefix(part, "id:") {
 					id, _ := strconv.ParseInt(part[len("id:"):], 10, 64)
 					ecShard.Id = uint32(id)
@@ -113,7 +113,7 @@ func parseOutput(output string) *master_pb.TopologyInfo {
 					shards := part[len("shards:["):]
 					shards = strings.TrimRight(shards, "]")
 					shardsInfo := erasure_coding.NewShardsInfo()
-					for _, shardId := range strings.Split(shards, ",") {
+					for shardId := range strings.SplitSeq(shards, ",") {
 						sid, _ := strconv.Atoi(shardId)
 						shardsInfo.Set(erasure_coding.NewShardInfo(erasure_coding.ShardId(sid), 0))
 					}

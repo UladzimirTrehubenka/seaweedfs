@@ -18,6 +18,7 @@ func NewServiceDiscoveryFromMap(m map[string]ServerAddress) (sd *ServerDiscovery
 	for _, s := range m {
 		sd.list = append(sd.list, s)
 	}
+
 	return sd
 }
 
@@ -33,6 +34,7 @@ func (sd *ServerDiscovery) RefreshBySrvIfAvailable() {
 	}
 	if newList == nil || len(newList) == 0 {
 		glog.V(0).Infof("looked up SRV for %s, but found no well-formed names", *sd.srvRecord)
+
 		return
 	}
 	if !reflect.DeepEqual(sd.list, newList) {
@@ -43,15 +45,15 @@ func (sd *ServerDiscovery) RefreshBySrvIfAvailable() {
 // GetInstances returns a copy of the latest known list of addresses
 // call RefreshBySrvIfAvailable prior to this in order to get a more up-to-date view
 func (sd *ServerDiscovery) GetInstances() (addresses []ServerAddress) {
-	for _, a := range sd.list {
-		addresses = append(addresses, a)
-	}
+	addresses = append(addresses, sd.list...)
+
 	return addresses
 }
 func (sd *ServerDiscovery) GetInstancesAsStrings() (addresses []string) {
 	for _, i := range sd.list {
 		addresses = append(addresses, string(i))
 	}
+
 	return addresses
 }
 func (sd *ServerDiscovery) GetInstancesAsMap() (addresses map[string]ServerAddress) {
@@ -59,5 +61,6 @@ func (sd *ServerDiscovery) GetInstancesAsMap() (addresses map[string]ServerAddre
 	for _, i := range sd.list {
 		addresses[string(i)] = i
 	}
+
 	return addresses
 }

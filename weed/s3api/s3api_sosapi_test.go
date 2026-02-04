@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"encoding/xml"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -92,7 +93,7 @@ func TestIsSOSAPIClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/bucket/object", nil)
+			req := httptest.NewRequest(http.MethodGet, "/bucket/object", nil)
 			req.Header.Set("User-Agent", tt.userAgent)
 			result := isSOSAPIClient(req)
 			if result != tt.expected {

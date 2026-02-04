@@ -28,7 +28,7 @@ func (wfs *WFS) subscribeFilerConfEvents() (*meta_cache.MetadataFollower, error)
 		fc := filer.NewFilerConf()
 		if len(content) > 0 {
 			if err := fc.LoadFromBytes(content); err != nil {
-				return fmt.Errorf("parse %s: %v", confFullName, err)
+				return fmt.Errorf("parse %s: %w", confFullName, err)
 			}
 		}
 
@@ -45,23 +45,23 @@ func (wfs *WFS) subscribeFilerConfEvents() (*meta_cache.MetadataFollower, error)
 	}
 
 	processEventFn := func(resp *filer_pb.SubscribeMetadataResponse) error {
-		message := resp.EventNotification
-		if message.NewEntry == nil {
+		message := resp.GetEventNotification()
+		if message.GetNewEntry() == nil {
 			return nil
 		}
 
-		dir := resp.Directory
-		name := resp.EventNotification.NewEntry.Name
+		dir := resp.GetDirectory()
+		name := resp.GetEventNotification().GetNewEntry().GetName()
 
 		if dir != confDir || name != confName {
 			return nil
 		}
 
-		content := message.NewEntry.Content
+		content := message.GetNewEntry().GetContent()
 		fc := filer.NewFilerConf()
 		if len(content) > 0 {
 			if err = fc.LoadFromBytes(content); err != nil {
-				return fmt.Errorf("parse %s: %v", confFullName, err)
+				return fmt.Errorf("parse %s: %w", confFullName, err)
 			}
 		}
 
@@ -69,6 +69,7 @@ func (wfs *WFS) subscribeFilerConfEvents() (*meta_cache.MetadataFollower, error)
 
 		return nil
 	}
+
 	return &meta_cache.MetadataFollower{
 		PathPrefixToWatch: confFullName,
 		ProcessEventFn:    processEventFn,
@@ -81,24 +82,24 @@ func (wfs *WFS) wormEnforcedForEntry(path util.FullPath, entry *filer_pb.Entry) 
 	}
 
 	rule := wfs.FilerConf.MatchStorageRule(string(path))
-	if !rule.Worm {
+	if !rule.GetWorm() {
 		return false, false
 	}
 
 	// worm is not enforced
-	if entry.WormEnforcedAtTsNs == 0 {
+	if entry.GetWormEnforcedAtTsNs() == 0 {
 		return false, true
 	}
 
 	// worm will never expire
-	if rule.WormRetentionTimeSeconds == 0 {
+	if rule.GetWormRetentionTimeSeconds() == 0 {
 		return true, true
 	}
 
-	enforcedAt := time.Unix(0, entry.WormEnforcedAtTsNs)
+	enforcedAt := time.Unix(0, entry.GetWormEnforcedAtTsNs())
 
 	// worm is expired
-	if time.Now().Sub(enforcedAt).Seconds() >= float64(rule.WormRetentionTimeSeconds) {
+	if time.Since(enforcedAt).Seconds() >= float64(rule.GetWormRetentionTimeSeconds()) {
 		return false, true
 	}
 

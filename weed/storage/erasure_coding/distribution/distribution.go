@@ -77,13 +77,14 @@ func (d *ECDistribution) String() string {
 func (d *ECDistribution) Summary() string {
 	summary := fmt.Sprintf("EC Configuration: %s\n", d.ECConfig.String())
 	summary += fmt.Sprintf("Replication: %s\n", d.ReplicationConfig.String())
-	summary += fmt.Sprintf("Distribution Plan:\n")
+	summary += "Distribution Plan:\n"
 	summary += fmt.Sprintf("  Data Centers: %d (target %d shards each, max %d)\n",
 		d.ReplicationConfig.MinDataCenters, d.TargetShardsPerDC, d.MaxShardsPerDC)
 	summary += fmt.Sprintf("  Racks per DC: %d (target %d shards each, max %d)\n",
 		d.ReplicationConfig.MinRacksPerDC, d.TargetShardsPerRack, d.MaxShardsPerRack)
 	summary += fmt.Sprintf("  Nodes per Rack: %d (target %d shards each, max %d)\n",
 		d.ReplicationConfig.MinNodesPerRack, d.TargetShardsPerNode, d.MaxShardsPerNode)
+
 	return summary
 }
 
@@ -92,6 +93,7 @@ func (d *ECDistribution) Summary() string {
 func (d *ECDistribution) CanSurviveDCFailure() bool {
 	// After losing one DC with max shards, check if remaining shards are enough
 	remainingAfterDCLoss := d.ECConfig.TotalShards() - d.TargetShardsPerDC
+
 	return remainingAfterDCLoss >= d.ECConfig.MinShardsForReconstruction()
 }
 
@@ -99,6 +101,7 @@ func (d *ECDistribution) CanSurviveDCFailure() bool {
 // complete loss of one rack
 func (d *ECDistribution) CanSurviveRackFailure() bool {
 	remainingAfterRackLoss := d.ECConfig.TotalShards() - d.TargetShardsPerRack
+
 	return remainingAfterRackLoss >= d.ECConfig.MinShardsForReconstruction()
 }
 
@@ -110,6 +113,7 @@ func (d *ECDistribution) MinDCsForDCFaultTolerance() int {
 	if maxShardsPerDC == 0 {
 		return d.ECConfig.TotalShards() // Would need one DC per shard
 	}
+
 	return ceilDivide(d.ECConfig.TotalShards(), maxShardsPerDC)
 }
 
@@ -148,6 +152,7 @@ func boolToResult(b bool) string {
 	if b {
 		return "SURVIVABLE ✓"
 	}
+
 	return "NOT SURVIVABLE ✗"
 }
 
@@ -156,5 +161,6 @@ func ceilDivide(a, b int) int {
 	if b <= 0 {
 		return a
 	}
+
 	return (a + b - 1) / b
 }

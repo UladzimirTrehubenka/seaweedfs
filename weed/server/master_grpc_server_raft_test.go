@@ -60,8 +60,8 @@ func TestRaftListClusterServers_NoRaft(t *testing.T) {
 	if resp == nil {
 		t.Error("expected non-nil response")
 	}
-	if len(resp.ClusterServers) != 0 {
-		t.Errorf("expected empty cluster servers, got %d", len(resp.ClusterServers))
+	if len(resp.GetClusterServers()) != 0 {
+		t.Errorf("expected empty cluster servers, got %d", len(resp.GetClusterServers()))
 	}
 }
 

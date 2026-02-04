@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -82,18 +83,15 @@ func (wfs *WFS) Flush(cancel <-chan struct{}, in *fuse.FlushIn) fuse.Status {
  * @param fi file information
  */
 func (wfs *WFS) Fsync(cancel <-chan struct{}, in *fuse.FsyncIn) (code fuse.Status) {
-
 	fh := wfs.GetHandle(FileHandleId(in.Fh))
 	if fh == nil {
 		return fuse.ENOENT
 	}
 
 	return wfs.doFlush(fh, in.Uid, in.Gid)
-
 }
 
 func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
-
 	// flush works at fh level
 	fileFullPath := fh.FullPath()
 	dir, name := fileFullPath.DirAndName()
@@ -105,6 +103,7 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 	if !isOverQuota {
 		if err := fh.dirtyPages.FlushData(); err != nil {
 			glog.Errorf("%v doFlush: %v", fileFullPath, err)
+
 			return fuse.EIO
 		}
 	}
@@ -121,16 +120,15 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 	defer fh.wfs.fhLockTable.ReleaseLock(fh.fh, fhActiveLock)
 
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		entry := fh.GetEntry()
 		entry.Name = name // this flush may be just after a rename operation
 
 		if entry.Attributes != nil {
 			entry.Attributes.Mime = fh.contentType
-			if entry.Attributes.Uid == 0 {
+			if entry.Attributes.GetUid() == 0 {
 				entry.Attributes.Uid = uid
 			}
-			if entry.Attributes.Gid == 0 {
+			if entry.Attributes.GetGid() == 0 {
 				entry.Attributes.Gid = gid
 			}
 			entry.Attributes.Mtime = time.Now().Unix()
@@ -144,7 +142,7 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 		}
 
 		glog.V(4).Infof("%s set chunks: %v", fileFullPath, len(entry.GetChunks()))
-		//for i, chunk := range entry.GetChunks() {
+		// for i, chunk := range entry.GetChunks() {
 		//	glog.V(4).Infof("%s chunks %d: %v [%d,%d)", fileFullPath, i, chunk.GetFileIdString(), chunk.Offset, chunk.Offset+int64(chunk.Size))
 		//}
 
@@ -158,17 +156,18 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 		}
 		entry.Chunks = append(chunks, manifestChunks...)
 
-		wfs.mapPbIdFromLocalToFiler(request.Entry)
-		defer wfs.mapPbIdFromFilerToLocal(request.Entry)
+		wfs.mapPbIdFromLocalToFiler(request.GetEntry())
+		defer wfs.mapPbIdFromFilerToLocal(request.GetEntry())
 
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			glog.Errorf("fh flush create %s: %v", fileFullPath, err)
-			return fmt.Errorf("fh flush create %s: %v", fileFullPath, err)
+
+			return fmt.Errorf("fh flush create %s: %w", fileFullPath, err)
 		}
 
 		// Only update cache if the parent directory is cached
 		if wfs.metaCache.IsDirectoryCached(util.FullPath(dir)) {
-			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, request.Entry)); err != nil {
+			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.GetDirectory(), request.GetEntry())); err != nil {
 				return fmt.Errorf("update meta cache for %s: %w", fileFullPath, err)
 			}
 		}
@@ -182,6 +181,7 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 
 	if err != nil {
 		glog.Errorf("%v fh %d flush: %v", fileFullPath, fh.fh, err)
+
 		return fuse.EIO
 	}
 

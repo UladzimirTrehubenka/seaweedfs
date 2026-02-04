@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
@@ -12,7 +13,7 @@ import (
 
 func (store *PostgresStore) LoadConfiguration(ctx context.Context) (*iam_pb.S3ApiConfiguration, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	config := &iam_pb.S3ApiConfiguration{}
@@ -39,28 +40,29 @@ func (store *PostgresStore) LoadConfiguration(ctx context.Context) (*iam_pb.S3Ap
 		// Parse account data
 		if len(accountDataJSON) > 0 {
 			if err := json.Unmarshal(accountDataJSON, &identity.Account); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal account data for user %s: %v", username, err)
+				return nil, fmt.Errorf("failed to unmarshal account data for user %s: %w", username, err)
 			}
 		}
 
 		// Parse actions
 		if len(actionsJSON) > 0 {
 			if err := json.Unmarshal(actionsJSON, &identity.Actions); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal actions for user %s: %v", username, err)
+				return nil, fmt.Errorf("failed to unmarshal actions for user %s: %w", username, err)
 			}
 		}
 
 		// Query credentials for this user
 		credRows, err := store.db.QueryContext(ctx, "SELECT access_key, secret_key FROM credentials WHERE username = $1", username)
 		if err != nil {
-			return nil, fmt.Errorf("failed to query credentials for user %s: %v", username, err)
+			return nil, fmt.Errorf("failed to query credentials for user %s: %w", username, err)
 		}
 
 		for credRows.Next() {
 			var accessKey, secretKey string
 			if err := credRows.Scan(&accessKey, &secretKey); err != nil {
 				credRows.Close()
-				return nil, fmt.Errorf("failed to scan credential row for user %s: %v", username, err)
+
+				return nil, fmt.Errorf("failed to scan credential row for user %s: %w", username, err)
 			}
 
 			identity.Credentials = append(identity.Credentials, &iam_pb.Credential{
@@ -78,7 +80,7 @@ func (store *PostgresStore) LoadConfiguration(ctx context.Context) (*iam_pb.S3Ap
 
 func (store *PostgresStore) SaveConfiguration(ctx context.Context, config *iam_pb.S3ApiConfiguration) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	// Start transaction
@@ -97,40 +99,40 @@ func (store *PostgresStore) SaveConfiguration(ctx context.Context, config *iam_p
 	}
 
 	// Insert all identities
-	for _, identity := range config.Identities {
+	for _, identity := range config.GetIdentities() {
 		// Marshal account data
 		var accountDataJSON []byte
-		if identity.Account != nil {
-			accountDataJSON, err = json.Marshal(identity.Account)
+		if identity.GetAccount() != nil {
+			accountDataJSON, err = json.Marshal(identity.GetAccount())
 			if err != nil {
-				return fmt.Errorf("failed to marshal account data for user %s: %v", identity.Name, err)
+				return fmt.Errorf("failed to marshal account data for user %s: %w", identity.GetName(), err)
 			}
 		}
 
 		// Marshal actions
 		var actionsJSON []byte
 		if identity.Actions != nil {
-			actionsJSON, err = json.Marshal(identity.Actions)
+			actionsJSON, err = json.Marshal(identity.GetActions())
 			if err != nil {
-				return fmt.Errorf("failed to marshal actions for user %s: %v", identity.Name, err)
+				return fmt.Errorf("failed to marshal actions for user %s: %w", identity.GetName(), err)
 			}
 		}
 
 		// Insert user
 		_, err := tx.ExecContext(ctx,
 			"INSERT INTO users (username, email, account_data, actions) VALUES ($1, $2, $3, $4)",
-			identity.Name, "", accountDataJSON, actionsJSON)
+			identity.GetName(), "", accountDataJSON, actionsJSON)
 		if err != nil {
-			return fmt.Errorf("failed to insert user %s: %v", identity.Name, err)
+			return fmt.Errorf("failed to insert user %s: %w", identity.GetName(), err)
 		}
 
 		// Insert credentials
-		for _, cred := range identity.Credentials {
+		for _, cred := range identity.GetCredentials() {
 			_, err := tx.ExecContext(ctx,
 				"INSERT INTO credentials (username, access_key, secret_key) VALUES ($1, $2, $3)",
-				identity.Name, cred.AccessKey, cred.SecretKey)
+				identity.GetName(), cred.GetAccessKey(), cred.GetSecretKey())
 			if err != nil {
-				return fmt.Errorf("failed to insert credential for user %s: %v", identity.Name, err)
+				return fmt.Errorf("failed to insert credential for user %s: %w", identity.GetName(), err)
 			}
 		}
 	}
@@ -140,12 +142,12 @@ func (store *PostgresStore) SaveConfiguration(ctx context.Context, config *iam_p
 
 func (store *PostgresStore) CreateUser(ctx context.Context, identity *iam_pb.Identity) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	// Check if user already exists
 	var count int
-	err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE username = $1", identity.Name).Scan(&count)
+	err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE username = $1", identity.GetName()).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("failed to check user existence: %w", err)
 	}
@@ -162,8 +164,8 @@ func (store *PostgresStore) CreateUser(ctx context.Context, identity *iam_pb.Ide
 
 	// Marshal account data
 	var accountDataJSON []byte
-	if identity.Account != nil {
-		accountDataJSON, err = json.Marshal(identity.Account)
+	if identity.GetAccount() != nil {
+		accountDataJSON, err = json.Marshal(identity.GetAccount())
 		if err != nil {
 			return fmt.Errorf("failed to marshal account data: %w", err)
 		}
@@ -172,7 +174,7 @@ func (store *PostgresStore) CreateUser(ctx context.Context, identity *iam_pb.Ide
 	// Marshal actions
 	var actionsJSON []byte
 	if identity.Actions != nil {
-		actionsJSON, err = json.Marshal(identity.Actions)
+		actionsJSON, err = json.Marshal(identity.GetActions())
 		if err != nil {
 			return fmt.Errorf("failed to marshal actions: %w", err)
 		}
@@ -181,16 +183,16 @@ func (store *PostgresStore) CreateUser(ctx context.Context, identity *iam_pb.Ide
 	// Insert user
 	_, err = tx.ExecContext(ctx,
 		"INSERT INTO users (username, email, account_data, actions) VALUES ($1, $2, $3, $4)",
-		identity.Name, "", accountDataJSON, actionsJSON)
+		identity.GetName(), "", accountDataJSON, actionsJSON)
 	if err != nil {
 		return fmt.Errorf("failed to insert user: %w", err)
 	}
 
 	// Insert credentials
-	for _, cred := range identity.Credentials {
+	for _, cred := range identity.GetCredentials() {
 		_, err = tx.ExecContext(ctx,
 			"INSERT INTO credentials (username, access_key, secret_key) VALUES ($1, $2, $3)",
-			identity.Name, cred.AccessKey, cred.SecretKey)
+			identity.GetName(), cred.GetAccessKey(), cred.GetSecretKey())
 		if err != nil {
 			return fmt.Errorf("failed to insert credential: %w", err)
 		}
@@ -201,7 +203,7 @@ func (store *PostgresStore) CreateUser(ctx context.Context, identity *iam_pb.Ide
 
 func (store *PostgresStore) GetUser(ctx context.Context, username string) (*iam_pb.Identity, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	var email string
@@ -211,9 +213,10 @@ func (store *PostgresStore) GetUser(ctx context.Context, username string) (*iam_
 		"SELECT email, account_data, actions FROM users WHERE username = $1",
 		username).Scan(&email, &accountDataJSON, &actionsJSON)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, credential.ErrUserNotFound
 		}
+
 		return nil, fmt.Errorf("failed to query user: %w", err)
 	}
 
@@ -259,7 +262,7 @@ func (store *PostgresStore) GetUser(ctx context.Context, username string) (*iam_
 
 func (store *PostgresStore) UpdateUser(ctx context.Context, username string, identity *iam_pb.Identity) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	// Start transaction
@@ -281,8 +284,8 @@ func (store *PostgresStore) UpdateUser(ctx context.Context, username string, ide
 
 	// Marshal account data
 	var accountDataJSON []byte
-	if identity.Account != nil {
-		accountDataJSON, err = json.Marshal(identity.Account)
+	if identity.GetAccount() != nil {
+		accountDataJSON, err = json.Marshal(identity.GetAccount())
 		if err != nil {
 			return fmt.Errorf("failed to marshal account data: %w", err)
 		}
@@ -291,7 +294,7 @@ func (store *PostgresStore) UpdateUser(ctx context.Context, username string, ide
 	// Marshal actions
 	var actionsJSON []byte
 	if identity.Actions != nil {
-		actionsJSON, err = json.Marshal(identity.Actions)
+		actionsJSON, err = json.Marshal(identity.GetActions())
 		if err != nil {
 			return fmt.Errorf("failed to marshal actions: %w", err)
 		}
@@ -312,10 +315,10 @@ func (store *PostgresStore) UpdateUser(ctx context.Context, username string, ide
 	}
 
 	// Insert new credentials
-	for _, cred := range identity.Credentials {
+	for _, cred := range identity.GetCredentials() {
 		_, err = tx.ExecContext(ctx,
 			"INSERT INTO credentials (username, access_key, secret_key) VALUES ($1, $2, $3)",
-			username, cred.AccessKey, cred.SecretKey)
+			username, cred.GetAccessKey(), cred.GetSecretKey())
 		if err != nil {
 			return fmt.Errorf("failed to insert credential: %w", err)
 		}
@@ -326,7 +329,7 @@ func (store *PostgresStore) UpdateUser(ctx context.Context, username string, ide
 
 func (store *PostgresStore) DeleteUser(ctx context.Context, username string) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	result, err := store.db.ExecContext(ctx, "DELETE FROM users WHERE username = $1", username)
@@ -348,7 +351,7 @@ func (store *PostgresStore) DeleteUser(ctx context.Context, username string) err
 
 func (store *PostgresStore) ListUsers(ctx context.Context) ([]string, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	rows, err := store.db.QueryContext(ctx, "SELECT username FROM users ORDER BY username")
@@ -371,15 +374,16 @@ func (store *PostgresStore) ListUsers(ctx context.Context) ([]string, error) {
 
 func (store *PostgresStore) GetUserByAccessKey(ctx context.Context, accessKey string) (*iam_pb.Identity, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	var username string
 	err := store.db.QueryRowContext(ctx, "SELECT username FROM credentials WHERE access_key = $1", accessKey).Scan(&username)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, credential.ErrAccessKeyNotFound
 		}
+
 		return nil, fmt.Errorf("failed to query access key: %w", err)
 	}
 
@@ -388,7 +392,7 @@ func (store *PostgresStore) GetUserByAccessKey(ctx context.Context, accessKey st
 
 func (store *PostgresStore) CreateAccessKey(ctx context.Context, username string, cred *iam_pb.Credential) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	// Check if user exists
@@ -404,7 +408,7 @@ func (store *PostgresStore) CreateAccessKey(ctx context.Context, username string
 	// Insert credential
 	_, err = store.db.ExecContext(ctx,
 		"INSERT INTO credentials (username, access_key, secret_key) VALUES ($1, $2, $3)",
-		username, cred.AccessKey, cred.SecretKey)
+		username, cred.GetAccessKey(), cred.GetSecretKey())
 	if err != nil {
 		return fmt.Errorf("failed to insert credential: %w", err)
 	}
@@ -414,7 +418,7 @@ func (store *PostgresStore) CreateAccessKey(ctx context.Context, username string
 
 func (store *PostgresStore) DeleteAccessKey(ctx context.Context, username string, accessKey string) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	result, err := store.db.ExecContext(ctx,
@@ -439,6 +443,7 @@ func (store *PostgresStore) DeleteAccessKey(ctx context.Context, username string
 		if count == 0 {
 			return credential.ErrUserNotFound
 		}
+
 		return credential.ErrAccessKeyNotFound
 	}
 

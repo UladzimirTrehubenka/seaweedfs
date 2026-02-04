@@ -14,10 +14,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
-	"github.com/stretchr/testify/assert"
 )
 
 var GetS3ApiConfiguration func(s3cfg *iam_pb.S3ApiConfiguration) (err error)
@@ -33,21 +34,25 @@ type iamS3ApiConfigureMock struct{}
 
 func (iam iamS3ApiConfigureMock) GetS3ApiConfiguration(s3cfg *iam_pb.S3ApiConfiguration) (err error) {
 	_ = copier.Copy(&s3cfg.Identities, &s3config.Identities)
+
 	return nil
 }
 
 func (iam iamS3ApiConfigureMock) PutS3ApiConfiguration(s3cfg *iam_pb.S3ApiConfiguration) (err error) {
 	_ = copier.Copy(&s3config.Identities, &s3cfg.Identities)
+
 	return nil
 }
 
 func (iam iamS3ApiConfigureMock) GetPolicies(policies *Policies) (err error) {
 	_ = copier.Copy(&policies, &policiesFile)
+
 	return nil
 }
 
 func (iam iamS3ApiConfigureMock) PutPolicies(policies *Policies) (err error) {
 	_ = copier.Copy(&policiesFile, &policies)
+
 	return nil
 }
 
@@ -58,9 +63,9 @@ func TestCreateUser(t *testing.T) {
 	_ = req.Build()
 	out := CreateUserResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
-	//assert.Equal(t, out.XMLName, "lol")
+	// assert.Equal(t, out.XMLName, "lol")
 }
 
 func TestListUsers(t *testing.T) {
@@ -69,7 +74,7 @@ func TestListUsers(t *testing.T) {
 	_ = req.Build()
 	out := ListUsersResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
@@ -80,7 +85,7 @@ func TestListAccessKeys(t *testing.T) {
 	_ = req.Build()
 	out := ListAccessKeysResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
@@ -91,7 +96,7 @@ func TestGetUser(t *testing.T) {
 	_ = req.Build()
 	out := GetUserResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
@@ -121,7 +126,7 @@ func TestCreatePolicy(t *testing.T) {
 	_ = req.Build()
 	out := CreatePolicyResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
@@ -152,7 +157,7 @@ func TestPutUserPolicy(t *testing.T) {
 	_ = req.Build()
 	out := PutUserPolicyResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
@@ -182,7 +187,7 @@ func TestPutUserPolicyError(t *testing.T) {
 	req, _ := iam.New(session.New()).PutUserPolicyRequest(params)
 	_ = req.Build()
 	response, err := executeRequest(req.HTTPRequest, nil)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, response.Code)
 
 	expectedMessage := "the user with name InvalidUser cannot be found"
@@ -200,6 +205,7 @@ func extractErrorCodeAndMessage(response *httptest.ResponseRecorder) (string, st
 
 	code := re.FindStringSubmatch(response.Body.String())[1]
 	message := re.FindStringSubmatch(response.Body.String())[2]
+
 	return code, message
 }
 
@@ -210,7 +216,7 @@ func TestGetUserPolicy(t *testing.T) {
 	_ = req.Build()
 	out := GetUserPolicyResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
@@ -222,7 +228,7 @@ func TestUpdateUser(t *testing.T) {
 	_ = req.Build()
 	out := UpdateUserResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
@@ -233,15 +239,16 @@ func TestDeleteUser(t *testing.T) {
 	_ = req.Build()
 	out := DeleteUserResponse{}
 	response, err := executeRequest(req.HTTPRequest, out)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
-func executeRequest(req *http.Request, v interface{}) (*httptest.ResponseRecorder, error) {
+func executeRequest(req *http.Request, v any) (*httptest.ResponseRecorder, error) {
 	rr := httptest.NewRecorder()
 	apiRouter := mux.NewRouter().SkipClean(true)
 	apiRouter.Path("/").Methods(http.MethodPost).HandlerFunc(ias.DoActions)
 	apiRouter.ServeHTTP(rr, req)
+
 	return rr, xml.Unmarshal(rr.Body.Bytes(), &v)
 }
 
@@ -297,11 +304,12 @@ func TestHandleImplicitUsername(t *testing.T) {
 	}
 }
 
-func mustMarshalJSON(t *testing.T, v interface{}) []byte {
+func mustMarshalJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {
 		t.Fatalf("failed to marshal JSON: %v", err)
 	}
+
 	return data
 }

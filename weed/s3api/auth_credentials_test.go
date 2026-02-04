@@ -6,20 +6,21 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 	. "github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
-	"github.com/stretchr/testify/assert"
+
+	jsonpb "google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
-	jsonpb "google.golang.org/protobuf/encoding/protojson"
 
 	_ "github.com/seaweedfs/seaweedfs/weed/credential/filer_etc"
 	_ "github.com/seaweedfs/seaweedfs/weed/credential/memory"
 )
 
 func TestIdentityListFileFormat(t *testing.T) {
-
 	s3ApiConfiguration := &iam_pb.S3ApiConfiguration{}
 
 	identity1 := &iam_pb.Identity{
@@ -74,7 +75,6 @@ func TestIdentityListFileFormat(t *testing.T) {
 	text, _ := m.Marshal(s3ApiConfiguration)
 
 	println(string(text))
-
 }
 
 func TestCanDo(t *testing.T) {
@@ -86,11 +86,11 @@ func TestCanDo(t *testing.T) {
 		},
 	}
 	// object specific
-	assert.Equal(t, true, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d.txt"))
-	assert.Equal(t, true, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d/e.txt"))
-	assert.Equal(t, false, ident1.CanDo(ACTION_DELETE_BUCKET, "bucket1", ""))
-	assert.Equal(t, false, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/other/some"), "action without *")
-	assert.Equal(t, false, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/*"), "action on parent directory")
+	assert.True(t, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d.txt"))
+	assert.True(t, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d/e.txt"))
+	assert.False(t, ident1.CanDo(ACTION_DELETE_BUCKET, "bucket1", ""))
+	assert.False(t, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/other/some"), "action without *")
+	assert.False(t, ident1.CanDo(ACTION_WRITE, "bucket1", "/a/b/*"), "action on parent directory")
 
 	// bucket specific
 	ident2 := &Identity{
@@ -101,11 +101,11 @@ func TestCanDo(t *testing.T) {
 			"WriteAcp:bucket1",
 		},
 	}
-	assert.Equal(t, true, ident2.CanDo(ACTION_READ, "bucket1", "/a/b/c/d.txt"))
-	assert.Equal(t, true, ident2.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d.txt"))
-	assert.Equal(t, true, ident2.CanDo(ACTION_WRITE_ACP, "bucket1", ""))
-	assert.Equal(t, false, ident2.CanDo(ACTION_READ_ACP, "bucket1", ""))
-	assert.Equal(t, false, ident2.CanDo(ACTION_LIST, "bucket1", "/a/b/c/d.txt"))
+	assert.True(t, ident2.CanDo(ACTION_READ, "bucket1", "/a/b/c/d.txt"))
+	assert.True(t, ident2.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d.txt"))
+	assert.True(t, ident2.CanDo(ACTION_WRITE_ACP, "bucket1", ""))
+	assert.False(t, ident2.CanDo(ACTION_READ_ACP, "bucket1", ""))
+	assert.False(t, ident2.CanDo(ACTION_LIST, "bucket1", "/a/b/c/d.txt"))
 
 	// across buckets
 	ident3 := &Identity{
@@ -115,10 +115,10 @@ func TestCanDo(t *testing.T) {
 			"Write",
 		},
 	}
-	assert.Equal(t, true, ident3.CanDo(ACTION_READ, "bucket1", "/a/b/c/d.txt"))
-	assert.Equal(t, true, ident3.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d.txt"))
-	assert.Equal(t, false, ident3.CanDo(ACTION_LIST, "bucket1", "/a/b/other/some"))
-	assert.Equal(t, false, ident3.CanDo(ACTION_WRITE_ACP, "bucket1", ""))
+	assert.True(t, ident3.CanDo(ACTION_READ, "bucket1", "/a/b/c/d.txt"))
+	assert.True(t, ident3.CanDo(ACTION_WRITE, "bucket1", "/a/b/c/d.txt"))
+	assert.False(t, ident3.CanDo(ACTION_LIST, "bucket1", "/a/b/other/some"))
+	assert.False(t, ident3.CanDo(ACTION_WRITE_ACP, "bucket1", ""))
 
 	// partial buckets
 	ident4 := &Identity{
@@ -128,9 +128,9 @@ func TestCanDo(t *testing.T) {
 			"ReadAcp:special_*",
 		},
 	}
-	assert.Equal(t, true, ident4.CanDo(ACTION_READ, "special_bucket", "/a/b/c/d.txt"))
-	assert.Equal(t, true, ident4.CanDo(ACTION_READ_ACP, "special_bucket", ""))
-	assert.Equal(t, false, ident4.CanDo(ACTION_READ, "bucket1", "/a/b/c/d.txt"))
+	assert.True(t, ident4.CanDo(ACTION_READ, "special_bucket", "/a/b/c/d.txt"))
+	assert.True(t, ident4.CanDo(ACTION_READ_ACP, "special_bucket", ""))
+	assert.False(t, ident4.CanDo(ACTION_READ, "bucket1", "/a/b/c/d.txt"))
 
 	// admin buckets
 	ident5 := &Identity{
@@ -139,10 +139,10 @@ func TestCanDo(t *testing.T) {
 			"Admin:special_*",
 		},
 	}
-	assert.Equal(t, true, ident5.CanDo(ACTION_READ, "special_bucket", "/a/b/c/d.txt"))
-	assert.Equal(t, true, ident5.CanDo(ACTION_READ_ACP, "special_bucket", ""))
-	assert.Equal(t, true, ident5.CanDo(ACTION_WRITE, "special_bucket", "/a/b/c/d.txt"))
-	assert.Equal(t, true, ident5.CanDo(ACTION_WRITE_ACP, "special_bucket", ""))
+	assert.True(t, ident5.CanDo(ACTION_READ, "special_bucket", "/a/b/c/d.txt"))
+	assert.True(t, ident5.CanDo(ACTION_READ_ACP, "special_bucket", ""))
+	assert.True(t, ident5.CanDo(ACTION_WRITE, "special_bucket", "/a/b/c/d.txt"))
+	assert.True(t, ident5.CanDo(ACTION_WRITE_ACP, "special_bucket", ""))
 
 	// anonymous buckets
 	ident6 := &Identity{
@@ -151,16 +151,16 @@ func TestCanDo(t *testing.T) {
 			"Read",
 		},
 	}
-	assert.Equal(t, true, ident6.CanDo(ACTION_READ, "anything_bucket", "/a/b/c/d.txt"))
+	assert.True(t, ident6.CanDo(ACTION_READ, "anything_bucket", "/a/b/c/d.txt"))
 
-	//test deleteBucket operation
+	// test deleteBucket operation
 	ident7 := &Identity{
 		Name: "anything",
 		Actions: []Action{
 			"DeleteBucket:bucket1",
 		},
 	}
-	assert.Equal(t, true, ident7.CanDo(ACTION_DELETE_BUCKET, "bucket1", ""))
+	assert.True(t, ident7.CanDo(ACTION_DELETE_BUCKET, "bucket1", ""))
 }
 
 func TestMatchWildcardPattern(t *testing.T) {
@@ -456,7 +456,7 @@ func TestNewIdentityAccessManagementWithStoreEnvVars(t *testing.T) {
 				assert.Contains(t, identity.Actions, Action(ACTION_ADMIN), "Should have admin action")
 			} else {
 				// When no env vars, should have no identities (since no config file)
-				assert.Len(t, iam.identities, 0, "Should have no identities when no env vars and no config file")
+				assert.Empty(t, iam.identities, "Should have no identities when no env vars and no config file")
 			}
 		})
 	}
@@ -483,11 +483,11 @@ func TestConfigFileWithNoIdentitiesAllowsEnvVars(t *testing.T) {
     }
   }
 }`
-	tmpFile, err := os.CreateTemp("", "s3-config-*.json")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "s3-config-*.json")
 	assert.NoError(t, err, "Should create temp config file")
 	defer os.Remove(tmpFile.Name())
 
-	_, err = tmpFile.Write([]byte(configContent))
+	_, err = tmpFile.WriteString(configContent)
 	assert.NoError(t, err, "Should write config content")
 	tmpFile.Close()
 

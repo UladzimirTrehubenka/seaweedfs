@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kurin/blazer/b2"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/replication/repl_util"
@@ -39,6 +40,7 @@ func (g *B2Sink) IsIncremental() bool {
 
 func (g *B2Sink) Initialize(configuration util.Configuration, prefix string) error {
 	g.isIncremental = configuration.GetBool(prefix + "is_incremental")
+
 	return g.initialize(
 		configuration.GetString(prefix+"b2_account_id"),
 		configuration.GetString(prefix+"b2_master_application_key"),
@@ -65,7 +67,6 @@ func (g *B2Sink) initialize(accountId, accountKey, bucket, dir string) error {
 }
 
 func (g *B2Sink) DeleteEntry(key string, isDirectory, deleteIncludeChunks bool, signatures []int32) error {
-
 	key = cleanKey(key)
 
 	if isDirectory {
@@ -86,15 +87,14 @@ func (g *B2Sink) DeleteEntry(key string, isDirectory, deleteIncludeChunks bool, 
 			return nil
 		}
 	}
-	return err
 
+	return err
 }
 
 func (g *B2Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int32) error {
-
 	key = cleanKey(key)
 
-	if entry.IsDirectory {
+	if entry.GetIsDirectory() {
 		return nil
 	}
 
@@ -112,11 +112,12 @@ func (g *B2Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int
 
 	writeFunc := func(data []byte) error {
 		_, writeErr := writer.Write(data)
+
 		return writeErr
 	}
 
-	if len(entry.Content) > 0 {
-		return writeFunc(entry.Content)
+	if len(entry.GetContent()) > 0 {
+		return writeFunc(entry.GetContent())
 	}
 
 	if err := repl_util.CopyFromChunkViews(chunkViews, g.filerSource, writeFunc); err != nil {
@@ -124,11 +125,11 @@ func (g *B2Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int
 	}
 
 	return nil
-
 }
 
 func (g *B2Sink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParentPath string, newEntry *filer_pb.Entry, deleteIncludeChunks bool, signatures []int32) (foundExistingEntry bool, err error) {
 	key = cleanKey(key)
+
 	return true, g.CreateEntry(key, newEntry, signatures)
 }
 
@@ -136,5 +137,6 @@ func cleanKey(key string) string {
 	if strings.HasPrefix(key, "/") {
 		key = key[1:]
 	}
+
 	return key
 }

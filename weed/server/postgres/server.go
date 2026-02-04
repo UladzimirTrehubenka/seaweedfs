@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -211,7 +213,7 @@ func (s *PostgreSQLServer) Start() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to start PostgreSQL server on %s: %v", addr, err)
+		return fmt.Errorf("failed to start PostgreSQL server on %s: %w", addr, err)
 	}
 
 	s.listener = listener
@@ -245,6 +247,7 @@ func (s *PostgreSQLServer) Stop() error {
 
 	s.wg.Wait()
 	glog.Infof("PostgreSQL Server stopped")
+
 	return nil
 }
 
@@ -266,6 +269,7 @@ func (s *PostgreSQLServer) acceptConnections() {
 				return
 			default:
 				glog.Errorf("Failed to accept PostgreSQL connection: %v", err)
+
 				continue
 			}
 		}
@@ -279,6 +283,7 @@ func (s *PostgreSQLServer) acceptConnections() {
 			glog.Warningf("Maximum connections reached (%d), rejecting connection from %s",
 				s.config.MaxConns, conn.RemoteAddr())
 			conn.Close()
+
 			continue
 		}
 
@@ -338,6 +343,7 @@ func (s *PostgreSQLServer) handleConnection(conn net.Conn) {
 		} else {
 			glog.Errorf("Startup failed for connection %d from %s: %v", connID, conn.RemoteAddr(), err)
 		}
+
 		return
 	}
 
@@ -354,11 +360,12 @@ func (s *PostgreSQLServer) handleConnection(conn net.Conn) {
 
 		err := s.handleMessage(session)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				glog.Infof("PostgreSQL client disconnected (ID: %d)", connID)
 			} else {
 				glog.Errorf("Error handling PostgreSQL message (ID: %d): %v", connID, err)
 			}
+
 			return
 		}
 
@@ -378,14 +385,16 @@ func (s *PostgreSQLServer) handleStartup(session *PostgreSQLSession) error {
 		length := make([]byte, 4)
 		_, err := io.ReadFull(session.reader, length)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				// Client disconnected during startup - this is common for health checks
-				return fmt.Errorf("client disconnected during startup handshake")
+				return errors.New("client disconnected during startup handshake")
 			}
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			var netErr net.Error
+			if errors.As(err, &netErr) {
 				return fmt.Errorf("startup handshake timeout after %v", startupTimeout)
 			}
-			return fmt.Errorf("failed to read message length during startup: %v", err)
+
+			return fmt.Errorf("failed to read message length during startup: %w", err)
 		}
 
 		msgLength := binary.BigEndian.Uint32(length) - 4
@@ -397,13 +406,15 @@ func (s *PostgreSQLServer) handleStartup(session *PostgreSQLSession) error {
 		msg := make([]byte, msgLength)
 		_, err = io.ReadFull(session.reader, msg)
 		if err != nil {
-			if err == io.EOF {
-				return fmt.Errorf("client disconnected while reading startup message")
+			if errors.Is(err, io.EOF) {
+				return errors.New("client disconnected while reading startup message")
 			}
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				return fmt.Errorf("startup message read timeout")
+			var netErr net.Error
+			if errors.As(err, &netErr) {
+				return errors.New("startup message read timeout")
 			}
-			return fmt.Errorf("failed to read startup message: %v", err)
+
+			return fmt.Errorf("failed to read startup message: %w", err)
 		}
 
 		// Parse protocol version
@@ -414,7 +425,7 @@ func (s *PostgreSQLServer) handleStartup(session *PostgreSQLSession) error {
 			// Reject SSL request - send 'N' to indicate SSL not supported
 			_, err = session.conn.Write([]byte{'N'})
 			if err != nil {
-				return fmt.Errorf("failed to reject SSL request: %v", err)
+				return fmt.Errorf("failed to reject SSL request: %w", err)
 			}
 			// Continue loop to read the actual startup message
 			continue
@@ -423,7 +434,7 @@ func (s *PostgreSQLServer) handleStartup(session *PostgreSQLSession) error {
 			// Reject GSSAPI request - send 'N' to indicate GSSAPI not supported
 			_, err = session.conn.Write([]byte{'N'})
 			if err != nil {
-				return fmt.Errorf("failed to reject GSSAPI request: %v", err)
+				return fmt.Errorf("failed to reject GSSAPI request: %w", err)
 			}
 			// Continue loop to read the actual startup message
 			continue
@@ -439,9 +450,10 @@ func (s *PostgreSQLServer) handleStartup(session *PostgreSQLSession) error {
 		// Parse parameters
 		params := strings.Split(string(msg[4:]), "\x00")
 		for i := 0; i < len(params)-1; i += 2 {
-			if params[i] == "user" {
+			switch params[i] {
+			case "user":
 				session.username = params[i+1]
-			} else if params[i] == "database" {
+			case "database":
 				session.database = params[i+1]
 			}
 			session.parameters[params[i]] = params[i+1]
@@ -458,7 +470,7 @@ func (s *PostgreSQLServer) handleStartup(session *PostgreSQLSession) error {
 	}
 
 	// Send parameter status messages
-	err = s.sendParameterStatus(session, "server_version", fmt.Sprintf("%s (SeaweedFS)", version.VERSION_NUMBER))
+	err = s.sendParameterStatus(session, "server_version", version.VERSION_NUMBER+" (SeaweedFS)")
 	if err != nil {
 		return err
 	}
@@ -492,6 +504,7 @@ func (s *PostgreSQLServer) handleStartup(session *PostgreSQLSession) error {
 	}
 
 	session.authenticated = true
+
 	return nil
 }
 
@@ -505,7 +518,7 @@ func (s *PostgreSQLServer) handleAuthentication(session *PostgreSQLSession) erro
 	case AuthMD5:
 		return s.handleMD5Auth(session)
 	default:
-		return fmt.Errorf("unsupported authentication method")
+		return errors.New("unsupported authentication method")
 	}
 }
 
@@ -520,6 +533,7 @@ func (s *PostgreSQLServer) sendAuthenticationOk(session *PostgreSQLSession) erro
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -630,7 +644,7 @@ func (s *PostgreSQLServer) handleMD5Auth(session *PostgreSQLSession) error {
 
 	// Calculate expected hash: md5(md5(password + username) + salt)
 	inner := md5.Sum([]byte(expectedPassword + session.username))
-	expected := fmt.Sprintf("md5%x", md5.Sum(append([]byte(fmt.Sprintf("%x", inner)), salt...)))
+	expected := fmt.Sprintf("md5%x", md5.Sum(append([]byte(hex.EncodeToString(inner[:])), salt...)))
 
 	if string(response[:len(response)-1]) != expected { // Remove null terminator
 		return s.sendError(session, "28P01", "authentication failed for user \""+session.username+"\"")
@@ -645,6 +659,7 @@ func (s *PostgreSQLServer) generateConnectionID() uint32 {
 	defer s.sessionMux.Unlock()
 	id := s.nextConnID
 	s.nextConnID++
+
 	return id
 }
 
@@ -652,6 +667,7 @@ func (s *PostgreSQLServer) generateConnectionID() uint32 {
 func (s *PostgreSQLServer) generateSecretKey() uint32 {
 	key := make([]byte, 4)
 	rand.Read(key)
+
 	return binary.BigEndian.Uint32(key)
 }
 

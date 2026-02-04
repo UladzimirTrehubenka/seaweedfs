@@ -42,7 +42,6 @@ preparing test prerequisite easier )
 */
 
 func TestMakeDiff(t *testing.T) {
-
 	v := new(Volume)
 	// lastCompactIndexOffset value is the index file size before step 4
 	v.lastCompactIndexOffset = 96
@@ -88,7 +87,7 @@ func testCompaction(t *testing.T, needleMapKind NeedleMapKind) {
 
 	startTime := time.Now()
 	v.Compact2(0, 0, nil)
-	speed := float64(v.ContentSize()) / time.Now().Sub(startTime).Seconds()
+	speed := float64(v.ContentSize()) / time.Since(startTime).Seconds()
 	t.Logf("compaction speed: %.2f bytes/s", speed)
 
 	// update & delete original objects, upload & delete new objects
@@ -122,7 +121,6 @@ func testCompaction(t *testing.T, needleMapKind NeedleMapKind) {
 	defer v.Close()
 
 	for i := 1; i <= beforeCommitFileCount+afterCommitFileCount; i++ {
-
 		if infos[i-1] == nil {
 			t.Fatal("not found file", i)
 		}
@@ -142,9 +140,7 @@ func testCompaction(t *testing.T, needleMapKind NeedleMapKind) {
 		if infos[i-1].crc != n.Checksum {
 			t.Fatalf("read file %d checksum mismatch expected %d found %d", i, infos[i-1].crc, n.Checksum)
 		}
-
 	}
-
 }
 func doSomeWritesDeletes(i int, v *Volume, t *testing.T, infos []*needleInfo) {
 	n := newRandomNeedle(uint64(i))
@@ -181,11 +177,13 @@ func newRandomNeedle(id uint64) *needle.Needle {
 
 	n.Checksum = needle.NewCRC(n.Data)
 	n.Id = types.Uint64ToNeedleId(id)
+
 	return n
 }
 
 func newEmptyNeedle(id uint64) *needle.Needle {
 	n := new(needle.Needle)
 	n.Id = types.Uint64ToNeedleId(id)
+
 	return n
 }

@@ -68,6 +68,7 @@ func LoadChunkManifest(buffer []byte, isCompressed bool) (*ChunkManifest, error)
 		return nil, e
 	}
 	sort.Sort(cm.Chunks)
+
 	return &cm, nil
 }
 
@@ -84,9 +85,10 @@ func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, g
 
 	// Check for any errors in results
 	for _, result := range results {
-		if result.Error != "" {
-			glog.V(0).Infof("delete file %+v: %v", result.FileId, result.Error)
-			return fmt.Errorf("chunk delete %v: %v", result.FileId, result.Error)
+		if result.GetError() != "" {
+			glog.V(0).Infof("delete file %+v: %v", result.GetFileId(), result.GetError())
+
+			return fmt.Errorf("chunk delete %v: %v", result.GetFileId(), result.GetError())
 		}
 	}
 
@@ -119,8 +121,8 @@ func readChunkNeedle(fileUrl string, w io.Writer, offset int64, jwt string) (wri
 		break
 	default:
 		return written, fmt.Errorf("Read chunk needle error: [%d] %s", resp.StatusCode, fileUrl)
-
 	}
+
 	return io.Copy(w, resp.Body)
 }
 
@@ -130,6 +132,7 @@ func NewChunkedFileReader(chunkList []*ChunkInfo, master pb.ServerAddress, grpcD
 		totalSize += chunk.Size
 	}
 	sort.Sort(ChunkList(chunkList))
+
 	return &ChunkedFileReader{
 		totalSize:      totalSize,
 		chunkList:      chunkList,
@@ -154,6 +157,7 @@ func (cf *ChunkedFileReader) Seek(offset int64, whence int) (int64, error) {
 		cf.Close()
 	}
 	cf.pos = offset
+
 	return cf.pos, err
 }
 
@@ -164,6 +168,7 @@ func (cf *ChunkedFileReader) WriteTo(w io.Writer) (n int64, err error) {
 		if cf.pos >= ci.Offset && cf.pos < ci.Offset+ci.Size {
 			chunkIndex = i
 			chunkStartOffset = cf.pos - ci.Offset
+
 			break
 		}
 	}
@@ -188,11 +193,13 @@ func (cf *ChunkedFileReader) WriteTo(w io.Writer) (n int64, err error) {
 
 		chunkStartOffset = 0
 	}
+
 	return n, nil
 }
 
 func (cf *ChunkedFileReader) ReadAt(p []byte, off int64) (n int, err error) {
 	cf.Seek(off, 0)
+
 	return cf.Read(p)
 }
 
@@ -203,6 +210,7 @@ func (cf *ChunkedFileReader) Read(p []byte) (int, error) {
 func (cf *ChunkedFileReader) Close() (e error) {
 	cf.mutex.Lock()
 	defer cf.mutex.Unlock()
+
 	return cf.closePipe()
 }
 
@@ -219,6 +227,7 @@ func (cf *ChunkedFileReader) closePipe() (e error) {
 		}
 	}
 	cf.pw = nil
+
 	return e
 }
 
@@ -234,5 +243,6 @@ func (cf *ChunkedFileReader) getPipeReader() io.Reader {
 		_, e := cf.WriteTo(pw)
 		pw.CloseWithError(e)
 	}(cf.pw)
+
 	return cf.pr
 }

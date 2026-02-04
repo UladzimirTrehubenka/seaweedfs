@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -44,6 +45,7 @@ func newVidMapClient(provider VolumeLocationProvider, dataCenter string, cacheSi
 	if cacheSize <= 0 {
 		cacheSize = DefaultVidMapCacheSize
 	}
+
 	return &vidMapClient{
 		vidMap:          newVidMap(dataCenter),
 		vidMapCacheSize: cacheSize,
@@ -67,12 +69,12 @@ func (vc *vidMapClient) LookupFileIdWithFallback(ctx context.Context, fileId str
 
 	// Cache hit - return immediately
 	if err == nil && len(fullUrls) > 0 {
-		return
+		return fullUrls, err
 	}
 
 	// Cache miss - extract volume ID from file ID (format: "volumeId,needle_id_cookie")
 	if fileId == "" {
-		return nil, fmt.Errorf("empty fileId")
+		return nil, errors.New("empty fileId")
 	}
 	parts := strings.Split(fileId, ",")
 	if len(parts) != 2 {
@@ -90,6 +92,7 @@ func (vc *vidMapClient) LookupFileIdWithFallback(ctx context.Context, fileId str
 		if err != nil {
 			return nil, fmt.Errorf("volume %s not found for fileId %s: %w", volumeId, fileId, err)
 		}
+
 		return nil, fmt.Errorf("volume %s not found for fileId %s", volumeId, fileId)
 	}
 
@@ -113,6 +116,7 @@ func (vc *vidMapClient) LookupFileIdWithFallback(ctx context.Context, fileId str
 
 	// Prefer same data center
 	fullUrls = append(sameDcUrls, otherDcUrls...)
+
 	return fullUrls, nil
 }
 
@@ -151,7 +155,7 @@ func (vc *vidMapClient) LookupVolumeIdsWithFallback(ctx context.Context, volumeI
 	for _, vidString := range volumeIds {
 		vid, err := strconv.ParseUint(vidString, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("invalid volume id %s: %v", vidString, err)
+			return nil, fmt.Errorf("invalid volume id %s: %w", vidString, err)
 		}
 		vidStringToUint[vidString] = uint32(vid)
 
@@ -172,7 +176,7 @@ func (vc *vidMapClient) LookupVolumeIdsWithFallback(ctx context.Context, volumeI
 	sort.Strings(needsLookup)
 	batchKey := strings.Join(needsLookup, ",")
 
-	sfResult, err, _ := vc.vidLookupGroup.Do(batchKey, func() (interface{}, error) {
+	sfResult, err, _ := vc.vidLookupGroup.Do(batchKey, func() (any, error) {
 		// Double-check cache for volumes that might have been populated while waiting
 		stillNeedLookup := make([]string, 0, len(needsLookup))
 		batchResult := make(map[string][]Location)
@@ -198,7 +202,7 @@ func (vc *vidMapClient) LookupVolumeIdsWithFallback(ctx context.Context, volumeI
 
 		providerResults, err := vc.provider.LookupVolumeIds(ctx, stillNeedLookup)
 		if err != nil {
-			return batchResult, fmt.Errorf("provider lookup failed: %v", err)
+			return batchResult, fmt.Errorf("provider lookup failed: %w", err)
 		}
 
 		// Update cache with results
@@ -206,6 +210,7 @@ func (vc *vidMapClient) LookupVolumeIdsWithFallback(ctx context.Context, volumeI
 			vid, err := strconv.ParseUint(vidString, 10, 32)
 			if err != nil {
 				glog.Warningf("Failed to parse volume id '%s': %v", vidString, err)
+
 				continue
 			}
 
@@ -227,9 +232,7 @@ func (vc *vidMapClient) LookupVolumeIdsWithFallback(ctx context.Context, volumeI
 
 	// Merge singleflight batch results
 	if batchLocations, ok := sfResult.(map[string][]Location); ok {
-		for vid, locs := range batchLocations {
-			result[vid] = locs
-		}
+		maps.Copy(result, batchLocations)
 	}
 
 	// Check for volumes that still weren't found
@@ -251,6 +254,7 @@ func (vc *vidMapClient) getStableVidMap() *vidMap {
 	vc.vidMapLock.RLock()
 	vm := vc.vidMap
 	vc.vidMapLock.RUnlock()
+
 	return vm
 }
 
@@ -339,7 +343,7 @@ func (vc *vidMapClient) resetVidMap() {
 
 	// Trim cache chain to vidMapCacheSize
 	node := tail
-	for i := 0; i < vc.vidMapCacheSize-1; i++ {
+	for range vc.vidMapCacheSize - 1 {
 		if node.cache.Load() == nil {
 			return
 		}

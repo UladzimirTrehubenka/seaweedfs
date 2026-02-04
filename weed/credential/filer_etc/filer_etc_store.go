@@ -1,14 +1,15 @@
 package filer_etc
 
 import (
-	"fmt"
+	"errors"
 	"sync"
+
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 func init() {
@@ -58,7 +59,8 @@ func (store *FilerEtcStore) withFilerClient(fn func(client filer_pb.SeaweedFiler
 	store.mu.RLock()
 	if store.filerAddressFunc == nil {
 		store.mu.RUnlock()
-		return fmt.Errorf("filer_etc: filer not yet available - please wait for filer discovery to complete and try again")
+
+		return errors.New("filer_etc: filer not yet available - please wait for filer discovery to complete and try again")
 	}
 
 	filerAddress := store.filerAddressFunc()
@@ -66,7 +68,7 @@ func (store *FilerEtcStore) withFilerClient(fn func(client filer_pb.SeaweedFiler
 	store.mu.RUnlock()
 
 	if filerAddress == "" {
-		return fmt.Errorf("filer_etc: no filer discovered yet - please ensure a filer is running and accessible")
+		return errors.New("filer_etc: no filer discovered yet - please ensure a filer is running and accessible")
 	}
 
 	// Use the pb.WithGrpcFilerClient helper similar to existing code

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/klauspost/reedsolomon"
+
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 )
 

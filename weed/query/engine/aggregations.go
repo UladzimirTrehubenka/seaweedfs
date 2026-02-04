@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -24,8 +26,8 @@ type AggregationSpec struct {
 type AggregationResult struct {
 	Count int64
 	Sum   float64
-	Min   interface{}
-	Max   interface{}
+	Min   any
+	Max   any
 }
 
 // AggregationStrategy represents the strategy for executing aggregations
@@ -100,6 +102,7 @@ func (opt *FastPathOptimizer) CollectDataSourcesWithTimeFilter(ctx context.Conte
 		if isDebugMode(ctx) {
 			fmt.Printf("ERROR: Partition discovery failed: %v\n", err)
 		}
+
 		return dataSources, DataSourceError{
 			Source: "partition_discovery",
 			Cause:  err,
@@ -216,7 +219,6 @@ func (comp *AggregationComputer) ComputeFastPathAggregations(
 	dataSources *TopicDataSources,
 	partitions []string,
 ) ([]AggregationResult, error) {
-
 	aggResults := make([]AggregationResult, len(aggregations))
 
 	for i, spec := range aggregations {
@@ -254,7 +256,7 @@ func (comp *AggregationComputer) ComputeFastPathAggregations(
 		default:
 			return nil, OptimizationError{
 				Strategy: "fast_path_aggregation",
-				Reason:   fmt.Sprintf("unsupported aggregation function: %s", spec.Function),
+				Reason:   "unsupported aggregation function: " + spec.Function,
 			}
 		}
 	}
@@ -263,8 +265,8 @@ func (comp *AggregationComputer) ComputeFastPathAggregations(
 }
 
 // computeGlobalMin computes the global minimum value across all data sources
-func (comp *AggregationComputer) computeGlobalMin(spec AggregationSpec, dataSources *TopicDataSources, partitions []string) (interface{}, error) {
-	var globalMin interface{}
+func (comp *AggregationComputer) computeGlobalMin(spec AggregationSpec, dataSources *TopicDataSources, partitions []string) (any, error) {
+	var globalMin any
 	var globalMinValue *schema_pb.Value
 	hasParquetStats := false
 
@@ -285,6 +287,7 @@ func (comp *AggregationComputer) computeGlobalMin(spec AggregationSpec, dataSour
 					if strings.EqualFold(colName, spec.Column) {
 						colStats = stats
 						found = true
+
 						break
 					}
 				}
@@ -339,8 +342,8 @@ func (comp *AggregationComputer) computeGlobalMin(spec AggregationSpec, dataSour
 }
 
 // computeGlobalMax computes the global maximum value across all data sources
-func (comp *AggregationComputer) computeGlobalMax(spec AggregationSpec, dataSources *TopicDataSources, partitions []string) (interface{}, error) {
-	var globalMax interface{}
+func (comp *AggregationComputer) computeGlobalMax(spec AggregationSpec, dataSources *TopicDataSources, partitions []string) (any, error) {
+	var globalMax any
 	var globalMaxValue *schema_pb.Value
 	hasParquetStats := false
 
@@ -361,6 +364,7 @@ func (comp *AggregationComputer) computeGlobalMax(spec AggregationSpec, dataSour
 					if strings.EqualFold(colName, spec.Column) {
 						colStats = stats
 						found = true
+
 						break
 					}
 				}
@@ -483,6 +487,7 @@ func (e *SQLEngine) executeAggregationQueryWithPlan(ctx context.Context, hybridS
 			if isDebugMode(ctx) {
 				fmt.Printf("Fast path optimization succeeded!\n")
 			}
+
 			return fastResult, nil
 		} else {
 			if isDebugMode(ctx) {
@@ -550,13 +555,7 @@ func (e *SQLEngine) executeAggregationQueryWithPlan(ctx context.Context, hybridS
 			// Add broker_buffer to data sources if buffer was queried
 			if stats.BrokerBufferQueried {
 				// Check if broker_buffer is already in data sources
-				hasBrokerBuffer := false
-				for _, source := range plan.DataSources {
-					if source == "broker_buffer" {
-						hasBrokerBuffer = true
-						break
-					}
-				}
+				hasBrokerBuffer := slices.Contains(plan.DataSources, "broker_buffer")
 				if !hasBrokerBuffer {
 					plan.DataSources = append(plan.DataSources, "broker_buffer")
 				}
@@ -732,6 +731,7 @@ func (e *SQLEngine) tryFastParquetAggregationWithPlan(ctx context.Context, hybri
 			if isDebugMode(ctx) {
 				fmt.Printf("Fast path validation failed: COUNT=%d but sources=0\n", countResult)
 			}
+
 			return nil, false
 		}
 		if totalRows > 0 && countResult == 0 {
@@ -739,6 +739,7 @@ func (e *SQLEngine) tryFastParquetAggregationWithPlan(ctx context.Context, hybri
 			if isDebugMode(ctx) {
 				fmt.Printf("Fast path validation failed: sources=%d but COUNT=0\n", totalRows)
 			}
+
 			return nil, false
 		}
 		if countResult != totalRows {
@@ -746,6 +747,7 @@ func (e *SQLEngine) tryFastParquetAggregationWithPlan(ctx context.Context, hybri
 			if isDebugMode(ctx) {
 				fmt.Printf("Fast path validation failed: COUNT=%d != sources=%d\n", countResult, totalRows)
 			}
+
 			return nil, false
 		}
 		if isDebugMode(ctx) {
@@ -781,9 +783,7 @@ func (e *SQLEngine) tryFastParquetAggregationWithPlan(ctx context.Context, hybri
 		}
 
 		// Merge details while preserving existing ones
-		for key, value := range aggPlan.Details {
-			plan.Details[key] = value
-		}
+		maps.Copy(plan.Details, aggPlan.Details)
 
 		// Add file path information from the data collection
 		plan.Details["partition_paths"] = partitions
@@ -873,7 +873,7 @@ func (e *SQLEngine) computeAggregations(results []HybridScanResult, aggregations
 			}
 
 		case FuncMIN:
-			var min interface{}
+			var min any
 			var minValue *schema_pb.Value
 			for _, result := range results {
 				if value := e.findColumnValue(result, spec.Column); value != nil {
@@ -886,7 +886,7 @@ func (e *SQLEngine) computeAggregations(results []HybridScanResult, aggregations
 			aggResults[i].Min = min
 
 		case FuncMAX:
-			var max interface{}
+			var max any
 			var maxValue *schema_pb.Value
 			for _, result := range results {
 				if value := e.findColumnValue(result, spec.Column); value != nil {

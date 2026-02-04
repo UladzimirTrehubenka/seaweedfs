@@ -11,6 +11,7 @@ import (
 
 	"github.com/arangodb/go-driver"
 	"github.com/arangodb/go-driver/http"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -45,9 +46,9 @@ type Model struct {
 	Name      string `json:"name,omitempty"`
 	Ttl       string `json:"ttl,omitempty"`
 
-	//arangodb does not support binary blobs
-	//we encode byte slice into uint64 slice
-	//see helpers.go
+	// arangodb does not support binary blobs
+	// we encode byte slice into uint64 slice
+	// see helpers.go
 	Meta []uint64 `json:"meta"`
 }
 
@@ -58,6 +59,7 @@ func (store *ArangodbStore) GetName() string {
 func (store *ArangodbStore) Initialize(configuration util.Configuration, prefix string) (err error) {
 	store.buckets = make(map[string]driver.Collection, 3)
 	store.databaseName = configuration.GetString(prefix + "db_name")
+
 	return store.connection(configuration.GetStringSlice(prefix+"servers"),
 		configuration.GetString(prefix+"username"),
 		configuration.GetString(prefix+"password"),
@@ -99,6 +101,7 @@ func (store *ArangodbStore) connection(uris []string, user string, pass string, 
 	if store.kvCollection, err = store.ensureCollection(ctx, KVMETA_COLLECTION); err != nil {
 		return err
 	}
+
 	return err
 }
 
@@ -134,6 +137,7 @@ func (store *ArangodbStore) CommitTransaction(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -147,14 +151,15 @@ func (store *ArangodbStore) RollbackTransaction(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func (store *ArangodbStore) InsertEntry(ctx context.Context, entry *filer.Entry) (err error) {
-	dir, name := entry.FullPath.DirAndName()
+	dir, name := entry.DirAndName()
 	meta, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encode %s: %s", entry.FullPath, err)
+		return fmt.Errorf("encode %s: %w", entry.FullPath, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -182,18 +187,17 @@ func (store *ArangodbStore) InsertEntry(ctx context.Context, entry *filer.Entry)
 	}
 
 	if err != nil {
-		return fmt.Errorf("InsertEntry %s: %v", entry.FullPath, err)
+		return fmt.Errorf("InsertEntry %s: %w", entry.FullPath, err)
 	}
 
 	return nil
-
 }
 
 func (store *ArangodbStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-	dir, name := entry.FullPath.DirAndName()
+	dir, name := entry.DirAndName()
 	meta, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encode %s: %s", entry.FullPath, err)
+		return fmt.Errorf("encode %s: %w", entry.FullPath, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -216,7 +220,7 @@ func (store *ArangodbStore) UpdateEntry(ctx context.Context, entry *filer.Entry)
 	}
 	_, err = targetCollection.UpdateDocument(ctx, model.Key, model)
 	if err != nil {
-		return fmt.Errorf("UpdateEntry %s: %v", entry.FullPath, err)
+		return fmt.Errorf("UpdateEntry %s: %w", entry.FullPath, err)
 	}
 
 	return nil
@@ -234,6 +238,7 @@ func (store *ArangodbStore) FindEntry(ctx context.Context, fullpath util.FullPat
 			return nil, filer_pb.ErrNotFound
 		}
 		glog.ErrorfCtx(ctx, "find %s: %v", fullpath, err)
+
 		return nil, filer_pb.ErrNotFound
 	}
 	if len(data.Meta) == 0 {
@@ -244,7 +249,7 @@ func (store *ArangodbStore) FindEntry(ctx context.Context, fullpath util.FullPat
 	}
 	err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData(arrayToBytes(data.Meta)))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
@@ -258,8 +263,10 @@ func (store *ArangodbStore) DeleteEntry(ctx context.Context, fullpath util.FullP
 	_, err = targetCollection.RemoveDocument(ctx, hashString(string(fullpath)))
 	if err != nil && !driver.IsNotFound(err) {
 		glog.ErrorfCtx(ctx, "find %s: %v", fullpath, err)
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
+
 	return nil
 }
 
@@ -281,9 +288,10 @@ func (store *ArangodbStore) DeleteFolderChildren(ctx context.Context, fullpath u
 	)
 	cur, err := store.database.Query(ctx, query, nil)
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 	defer cur.Close()
+
 	return nil
 }
 
@@ -313,7 +321,7 @@ sort d.name asc
 		query = query + "limit " + strconv.Itoa(int(limit))
 	}
 	query = query + "\n return d"
-	cur, err := store.database.Query(ctx, query, map[string]interface{}{"dir": dirPath})
+	cur, err := store.database.Query(ctx, query, map[string]any{"dir": dirPath})
 	if err != nil {
 		return lastFileName, fmt.Errorf("failed to list directory entries: find error: %w", err)
 	}
@@ -332,20 +340,22 @@ sort d.name asc
 		if decodeErr := entry.DecodeAttributesAndChunks(util.MaybeDecompressData(converted)); decodeErr != nil {
 			err = decodeErr
 			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
+
 			break
 		}
 
 		resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 		if resEachEntryFuncErr != nil {
 			err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 			break
 		}
 
 		if !resEachEntryFunc {
 			break
 		}
-
 	}
+
 	return lastFileName, err
 }
 

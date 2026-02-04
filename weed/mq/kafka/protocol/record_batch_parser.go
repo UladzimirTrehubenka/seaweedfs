@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 
@@ -131,7 +132,7 @@ func (batch *RecordBatch) DecompressRecords() ([]byte, error) {
 // ValidateCRC32 validates the CRC32 checksum of the record batch
 func (batch *RecordBatch) ValidateCRC32(originalData []byte) error {
 	if len(originalData) < 17 { // Need at least up to CRC field
-		return fmt.Errorf("data too small for CRC validation")
+		return errors.New("data too small for CRC validation")
 	}
 
 	// CRC32 is calculated over the data starting after the CRC field
@@ -177,7 +178,7 @@ func (batch *RecordBatch) ExtractRecords() ([]Record, error) {
 
 	// For now, create placeholder records
 	// In a full implementation, this would parse the actual record format
-	for i := int32(0); i < batch.RecordCount; i++ {
+	for i := range int32(batch.RecordCount) {
 		record := Record{
 			Offset:    batch.BaseOffset + int64(i),
 			Key:       nil,                             // Would be parsed from record data
@@ -212,6 +213,7 @@ func CompressRecordBatch(codec compression.CompressionCodec, records []byte) ([]
 	}
 
 	attributes := compression.SetCompressionCodec(0, codec)
+
 	return compressed, attributes, nil
 }
 

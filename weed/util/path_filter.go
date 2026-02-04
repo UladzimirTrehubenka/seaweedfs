@@ -15,7 +15,7 @@ type PathPrefixFilter struct {
 // NewPathPrefixFilter creates a new PathPrefixFilter from comma-separated include and exclude prefix strings.
 // Each prefix is normalized to have a trailing slash for directory boundary matching.
 // Invalid prefixes (empty or not starting with /) are skipped with a warning via the provided warn function.
-func NewPathPrefixFilter(includePrefixes, excludePrefixes string, warn func(format string, args ...interface{})) *PathPrefixFilter {
+func NewPathPrefixFilter(includePrefixes, excludePrefixes string, warn func(format string, args ...any)) *PathPrefixFilter {
 	pf := &PathPrefixFilter{}
 
 	pf.includePrefixes = parsePrefixes(includePrefixes, warn)
@@ -25,13 +25,13 @@ func NewPathPrefixFilter(includePrefixes, excludePrefixes string, warn func(form
 }
 
 // parsePrefixes parses a comma-separated list of prefixes and normalizes them.
-func parsePrefixes(prefixList string, warn func(format string, args ...interface{})) []string {
+func parsePrefixes(prefixList string, warn func(format string, args ...any)) []string {
 	if prefixList == "" {
 		return nil
 	}
 
 	var result []string
-	for _, p := range strings.Split(prefixList, ",") {
+	for p := range strings.SplitSeq(prefixList, ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
@@ -40,6 +40,7 @@ func parsePrefixes(prefixList string, warn func(format string, args ...interface
 			if warn != nil {
 				warn("prefix %q does not start with '/', skipping", p)
 			}
+
 			continue
 		}
 		// Normalize: ensure trailing slash for directory boundary matching
@@ -48,6 +49,7 @@ func parsePrefixes(prefixList string, warn func(format string, args ...interface
 		}
 		result = append(result, p)
 	}
+
 	return result
 }
 
@@ -114,6 +116,7 @@ func findDeepestMatch(path string, prefixes []string) string {
 			}
 		}
 	}
+
 	return deepest
 }
 

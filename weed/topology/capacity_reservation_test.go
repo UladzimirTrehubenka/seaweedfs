@@ -173,7 +173,7 @@ func TestNodeImpl_ConcurrentReservations(t *testing.T) {
 	concurrentRequests := 10
 	wg.Add(concurrentRequests)
 
-	for i := 0; i < concurrentRequests; i++ {
+	for i := range concurrentRequests {
 		go func(i int) {
 			defer wg.Done()
 			if reservationId, success := dn.TryReserveCapacity(diskType, 1); success {
@@ -203,8 +203,9 @@ func TestNodeImpl_ConcurrentReservations(t *testing.T) {
 	}
 
 	// Release all reservations
-	reservationIds.Range(func(key, value interface{}) bool {
+	reservationIds.Range(func(key, value any) bool {
 		dn.ReleaseReservedCapacity(key.(string))
+
 		return true
 	})
 

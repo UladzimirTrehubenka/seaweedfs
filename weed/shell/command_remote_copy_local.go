@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -61,7 +62,6 @@ func (c *commandRemoteCopyLocal) HasTag(CommandTag) bool {
 }
 
 func (c *commandRemoteCopyLocal) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	remoteCopyLocalCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 
 	dir := remoteCopyLocalCommand.String("dir", "", "a directory in filer")
@@ -75,12 +75,13 @@ func (c *commandRemoteCopyLocal) Do(args []string, commandEnv *CommandEnv, write
 	}
 
 	if *dir == "" {
-		return fmt.Errorf("need to specify -dir option")
+		return errors.New("need to specify -dir option")
 	}
 
 	mappings, localMountedDir, remoteStorageMountedLocation, remoteStorageConf, detectErr := detectMountInfo(commandEnv, writer, *dir)
 	if detectErr != nil {
 		jsonPrintln(writer, mappings)
+
 		return detectErr
 	}
 
@@ -89,7 +90,6 @@ func (c *commandRemoteCopyLocal) Do(args []string, commandEnv *CommandEnv, write
 }
 
 func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, writer io.Writer, localMountedDir util.FullPath, remoteMountedLocation *remote_pb.RemoteStorageLocation, dirToCopy util.FullPath, remoteConf *remote_pb.RemoteConf, concurrency int, dryRun bool, forceUpdate bool, fileFilter *FileFilter) error {
-
 	// Get remote storage client
 	remoteStorage, err := remote_storage.GetRemoteStorage(remoteConf)
 	if err != nil {
@@ -103,9 +103,10 @@ func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, wri
 	err = recursivelyTraverseDirectory(commandEnv, dirToCopy, func(dir util.FullPath, entry *filer_pb.Entry) bool {
 		// Only consider files that are part of remote mount
 		if isInMountedDirectory(dir, localMountedDir) {
-			fullPath := string(dir.Child(entry.Name))
+			fullPath := string(dir.Child(entry.GetName()))
 			localFiles[fullPath] = entry
 		}
+
 		return true
 	})
 	if err != nil {
@@ -120,6 +121,7 @@ func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, wri
 		localDir := filer.MapRemoteStorageLocationPathToFullPath(localMountedDir, remoteMountedLocation, remoteDir)
 		fullPath := string(localDir.Child(name))
 		remoteFiles[fullPath] = true
+
 		return nil
 	})
 	if err != nil {
@@ -132,7 +134,7 @@ func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, wri
 	var filesToCopy []string
 	for localPath, localEntry := range localFiles {
 		// Skip directories
-		if localEntry.IsDirectory {
+		if localEntry.GetIsDirectory() {
 			continue
 		}
 
@@ -163,12 +165,14 @@ func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, wri
 		for _, path := range filesToCopy {
 			fmt.Fprintf(writer, "COPY: %s\n", path)
 		}
+
 		return nil
 	}
 
 	// Step 4: Copy files to remote storage
 	if len(filesToCopy) == 0 {
 		fmt.Fprintf(writer, "No files to copy\n")
+
 		return nil
 	}
 
@@ -190,6 +194,7 @@ func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, wri
 				outputMu.Lock()
 				fmt.Fprintf(writer, "Warning: skipping copy for %s (local entry not found)\n", localPath)
 				outputMu.Unlock()
+
 				return
 			}
 
@@ -209,6 +214,7 @@ func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, wri
 				errOnce.Do(func() {
 					firstErr = err
 				})
+
 				return
 			}
 
@@ -225,11 +231,11 @@ func (c *commandRemoteCopyLocal) doLocalToRemoteCopy(commandEnv *CommandEnv, wri
 	}
 
 	fmt.Fprintf(writer, "Successfully copied %d files to remote storage\n", successCount.Load())
+
 	return nil
 }
 
 func syncFileToRemote(commandEnv *CommandEnv, remoteStorage remote_storage.RemoteStorageClient, remoteConf *remote_pb.RemoteConf, remoteLocation *remote_pb.RemoteStorageLocation, dir util.FullPath, localEntry *filer_pb.Entry) error {
-
 	// Upload to remote storage using the same approach as filer_remote_sync
 	var remoteEntry *filer_pb.RemoteEntry
 	var err error
@@ -242,6 +248,7 @@ func syncFileToRemote(commandEnv *CommandEnv, remoteStorage remote_storage.Remot
 		if err != nil {
 			return err
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -278,5 +285,6 @@ func isInMountedDirectory(dir util.FullPath, mountedDir util.FullPath) bool {
 	if !strings.HasSuffix(mountedDirStr, "/") {
 		mountedDirStr += "/"
 	}
+
 	return strings.HasPrefix(string(dir)+"/", mountedDirStr)
 }

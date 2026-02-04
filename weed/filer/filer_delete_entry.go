@@ -26,7 +26,7 @@ func (f *Filer) DeleteEntryMetaAndData(ctx context.Context, p util.FullPath, isR
 	if findErr != nil {
 		return findErr
 	}
-	if ifNotModifiedAfter > 0 && entry.Attr.Mtime.Unix() > ifNotModifiedAfter {
+	if ifNotModifiedAfter > 0 && entry.Mtime.Unix() > ifNotModifiedAfter {
 		return nil
 	}
 	isDeleteCollection := f.IsBucket(entry)
@@ -38,18 +38,20 @@ func (f *Filer) DeleteEntryMetaAndData(ctx context.Context, p util.FullPath, isR
 			if shouldDeleteChunks {
 				f.maybeDeleteHardLinks(ctx, hardLinkIds)
 			}
+
 			return nil
 		})
 		if err != nil {
 			glog.V(2).InfofCtx(ctx, "delete directory %s: %v", p, err)
-			return fmt.Errorf("delete directory %s: %v", p, err)
+
+			return fmt.Errorf("delete directory %s: %w", p, err)
 		}
 	}
 
 	// delete the file or folder
 	err = f.doDeleteEntryMetaAndData(ctx, entry, shouldDeleteChunks, isFromOtherCluster, signatures)
 	if err != nil {
-		return fmt.Errorf("delete file %s: %v", p, err)
+		return fmt.Errorf("delete file %s: %w", p, err)
 	}
 
 	if shouldDeleteChunks && !isDeleteCollection {
@@ -69,8 +71,7 @@ func (f *Filer) DeleteEntryMetaAndData(ctx context.Context, p util.FullPath, isR
 }
 
 func (f *Filer) doBatchDeleteFolderMetaAndData(ctx context.Context, entry *Entry, isRecursive, ignoreRecursiveError, shouldDeleteChunks, isDeletingBucket, isFromOtherCluster bool, signatures []int32, onHardLinkIdsFn OnHardLinkIdsFunc) (err error) {
-
-	//collect all the chunks of this layer and delete them together at the end
+	// collect all the chunks of this layer and delete them together at the end
 	var chunksToDelete []*filer_pb.FileChunk
 	lastFileName := ""
 	includeLastFile := false
@@ -79,11 +80,13 @@ func (f *Filer) doBatchDeleteFolderMetaAndData(ctx context.Context, entry *Entry
 			entries, _, err := f.ListDirectoryEntries(ctx, entry.FullPath, lastFileName, includeLastFile, PaginationSize, "", "", "")
 			if err != nil {
 				glog.ErrorfCtx(ctx, "list folder %s: %v", entry.FullPath, err)
-				return fmt.Errorf("list folder %s: %v", entry.FullPath, err)
+
+				return fmt.Errorf("list folder %s: %w", entry.FullPath, err)
 			}
 			if lastFileName == "" && !isRecursive && len(entries) > 0 {
 				// only for first iteration in the loop
 				glog.V(2).InfofCtx(ctx, "deleting a folder %s has children: %+v ...", entry.FullPath, entries[0].Name())
+
 				return fmt.Errorf("%s: %s", MsgFailDelNonEmptyFolder, entry.FullPath)
 			}
 
@@ -127,7 +130,6 @@ func (f *Filer) doBatchDeleteFolderMetaAndData(ctx context.Context, entry *Entry
 }
 
 func (f *Filer) doDeleteEntryMetaAndData(ctx context.Context, entry *Entry, shouldDeleteChunks bool, isFromOtherCluster bool, signatures []int32) (err error) {
-
 	glog.V(3).InfofCtx(ctx, "deleting entry %v, delete chunks: %v", entry.FullPath, shouldDeleteChunks)
 
 	if storeDeletionErr := f.Store.DeleteOneEntry(ctx, entry); storeDeletionErr != nil {
@@ -141,7 +143,6 @@ func (f *Filer) doDeleteEntryMetaAndData(ctx context.Context, entry *Entry, shou
 }
 
 func (f *Filer) DoDeleteCollection(collectionName string) (err error) {
-
 	return f.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
 		_, err := client.CollectionDelete(context.Background(), &master_pb.CollectionDeleteRequest{
 			Name: collectionName,
@@ -149,9 +150,9 @@ func (f *Filer) DoDeleteCollection(collectionName string) (err error) {
 		if err != nil {
 			glog.Infof("delete collection %s: %v", collectionName, err)
 		}
+
 		return err
 	})
-
 }
 
 func (f *Filer) maybeDeleteHardLinks(ctx context.Context, hardLinkIds []HardLinkId) {

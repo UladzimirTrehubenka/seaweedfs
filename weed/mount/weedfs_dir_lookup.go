@@ -13,14 +13,13 @@ import (
 // name) pair.
 
 func (wfs *WFS) Lookup(cancel <-chan struct{}, header *fuse.InHeader, name string, out *fuse.EntryOut) (code fuse.Status) {
-
 	if s := checkName(name); s != fuse.OK {
 		return s
 	}
 
 	dirPath, code := wfs.inodeToPath.GetPath(header.NodeId)
 	if code != fuse.OK {
-		return
+		return code
 	}
 
 	fullFilePath := dirPath.Child(name)
@@ -45,5 +44,4 @@ func (wfs *WFS) Lookup(cancel <-chan struct{}, header *fuse.InHeader, name strin
 	wfs.outputFilerEntry(out, inode, localEntry)
 
 	return fuse.OK
-
 }

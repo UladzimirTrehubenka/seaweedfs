@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
@@ -107,18 +109,19 @@ func (p *OIDCProvider) GetIssuer() string {
 	if p.config == nil {
 		return ""
 	}
+
 	return p.config.Issuer
 }
 
 // Initialize initializes the OIDC provider with configuration
-func (p *OIDCProvider) Initialize(config interface{}) error {
+func (p *OIDCProvider) Initialize(config any) error {
 	if config == nil {
-		return fmt.Errorf("config cannot be nil")
+		return errors.New("config cannot be nil")
 	}
 
 	oidcConfig, ok := config.(*OIDCConfig)
 	if !ok {
-		return fmt.Errorf("invalid config type for OIDC provider")
+		return errors.New("invalid config type for OIDC provider")
 	}
 
 	if err := p.validateConfig(oidcConfig); err != nil {
@@ -181,16 +184,16 @@ func (p *OIDCProvider) Initialize(config interface{}) error {
 // validateConfig validates the OIDC configuration
 func (p *OIDCProvider) validateConfig(config *OIDCConfig) error {
 	if config.Issuer == "" {
-		return fmt.Errorf("issuer is required")
+		return errors.New("issuer is required")
 	}
 
 	if config.ClientID == "" {
-		return fmt.Errorf("client ID is required")
+		return errors.New("client ID is required")
 	}
 
 	// Basic URL validation for issuer
 	if config.Issuer != "" && config.Issuer != "https://accounts.google.com" && config.Issuer[0:4] != "http" {
-		return fmt.Errorf("invalid issuer URL format")
+		return errors.New("invalid issuer URL format")
 	}
 
 	return nil
@@ -199,11 +202,11 @@ func (p *OIDCProvider) validateConfig(config *OIDCConfig) error {
 // Authenticate authenticates a user with an OIDC token
 func (p *OIDCProvider) Authenticate(ctx context.Context, token string) (*providers.ExternalIdentity, error) {
 	if !p.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if token == "" {
-		return nil, fmt.Errorf("token cannot be empty")
+		return nil, errors.New("token cannot be empty")
 	}
 
 	// Validate token and get claims
@@ -286,11 +289,11 @@ func (p *OIDCProvider) Authenticate(ctx context.Context, token string) (*provide
 // GetUserInfo retrieves user information from the UserInfo endpoint
 func (p *OIDCProvider) GetUserInfo(ctx context.Context, userID string) (*providers.ExternalIdentity, error) {
 	if !p.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if userID == "" {
-		return nil, fmt.Errorf("user ID cannot be empty")
+		return nil, errors.New("user ID cannot be empty")
 	}
 
 	// For now, we'll use a token-based approach since OIDC UserInfo typically requires a token
@@ -301,11 +304,11 @@ func (p *OIDCProvider) GetUserInfo(ctx context.Context, userID string) (*provide
 // GetUserInfoWithToken retrieves user information using an access token
 func (p *OIDCProvider) GetUserInfoWithToken(ctx context.Context, accessToken string) (*providers.ExternalIdentity, error) {
 	if !p.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if accessToken == "" {
-		return nil, fmt.Errorf("access token cannot be empty")
+		return nil, errors.New("access token cannot be empty")
 	}
 
 	return p.getUserInfoWithToken(ctx, "", accessToken)
@@ -321,9 +324,9 @@ func (p *OIDCProvider) getUserInfoWithToken(ctx context.Context, userID, accessT
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "GET", userInfoUri, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userInfoUri, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create UserInfo request: %v", err)
+		return nil, fmt.Errorf("failed to create UserInfo request: %w", err)
 	}
 
 	// Set authorization header if access token is provided
@@ -335,7 +338,7 @@ func (p *OIDCProvider) getUserInfoWithToken(ctx context.Context, userID, accessT
 	// Make HTTP request
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call UserInfo endpoint: %v", err)
+		return nil, fmt.Errorf("failed to call UserInfo endpoint: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -345,9 +348,9 @@ func (p *OIDCProvider) getUserInfoWithToken(ctx context.Context, userID, accessT
 	}
 
 	// Parse JSON response
-	var userInfo map[string]interface{}
+	var userInfo map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-		return nil, fmt.Errorf("failed to decode UserInfo response: %v", err)
+		return nil, fmt.Errorf("failed to decode UserInfo response: %w", err)
 	}
 
 	glog.V(4).Infof("Received UserInfo response: %+v", userInfo)
@@ -361,40 +364,41 @@ func (p *OIDCProvider) getUserInfoWithToken(ctx context.Context, userID, accessT
 	}
 
 	glog.V(3).Infof("Retrieved user info from OIDC provider: %s", identity.UserID)
+
 	return identity, nil
 }
 
 // ValidateToken validates an OIDC JWT token
 func (p *OIDCProvider) ValidateToken(ctx context.Context, token string) (*providers.TokenClaims, error) {
 	if !p.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if token == "" {
-		return nil, fmt.Errorf("token cannot be empty")
+		return nil, errors.New("token cannot be empty")
 	}
 
 	// Parse token without verification first to get header info
 	parsedToken, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JWT token: %v", err)
+		return nil, fmt.Errorf("failed to parse JWT token: %w", err)
 	}
 
 	// Get key ID from header
 	kid, ok := parsedToken.Header["kid"].(string)
 	if !ok {
-		return nil, fmt.Errorf("missing key ID in JWT header")
+		return nil, errors.New("missing key ID in JWT header")
 	}
 
 	// Get signing key from JWKS
 	publicKey, err := p.getPublicKey(ctx, kid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get public key: %v", err)
+		return nil, fmt.Errorf("failed to get public key: %w", err)
 	}
 
 	// Parse and validate token with proper signature verification
 	claims := jwt.MapClaims{}
-	validatedToken, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+	validatedToken, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (any, error) {
 		// Verify signing method
 		switch token.Method.(type) {
 		case *jwt.SigningMethodRSA, *jwt.SigningMethodECDSA:
@@ -407,9 +411,10 @@ func (p *OIDCProvider) ValidateToken(ctx context.Context, token string) (*provid
 	if err != nil {
 		// Use JWT library's typed errors for robust error checking
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, fmt.Errorf("%w: %v", providers.ErrProviderTokenExpired, err)
+			return nil, fmt.Errorf("%w: %w", providers.ErrProviderTokenExpired, err)
 		}
-		return nil, fmt.Errorf("%w: %v", providers.ErrProviderInvalidToken, err)
+
+		return nil, fmt.Errorf("%w: %w", providers.ErrProviderInvalidToken, err)
 	}
 
 	if !validatedToken.Valid {
@@ -431,10 +436,11 @@ func (p *OIDCProvider) ValidateToken(ctx context.Context, token string) (*provid
 			if aud == p.config.ClientID {
 				audienceMatched = true
 			}
-		case []interface{}:
+		case []any:
 			for _, a := range aud {
 				if str, ok := a.(string); ok && str == p.config.ClientID {
 					audienceMatched = true
+
 					break
 				}
 			}
@@ -460,7 +466,7 @@ func (p *OIDCProvider) ValidateToken(ctx context.Context, token string) (*provid
 	tokenClaims := &providers.TokenClaims{
 		Subject: subject,
 		Issuer:  issuer,
-		Claims:  make(map[string]interface{}),
+		Claims:  make(map[string]any),
 	}
 
 	// Extract time-based claims (exp, iat, nbf)
@@ -482,9 +488,7 @@ func (p *OIDCProvider) ValidateToken(ctx context.Context, token string) (*provid
 	}
 
 	// Copy all claims
-	for key, value := range claims {
-		tokenClaims.Claims[key] = value
-	}
+	maps.Copy(tokenClaims.Claims, claims)
 
 	return tokenClaims, nil
 }
@@ -547,15 +551,16 @@ func (p *OIDCProvider) mapClaimsToRolesWithConfig(claims *providers.TokenClaims)
 	}
 
 	glog.V(2).Infof("Role mapping result: %v", roles)
+
 	return roles
 }
 
 // getPublicKey retrieves the public key for the given key ID from JWKS
-func (p *OIDCProvider) getPublicKey(ctx context.Context, kid string) (interface{}, error) {
+func (p *OIDCProvider) getPublicKey(ctx context.Context, kid string) (any, error) {
 	// Fetch JWKS if not cached or refresh if expired
 	if p.jwksCache == nil || (!p.jwksFetchedAt.IsZero() && time.Since(p.jwksFetchedAt) > p.jwksTTL) {
 		if err := p.fetchJWKS(ctx); err != nil {
-			return nil, fmt.Errorf("failed to fetch JWKS: %v", err)
+			return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 		}
 	}
 
@@ -568,13 +573,14 @@ func (p *OIDCProvider) getPublicKey(ctx context.Context, kid string) (interface{
 
 	// Key not found in cache. Refresh JWKS once to handle key rotation and retry.
 	if err := p.fetchJWKS(ctx); err != nil {
-		return nil, fmt.Errorf("failed to refresh JWKS after key miss: %v", err)
+		return nil, fmt.Errorf("failed to refresh JWKS after key miss: %w", err)
 	}
 	for _, key := range p.jwksCache.Keys {
 		if key.Kid == kid {
 			return p.parseJWK(&key)
 		}
 	}
+
 	return nil, fmt.Errorf("key with ID %s not found in JWKS after refresh", kid)
 }
 
@@ -585,14 +591,14 @@ func (p *OIDCProvider) fetchJWKS(ctx context.Context) error {
 		jwksURL = strings.TrimSuffix(p.config.Issuer, "/") + "/.well-known/jwks.json"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", jwksURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create JWKS request: %v", err)
+		return fmt.Errorf("failed to create JWKS request: %w", err)
 	}
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to fetch JWKS: %v", err)
+		return fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -602,17 +608,18 @@ func (p *OIDCProvider) fetchJWKS(ctx context.Context) error {
 
 	var jwks JWKS
 	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
-		return fmt.Errorf("failed to decode JWKS response: %v", err)
+		return fmt.Errorf("failed to decode JWKS response: %w", err)
 	}
 
 	p.jwksCache = &jwks
 	p.jwksFetchedAt = time.Now()
 	glog.V(3).Infof("Fetched JWKS with %d keys from %s", len(jwks.Keys), jwksURL)
+
 	return nil
 }
 
 // parseJWK converts a JWK to a public key
-func (p *OIDCProvider) parseJWK(key *JWK) (interface{}, error) {
+func (p *OIDCProvider) parseJWK(key *JWK) (any, error) {
 	switch key.Kty {
 	case "RSA":
 		return p.parseRSAKey(key)
@@ -628,13 +635,13 @@ func (p *OIDCProvider) parseRSAKey(key *JWK) (*rsa.PublicKey, error) {
 	// Decode the modulus (n)
 	nBytes, err := base64.RawURLEncoding.DecodeString(key.N)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode RSA modulus: %v", err)
+		return nil, fmt.Errorf("failed to decode RSA modulus: %w", err)
 	}
 
 	// Decode the exponent (e)
 	eBytes, err := base64.RawURLEncoding.DecodeString(key.E)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode RSA exponent: %v", err)
+		return nil, fmt.Errorf("failed to decode RSA exponent: %w", err)
 	}
 
 	// Convert exponent bytes to int
@@ -656,7 +663,7 @@ func (p *OIDCProvider) parseRSAKey(key *JWK) (*rsa.PublicKey, error) {
 func (p *OIDCProvider) parseECKey(key *JWK) (*ecdsa.PublicKey, error) {
 	// Validate required fields
 	if key.X == "" || key.Y == "" || key.Crv == "" {
-		return nil, fmt.Errorf("incomplete EC key: missing x, y, or crv parameter")
+		return nil, errors.New("incomplete EC key: missing x, y, or crv parameter")
 	}
 
 	// Get the curve
@@ -675,13 +682,13 @@ func (p *OIDCProvider) parseECKey(key *JWK) (*ecdsa.PublicKey, error) {
 	// Decode x coordinate
 	xBytes, err := base64.RawURLEncoding.DecodeString(key.X)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode EC x coordinate: %v", err)
+		return nil, fmt.Errorf("failed to decode EC x coordinate: %w", err)
 	}
 
 	// Decode y coordinate
 	yBytes, err := base64.RawURLEncoding.DecodeString(key.Y)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode EC y coordinate: %v", err)
+		return nil, fmt.Errorf("failed to decode EC y coordinate: %w", err)
 	}
 
 	// Create EC public key
@@ -693,14 +700,14 @@ func (p *OIDCProvider) parseECKey(key *JWK) (*ecdsa.PublicKey, error) {
 
 	// Validate that the point is on the curve
 	if !curve.IsOnCurve(pubKey.X, pubKey.Y) {
-		return nil, fmt.Errorf("EC key coordinates are not on the specified curve")
+		return nil, errors.New("EC key coordinates are not on the specified curve")
 	}
 
 	return pubKey, nil
 }
 
 // mapUserInfoToIdentity maps UserInfo response to ExternalIdentity
-func (p *OIDCProvider) mapUserInfoToIdentity(userInfo map[string]interface{}) *providers.ExternalIdentity {
+func (p *OIDCProvider) mapUserInfoToIdentity(userInfo map[string]any) *providers.ExternalIdentity {
 	identity := &providers.ExternalIdentity{
 		Provider:   p.name,
 		Attributes: make(map[string]string),
@@ -722,7 +729,7 @@ func (p *OIDCProvider) mapUserInfoToIdentity(userInfo map[string]interface{}) *p
 	// Handle groups claim (can be array of strings or single string)
 	if groupsData, exists := userInfo["groups"]; exists {
 		switch groups := groupsData.(type) {
-		case []interface{}:
+		case []any:
 			// Array of groups
 			for _, group := range groups {
 				if groupStr, ok := group.(string); ok {

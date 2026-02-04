@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -21,12 +22,12 @@ type BucketMetadataTestCase struct {
 }
 
 var (
-	//bad entry
+	// bad entry
 	badEntry = &filer_pb.Entry{
 		Name: "badEntry",
 	}
 
-	//good entry
+	// good entry
 	goodEntryAcl, _ = json.Marshal(s3_constants.PublicRead)
 	goodEntry       = &filer_pb.Entry{
 		Name: "entryWithValidAcp",
@@ -37,7 +38,7 @@ var (
 		},
 	}
 
-	//ownership is ""
+	// ownership is ""
 	ownershipEmptyStr = &filer_pb.Entry{
 		Name: "ownershipEmptyStr",
 		Extended: map[string][]byte{
@@ -45,7 +46,7 @@ var (
 		},
 	}
 
-	//ownership valid
+	// ownership valid
 	ownershipValid = &filer_pb.Entry{
 		Name: "ownershipValid",
 		Extended: map[string][]byte{
@@ -53,7 +54,7 @@ var (
 		},
 	}
 
-	//owner is ""
+	// owner is ""
 	acpEmptyStr = &filer_pb.Entry{
 		Name: "acpEmptyStr",
 		Extended: map[string][]byte{
@@ -61,7 +62,7 @@ var (
 		},
 	}
 
-	//owner not exists
+	// owner not exists
 	acpEmptyObject = &filer_pb.Entry{
 		Name: "acpEmptyObject",
 		Extended: map[string][]byte{
@@ -69,7 +70,7 @@ var (
 		},
 	}
 
-	//grants is nil
+	// grants is nil
 	acpOwnerNilAcp, _ = json.Marshal(make([]*s3.Grant, 0))
 	acpOwnerNil       = &filer_pb.Entry{
 		Name: "acpOwnerNil",
@@ -78,15 +79,15 @@ var (
 		},
 	}
 
-	//load filer is
+	// load filer is
 	loadFilerBucket = make(map[string]int, 1)
-	//override `loadBucketMetadataFromFiler` to avoid really load from filer
+	// override `loadBucketMetadataFromFiler` to avoid really load from filer
 )
 
 var tcs = []*BucketMetadataTestCase{
 	{
 		badEntry, &BucketMetaData{
-			Name:            badEntry.Name,
+			Name:            badEntry.GetName(),
 			ObjectOwnership: s3_constants.DefaultOwnershipForExists,
 			Owner: &s3.Owner{
 				DisplayName: &AccountAdmin.DisplayName,
@@ -97,7 +98,7 @@ var tcs = []*BucketMetadataTestCase{
 	},
 	{
 		goodEntry, &BucketMetaData{
-			Name:            goodEntry.Name,
+			Name:            goodEntry.GetName(),
 			ObjectOwnership: s3_constants.OwnershipBucketOwnerEnforced,
 			Owner: &s3.Owner{
 				DisplayName: &AccountAdmin.DisplayName,
@@ -108,7 +109,7 @@ var tcs = []*BucketMetadataTestCase{
 	},
 	{
 		ownershipEmptyStr, &BucketMetaData{
-			Name:            ownershipEmptyStr.Name,
+			Name:            ownershipEmptyStr.GetName(),
 			ObjectOwnership: s3_constants.DefaultOwnershipForExists,
 			Owner: &s3.Owner{
 				DisplayName: &AccountAdmin.DisplayName,
@@ -119,7 +120,7 @@ var tcs = []*BucketMetadataTestCase{
 	},
 	{
 		ownershipValid, &BucketMetaData{
-			Name:            ownershipValid.Name,
+			Name:            ownershipValid.GetName(),
 			ObjectOwnership: s3_constants.OwnershipBucketOwnerEnforced,
 			Owner: &s3.Owner{
 				DisplayName: &AccountAdmin.DisplayName,
@@ -130,7 +131,7 @@ var tcs = []*BucketMetadataTestCase{
 	},
 	{
 		acpEmptyStr, &BucketMetaData{
-			Name:            acpEmptyStr.Name,
+			Name:            acpEmptyStr.GetName(),
 			ObjectOwnership: s3_constants.DefaultOwnershipForExists,
 			Owner: &s3.Owner{
 				DisplayName: &AccountAdmin.DisplayName,
@@ -141,7 +142,7 @@ var tcs = []*BucketMetadataTestCase{
 	},
 	{
 		acpEmptyObject, &BucketMetaData{
-			Name:            acpEmptyObject.Name,
+			Name:            acpEmptyObject.GetName(),
 			ObjectOwnership: s3_constants.DefaultOwnershipForExists,
 			Owner: &s3.Owner{
 				DisplayName: &AccountAdmin.DisplayName,
@@ -152,7 +153,7 @@ var tcs = []*BucketMetadataTestCase{
 	},
 	{
 		acpOwnerNil, &BucketMetaData{
-			Name:            acpOwnerNil.Name,
+			Name:            acpOwnerNil.GetName(),
 			ObjectOwnership: s3_constants.DefaultOwnershipForExists,
 			Owner: &s3.Owner{
 				DisplayName: &AccountAdmin.DisplayName,
@@ -178,6 +179,7 @@ func TestGetBucketMetadata(t *testing.T) {
 	loadBucketMetadataFromFiler = func(r *BucketRegistry, bucketName string) (*BucketMetaData, error) {
 		time.Sleep(time.Second)
 		loadFilerBucket[bucketName] = loadFilerBucket[bucketName] + 1
+
 		return &BucketMetaData{
 			Name: bucketName,
 		}, nil
@@ -189,16 +191,16 @@ func TestGetBucketMetadata(t *testing.T) {
 		s3a:           nil,
 	}
 
-	//start 40 goroutine for
+	// start 40 goroutine for
 	var wg sync.WaitGroup
 	closeCh := make(chan struct{})
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 		outLoop:
 			for {
-				for j := 0; j < 5; j++ {
+				for j := range 5 {
 					select {
 					case <-closeCh:
 						break outLoop
@@ -219,7 +221,7 @@ func TestGetBucketMetadata(t *testing.T) {
 	close(closeCh)
 	wg.Wait()
 
-	//Each bucket is loaded from the filer only once
+	// Each bucket is loaded from the filer only once
 	for bucketName, loadCount := range loadFilerBucket {
 		if loadCount != 1 {
 			t.Fatalf("lock is uneffict: %s, %d", bucketName, loadCount)

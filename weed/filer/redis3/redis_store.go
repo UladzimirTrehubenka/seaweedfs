@@ -9,6 +9,7 @@ import (
 	"github.com/go-redsync/redsync/v4"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -80,5 +81,6 @@ func (store *Redis3Store) initialize(hostPort string, password string, database 
 		})
 	}
 	store.redsync = redsync.New(goredis.NewPool(store.Client))
-	return
+
+	return err
 }

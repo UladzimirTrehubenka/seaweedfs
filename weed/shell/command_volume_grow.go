@@ -2,8 +2,8 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
-	"fmt"
 	"io"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
@@ -36,7 +36,6 @@ func (c *commandGrow) HasTag(CommandTag) bool {
 }
 
 func (c *commandGrow) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	volumeVacuumCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	growCount := volumeVacuumCommand.Uint("count", 2, "")
 	collection := volumeVacuumCommand.String("collection", "", "grow this collection")
@@ -49,7 +48,7 @@ func (c *commandGrow) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 		return nil
 	}
 	if *collection == "" {
-		return fmt.Errorf("collection option is required")
+		return errors.New("collection option is required")
 	}
 	t, _, err := collectTopologyInfo(commandEnv, 0)
 	if err != nil {
@@ -68,27 +67,27 @@ func (c *commandGrow) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 	rackFound := *rack == ""
 	dataNodeFound := *dataNode == ""
 	diskTypeFound := *diskType == ""
-	for _, dc := range t.DataCenterInfos {
-		if dc.Id == *dataCenter {
+	for _, dc := range t.GetDataCenterInfos() {
+		if dc.GetId() == *dataCenter {
 			dataCenterFound = true
 		}
-		for _, r := range dc.RackInfos {
-			if r.Id == *rack {
+		for _, r := range dc.GetRackInfos() {
+			if r.GetId() == *rack {
 				rackFound = true
 			}
-			for _, dn := range r.DataNodeInfos {
-				if dn.Id == *dataNode {
+			for _, dn := range r.GetDataNodeInfos() {
+				if dn.GetId() == *dataNode {
 					dataNodeFound = true
 				}
-				for _, di := range dn.DiskInfos {
-					if !diskTypeFound && di.Type == types.ToDiskType(*diskType).String() {
+				for _, di := range dn.GetDiskInfos() {
+					if !diskTypeFound && di.GetType() == types.ToDiskType(*diskType).String() {
 						diskTypeFound = true
 					}
-					for _, vi := range di.VolumeInfos {
-						if !collectionFound && vi.Collection == *collection {
-							replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(vi.ReplicaPlacement))
-							volumeGrowRequest.Ttl = needle.LoadTTLFromUint32(vi.Ttl).String()
-							volumeGrowRequest.DiskType = vi.DiskType
+					for _, vi := range di.GetVolumeInfos() {
+						if !collectionFound && vi.GetCollection() == *collection {
+							replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(vi.GetReplicaPlacement()))
+							volumeGrowRequest.Ttl = needle.LoadTTLFromUint32(vi.GetTtl()).String()
+							volumeGrowRequest.DiskType = vi.GetDiskType()
 							volumeGrowRequest.Replication = replicaPlacement.String()
 							collectionFound = true
 						}
@@ -101,27 +100,28 @@ func (c *commandGrow) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 		}
 	}
 	if !dataCenterFound {
-		return fmt.Errorf("data center not found")
+		return errors.New("data center not found")
 	}
 	if !rackFound {
-		return fmt.Errorf("rack not found")
+		return errors.New("rack not found")
 	}
 	if !dataNodeFound {
-		return fmt.Errorf("data node not found")
+		return errors.New("data node not found")
 	}
 	if !diskTypeFound {
-		return fmt.Errorf("disk type not found")
+		return errors.New("disk type not found")
 	}
 	if !collectionFound {
-		return fmt.Errorf("collection not found")
+		return errors.New("collection not found")
 	}
 	if err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
 		if _, err := client.VolumeGrow(context.Background(), volumeGrowRequest); err != nil {
 			return err
 		}
+
 		return nil
 	}); err != nil {
-		return
+		return err
 	}
 
 	return nil

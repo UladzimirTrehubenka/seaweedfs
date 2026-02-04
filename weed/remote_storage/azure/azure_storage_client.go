@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
 	"github.com/seaweedfs/seaweedfs/weed/remote_storage"
@@ -93,16 +95,15 @@ func (s azureRemoteStorageMaker) HasBucket() bool {
 }
 
 func (s azureRemoteStorageMaker) Make(conf *remote_pb.RemoteConf) (remote_storage.RemoteStorageClient, error) {
-
 	client := &azureRemoteStorageClient{
 		conf: conf,
 	}
 
-	accountName, accountKey := conf.AzureAccountName, conf.AzureAccountKey
+	accountName, accountKey := conf.GetAzureAccountName(), conf.GetAzureAccountKey()
 	if len(accountName) == 0 || len(accountKey) == 0 {
 		accountName, accountKey = os.Getenv("AZURE_STORAGE_ACCOUNT"), os.Getenv("AZURE_STORAGE_ACCESS_KEY")
 		if len(accountName) == 0 || len(accountKey) == 0 {
-			return nil, fmt.Errorf("either AZURE_STORAGE_ACCOUNT or AZURE_STORAGE_ACCESS_KEY environment variable is not set")
+			return nil, errors.New("either AZURE_STORAGE_ACCOUNT or AZURE_STORAGE_ACCESS_KEY environment variable is not set")
 		}
 	}
 
@@ -131,9 +132,8 @@ type azureRemoteStorageClient struct {
 var _ = remote_storage.RemoteStorageClient(&azureRemoteStorageClient{})
 
 func (az *azureRemoteStorageClient) Traverse(loc *remote_pb.RemoteStorageLocation, visitFn remote_storage.VisitFunc) (err error) {
-
-	pathKey := loc.Path[1:]
-	containerClient := az.client.ServiceClient().NewContainerClient(loc.Bucket)
+	pathKey := loc.GetPath()[1:]
+	containerClient := az.client.ServiceClient().NewContainerClient(loc.GetBucket())
 
 	// List blobs with pager
 	pager := containerClient.NewListBlobsFlatPager(&container.ListBlobsFlatOptions{
@@ -143,7 +143,7 @@ func (az *azureRemoteStorageClient) Traverse(loc *remote_pb.RemoteStorageLocatio
 	for pager.More() {
 		resp, err := pager.NextPage(context.Background())
 		if err != nil {
-			return fmt.Errorf("azure traverse %s%s: %w", loc.Bucket, loc.Path, err)
+			return fmt.Errorf("azure traverse %s%s: %w", loc.GetBucket(), loc.GetPath(), err)
 		}
 
 		for _, blobItem := range resp.Segment.BlobItems {
@@ -154,7 +154,7 @@ func (az *azureRemoteStorageClient) Traverse(loc *remote_pb.RemoteStorageLocatio
 			dir, name := util.FullPath(key).DirAndName()
 
 			remoteEntry := &filer_pb.RemoteEntry{
-				StorageName: az.conf.Name,
+				StorageName: az.conf.GetName(),
 			}
 			if blobItem.Properties != nil {
 				if blobItem.Properties.LastModified != nil {
@@ -170,18 +170,17 @@ func (az *azureRemoteStorageClient) Traverse(loc *remote_pb.RemoteStorageLocatio
 
 			err = visitFn(dir, name, false, remoteEntry)
 			if err != nil {
-				return fmt.Errorf("azure processing %s%s: %w", loc.Bucket, loc.Path, err)
+				return fmt.Errorf("azure processing %s%s: %w", loc.GetBucket(), loc.GetPath(), err)
 			}
 		}
 	}
 
-	return
+	return err
 }
 
 func (az *azureRemoteStorageClient) ReadFile(loc *remote_pb.RemoteStorageLocation, offset int64, size int64) (data []byte, err error) {
-
-	key := loc.Path[1:]
-	blobClient := az.client.ServiceClient().NewContainerClient(loc.Bucket).NewBlockBlobClient(key)
+	key := loc.GetPath()[1:]
+	blobClient := az.client.ServiceClient().NewContainerClient(loc.GetBucket()).NewBlockBlobClient(key)
 
 	count := size
 	if count == 0 {
@@ -194,13 +193,13 @@ func (az *azureRemoteStorageClient) ReadFile(loc *remote_pb.RemoteStorageLocatio
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to download file %s%s: %w", loc.Bucket, loc.Path, err)
+		return nil, fmt.Errorf("failed to download file %s%s: %w", loc.GetBucket(), loc.GetPath(), err)
 	}
 	defer downloadResp.Body.Close()
 
 	data, err = io.ReadAll(downloadResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read download stream %s%s: %w", loc.Bucket, loc.Path, err)
+		return nil, fmt.Errorf("failed to read download stream %s%s: %w", loc.GetBucket(), loc.GetPath(), err)
 	}
 
 	return
@@ -215,14 +214,13 @@ func (az *azureRemoteStorageClient) RemoveDirectory(loc *remote_pb.RemoteStorage
 }
 
 func (az *azureRemoteStorageClient) WriteFile(loc *remote_pb.RemoteStorageLocation, entry *filer_pb.Entry, reader io.Reader) (remoteEntry *filer_pb.RemoteEntry, err error) {
-
-	key := loc.Path[1:]
-	blobClient := az.client.ServiceClient().NewContainerClient(loc.Bucket).NewBlockBlobClient(key)
+	key := loc.GetPath()[1:]
+	blobClient := az.client.ServiceClient().NewContainerClient(loc.GetBucket()).NewBlockBlobClient(key)
 
 	// Upload from reader
-	metadata := toMetadata(entry.Extended)
+	metadata := toMetadata(entry.GetExtended())
 	httpHeaders := &blob.HTTPHeaders{}
-	if entry.Attributes != nil && entry.Attributes.Mime != "" {
+	if entry.GetAttributes() != nil && entry.GetAttributes().GetMime() != "" {
 		httpHeaders.BlobContentType = &entry.Attributes.Mime
 	}
 
@@ -233,7 +231,7 @@ func (az *azureRemoteStorageClient) WriteFile(loc *remote_pb.RemoteStorageLocati
 		Metadata:    metadata,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("azure upload to %s%s: %w", loc.Bucket, loc.Path, err)
+		return nil, fmt.Errorf("azure upload to %s%s: %w", loc.GetBucket(), loc.GetPath(), err)
 	}
 
 	// read back the remote entry
@@ -241,8 +239,8 @@ func (az *azureRemoteStorageClient) WriteFile(loc *remote_pb.RemoteStorageLocati
 }
 
 func (az *azureRemoteStorageClient) readFileRemoteEntry(loc *remote_pb.RemoteStorageLocation) (*filer_pb.RemoteEntry, error) {
-	key := loc.Path[1:]
-	blobClient := az.client.ServiceClient().NewContainerClient(loc.Bucket).NewBlockBlobClient(key)
+	key := loc.GetPath()[1:]
+	blobClient := az.client.ServiceClient().NewContainerClient(loc.GetBucket()).NewBlockBlobClient(key)
 
 	props, err := blobClient.GetProperties(context.Background(), nil)
 	if err != nil {
@@ -250,7 +248,7 @@ func (az *azureRemoteStorageClient) readFileRemoteEntry(loc *remote_pb.RemoteSto
 	}
 
 	remoteEntry := &filer_pb.RemoteEntry{
-		StorageName: az.conf.Name,
+		StorageName: az.conf.GetName(),
 	}
 
 	if props.LastModified != nil {
@@ -280,17 +278,18 @@ func toMetadata(attributes map[string][]byte) map[string]*string {
 			metadata[key] = &val
 		}
 	}
+
 	return metadata
 }
 
 func (az *azureRemoteStorageClient) UpdateFileMetadata(loc *remote_pb.RemoteStorageLocation, oldEntry *filer_pb.Entry, newEntry *filer_pb.Entry) (err error) {
-	if reflect.DeepEqual(oldEntry.Extended, newEntry.Extended) {
+	if reflect.DeepEqual(oldEntry.GetExtended(), newEntry.GetExtended()) {
 		return nil
 	}
-	metadata := toMetadata(newEntry.Extended)
+	metadata := toMetadata(newEntry.GetExtended())
 
-	key := loc.Path[1:]
-	blobClient := az.client.ServiceClient().NewContainerClient(loc.Bucket).NewBlobClient(key)
+	key := loc.GetPath()[1:]
+	blobClient := az.client.ServiceClient().NewContainerClient(loc.GetBucket()).NewBlobClient(key)
 
 	_, err = blobClient.SetMetadata(context.Background(), metadata, nil)
 
@@ -298,8 +297,8 @@ func (az *azureRemoteStorageClient) UpdateFileMetadata(loc *remote_pb.RemoteStor
 }
 
 func (az *azureRemoteStorageClient) DeleteFile(loc *remote_pb.RemoteStorageLocation) (err error) {
-	key := loc.Path[1:]
-	blobClient := az.client.ServiceClient().NewContainerClient(loc.Bucket).NewBlobClient(key)
+	key := loc.GetPath()[1:]
+	blobClient := az.client.ServiceClient().NewContainerClient(loc.GetBucket()).NewBlobClient(key)
 
 	_, err = blobClient.Delete(context.Background(), &blob.DeleteOptions{
 		DeleteSnapshots: to.Ptr(blob.DeleteSnapshotsOptionTypeInclude),
@@ -309,8 +308,10 @@ func (az *azureRemoteStorageClient) DeleteFile(loc *remote_pb.RemoteStorageLocat
 		if bloberror.HasCode(err, bloberror.BlobNotFound) {
 			return nil
 		}
-		return fmt.Errorf("azure delete %s%s: %w", loc.Bucket, loc.Path, err)
+
+		return fmt.Errorf("azure delete %s%s: %w", loc.GetBucket(), loc.GetPath(), err)
 	}
+
 	return
 }
 
@@ -335,6 +336,7 @@ func (az *azureRemoteStorageClient) ListBuckets() (buckets []*remote_storage.Buc
 			}
 		}
 	}
+
 	return
 }
 
@@ -344,6 +346,7 @@ func (az *azureRemoteStorageClient) CreateBucket(name string) (err error) {
 	if err != nil {
 		return fmt.Errorf("create bucket %s: %w", name, err)
 	}
+
 	return
 }
 
@@ -353,5 +356,6 @@ func (az *azureRemoteStorageClient) DeleteBucket(name string) (err error) {
 	if err != nil {
 		return fmt.Errorf("delete bucket %s: %w", name, err)
 	}
+
 	return
 }

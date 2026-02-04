@@ -27,6 +27,7 @@ import (
 func (wfs *WFS) loopFlushDirtyMetadata() {
 	if wfs.option.MetadataFlushSeconds <= 0 {
 		glog.V(0).Infof("periodic metadata flush disabled")
+
 		return
 	}
 
@@ -139,8 +140,8 @@ func (wfs *WFS) flushFileMetadata(fh *FileHandle) error {
 			SkipCheckParentDirectory: true,
 		}
 
-		wfs.mapPbIdFromLocalToFiler(request.Entry)
-		defer wfs.mapPbIdFromFilerToLocal(request.Entry)
+		wfs.mapPbIdFromLocalToFiler(request.GetEntry())
+		defer wfs.mapPbIdFromFilerToLocal(request.GetEntry())
 
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			return err
@@ -148,12 +149,13 @@ func (wfs *WFS) flushFileMetadata(fh *FileHandle) error {
 
 		// Only update cache if the parent directory is cached
 		if wfs.metaCache.IsDirectoryCached(util.FullPath(dir)) {
-			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, request.Entry)); err != nil {
+			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.GetDirectory(), request.GetEntry())); err != nil {
 				return fmt.Errorf("update meta cache for %s: %w", fileFullPath, err)
 			}
 		}
 
 		glog.V(3).Infof("flushed metadata for %s with %d chunks", fileFullPath, len(entry.GetChunks()))
+
 		return nil
 	})
 

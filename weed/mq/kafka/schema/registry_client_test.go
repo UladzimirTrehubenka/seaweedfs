@@ -31,17 +31,18 @@ func TestNewRegistryClient(t *testing.T) {
 func TestRegistryClient_GetSchemaByID(t *testing.T) {
 	// Mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/schemas/ids/1" {
-			response := map[string]interface{}{
+		switch r.URL.Path {
+		case "/schemas/ids/1":
+			response := map[string]any{
 				"schema":  `{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}`,
 				"subject": "user-value",
 				"version": 1,
 			}
 			json.NewEncoder(w).Encode(response)
-		} else if r.URL.Path == "/schemas/ids/999" {
+		case "/schemas/ids/999":
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(`{"error_code":40403,"message":"Schema not found"}`))
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -101,7 +102,7 @@ func TestRegistryClient_GetSchemaByID(t *testing.T) {
 func TestRegistryClient_GetLatestSchema(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/subjects/user-value/versions/latest" {
-			response := map[string]interface{}{
+			response := map[string]any{
 				"id":      uint32(1),
 				"schema":  `{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}`,
 				"subject": "user-value",
@@ -133,8 +134,8 @@ func TestRegistryClient_GetLatestSchema(t *testing.T) {
 
 func TestRegistryClient_RegisterSchema(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" && r.URL.Path == "/subjects/test-value/versions" {
-			response := map[string]interface{}{
+		if r.Method == http.MethodPost && r.URL.Path == "/subjects/test-value/versions" {
+			response := map[string]any{
 				"id": uint32(123),
 			}
 			json.NewEncoder(w).Encode(response)
@@ -160,8 +161,8 @@ func TestRegistryClient_RegisterSchema(t *testing.T) {
 
 func TestRegistryClient_CheckCompatibility(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" && r.URL.Path == "/compatibility/subjects/test-value/versions/latest" {
-			response := map[string]interface{}{
+		if r.Method == http.MethodPost && r.URL.Path == "/compatibility/subjects/test-value/versions/latest" {
+			response := map[string]any{
 				"is_compatible": true,
 			}
 			json.NewEncoder(w).Encode(response)
@@ -331,7 +332,7 @@ func TestRegistryClient_HealthCheck(t *testing.T) {
 // Benchmark tests
 func BenchmarkRegistryClient_GetSchemaByID(b *testing.B) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := map[string]interface{}{
+		response := map[string]any{
 			"schema":  `{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}`,
 			"subject": "user-value",
 			"version": 1,
@@ -343,8 +344,7 @@ func BenchmarkRegistryClient_GetSchemaByID(b *testing.B) {
 	config := RegistryConfig{URL: server.URL}
 	client := NewRegistryClient(config)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = client.GetSchemaByID(1)
 	}
 }
@@ -355,8 +355,7 @@ func BenchmarkRegistryClient_DetectSchemaFormat(b *testing.B) {
 
 	avroSchema := `{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}`
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = client.detectSchemaFormat(avroSchema)
 	}
 }

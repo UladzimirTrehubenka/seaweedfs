@@ -54,6 +54,7 @@ type DiskInfo struct {
 // activeDisk represents internal disk state (private)
 type activeDisk struct {
 	*DiskInfo
+
 	pendingTasks  []*taskState
 	assignedTasks []*taskState
 	recentTasks   []*taskState // Completed in last N seconds

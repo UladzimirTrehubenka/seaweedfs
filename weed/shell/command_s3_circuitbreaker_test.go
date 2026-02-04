@@ -15,7 +15,7 @@ type Case struct {
 
 var (
 	TestCases = []*Case{
-		//add circuit breaker config for global
+		// add circuit breaker config for global
 		{
 			args: strings.Split("-global -type Count -actions Read,Write -values 500,200", " "),
 			result: `{
@@ -29,7 +29,7 @@ var (
 			}`,
 		},
 
-		//disable global config
+		// disable global config
 		{
 			args: strings.Split("-global -disable", " "),
 			result: `{
@@ -42,7 +42,7 @@ var (
 			}`,
 		},
 
-		//add circuit breaker config for buckets x,y,z
+		// add circuit breaker config for buckets x,y,z
 		{
 			args: strings.Split("-buckets x,y,z -type Count -actions Read,Write -values 200,100", " "),
 			result: `{
@@ -78,7 +78,7 @@ var (
 			}`,
 		},
 
-		//disable circuit breaker config of x
+		// disable circuit breaker config of x
 		{
 			args: strings.Split("-buckets x -disable", " "),
 			result: `{
@@ -113,7 +113,7 @@ var (
 			}`,
 		},
 
-		//delete circuit breaker config of x
+		// delete circuit breaker config of x
 		{
 			args: strings.Split("-buckets x -delete", " "),
 			result: `{
@@ -142,7 +142,7 @@ var (
 			}`,
 		},
 
-		//configure the circuit breaker for the size of the uploaded file for bucket x,y
+		// configure the circuit breaker for the size of the uploaded file for bucket x,y
 		{
 			args: strings.Split("-buckets x,y -type MB -actions Write -values 1024", " "),
 			result: `{
@@ -178,7 +178,7 @@ var (
 			}`,
 		},
 
-		//delete the circuit breaker configuration for the size of the uploaded file of bucket x,y
+		// delete the circuit breaker configuration for the size of the uploaded file of bucket x,y
 		{
 			args: strings.Split("-buckets x,y -type MB -actions Write -delete", " "),
 			result: `{
@@ -210,7 +210,7 @@ var (
 			}`,
 		},
 
-		//enable global circuit breaker config (without -disable flag)
+		// enable global circuit breaker config (without -disable flag)
 		{
 			args: strings.Split("-global", " "),
 			result: `{
@@ -243,7 +243,7 @@ var (
 			}`,
 		},
 
-		//clear all circuit breaker config
+		// clear all circuit breaker config
 		{
 			args: strings.Split("-delete", " "),
 			result: `{
@@ -262,6 +262,7 @@ func TestCircuitBreakerShell(t *testing.T) {
 			return err
 		}
 		writeBuf.Reset()
+
 		return nil
 	}
 
@@ -273,13 +274,13 @@ func TestCircuitBreakerShell(t *testing.T) {
 		if i != 0 {
 			result := writeBuf.String()
 
-			actual := make(map[string]interface{})
+			actual := make(map[string]any)
 			err := json.Unmarshal([]byte(result), &actual)
 			if err != nil {
 				t.Error(err)
 			}
 
-			expect := make(map[string]interface{})
+			expect := make(map[string]any)
 			err = json.Unmarshal([]byte(result), &expect)
 			if err != nil {
 				t.Error(err)

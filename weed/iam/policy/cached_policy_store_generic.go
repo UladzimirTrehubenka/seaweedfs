@@ -42,11 +42,12 @@ func (a *PolicyStoreAdapter) List(ctx context.Context, filerAddress string) ([]s
 // GenericCachedPolicyStore implements PolicyStore using the generic cache
 type GenericCachedPolicyStore struct {
 	*util.CachedStore[*PolicyDocument]
+
 	adapter *PolicyStoreAdapter
 }
 
 // NewGenericCachedPolicyStore creates a new cached policy store using generics
-func NewGenericCachedPolicyStore(config map[string]interface{}, filerAddressProvider func() string) (*GenericCachedPolicyStore, error) {
+func NewGenericCachedPolicyStore(config map[string]any, filerAddressProvider func() string) (*GenericCachedPolicyStore, error) {
 	// Create underlying filer store
 	filerStore, err := NewFilerPolicyStore(config, filerAddressProvider)
 	if err != nil {
@@ -126,12 +127,14 @@ func genericCopyPolicyDocument(policy *PolicyDocument) *PolicyDocument {
 	policyData, err := json.Marshal(policy)
 	if err != nil {
 		glog.Errorf("Failed to marshal policy document for deep copy: %v", err)
+
 		return nil
 	}
 
 	var copied PolicyDocument
 	if err := json.Unmarshal(policyData, &copied); err != nil {
 		glog.Errorf("Failed to unmarshal policy document for deep copy: %v", err)
+
 		return nil
 	}
 

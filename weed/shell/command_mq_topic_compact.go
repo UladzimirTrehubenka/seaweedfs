@@ -39,7 +39,6 @@ func (c *commandMqTopicCompact) HasTag(tag CommandTag) bool {
 }
 
 func (c *commandMqTopicCompact) Do(args []string, commandEnv *CommandEnv, writer io.Writer) error {
-
 	// parse parameters
 	mqCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	namespace := mqCommand.String("namespace", "", "namespace name")
@@ -91,5 +90,4 @@ func (c *commandMqTopicCompact) Do(args []string, commandEnv *CommandEnv, writer
 	}
 
 	return nil
-
 }

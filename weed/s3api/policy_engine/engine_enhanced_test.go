@@ -60,11 +60,13 @@ func TestExtractPrincipalVariables(t *testing.T) {
 				actualValues, ok := result[key]
 				if !ok {
 					t.Errorf("Expected key %s not found in result", key)
+
 					continue
 				}
 
 				if len(actualValues) != len(expectedValues) {
 					t.Errorf("For key %s: expected %d values, got %d", key, len(expectedValues), len(actualValues))
+
 					continue
 				}
 
@@ -90,7 +92,7 @@ func TestSubstituteVariablesWithClaims(t *testing.T) {
 		name     string
 		pattern  string
 		context  map[string][]string
-		claims   map[string]interface{}
+		claims   map[string]any
 		expected string
 	}{
 		{
@@ -106,7 +108,7 @@ func TestSubstituteVariablesWithClaims(t *testing.T) {
 			name:    "JWT claim substitution",
 			pattern: "arn:aws:s3:::bucket/${jwt:preferred_username}/*",
 			context: map[string][]string{},
-			claims: map[string]interface{}{
+			claims: map[string]any{
 				"preferred_username": "bob",
 			},
 			expected: "arn:aws:s3:::bucket/bob/*",
@@ -117,7 +119,7 @@ func TestSubstituteVariablesWithClaims(t *testing.T) {
 			context: map[string][]string{
 				"aws:principaltype": {"IAMUser"},
 			},
-			claims: map[string]interface{}{
+			claims: map[string]any{
 				"sub": "user123",
 			},
 			expected: "arn:aws:s3:::bucket/user123/files/IAMUser",
@@ -126,7 +128,7 @@ func TestSubstituteVariablesWithClaims(t *testing.T) {
 			name:     "Variable not found",
 			pattern:  "arn:aws:s3:::bucket/${jwt:missing}/*",
 			context:  map[string][]string{},
-			claims:   map[string]interface{}{},
+			claims:   map[string]any{},
 			expected: "arn:aws:s3:::bucket/${jwt:missing}/*",
 		},
 	}
@@ -215,7 +217,7 @@ func TestPolicyVariablesWithJWTClaims(t *testing.T) {
 		Resource:   "arn:aws:s3:::bucket/alice/file.txt",
 		Principal:  "arn:aws:iam::123456789012:user/alice",
 		Conditions: map[string][]string{},
-		Claims: map[string]interface{}{
+		Claims: map[string]any{
 			"preferred_username": "alice",
 		},
 	}
@@ -250,7 +252,7 @@ func TestExtractPrincipalVariablesWithAccount(t *testing.T) {
 func TestSubstituteVariablesWithLDAP(t *testing.T) {
 	pattern := "arn:aws:s3:::bucket/${ldap:username}/*"
 	context := map[string][]string{}
-	claims := map[string]interface{}{
+	claims := map[string]any{
 		"username": "jdoe",
 	}
 
@@ -263,7 +265,7 @@ func TestSubstituteVariablesWithLDAP(t *testing.T) {
 
 	// Test ldap:dn
 	pattern = "arn:aws:s3:::bucket/${ldap:dn}/*"
-	claims = map[string]interface{}{
+	claims = map[string]any{
 		"dn": "uid=jdoe,ou=people,dc=example,dc=com",
 	}
 	result = SubstituteVariables(pattern, context, claims)
@@ -278,14 +280,14 @@ func TestSubstituteVariablesSpecialChars(t *testing.T) {
 		name     string
 		pattern  string
 		context  map[string][]string
-		claims   map[string]interface{}
+		claims   map[string]any
 		expected string
 	}{
 		{
 			name:    "Comparison operators in claims/vars",
 			pattern: "resource/${jwt:scope}",
 			context: map[string][]string{},
-			claims: map[string]interface{}{
+			claims: map[string]any{
 				"scope": "read/write",
 			},
 			expected: "resource/read/write",
@@ -294,7 +296,7 @@ func TestSubstituteVariablesSpecialChars(t *testing.T) {
 			name:    "Path traversal attempt (should just substitute text)",
 			pattern: "bucket/${jwt:user}",
 			context: map[string][]string{},
-			claims: map[string]interface{}{
+			claims: map[string]any{
 				"user": "../../../etc/passwd",
 			},
 			expected: "bucket/../../../etc/passwd",

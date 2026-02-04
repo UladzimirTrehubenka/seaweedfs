@@ -112,6 +112,7 @@ func GetBrokerErrorInfo(code int32) BrokerErrorInfo {
 	if info, exists := BrokerErrors[code]; exists {
 		return info
 	}
+
 	return BrokerErrorInfo{
 		Code: code, Name: "UNKNOWN", Description: "Unknown broker error code", KafkaCode: 1,
 	}
@@ -128,5 +129,6 @@ func CreateBrokerError(code int32, message string) (int32, string) {
 	if message == "" {
 		message = info.Description
 	}
+
 	return code, message
 }

@@ -92,6 +92,7 @@ func (vgr *VolumeGrowReservation) releaseAllReservations() {
 
 func (o *VolumeGrowOption) String() string {
 	blob, _ := json.Marshal(o)
+
 	return string(blob)
 }
 
@@ -112,6 +113,7 @@ func (vg *VolumeGrowth) findVolumeCount(copyCount int) (count uint32) {
 	default:
 		count = VolumeGrowStrategy.CopyOtherCount
 	}
+
 	return
 }
 
@@ -123,20 +125,23 @@ func (vg *VolumeGrowth) AutomaticGrowByType(option *VolumeGrowOption, grpcDialOp
 	if len(result) > 0 && len(result)%option.ReplicaPlacement.GetCopyCount() == 0 {
 		return result, nil
 	}
+
 	return result, err
 }
 func (vg *VolumeGrowth) GrowByCountAndType(grpcDialOption grpc.DialOption, targetCount uint32, option *VolumeGrowOption, topo *Topology) (result []*master_pb.VolumeLocation, err error) {
 	vg.accessLock.Lock()
 	defer vg.accessLock.Unlock()
 
-	for i := uint32(0); i < targetCount; i++ {
+	for range targetCount {
 		if res, e := vg.findAndGrow(grpcDialOption, topo, option); e == nil {
 			result = append(result, res...)
 		} else {
 			glog.V(0).Infof("create %d volume, created %d: %v", targetCount, len(result), e)
+
 			return result, e
 		}
 	}
+
 	return
 }
 
@@ -171,7 +176,8 @@ func (vg *VolumeGrowth) findAndGrow(grpcDialOption grpc.DialOption, topo *Topolo
 			})
 		}
 	}
-	return
+
+	return result, err
 }
 
 // 1. find the main data node
@@ -181,7 +187,7 @@ func (vg *VolumeGrowth) findAndGrow(grpcDialOption grpc.DialOption, topo *Topolo
 // 2. find rest data nodes
 // If useReservations is true, reserves capacity on each server and returns reservation info
 func (vg *VolumeGrowth) findEmptySlotsForOneVolume(topo *Topology, option *VolumeGrowOption, useReservations bool) (servers []*DataNode, reservation *VolumeGrowReservation, err error) {
-	//find main datacenter and other data centers
+	// find main datacenter and other data centers
 	rp := option.ReplicaPlacement
 
 	// Track tentative reservations to make the process atomic
@@ -246,13 +252,14 @@ func (vg *VolumeGrowth) findEmptySlotsForOneVolume(topo *Topology, option *Volum
 		if possibleRacksCount < rp.DiffRackCount+1 {
 			return fmt.Errorf("Only has %d racks with more than %d free data nodes, not enough for %d.", possibleRacksCount, rp.SameRackCount+1, rp.DiffRackCount+1)
 		}
+
 		return nil
 	})
 	if dc_err != nil {
 		return nil, nil, dc_err
 	}
 
-	//find main rack and other racks
+	// find main rack and other racks
 	mainRack, otherRacks, rackErr := mainDataCenter.(*DataCenter).PickNodesByWeight(rp.DiffRackCount+1, option, func(node Node) error {
 		if option.Rack != "" && node.IsRack() && node.Id() != NodeId(option.Rack) {
 			return fmt.Errorf("Not matching preferred rack:%s", option.Rack)
@@ -273,13 +280,14 @@ func (vg *VolumeGrowth) findEmptySlotsForOneVolume(topo *Topology, option *Volum
 		if possibleDataNodesCount < rp.SameRackCount+1 {
 			return fmt.Errorf("Only has %d data nodes with a slot, not enough for %d.", possibleDataNodesCount, rp.SameRackCount+1)
 		}
+
 		return nil
 	})
 	if rackErr != nil {
 		return nil, nil, rackErr
 	}
 
-	//find main server and other servers
+	// find main server and other servers
 	mainServer, otherServers, serverErr := mainRack.(*Rack).PickNodesByWeight(rp.SameRackCount+1, option, func(node Node) error {
 		if option.DataNode != "" && node.IsDataNode() && node.Id() != NodeId(option.DataNode) {
 			return fmt.Errorf("Not matching preferred data node:%s", option.DataNode)
@@ -301,6 +309,7 @@ func (vg *VolumeGrowth) findEmptySlotsForOneVolume(topo *Topology, option *Volum
 		} else if availableSpaceFunc(node, option) < 1 {
 			return fmt.Errorf("Free:%d < Expected:%d", availableSpaceFunc(node, option), 1)
 		}
+
 		return nil
 	})
 	if serverErr != nil {
@@ -375,7 +384,8 @@ func (vg *VolumeGrowth) grow(grpcDialOption grpc.DialOption, topo *Topology, vid
 			glog.V(0).Infof("Created Volume %d on %s", vid, server.NodeImpl.String())
 		} else {
 			glog.Warningf("Failed to assign volume %d on %s: %v", vid, server.NodeImpl.String(), err)
-			growErr = fmt.Errorf("failed to assign volume %d on %s: %v", vid, server.NodeImpl.String(), err)
+			growErr = fmt.Errorf("failed to assign volume %d on %s: %w", vid, server.NodeImpl.String(), err)
+
 			break
 		}
 	}

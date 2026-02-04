@@ -8,7 +8,10 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
@@ -19,7 +22,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"google.golang.org/grpc"
 )
 
 type DataCenterId string
@@ -132,13 +134,14 @@ func _getDefaultReplicaPlacement(commandEnv *CommandEnv) (*super_block.ReplicaPl
 
 	err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
 		resp, err = client.GetMasterConfiguration(context.Background(), &master_pb.GetMasterConfigurationRequest{})
+
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return super_block.NewReplicaPlacementFromString(resp.DefaultReplication)
+	return super_block.NewReplicaPlacementFromString(resp.GetDefaultReplication())
 }
 
 func parseReplicaPlacementArg(commandEnv *CommandEnv, replicaStr string) (*super_block.ReplicaPlacement, error) {
@@ -164,7 +167,6 @@ func parseReplicaPlacementArg(commandEnv *CommandEnv, replicaStr string) (*super
 }
 
 func collectTopologyInfo(commandEnv *CommandEnv, delayBeforeCollecting time.Duration) (topoInfo *master_pb.TopologyInfo, volumeSizeLimitMb uint64, err error) {
-
 	if delayBeforeCollecting > 0 {
 		time.Sleep(delayBeforeCollecting)
 	}
@@ -172,14 +174,14 @@ func collectTopologyInfo(commandEnv *CommandEnv, delayBeforeCollecting time.Dura
 	var resp *master_pb.VolumeListResponse
 	err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
 		resp, err = client.VolumeList(context.Background(), &master_pb.VolumeListRequest{})
+
 		return err
 	})
 	if err != nil {
 		return
 	}
 
-	return resp.TopologyInfo, resp.VolumeSizeLimitMb, nil
-
+	return resp.GetTopologyInfo(), resp.GetVolumeSizeLimitMb(), nil
 }
 
 func collectEcNodesForDC(commandEnv *CommandEnv, selectedDataCenter string, diskType types.DiskType) (ecNodes []*EcNode, totalFreeEcSlots int, err error) {
@@ -214,20 +216,21 @@ func collectVolumeIdToCollection(t *master_pb.TopologyInfo, vids []needle.Volume
 		vidSet[vid] = true
 	}
 
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
-				for _, diskInfo := range dn.DiskInfos {
-					for _, vi := range diskInfo.VolumeInfos {
-						vid := needle.VolumeId(vi.Id)
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
+				for _, diskInfo := range dn.GetDiskInfos() {
+					for _, vi := range diskInfo.GetVolumeInfos() {
+						vid := needle.VolumeId(vi.GetId())
 						if vidSet[vid] {
-							result[vid] = vi.Collection
+							result[vid] = vi.GetCollection()
 						}
 					}
 				}
 			}
 		}
 	}
+
 	return result
 }
 
@@ -237,21 +240,21 @@ func collectCollectionsForVolumeIds(t *master_pb.TopologyInfo, vids []needle.Vol
 	}
 
 	found := map[string]bool{}
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
-				for _, diskInfo := range dn.DiskInfos {
-					for _, vi := range diskInfo.VolumeInfos {
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
+				for _, diskInfo := range dn.GetDiskInfos() {
+					for _, vi := range diskInfo.GetVolumeInfos() {
 						for _, vid := range vids {
-							if needle.VolumeId(vi.Id) == vid {
-								found[vi.Collection] = true
+							if needle.VolumeId(vi.GetId()) == vid {
+								found[vi.GetCollection()] = true
 							}
 						}
 					}
-					for _, ecs := range diskInfo.EcShardInfos {
+					for _, ecs := range diskInfo.GetEcShardInfos() {
 						for _, vid := range vids {
-							if needle.VolumeId(ecs.Id) == vid {
-								found[ecs.Collection] = true
+							if needle.VolumeId(ecs.GetId()) == vid {
+								found[ecs.GetCollection()] = true
 							}
 						}
 					}
@@ -264,23 +267,22 @@ func collectCollectionsForVolumeIds(t *master_pb.TopologyInfo, vids []needle.Vol
 	}
 
 	collections := []string{}
-	for k, _ := range found {
+	for k := range found {
 		collections = append(collections, k)
 	}
 	sort.Strings(collections)
+
 	return collections
 }
 
 func moveMountedShardToEcNode(commandEnv *CommandEnv, existingLocation *EcNode, collection string, vid needle.VolumeId, shardId erasure_coding.ShardId, destinationEcNode *EcNode, destDiskId uint32, applyBalancing bool, diskType types.DiskType) (err error) {
-
 	if !commandEnv.isLocked() {
-		return fmt.Errorf("lock is lost")
+		return errors.New("lock is lost")
 	}
 
 	copiedShardIds := []erasure_coding.ShardId{shardId}
 
 	if applyBalancing {
-
 		existingServerAddress := pb.NewServerAddressFromDataNode(existingLocation.info)
 
 		// ask destination node to copy shard and the ecx file from source node, and mount it
@@ -302,31 +304,27 @@ func moveMountedShardToEcNode(commandEnv *CommandEnv, existingLocation *EcNode, 
 		}
 
 		if destDiskId > 0 {
-			fmt.Printf("moved ec shard %d.%d %s => %s (disk %d)\n", vid, shardId, existingLocation.info.Id, destinationEcNode.info.Id, destDiskId)
+			fmt.Printf("moved ec shard %d.%d %s => %s (disk %d)\n", vid, shardId, existingLocation.info.GetId(), destinationEcNode.info.GetId(), destDiskId)
 		} else {
-			fmt.Printf("moved ec shard %d.%d %s => %s\n", vid, shardId, existingLocation.info.Id, destinationEcNode.info.Id)
+			fmt.Printf("moved ec shard %d.%d %s => %s\n", vid, shardId, existingLocation.info.GetId(), destinationEcNode.info.GetId())
 		}
-
 	}
 
 	destinationEcNode.addEcVolumeShards(vid, collection, copiedShardIds, diskType)
 	existingLocation.deleteEcVolumeShards(vid, copiedShardIds, diskType)
 
 	return nil
-
 }
 
 func oneServerCopyAndMountEcShardsFromSource(grpcDialOption grpc.DialOption,
 	targetServer *EcNode, shardIdsToCopy []erasure_coding.ShardId,
 	volumeId needle.VolumeId, collection string, existingLocation pb.ServerAddress, destDiskId uint32) (copiedShardIds []erasure_coding.ShardId, err error) {
-
-	fmt.Printf("allocate %d.%v %s => %s\n", volumeId, shardIdsToCopy, existingLocation, targetServer.info.Id)
+	fmt.Printf("allocate %d.%v %s => %s\n", volumeId, shardIdsToCopy, existingLocation, targetServer.info.GetId())
 
 	targetAddress := pb.NewServerAddressFromDataNode(targetServer.info)
 	err = operation.WithVolumeServerClient(false, targetAddress, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
-
 		if targetAddress != existingLocation {
-			fmt.Printf("copy %d.%v %s => %s\n", volumeId, shardIdsToCopy, existingLocation, targetServer.info.Id)
+			fmt.Printf("copy %d.%v %s => %s\n", volumeId, shardIdsToCopy, existingLocation, targetServer.info.GetId())
 			_, copyErr := volumeServerClient.VolumeEcShardsCopy(context.Background(), &volume_server_pb.VolumeEcShardsCopyRequest{
 				VolumeId:       uint32(volumeId),
 				Collection:     collection,
@@ -338,18 +336,18 @@ func oneServerCopyAndMountEcShardsFromSource(grpcDialOption grpc.DialOption,
 				DiskId:         destDiskId,
 			})
 			if copyErr != nil {
-				return fmt.Errorf("copy %d.%v %s => %s : %v\n", volumeId, shardIdsToCopy, existingLocation, targetServer.info.Id, copyErr)
+				return fmt.Errorf("copy %d.%v %s => %s : %w\n", volumeId, shardIdsToCopy, existingLocation, targetServer.info.GetId(), copyErr)
 			}
 		}
 
-		fmt.Printf("mount %d.%v on %s\n", volumeId, shardIdsToCopy, targetServer.info.Id)
+		fmt.Printf("mount %d.%v on %s\n", volumeId, shardIdsToCopy, targetServer.info.GetId())
 		_, mountErr := volumeServerClient.VolumeEcShardsMount(context.Background(), &volume_server_pb.VolumeEcShardsMountRequest{
 			VolumeId:   uint32(volumeId),
 			Collection: collection,
 			ShardIds:   erasure_coding.ShardIdsToUint32(shardIdsToCopy),
 		})
 		if mountErr != nil {
-			return fmt.Errorf("mount %d.%v on %s : %v\n", volumeId, shardIdsToCopy, targetServer.info.Id, mountErr)
+			return fmt.Errorf("mount %d.%v on %s : %w\n", volumeId, shardIdsToCopy, targetServer.info.GetId(), mountErr)
 		}
 
 		if targetAddress != existingLocation {
@@ -361,17 +359,17 @@ func oneServerCopyAndMountEcShardsFromSource(grpcDialOption grpc.DialOption,
 	})
 
 	if err != nil {
-		return
+		return copiedShardIds, err
 	}
 
-	return
+	return copiedShardIds, err
 }
 
 func eachDataNode(topo *master_pb.TopologyInfo, fn func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo)) {
-	for _, dc := range topo.DataCenterInfos {
-		for _, rack := range dc.RackInfos {
-			for _, dn := range rack.DataNodeInfos {
-				fn(DataCenterId(dc.Id), RackId(rack.Id), dn)
+	for _, dc := range topo.GetDataCenterInfos() {
+		for _, rack := range dc.GetRackInfos() {
+			for _, dn := range rack.GetDataNodeInfos() {
+				fn(DataCenterId(dc.GetId()), RackId(rack.GetId()), dn)
 			}
 		}
 	}
@@ -417,6 +415,7 @@ func countShards(ecShardInfos []*master_pb.VolumeEcShardInformationMessage) (cou
 	for _, eci := range ecShardInfos {
 		count += erasure_coding.GetShardCount(eci)
 	}
+
 	return
 }
 
@@ -424,12 +423,12 @@ func countFreeShardSlots(dn *master_pb.DataNodeInfo, diskType types.DiskType) (c
 	if dn.DiskInfos == nil {
 		return 0
 	}
-	diskInfo := dn.DiskInfos[string(diskType)]
+	diskInfo := dn.GetDiskInfos()[string(diskType)]
 	if diskInfo == nil {
 		return 0
 	}
 
-	slots := int(diskInfo.MaxVolumeCount-diskInfo.VolumeCount)*erasure_coding.DataShardsCount - countShards(diskInfo.EcShardInfos)
+	slots := int(diskInfo.GetMaxVolumeCount()-diskInfo.GetVolumeCount())*erasure_coding.DataShardsCount - countShards(diskInfo.GetEcShardInfos())
 	if slots < 0 {
 		return 0
 	}
@@ -438,13 +437,14 @@ func countFreeShardSlots(dn *master_pb.DataNodeInfo, diskType types.DiskType) (c
 }
 
 func (ecNode *EcNode) localShardIdCount(vid uint32) int {
-	for _, diskInfo := range ecNode.info.DiskInfos {
-		for _, eci := range diskInfo.EcShardInfos {
-			if vid == eci.Id {
+	for _, diskInfo := range ecNode.info.GetDiskInfos() {
+		for _, eci := range diskInfo.GetEcShardInfos() {
+			if vid == eci.GetId() {
 				return erasure_coding.GetShardCount(eci)
 			}
 		}
 	}
+
 	return 0
 }
 
@@ -466,32 +466,32 @@ func collectEcVolumeServersByDc(topo *master_pb.TopologyInfo, selectedDataCenter
 		// Build disk-level information from volumes and EC shards
 		// First, discover all unique disk IDs from VolumeInfos (includes empty disks)
 		allDiskIds := make(map[uint32]string) // diskId -> diskType
-		for diskTypeKey, diskInfo := range dn.DiskInfos {
+		for diskTypeKey, diskInfo := range dn.GetDiskInfos() {
 			if diskInfo == nil {
 				continue
 			}
 			// Get all disk IDs from volumes
-			for _, vi := range diskInfo.VolumeInfos {
-				allDiskIds[vi.DiskId] = diskTypeKey
+			for _, vi := range diskInfo.GetVolumeInfos() {
+				allDiskIds[vi.GetDiskId()] = diskTypeKey
 			}
 			// Also get disk IDs from EC shards
-			for _, ecShardInfo := range diskInfo.EcShardInfos {
-				allDiskIds[ecShardInfo.DiskId] = diskTypeKey
+			for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+				allDiskIds[ecShardInfo.GetDiskId()] = diskTypeKey
 			}
 		}
 
 		// Group EC shards by disk_id
 		diskShards := make(map[uint32]map[needle.VolumeId]*erasure_coding.ShardsInfo)
-		for _, diskInfo := range dn.DiskInfos {
+		for _, diskInfo := range dn.GetDiskInfos() {
 			if diskInfo == nil {
 				continue
 			}
-			for _, eci := range diskInfo.EcShardInfos {
-				diskId := eci.DiskId
+			for _, eci := range diskInfo.GetEcShardInfos() {
+				diskId := eci.GetDiskId()
 				if diskShards[diskId] == nil {
 					diskShards[diskId] = make(map[needle.VolumeId]*erasure_coding.ShardsInfo)
 				}
-				vid := needle.VolumeId(eci.Id)
+				vid := needle.VolumeId(eci.GetId())
 				diskShards[diskId][vid] = erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(eci)
 			}
 		}
@@ -525,11 +525,11 @@ func collectEcVolumeServersByDc(topo *master_pb.TopologyInfo, selectedDataCenter
 		ecNodes = append(ecNodes, ecNode)
 		totalFreeEcSlots += freeEcSlots
 	})
-	return
+
+	return ecNodes, totalFreeEcSlots
 }
 
 func sourceServerDeleteEcShards(grpcDialOption grpc.DialOption, collection string, volumeId needle.VolumeId, sourceLocation pb.ServerAddress, toBeDeletedShardIds []erasure_coding.ShardId) error {
-
 	fmt.Printf("delete %d.%v from %s\n", volumeId, toBeDeletedShardIds, sourceLocation)
 
 	return operation.WithVolumeServerClient(false, sourceLocation, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
@@ -538,13 +538,12 @@ func sourceServerDeleteEcShards(grpcDialOption grpc.DialOption, collection strin
 			Collection: collection,
 			ShardIds:   erasure_coding.ShardIdsToUint32(toBeDeletedShardIds),
 		})
+
 		return deleteErr
 	})
-
 }
 
 func unmountEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sourceLocation pb.ServerAddress, toBeUnmountedhardIds []erasure_coding.ShardId) error {
-
 	fmt.Printf("unmount %d.%v from %s\n", volumeId, toBeUnmountedhardIds, sourceLocation)
 
 	return operation.WithVolumeServerClient(false, sourceLocation, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
@@ -552,12 +551,12 @@ func unmountEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, s
 			VolumeId: uint32(volumeId),
 			ShardIds: erasure_coding.ShardIdsToUint32(toBeUnmountedhardIds),
 		})
+
 		return deleteErr
 	})
 }
 
 func mountEcShards(grpcDialOption grpc.DialOption, collection string, volumeId needle.VolumeId, sourceLocation pb.ServerAddress, toBeMountedhardIds []erasure_coding.ShardId) error {
-
 	fmt.Printf("mount %d.%v on %s\n", volumeId, toBeMountedhardIds, sourceLocation)
 
 	return operation.WithVolumeServerClient(false, sourceLocation, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
@@ -566,6 +565,7 @@ func mountEcShards(grpcDialOption grpc.DialOption, collection string, volumeId n
 			Collection: collection,
 			ShardIds:   erasure_coding.ShardIdsToUint32(toBeMountedhardIds),
 		})
+
 		return mountErr
 	})
 }
@@ -575,13 +575,14 @@ func ceilDivide(a, b int) int {
 	if (a % b) != 0 {
 		r = 1
 	}
+
 	return (a / b) + r
 }
 
 func findEcVolumeShardsInfo(ecNode *EcNode, vid needle.VolumeId, diskType types.DiskType) *erasure_coding.ShardsInfo {
-	if diskInfo, found := ecNode.info.DiskInfos[string(diskType)]; found {
-		for _, shardInfo := range diskInfo.EcShardInfos {
-			if needle.VolumeId(shardInfo.Id) == vid {
+	if diskInfo, found := ecNode.info.GetDiskInfos()[string(diskType)]; found {
+		for _, shardInfo := range diskInfo.GetEcShardInfos() {
+			if needle.VolumeId(shardInfo.GetId()) == vid {
 				return erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(shardInfo)
 			}
 		}
@@ -593,12 +594,11 @@ func findEcVolumeShardsInfo(ecNode *EcNode, vid needle.VolumeId, diskType types.
 
 // TODO: simplify me
 func (ecNode *EcNode) addEcVolumeShards(vid needle.VolumeId, collection string, shardIds []erasure_coding.ShardId, diskType types.DiskType) *EcNode {
-
 	foundVolume := false
-	diskInfo, found := ecNode.info.DiskInfos[string(diskType)]
+	diskInfo, found := ecNode.info.GetDiskInfos()[string(diskType)]
 	if found {
-		for _, ecsi := range diskInfo.EcShardInfos {
-			if needle.VolumeId(ecsi.Id) == vid {
+		for _, ecsi := range diskInfo.GetEcShardInfos() {
+			if needle.VolumeId(ecsi.GetId()) == vid {
 				si := erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(ecsi)
 				oldShardCount := si.Count()
 				for _, shardId := range shardIds {
@@ -608,6 +608,7 @@ func (ecNode *EcNode) addEcVolumeShards(vid needle.VolumeId, collection string, 
 				ecsi.ShardSizes = si.SizesInt64()
 				ecNode.freeEcSlot -= si.Count() - oldShardCount
 				foundVolume = true
+
 				break
 			}
 		}
@@ -637,10 +638,9 @@ func (ecNode *EcNode) addEcVolumeShards(vid needle.VolumeId, collection string, 
 }
 
 func (ecNode *EcNode) deleteEcVolumeShards(vid needle.VolumeId, shardIds []erasure_coding.ShardId, diskType types.DiskType) *EcNode {
-
-	if diskInfo, found := ecNode.info.DiskInfos[string(diskType)]; found {
-		for _, eci := range diskInfo.EcShardInfos {
-			if needle.VolumeId(eci.Id) == vid {
+	if diskInfo, found := ecNode.info.GetDiskInfos()[string(diskType)]; found {
+		for _, eci := range diskInfo.GetEcShardInfos() {
+			if needle.VolumeId(eci.GetId()) == vid {
 				si := erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(eci)
 				oldCount := si.Count()
 				for _, shardId := range shardIds {
@@ -662,6 +662,7 @@ func groupByCount(data []*EcNode, identifierFn func(*EcNode) (id string, count i
 		id, count := identifierFn(d)
 		countMap[id] += count
 	}
+
 	return countMap
 }
 
@@ -671,6 +672,7 @@ func groupBy(data []*EcNode, identifierFn func(*EcNode) (id string)) map[string]
 		id := identifierFn(d)
 		groupMap[id] = append(groupMap[id], d)
 	}
+
 	return groupMap
 }
 
@@ -691,6 +693,7 @@ func (ecb *ecBalancer) getDataShardCount() int {
 	if ecb.dataShardCount > 0 {
 		return ecb.dataShardCount
 	}
+
 	return erasure_coding.DataShardsCount
 }
 
@@ -699,6 +702,7 @@ func (ecb *ecBalancer) getParityShardCount() int {
 	if ecb.parityShardCount > 0 {
 		return ecb.parityShardCount
 	}
+
 	return erasure_coding.ParityShardsCount
 }
 
@@ -714,26 +718,26 @@ func (ecb *ecBalancer) racks() map[RackId]*EcRack {
 				ecNodes: make(map[EcNodeId]*EcNode),
 			}
 		}
-		racks[ecNode.rack].ecNodes[EcNodeId(ecNode.info.Id)] = ecNode
+		racks[ecNode.rack].ecNodes[EcNodeId(ecNode.info.GetId())] = ecNode
 		racks[ecNode.rack].freeEcSlot += ecNode.freeEcSlot
 	}
+
 	return racks
 }
 
 func (ecb *ecBalancer) balanceEcVolumes(collection string) error {
-
 	fmt.Printf("balanceEcVolumes %s\n", collection)
 
 	if err := ecb.deleteDuplicatedEcShards(collection); err != nil {
-		return fmt.Errorf("delete duplicated collection %s ec shards: %v", collection, err)
+		return fmt.Errorf("delete duplicated collection %s ec shards: %w", collection, err)
 	}
 
 	if err := ecb.balanceEcShardsAcrossRacks(collection); err != nil {
-		return fmt.Errorf("balance across racks collection %s ec shards: %v", collection, err)
+		return fmt.Errorf("balance across racks collection %s ec shards: %w", collection, err)
 	}
 
 	if err := ecb.balanceEcShardsWithinRacks(collection); err != nil {
-		return fmt.Errorf("balance within racks collection %s ec shards: %v", collection, err)
+		return fmt.Errorf("balance within racks collection %s ec shards: %w", collection, err)
 	}
 
 	return nil
@@ -748,6 +752,7 @@ func (ecb *ecBalancer) deleteDuplicatedEcShards(collection string) error {
 			return ecb.doDeduplicateEcShards(collection, vid, locations)
 		})
 	}
+
 	return ewg.Wait()
 }
 
@@ -766,7 +771,7 @@ func (ecb *ecBalancer) doDeduplicateEcShards(collection string, vid needle.Volum
 			continue
 		}
 		sortEcNodesByFreeslotsAscending(ecNodes)
-		fmt.Printf("ec shard %d.%d has %d copies, keeping %v\n", vid, shardId, len(ecNodes), ecNodes[0].info.Id)
+		fmt.Printf("ec shard %d.%d has %d copies, keeping %v\n", vid, shardId, len(ecNodes), ecNodes[0].info.GetId())
 		if !ecb.applyBalancing {
 			continue
 		}
@@ -782,6 +787,7 @@ func (ecb *ecBalancer) doDeduplicateEcShards(collection string, vid needle.Volum
 			ecNode.deleteEcVolumeShards(vid, duplicatedShardIds, ecb.diskType)
 		}
 	}
+
 	return nil
 }
 
@@ -796,6 +802,7 @@ func (ecb *ecBalancer) balanceEcShardsAcrossRacks(collection string) error {
 			return ecb.doBalanceEcShardsAcrossRacks(collection, vid, locations)
 		})
 	}
+
 	return ewg.Wait()
 }
 
@@ -805,6 +812,7 @@ func countShardsByRack(vid needle.VolumeId, locations []*EcNode, diskType types.
 		if si := findEcVolumeShardsInfo(ecNode, vid, diskType); si != nil {
 			count = si.Count()
 		}
+
 		return
 	})
 }
@@ -824,6 +832,7 @@ func shardsByType(vid needle.VolumeId, locations []*EcNode, diskType types.DiskT
 			}
 		}
 	}
+
 	return
 }
 
@@ -837,16 +846,17 @@ func shardsByTypePerRack(vid needle.VolumeId, locations []*EcNode, diskType type
 // shardsByTypePerNode counts data shards and parity shards per node
 func shardsByTypePerNode(vid needle.VolumeId, locations []*EcNode, diskType types.DiskType, dataShards int) (dataPerNode, parityPerNode map[string][]erasure_coding.ShardId) {
 	return shardsByType(vid, locations, diskType, dataShards, func(ecNode *EcNode) string {
-		return ecNode.info.Id
+		return ecNode.info.GetId()
 	})
 }
 
 func countShardsByNode(vid needle.VolumeId, locations []*EcNode, diskType types.DiskType) map[string]int {
 	return groupByCount(locations, func(ecNode *EcNode) (id string, count int) {
-		id = ecNode.info.Id
+		id = ecNode.info.GetId()
 		if si := findEcVolumeShardsInfo(ecNode, vid, diskType); si != nil {
 			count = si.Count()
 		}
+
 		return
 	})
 }
@@ -934,6 +944,7 @@ func (ecb *ecBalancer) balanceShardTypeAcrossRacks(
 				si := findEcVolumeShardsInfo(ecNode, vid, ecb.diskType)
 				if si.Has(shardId) {
 					shardsToMove[shardId] = ecNode
+
 					break
 				}
 			}
@@ -945,7 +956,8 @@ func (ecb *ecBalancer) balanceShardTypeAcrossRacks(
 		// Find destination rack with room for this shard type
 		destRackId, err := ecb.pickRackForShardType(racks, shardsPerRack, maxPerRack, rackToShardCount, antiAffinityRacks)
 		if err != nil {
-			fmt.Printf("ec %s shard %d.%d at %s can not find a destination rack:\n%s\n", shardType, vid, shardId, ecNode.info.Id, err.Error())
+			fmt.Printf("ec %s shard %d.%d at %s can not find a destination rack:\n%s\n", shardType, vid, shardId, ecNode.info.GetId(), err.Error())
+
 			continue
 		}
 
@@ -965,6 +977,7 @@ func (ecb *ecBalancer) balanceShardTypeAcrossRacks(
 		for i, s := range shardsPerRack[srcRack] {
 			if s == shardId {
 				shardsPerRack[srcRack] = append(shardsPerRack[srcRack][:i], shardsPerRack[srcRack][i+1:]...)
+
 				break
 			}
 		}
@@ -1053,8 +1066,10 @@ func (s *twoPassSelector[T]) selectCandidate() (T, error) {
 
 	if len(selected) == 0 {
 		var zero T
+
 		return zero, errors.New("no valid candidate available")
 	}
+
 	return selected[rand.IntN(len(selected))], nil
 }
 
@@ -1107,6 +1122,7 @@ func (ecb *ecBalancer) pickRackForShardType(
 			if ecb.replicaPlacement != nil && ecb.replicaPlacement.DiffRackCount > 0 {
 				return rackToShardCount[string(c.id)] < ecb.replicaPlacement.DiffRackCount
 			}
+
 			return true
 		},
 	}
@@ -1115,6 +1131,7 @@ func (ecb *ecBalancer) pickRackForShardType(
 	if err != nil {
 		return "", errors.New("no rack available for shard type balancing")
 	}
+
 	return selected.id, nil
 }
 
@@ -1128,11 +1145,13 @@ func (ecb *ecBalancer) pickRackToBalanceShardsInto(rackToEcNodes map[RackId]*EcR
 	}
 
 	details := ""
+	var detailsSb1131 strings.Builder
 	for rackId, rack := range rackToEcNodes {
 		shards := rackToShardCount[string(rackId)]
 
 		if rack.freeEcSlot <= 0 {
-			details += fmt.Sprintf("  Skipped %s because it has no free slots\n", rackId)
+			detailsSb1131.WriteString(fmt.Sprintf("  Skipped %s because it has no free slots\n", rackId))
+
 			continue
 		}
 		// For EC shards, replica placement constraint only applies when DiffRackCount > 0.
@@ -1140,7 +1159,8 @@ func (ecb *ecBalancer) pickRackToBalanceShardsInto(rackToEcNodes map[RackId]*EcR
 		// distributed freely across racks for fault tolerance - the "000" means
 		// "no volume replication needed" because erasure coding provides redundancy.
 		if ecb.replicaPlacement != nil && ecb.replicaPlacement.DiffRackCount > 0 && shards > ecb.replicaPlacement.DiffRackCount {
-			details += fmt.Sprintf("  Skipped %s because shards %d > replica placement limit for other racks (%d)\n", rackId, shards, ecb.replicaPlacement.DiffRackCount)
+			detailsSb1131.WriteString(fmt.Sprintf("  Skipped %s because shards %d > replica placement limit for other racks (%d)\n", rackId, shards, ecb.replicaPlacement.DiffRackCount))
+
 			continue
 		}
 
@@ -1153,10 +1173,12 @@ func (ecb *ecBalancer) pickRackToBalanceShardsInto(rackToEcNodes map[RackId]*EcR
 			targets = append(targets, rackId)
 		}
 	}
+	details += detailsSb1131.String()
 
 	if len(targets) == 0 {
 		return "", errors.New(details)
 	}
+
 	return targets[rand.IntN(len(targets))], nil
 }
 
@@ -1168,14 +1190,13 @@ func (ecb *ecBalancer) balanceEcShardsWithinRacks(collection string) error {
 	// spread the ec shards evenly
 	ewg := ecb.errorWaitGroup()
 	for vid, locations := range vidLocations {
-
 		// see the volume's shards are in how many racks, and how many in each rack
 		rackToShardCount := countShardsByRack(vid, locations, ecb.diskType)
 
 		for rackId := range rackToShardCount {
 			var possibleDestinationEcNodes []*EcNode
 			for _, n := range racks[RackId(rackId)].ecNodes {
-				if _, found := n.info.DiskInfos[string(ecb.diskType)]; found {
+				if _, found := n.info.GetDiskInfos()[string(ecb.diskType)]; found {
 					possibleDestinationEcNodes = append(possibleDestinationEcNodes, n)
 				}
 			}
@@ -1184,6 +1205,7 @@ func (ecb *ecBalancer) balanceEcShardsWithinRacks(collection string) error {
 			})
 		}
 	}
+
 	return ewg.Wait()
 }
 
@@ -1250,6 +1272,7 @@ func (ecb *ecBalancer) balanceEcRacks() error {
 			return ecb.doBalanceEcRack(ecRack)
 		})
 	}
+
 	return ewg.Wait()
 }
 
@@ -1264,14 +1287,15 @@ func (ecb *ecBalancer) doBalanceEcRack(ecRack *EcRack) error {
 	}
 
 	ecNodeIdToShardCount := groupByCount(rackEcNodes, func(ecNode *EcNode) (id string, count int) {
-		diskInfo, found := ecNode.info.DiskInfos[string(ecb.diskType)]
+		diskInfo, found := ecNode.info.GetDiskInfos()[string(ecb.diskType)]
 		if !found {
 			return
 		}
-		for _, ecShardInfo := range diskInfo.EcShardInfos {
+		for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
 			count += erasure_coding.GetShardCount(ecShardInfo)
 		}
-		return ecNode.info.Id, count
+
+		return ecNode.info.GetId(), count
 	})
 
 	var totalShardCount int
@@ -1288,44 +1312,45 @@ func (ecb *ecBalancer) doBalanceEcRack(ecRack *EcRack) error {
 			return b.freeEcSlot - a.freeEcSlot
 		})
 		emptyNode, fullNode := rackEcNodes[0], rackEcNodes[len(rackEcNodes)-1]
-		emptyNodeShardCount, fullNodeShardCount := ecNodeIdToShardCount[emptyNode.info.Id], ecNodeIdToShardCount[fullNode.info.Id]
+		emptyNodeShardCount, fullNodeShardCount := ecNodeIdToShardCount[emptyNode.info.GetId()], ecNodeIdToShardCount[fullNode.info.GetId()]
 		if fullNodeShardCount > averageShardCount && emptyNodeShardCount+1 <= averageShardCount {
-
 			emptyNodeIds := make(map[uint32]bool)
-			if emptyDiskInfo, found := emptyNode.info.DiskInfos[string(ecb.diskType)]; found {
-				for _, shards := range emptyDiskInfo.EcShardInfos {
-					emptyNodeIds[shards.Id] = true
+			if emptyDiskInfo, found := emptyNode.info.GetDiskInfos()[string(ecb.diskType)]; found {
+				for _, shards := range emptyDiskInfo.GetEcShardInfos() {
+					emptyNodeIds[shards.GetId()] = true
 				}
 			}
-			if fullDiskInfo, found := fullNode.info.DiskInfos[string(ecb.diskType)]; found {
-				for _, shards := range fullDiskInfo.EcShardInfos {
-					if _, found := emptyNodeIds[shards.Id]; found {
+			if fullDiskInfo, found := fullNode.info.GetDiskInfos()[string(ecb.diskType)]; found {
+				for _, shards := range fullDiskInfo.GetEcShardInfos() {
+					if _, found := emptyNodeIds[shards.GetId()]; found {
 						continue
 					}
 					si := erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(shards)
 					for _, shardId := range si.Ids() {
-						vid := needle.VolumeId(shards.Id)
+						vid := needle.VolumeId(shards.GetId())
 						// For balancing, strictly require matching disk type
 						// For balancing, strictly require matching disk type and apply anti-affinity
 						dataShardCount := ecb.getDataShardCount()
 						destDiskId := pickBestDiskOnNode(emptyNode, vid, ecb.diskType, true, shardId, dataShardCount)
 
 						if destDiskId > 0 {
-							fmt.Printf("%s moves ec shards %d.%d to %s (disk %d)\n", fullNode.info.Id, shards.Id, shardId, emptyNode.info.Id, destDiskId)
+							fmt.Printf("%s moves ec shards %d.%d to %s (disk %d)\n", fullNode.info.GetId(), shards.GetId(), shardId, emptyNode.info.GetId(), destDiskId)
 						} else {
-							fmt.Printf("%s moves ec shards %d.%d to %s\n", fullNode.info.Id, shards.Id, shardId, emptyNode.info.Id)
+							fmt.Printf("%s moves ec shards %d.%d to %s\n", fullNode.info.GetId(), shards.GetId(), shardId, emptyNode.info.GetId())
 						}
 
-						err := moveMountedShardToEcNode(ecb.commandEnv, fullNode, shards.Collection, vid, shardId, emptyNode, destDiskId, ecb.applyBalancing, ecb.diskType)
+						err := moveMountedShardToEcNode(ecb.commandEnv, fullNode, shards.GetCollection(), vid, shardId, emptyNode, destDiskId, ecb.applyBalancing, ecb.diskType)
 						if err != nil {
 							return err
 						}
 
-						ecNodeIdToShardCount[emptyNode.info.Id]++
-						ecNodeIdToShardCount[fullNode.info.Id]--
+						ecNodeIdToShardCount[emptyNode.info.GetId()]++
+						ecNodeIdToShardCount[fullNode.info.GetId()]--
 						hasMove = true
+
 						break
 					}
+
 					break
 				}
 			}
@@ -1337,10 +1362,10 @@ func (ecb *ecBalancer) doBalanceEcRack(ecRack *EcRack) error {
 
 func (ecb *ecBalancer) pickEcNodeToBalanceShardsInto(vid needle.VolumeId, existingLocation *EcNode, possibleDestinations []*EcNode) (*EcNode, error) {
 	if existingLocation == nil {
-		return nil, fmt.Errorf("INTERNAL: missing source nodes")
+		return nil, errors.New("INTERNAL: missing source nodes")
 	}
 	if len(possibleDestinations) == 0 {
-		return nil, fmt.Errorf("INTERNAL: missing destination nodes")
+		return nil, errors.New("INTERNAL: missing destination nodes")
 	}
 
 	nodeShards := map[*EcNode]int{}
@@ -1361,12 +1386,14 @@ func (ecb *ecBalancer) pickEcNodeToBalanceShardsInto(vid needle.VolumeId, existi
 	}
 
 	details := ""
+	var detailsSb1364 strings.Builder
 	for _, node := range possibleDestinations {
-		if node.info.Id == existingLocation.info.Id {
+		if node.info.GetId() == existingLocation.info.GetId() {
 			continue
 		}
 		if node.freeEcSlot <= 0 {
-			details += fmt.Sprintf("  Skipped %s because it has no free slots\n", node.info.Id)
+			detailsSb1364.WriteString(fmt.Sprintf("  Skipped %s because it has no free slots\n", node.info.GetId()))
+
 			continue
 		}
 
@@ -1376,7 +1403,8 @@ func (ecb *ecBalancer) pickEcNodeToBalanceShardsInto(vid needle.VolumeId, existi
 		// distributed freely within racks - the "000" means "no volume replication needed"
 		// because erasure coding provides redundancy.
 		if ecb.replicaPlacement != nil && ecb.replicaPlacement.SameRackCount > 0 && shards > ecb.replicaPlacement.SameRackCount+1 {
-			details += fmt.Sprintf("  Skipped %s because shards %d > replica placement limit for the rack (%d + 1)\n", node.info.Id, shards, ecb.replicaPlacement.SameRackCount)
+			detailsSb1364.WriteString(fmt.Sprintf("  Skipped %s because shards %d > replica placement limit for the rack (%d + 1)\n", node.info.GetId(), shards, ecb.replicaPlacement.SameRackCount))
+
 			continue
 		}
 
@@ -1389,6 +1417,7 @@ func (ecb *ecBalancer) pickEcNodeToBalanceShardsInto(vid needle.VolumeId, existi
 			targets = append(targets, node)
 		}
 	}
+	details += detailsSb1364.String()
 
 	if len(targets) == 0 {
 		return nil, errors.New(details)
@@ -1400,8 +1429,10 @@ func (ecb *ecBalancer) pickEcNodeToBalanceShardsInto(vid needle.VolumeId, existi
 		slices.SortFunc(targets, func(a, b *EcNode) int {
 			aScore := diskDistributionScore(a, vid)
 			bScore := diskDistributionScore(b, vid)
+
 			return aScore - bScore // Lower score is better
 		})
+
 		return targets[0], nil
 	}
 
@@ -1424,6 +1455,7 @@ func diskDistributionScore(ecNode *EcNode, vid needle.VolumeId) int {
 		}
 		score += disk.ecShardCount // Also consider total shards on disk
 	}
+
 	return score
 }
 
@@ -1503,6 +1535,7 @@ func pickBestDiskOnNode(ecNode *EcNode, vid needle.VolumeId, diskType types.Disk
 	if bestDiskId != 0 {
 		return bestDiskId
 	}
+
 	return fallbackDiskId
 }
 
@@ -1516,6 +1549,7 @@ func (ecb *ecBalancer) pickEcNodeAndDiskToBalanceShardsInto(vid needle.VolumeId,
 	// For balancing, strictly require matching disk type and apply anti-affinity
 	dataShardCount := ecb.getDataShardCount()
 	diskId := pickBestDiskOnNode(node, vid, ecb.diskType, true, shardId, dataShardCount)
+
 	return node, diskId, nil
 }
 
@@ -1523,14 +1557,16 @@ func (ecb *ecBalancer) pickOneEcNodeAndMoveOneShard(existingLocation *EcNode, co
 	destNode, destDiskId, err := ecb.pickEcNodeAndDiskToBalanceShardsInto(vid, shardId, existingLocation, possibleDestinationEcNodes)
 	if err != nil {
 		fmt.Printf("WARNING: Could not find suitable target node for %d.%d:\n%s", vid, shardId, err.Error())
+
 		return nil
 	}
 
 	if destDiskId > 0 {
-		fmt.Printf("%s moves ec shard %d.%d to %s (disk %d)\n", existingLocation.info.Id, vid, shardId, destNode.info.Id, destDiskId)
+		fmt.Printf("%s moves ec shard %d.%d to %s (disk %d)\n", existingLocation.info.GetId(), vid, shardId, destNode.info.GetId(), destDiskId)
 	} else {
-		fmt.Printf("%s moves ec shard %d.%d to %s\n", existingLocation.info.Id, vid, shardId, destNode.info.Id)
+		fmt.Printf("%s moves ec shard %d.%d to %s\n", existingLocation.info.GetId(), vid, shardId, destNode.info.GetId())
 	}
+
 	return moveMountedShardToEcNode(ecb.commandEnv, existingLocation, collection, vid, shardId, destNode, destDiskId, ecb.applyBalancing, ecb.diskType)
 }
 
@@ -1549,7 +1585,7 @@ func pickNEcShardsToMoveFrom(ecNodes []*EcNode, vid needle.VolumeId, n int, disk
 	slices.SortFunc(candidateEcNodes, func(a, b *CandidateEcNode) int {
 		return b.shardCount - a.shardCount
 	})
-	for i := 0; i < n; i++ {
+	for range n {
 		selectedEcNodeIndex := -1
 		for i, candidateEcNode := range candidateEcNodes {
 			si := findEcVolumeShardsInfo(candidateEcNode.ecNode, vid, diskType)
@@ -1559,8 +1595,10 @@ func pickNEcShardsToMoveFrom(ecNodes []*EcNode, vid needle.VolumeId, n int, disk
 					candidateEcNode.shardCount--
 					picked[shardId] = candidateEcNode.ecNode
 					candidateEcNode.ecNode.deleteEcVolumeShards(vid, []erasure_coding.ShardId{shardId}, diskType)
+
 					break
 				}
+
 				break
 			}
 		}
@@ -1569,25 +1607,26 @@ func pickNEcShardsToMoveFrom(ecNodes []*EcNode, vid needle.VolumeId, n int, disk
 				return candidateEcNodes[i].shardCount > candidateEcNodes[j].shardCount
 			})
 		}
-
 	}
+
 	return picked
 }
 
 func (ecb *ecBalancer) collectVolumeIdToEcNodes(collection string) map[needle.VolumeId][]*EcNode {
 	vidLocations := make(map[needle.VolumeId][]*EcNode)
 	for _, ecNode := range ecb.ecNodes {
-		diskInfo, found := ecNode.info.DiskInfos[string(ecb.diskType)]
+		diskInfo, found := ecNode.info.GetDiskInfos()[string(ecb.diskType)]
 		if !found {
 			continue
 		}
-		for _, shardInfo := range diskInfo.EcShardInfos {
+		for _, shardInfo := range diskInfo.GetEcShardInfos() {
 			// ignore if not in current collection
-			if shardInfo.Collection == collection {
-				vidLocations[needle.VolumeId(shardInfo.Id)] = append(vidLocations[needle.VolumeId(shardInfo.Id)], ecNode)
+			if shardInfo.GetCollection() == collection {
+				vidLocations[needle.VolumeId(shardInfo.GetId())] = append(vidLocations[needle.VolumeId(shardInfo.GetId())], ecNode)
 			}
 		}
 	}
+
 	return vidLocations
 }
 
@@ -1638,6 +1677,7 @@ func compileCollectionPattern(pattern string) (*regexp.Regexp, error) {
 		// CollectionDefault keyword matches empty collection
 		return regexp.Compile("^$")
 	}
+
 	return regexp.Compile(pattern)
 }
 
@@ -1655,7 +1695,7 @@ func (ecb *ecBalancer) balanceShardTypeAcrossNodes(
 	// Map ID to EcNode for lookup
 	nodeMap := make(map[string]*EcNode)
 	for _, n := range possibleDestinationEcNodes {
-		nodeMap[n.info.Id] = n
+		nodeMap[n.info.GetId()] = n
 	}
 
 	// Find nodes with too many shards of this type
@@ -1686,7 +1726,8 @@ func (ecb *ecBalancer) balanceShardTypeAcrossNodes(
 		// Find destination node with room for this shard type
 		destNode, err := ecb.pickNodeForShardType(possibleDestinationEcNodes, shardsPerNode, maxPerNode, nodeToShardCount, antiAffinityNodes)
 		if err != nil {
-			fmt.Printf("ec %s shard %d.%d at %s can not find a destination node:\n%s\n", shardType, vid, shardId, ecNode.info.Id, err.Error())
+			fmt.Printf("ec %s shard %d.%d at %s can not find a destination node:\n%s\n", shardType, vid, shardId, ecNode.info.GetId(), err.Error())
+
 			continue
 		}
 
@@ -1696,14 +1737,15 @@ func (ecb *ecBalancer) balanceShardTypeAcrossNodes(
 		}
 
 		// Update tracking
-		destNodeId := destNode.info.Id
+		destNodeId := destNode.info.GetId()
 		shardsPerNode[destNodeId] = append(shardsPerNode[destNodeId], shardId)
 
 		// Remove from source node
-		srcNodeId := ecNode.info.Id
+		srcNodeId := ecNode.info.GetId()
 		for i, s := range shardsPerNode[srcNodeId] {
 			if s == shardId {
 				shardsPerNode[srcNodeId] = append(shardsPerNode[srcNodeId][:i], shardsPerNode[srcNodeId][i+1:]...)
+
 				break
 			}
 		}
@@ -1731,7 +1773,7 @@ func (ecb *ecBalancer) pickNodeForShardType(
 		targetToShardCount: nodeToShardCount,
 		antiAffinity:       antiAffinityNodes,
 		getKey: func(n *EcNode) string {
-			return n.info.Id
+			return n.info.GetId()
 		},
 		hasFreeSlots: func(n *EcNode) bool {
 			return n.freeEcSlot > 0
@@ -1739,8 +1781,9 @@ func (ecb *ecBalancer) pickNodeForShardType(
 		checkLimit: func(n *EcNode) bool {
 			// For EC shards, replica placement constraint only applies when SameRackCount > 0.
 			if ecb.replicaPlacement != nil && ecb.replicaPlacement.SameRackCount > 0 {
-				return nodeToShardCount[n.info.Id] < ecb.replicaPlacement.SameRackCount+1
+				return nodeToShardCount[n.info.GetId()] < ecb.replicaPlacement.SameRackCount+1
 			}
+
 			return true
 		},
 	}
@@ -1749,5 +1792,6 @@ func (ecb *ecBalancer) pickNodeForShardType(
 	if err != nil {
 		return nil, errors.New("no node available for shard type balancing")
 	}
+
 	return selected, nil
 }

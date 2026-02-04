@@ -18,17 +18,20 @@ func (h *S3TablesHandler) handleGetTableBucket(w http.ResponseWriter, r *http.Re
 	var req GetTableBucketRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -50,7 +53,7 @@ func (h *S3TablesHandler) handleGetTableBucket(w http.ResponseWriter, r *http.Re
 		if err == nil {
 			bucketPolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket policy: %v", err)
+			return fmt.Errorf("failed to fetch bucket policy: %w", err)
 		}
 
 		return nil
@@ -62,6 +65,7 @@ func (h *S3TablesHandler) handleGetTableBucket(w http.ResponseWriter, r *http.Re
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to get table bucket: %v", err))
 		}
+
 		return err
 	}
 
@@ -73,6 +77,7 @@ func (h *S3TablesHandler) handleGetTableBucket(w http.ResponseWriter, r *http.Re
 		IdentityActions: identityActions,
 	}) {
 		h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "not authorized to get table bucket details")
+
 		return ErrAccessDenied
 	}
 
@@ -84,6 +89,7 @@ func (h *S3TablesHandler) handleGetTableBucket(w http.ResponseWriter, r *http.Re
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
@@ -92,6 +98,7 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 	var req ListTableBucketsRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -102,6 +109,7 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 		IdentityActions: identityActions,
 	}) {
 		h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "not authorized to list table buckets")
+
 		return NewAuthError("ListTableBuckets", principal, "not authorized to list table buckets")
 	}
 
@@ -113,6 +121,7 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 	const maxBucketsLimit = 1000
 	if maxBuckets > maxBucketsLimit {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "MaxBuckets exceeds maximum allowed value")
+
 		return fmt.Errorf("invalid maxBuckets value: %d", maxBuckets)
 	}
 
@@ -135,39 +144,40 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 			for {
 				entry, respErr := resp.Recv()
 				if respErr != nil {
-					if respErr == io.EOF {
+					if errors.Is(respErr, io.EOF) {
 						break
 					}
+
 					return respErr
 				}
-				if entry.Entry == nil {
+				if entry.GetEntry() == nil {
 					continue
 				}
 
 				// Skip the start item if it was included in the previous page
-				if len(buckets) == 0 && req.ContinuationToken != "" && entry.Entry.Name == req.ContinuationToken {
+				if len(buckets) == 0 && req.ContinuationToken != "" && entry.GetEntry().GetName() == req.ContinuationToken {
 					continue
 				}
 
 				hasMore = true
-				lastFileName = entry.Entry.Name
+				lastFileName = entry.GetEntry().GetName()
 
-				if !entry.Entry.IsDirectory {
+				if !entry.GetEntry().GetIsDirectory() {
 					continue
 				}
 
 				// Skip entries starting with "."
-				if strings.HasPrefix(entry.Entry.Name, ".") {
+				if strings.HasPrefix(entry.GetEntry().GetName(), ".") {
 					continue
 				}
 
 				// Apply prefix filter
-				if req.Prefix != "" && !strings.HasPrefix(entry.Entry.Name, req.Prefix) {
+				if req.Prefix != "" && !strings.HasPrefix(entry.GetEntry().GetName(), req.Prefix) {
 					continue
 				}
 
 				// Read metadata from extended attribute
-				data, ok := entry.Entry.Extended[ExtendedKeyMetadata]
+				data, ok := entry.GetEntry().GetExtended()[ExtendedKeyMetadata]
 				if !ok {
 					continue
 				}
@@ -177,7 +187,7 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 					continue
 				}
 
-				bucketPath := GetTableBucketPath(entry.Entry.Name)
+				bucketPath := GetTableBucketPath(entry.GetEntry().GetName())
 				bucketPolicy := ""
 				policyData, err := h.getExtendedAttribute(r.Context(), client, bucketPath, ExtendedKeyPolicy)
 				if err != nil {
@@ -188,10 +198,10 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 					bucketPolicy = string(policyData)
 				}
 
-				bucketARN := h.generateTableBucketARN(metadata.OwnerAccountID, entry.Entry.Name)
+				bucketARN := h.generateTableBucketARN(metadata.OwnerAccountID, entry.GetEntry().GetName())
 				identityActions := getIdentityActions(r)
 				if !CheckPermissionWithContext("GetTableBucket", accountID, metadata.OwnerAccountID, bucketPolicy, bucketARN, &PolicyContext{
-					TableBucketName: entry.Entry.Name,
+					TableBucketName: entry.GetEntry().GetName(),
 					IdentityActions: identityActions,
 				}) {
 					continue
@@ -199,7 +209,7 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 
 				buckets = append(buckets, TableBucketSummary{
 					ARN:       bucketARN,
-					Name:      entry.Entry.Name,
+					Name:      entry.GetEntry().GetName(),
 					CreatedAt: metadata.CreatedAt,
 				})
 
@@ -223,6 +233,7 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 		} else {
 			// For other errors, return error response
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to list table buckets: %v", err))
+
 			return err
 		}
 	}
@@ -238,26 +249,29 @@ func (h *S3TablesHandler) handleListTableBuckets(w http.ResponseWriter, r *http.
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
 // handleDeleteTableBucket deletes a table bucket
 func (h *S3TablesHandler) handleDeleteTableBucket(w http.ResponseWriter, r *http.Request, filerClient FilerClient) error {
-
 	var req DeleteTableBucketRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -296,7 +310,7 @@ func (h *S3TablesHandler) handleDeleteTableBucket(w http.ResponseWriter, r *http
 			TableBucketName: bucketName,
 			IdentityActions: identityActions,
 		}) {
-			return NewAuthError("DeleteTableBucket", principal, fmt.Sprintf("not authorized to delete bucket %s", bucketName))
+			return NewAuthError("DeleteTableBucket", principal, "not authorized to delete bucket "+bucketName)
 		}
 
 		// 3. Check if bucket is empty
@@ -311,13 +325,15 @@ func (h *S3TablesHandler) handleDeleteTableBucket(w http.ResponseWriter, r *http
 		for {
 			entry, err := resp.Recv()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
+
 				return err
 			}
-			if entry.Entry != nil && !strings.HasPrefix(entry.Entry.Name, ".") {
+			if entry.GetEntry() != nil && !strings.HasPrefix(entry.GetEntry().GetName(), ".") {
 				hasChildren = true
+
 				break
 			}
 		}
@@ -333,12 +349,14 @@ func (h *S3TablesHandler) handleDeleteTableBucket(w http.ResponseWriter, r *http
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to delete table bucket: %v", err))
 		}
+
 		return err
 	}
 
 	if hasChildren {
 		h.writeError(w, http.StatusConflict, ErrCodeBucketNotEmpty, "table bucket is not empty")
-		return fmt.Errorf("bucket not empty")
+
+		return errors.New("bucket not empty")
 	}
 
 	// Delete the bucket
@@ -348,9 +366,11 @@ func (h *S3TablesHandler) handleDeleteTableBucket(w http.ResponseWriter, r *http
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to delete table bucket")
+
 		return err
 	}
 
 	h.writeJSON(w, http.StatusOK, nil)
+
 	return nil
 }

@@ -88,6 +88,7 @@ func runWorker(cmd *Command, args []string) bool {
 	capabilities := parseCapabilities(*workerCapabilities)
 	if len(capabilities) == 0 {
 		glog.Fatalf("No valid capabilities specified")
+
 		return false
 	}
 
@@ -97,11 +98,13 @@ func runWorker(cmd *Command, args []string) bool {
 		glog.Infof("Setting working directory to: %s", *workerWorkingDir)
 		if err := os.Chdir(*workerWorkingDir); err != nil {
 			glog.Fatalf("Failed to change working directory: %v", err)
+
 			return false
 		}
 		wd, err := os.Getwd()
 		if err != nil {
 			glog.Fatalf("Failed to get working directory: %v", err)
+
 			return false
 		}
 		baseWorkingDir = wd
@@ -111,6 +114,7 @@ func runWorker(cmd *Command, args []string) bool {
 		wd, err := os.Getwd()
 		if err != nil {
 			glog.Fatalf("Failed to get current working directory: %v", err)
+
 			return false
 		}
 		baseWorkingDir = wd
@@ -122,6 +126,7 @@ func runWorker(cmd *Command, args []string) bool {
 		taskDir := filepath.Join(baseWorkingDir, string(capability))
 		if err := os.MkdirAll(taskDir, 0755); err != nil {
 			glog.Fatalf("Failed to create task directory %s: %v", taskDir, err)
+
 			return false
 		}
 		glog.Infof("Created task directory: %s", taskDir)
@@ -145,11 +150,13 @@ func runWorker(cmd *Command, args []string) bool {
 	workerInstance, err := worker.NewWorker(config)
 	if err != nil {
 		glog.Fatalf("Failed to create worker: %v", err)
+
 		return false
 	}
 	adminClient, err := worker.CreateAdminClient(*workerAdminServer, workerInstance.ID(), grpcDialOption)
 	if err != nil {
 		glog.Fatalf("Failed to create admin client: %v", err)
+
 		return false
 	}
 
@@ -161,11 +168,13 @@ func runWorker(cmd *Command, args []string) bool {
 		glog.Infof("Setting working directory to: %s", *workerWorkingDir)
 		if err := os.Chdir(*workerWorkingDir); err != nil {
 			glog.Fatalf("Failed to change working directory: %v", err)
+
 			return false
 		}
 		wd, err := os.Getwd()
 		if err != nil {
 			glog.Fatalf("Failed to get working directory: %v", err)
+
 			return false
 		}
 		glog.Infof("Current working directory: %s", wd)
@@ -180,6 +189,7 @@ func runWorker(cmd *Command, args []string) bool {
 	err = workerInstance.Start()
 	if err != nil {
 		glog.Errorf("Failed to start worker: %v", err)
+
 		return false
 	}
 
@@ -231,9 +241,9 @@ func parseCapabilities(capabilityStr string) []types.TaskType {
 	}
 
 	var capabilities []types.TaskType
-	parts := strings.Split(capabilityStr, ",")
+	parts := strings.SplitSeq(capabilityStr, ",")
 
-	for _, part := range parts {
+	for part := range parts {
 		part = strings.TrimSpace(part)
 		if taskType, exists := capabilityMap[part]; exists {
 			capabilities = append(capabilities, taskType)
@@ -275,6 +285,7 @@ func workerReadyHandler(workerInstance *worker.Worker) http.HandlerFunc {
 		admin := workerInstance.GetAdmin()
 		if admin == nil || !admin.IsConnected() {
 			w.WriteHeader(http.StatusServiceUnavailable)
+
 			return
 		}
 

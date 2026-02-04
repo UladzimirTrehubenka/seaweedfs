@@ -10,7 +10,6 @@ import (
 
 // TestWhereParsing tests if WHERE clauses are parsed correctly by CockroachDB parser
 func TestWhereParsing(t *testing.T) {
-
 	testCases := []struct {
 		name        string
 		sql         string
@@ -54,11 +53,13 @@ func TestWhereParsing(t *testing.T) {
 				} else {
 					t.Logf("PASS: Expected parse error: %v", parseErr)
 				}
+
 				return
 			}
 
 			if parseErr != nil {
 				t.Errorf("Unexpected parse error for %s: %v", tc.desc, parseErr)
+
 				return
 			}
 
@@ -66,12 +67,14 @@ func TestWhereParsing(t *testing.T) {
 			selectStmt, ok := parsedStmt.(*SelectStatement)
 			if !ok {
 				t.Errorf("Expected SelectStatement, got %T", parsedStmt)
+
 				return
 			}
 
 			// Check if WHERE clause exists
 			if selectStmt.Where == nil {
 				t.Errorf("WHERE clause not parsed for: %s", tc.desc)
+
 				return
 			}
 
@@ -162,6 +165,7 @@ func TestPredicateBuilding(t *testing.T) {
 				t.Errorf("PREDICATE BUILD ERROR: %v", buildErr)
 				t.Errorf("This might be the root cause of WHERE clause not working!")
 				t.Errorf("WHERE expression type: %T", selectStmt.Where.Expr)
+
 				return
 			}
 
@@ -202,11 +206,12 @@ func TestWhereClauseEndToEnd(t *testing.T) {
 	t.Logf("WHERE 1 = 0: %d rows", impossibleCount)
 
 	// CRITICAL TEST: This should detect the WHERE clause bug
-	if impossibleCount == baselineCount {
+	switch impossibleCount {
+	case baselineCount:
 		t.Errorf("WHERE CLAUSE BUG CONFIRMED:")
 		t.Errorf("   Impossible condition returned same row count as no WHERE clause")
 		t.Errorf("   This proves WHERE filtering is not being applied")
-	} else if impossibleCount == 0 {
+	case 0:
 		t.Logf("Impossible WHERE condition correctly returns 0 rows")
 	}
 
@@ -221,11 +226,12 @@ func TestWhereClauseEndToEnd(t *testing.T) {
 		specificCount := len(specificResult.Rows)
 		t.Logf("WHERE id = %s: %d rows", firstId, specificCount)
 
-		if specificCount == baselineCount {
+		switch specificCount {
+		case baselineCount:
 			t.Errorf("WHERE clause bug: Specific ID filter returned all rows")
-		} else if specificCount == 1 {
+		case 1:
 			t.Logf("Specific ID WHERE clause working correctly")
-		} else {
+		default:
 			t.Logf("Unexpected: Specific ID returned %d rows", specificCount)
 		}
 	}
@@ -288,6 +294,7 @@ func getSampleIds(result *QueryResult, count int) []string {
 	for i := 0; i < count && i < len(result.Rows); i++ {
 		ids = append(ids, result.Rows[i][0].ToString())
 	}
+
 	return ids
 }
 

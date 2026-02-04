@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/app"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/layout"
@@ -28,6 +29,7 @@ func (h *MessageQueueHandlers) ShowBrokers(c *gin.Context) {
 	brokersData, err := h.adminServer.GetClusterBrokers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster brokers: " + err.Error()})
+
 		return
 	}
 
@@ -45,6 +47,7 @@ func (h *MessageQueueHandlers) ShowBrokers(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -55,6 +58,7 @@ func (h *MessageQueueHandlers) ShowTopics(c *gin.Context) {
 	topicsData, err := h.adminServer.GetTopics()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get topics: " + err.Error()})
+
 		return
 	}
 
@@ -72,6 +76,7 @@ func (h *MessageQueueHandlers) ShowTopics(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -82,6 +87,7 @@ func (h *MessageQueueHandlers) ShowSubscribers(c *gin.Context) {
 	subscribersData, err := h.adminServer.GetSubscribers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get subscribers: " + err.Error()})
+
 		return
 	}
 
@@ -99,6 +105,7 @@ func (h *MessageQueueHandlers) ShowSubscribers(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -111,6 +118,7 @@ func (h *MessageQueueHandlers) ShowTopicDetails(c *gin.Context) {
 
 	if namespace == "" || topicName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or topic name"})
+
 		return
 	}
 
@@ -118,6 +126,7 @@ func (h *MessageQueueHandlers) ShowTopicDetails(c *gin.Context) {
 	topicDetailsData, err := h.adminServer.GetTopicDetails(namespace, topicName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get topic details: " + err.Error()})
+
 		return
 	}
 
@@ -135,6 +144,7 @@ func (h *MessageQueueHandlers) ShowTopicDetails(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -147,6 +157,7 @@ func (h *MessageQueueHandlers) GetTopicDetailsAPI(c *gin.Context) {
 
 	if namespace == "" || topicName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or topic name"})
+
 		return
 	}
 
@@ -154,6 +165,7 @@ func (h *MessageQueueHandlers) GetTopicDetailsAPI(c *gin.Context) {
 	topicDetailsData, err := h.adminServer.GetTopicDetails(namespace, topicName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get topic details: " + err.Error()})
+
 		return
 	}
 
@@ -164,9 +176,9 @@ func (h *MessageQueueHandlers) GetTopicDetailsAPI(c *gin.Context) {
 // CreateTopicAPI creates a new topic with retention configuration
 func (h *MessageQueueHandlers) CreateTopicAPI(c *gin.Context) {
 	var req struct {
-		Namespace      string `json:"namespace" binding:"required"`
-		Name           string `json:"name" binding:"required"`
-		PartitionCount int32  `json:"partition_count" binding:"required"`
+		Namespace      string `binding:"required" json:"namespace"`
+		Name           string `binding:"required" json:"name"`
+		PartitionCount int32  `binding:"required" json:"partition_count"`
 		Retention      struct {
 			Enabled          bool  `json:"enabled"`
 			RetentionSeconds int64 `json:"retention_seconds"`
@@ -175,17 +187,20 @@ func (h *MessageQueueHandlers) CreateTopicAPI(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
 	// Validate inputs
 	if req.PartitionCount < 1 || req.PartitionCount > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Partition count must be between 1 and 100"})
+
 		return
 	}
 
 	if req.Retention.Enabled && req.Retention.RetentionSeconds <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Retention seconds must be positive when retention is enabled"})
+
 		return
 	}
 
@@ -193,6 +208,7 @@ func (h *MessageQueueHandlers) CreateTopicAPI(c *gin.Context) {
 	err := h.adminServer.CreateTopicWithRetention(req.Namespace, req.Name, req.PartitionCount, req.Retention.Enabled, req.Retention.RetentionSeconds)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create topic: " + err.Error()})
+
 		return
 	}
 
@@ -215,12 +231,14 @@ func (h *MessageQueueHandlers) UpdateTopicRetentionAPI(c *gin.Context) {
 	var request UpdateTopicRetentionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
 	}
 
 	// Validate required fields
 	if request.Namespace == "" || request.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "namespace and name are required"})
+
 		return
 	}
 
@@ -228,6 +246,7 @@ func (h *MessageQueueHandlers) UpdateTopicRetentionAPI(c *gin.Context) {
 	err := h.adminServer.UpdateTopicRetention(request.Namespace, request.Name, request.Retention.Enabled, request.Retention.RetentionSeconds)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 

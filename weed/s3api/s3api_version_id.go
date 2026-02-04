@@ -51,6 +51,7 @@ func generateVersionId(useInvertedFormat bool) string {
 
 	// Combine timestamp (16 chars) + random (16 chars) = 32 chars total
 	randomHex := hex.EncodeToString(randBytes)
+
 	return timestampHex + randomHex
 }
 
@@ -117,12 +118,14 @@ func compareVersionIds(a, b string) int {
 			if a < b {
 				return -1
 			}
+
 			return 1
 		} else {
 			// Old format: lexicographic order is inverted (smaller = older)
 			if a < b {
 				return 1
 			}
+
 			return -1
 		}
 	}
@@ -136,6 +139,7 @@ func compareVersionIds(a, b string) int {
 	if aTime < bTime {
 		return 1 // b is newer
 	}
+
 	return 0
 }
 
@@ -146,7 +150,7 @@ func (s3a *S3ApiServer) getVersionedObjectDir(bucket, object string) string {
 
 // getVersionFileName returns the filename for a specific version
 func (s3a *S3ApiServer) getVersionFileName(versionId string) string {
-	return fmt.Sprintf("v_%s", versionId)
+	return "v_" + versionId
 }
 
 // getVersionIdFormat checks the .versions directory to determine which version ID format to use.
@@ -166,7 +170,7 @@ func (s3a *S3ApiServer) getVersionIdFormat(bucket, object string) bool {
 
 	// Infer format from the latest version ID stored in metadata
 	if versionsEntry.Extended != nil {
-		if latestVersionId, exists := versionsEntry.Extended[s3_constants.ExtLatestVersionIdKey]; exists {
+		if latestVersionId, exists := versionsEntry.GetExtended()[s3_constants.ExtLatestVersionIdKey]; exists {
 			return isNewFormatVersionId(string(latestVersionId))
 		}
 	}
@@ -180,5 +184,6 @@ func (s3a *S3ApiServer) getVersionIdFormat(bucket, object string) bool {
 // For new objects, uses inverted format. For existing versioned objects, uses their existing format.
 func (s3a *S3ApiServer) generateVersionIdForObject(bucket, object string) string {
 	useInvertedFormat := s3a.getVersionIdFormat(bucket, object)
+
 	return generateVersionId(useInvertedFormat)
 }

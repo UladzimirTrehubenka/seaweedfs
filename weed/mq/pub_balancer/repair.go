@@ -5,12 +5,14 @@ import (
 	"sort"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
-	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"modernc.org/mathutil"
+
+	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 )
 
 func (balancer *PubBalancer) RepairTopics() []BalanceAction {
 	action := BalanceTopicPartitionOnBrokers(balancer.Brokers)
+
 	return []BalanceAction{action}
 }
 
@@ -21,7 +23,6 @@ type TopicPartitionInfo struct {
 // RepairMissingTopicPartitions check the stats of all brokers,
 // and repair the missing topic partitions on the brokers.
 func RepairMissingTopicPartitions(brokers cmap.ConcurrentMap[string, *BrokerStats]) (actions []BalanceAction) {
-
 	// find all topic partitions
 	topicToTopicPartitions := make(map[topic.Topic]map[topic.Partition]*TopicPartitionInfo)
 	for brokerStatsItem := range brokers.IterBuffered() {
@@ -66,12 +67,12 @@ func RepairMissingTopicPartitions(brokers cmap.ConcurrentMap[string, *BrokerStat
 }
 
 func EachTopicRepairMissingTopicPartitions(t topic.Topic, info map[topic.Partition]*TopicPartitionInfo) (missingPartitions []topic.Partition) {
-
 	// find the missing topic partitions
 	var partitions []topic.Partition
 	for partition := range info {
 		partitions = append(partitions, partition)
 	}
+
 	return findMissingPartitions(partitions, MaxPartitionCount)
 }
 
@@ -119,5 +120,6 @@ func findMissingPartitions(partitions []topic.Partition, ringSize int32) (missin
 		})
 		coveredWatermark = upperBound
 	}
+
 	return missingPartitions
 }

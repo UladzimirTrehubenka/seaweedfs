@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
-	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 )
 
 func (store *IamGrpcStore) GetPolicies(ctx context.Context) (map[string]policy_engine.PolicyDocument, error) {
@@ -18,15 +19,17 @@ func (store *IamGrpcStore) GetPolicies(ctx context.Context) (map[string]policy_e
 		if err != nil {
 			return err
 		}
-		for _, p := range resp.Policies {
+		for _, p := range resp.GetPolicies() {
 			var doc policy_engine.PolicyDocument
-			if err := json.Unmarshal([]byte(p.Content), &doc); err != nil {
-				return fmt.Errorf("failed to unmarshal policy %s: %v", p.Name, err)
+			if err := json.Unmarshal([]byte(p.GetContent()), &doc); err != nil {
+				return fmt.Errorf("failed to unmarshal policy %s: %w", p.GetName(), err)
 			}
-			policies[p.Name] = doc
+			policies[p.GetName()] = doc
 		}
+
 		return nil
 	})
+
 	return policies, err
 }
 
@@ -35,11 +38,13 @@ func (store *IamGrpcStore) PutPolicy(ctx context.Context, name string, document 
 	if err != nil {
 		return err
 	}
+
 	return store.withIamClient(func(client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		_, err := client.PutPolicy(ctx, &iam_pb.PutPolicyRequest{
 			Name:    name,
 			Content: string(content),
 		})
+
 		return err
 	})
 }
@@ -49,6 +54,7 @@ func (store *IamGrpcStore) DeletePolicy(ctx context.Context, name string) error 
 		_, err := client.DeletePolicy(ctx, &iam_pb.DeletePolicyRequest{
 			Name: name,
 		})
+
 		return err
 	})
 }
@@ -62,15 +68,18 @@ func (store *IamGrpcStore) GetPolicy(ctx context.Context, name string) (*policy_
 		if err != nil {
 			return err
 		}
-		return json.Unmarshal([]byte(resp.Content), &doc)
+
+		return json.Unmarshal([]byte(resp.GetContent()), &doc)
 	})
 	if err != nil {
 		// If policy not found, return nil instead of error (consistent with other stores)
 		if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
 			return nil, nil
 		}
+
 		return nil, err
 	}
+
 	return &doc, nil
 }
 

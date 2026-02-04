@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 )
@@ -52,11 +53,13 @@ func LookupFileId(masterFn GetMasterFn, grpcDialOption grpc.DialOption, fileId s
 	if len(lookup.Locations) == 0 {
 		return "", jwt, errors.New("File Not Found")
 	}
+
 	return "http://" + lookup.Locations[rand.IntN(len(lookup.Locations))].Url + "/" + fileId, lookup.Jwt, nil
 }
 
 func LookupVolumeId(masterFn GetMasterFn, grpcDialOption grpc.DialOption, vid string) (*LookupResult, error) {
 	results, err := LookupVolumeIds(masterFn, grpcDialOption, []string{vid})
+
 	return results[vid], err
 }
 
@@ -65,7 +68,7 @@ func LookupVolumeIds(masterFn GetMasterFn, grpcDialOption grpc.DialOption, vids 
 	ret := make(map[string]*LookupResult)
 	var unknown_vids []string
 
-	//check vid cache first
+	// check vid cache first
 	for _, vid := range vids {
 		locations, cacheErr := vc.Get(vid)
 		if cacheErr == nil {
@@ -74,15 +77,14 @@ func LookupVolumeIds(masterFn GetMasterFn, grpcDialOption grpc.DialOption, vids 
 			unknown_vids = append(unknown_vids, vid)
 		}
 	}
-	//return success if all volume ids are known
+	// return success if all volume ids are known
 	if len(unknown_vids) == 0 {
 		return ret, nil
 	}
 
-	//only query unknown_vids
+	// only query unknown_vids
 
 	err := WithMasterServerClient(false, masterFn(context.Background()), grpcDialOption, func(masterClient master_pb.SeaweedClient) error {
-
 		req := &master_pb.LookupVolumeRequest{
 			VolumeOrFileIds: unknown_vids,
 		}
@@ -91,25 +93,25 @@ func LookupVolumeIds(masterFn GetMasterFn, grpcDialOption grpc.DialOption, vids 
 			return grpcErr
 		}
 
-		//set newly checked vids to cache
-		for _, vidLocations := range resp.VolumeIdLocations {
+		// set newly checked vids to cache
+		for _, vidLocations := range resp.GetVolumeIdLocations() {
 			var locations []Location
-			for _, loc := range vidLocations.Locations {
+			for _, loc := range vidLocations.GetLocations() {
 				locations = append(locations, Location{
-					Url:        loc.Url,
-					PublicUrl:  loc.PublicUrl,
-					DataCenter: loc.DataCenter,
-					GrpcPort:   int(loc.GrpcPort),
+					Url:        loc.GetUrl(),
+					PublicUrl:  loc.GetPublicUrl(),
+					DataCenter: loc.GetDataCenter(),
+					GrpcPort:   int(loc.GetGrpcPort()),
 				})
 			}
-			if vidLocations.Error == "" {
-				vc.Set(vidLocations.VolumeOrFileId, locations, 10*time.Minute)
+			if vidLocations.GetError() == "" {
+				vc.Set(vidLocations.GetVolumeOrFileId(), locations, 10*time.Minute)
 			}
-			ret[vidLocations.VolumeOrFileId] = &LookupResult{
-				VolumeOrFileId: vidLocations.VolumeOrFileId,
+			ret[vidLocations.GetVolumeOrFileId()] = &LookupResult{
+				VolumeOrFileId: vidLocations.GetVolumeOrFileId(),
 				Locations:      locations,
-				Jwt:            vidLocations.Auth,
-				Error:          vidLocations.Error,
+				Jwt:            vidLocations.GetAuth(),
+				Error:          vidLocations.GetError(),
 			}
 		}
 

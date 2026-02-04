@@ -37,6 +37,7 @@ func (pm *PartitionMapper) MapKafkaPartitionToSMQRange(kafkaPartition int32) (ra
 	rangeSize := pm.GetRangeSize()
 	rangeStart = kafkaPartition * rangeSize
 	rangeStop = rangeStart + rangeSize - 1
+
 	return rangeStart, rangeStop
 }
 
@@ -55,6 +56,7 @@ func (pm *PartitionMapper) CreateSMQPartition(kafkaPartition int32, unixTimeNs i
 // ExtractKafkaPartitionFromSMQRange extracts the Kafka partition from SeaweedMQ range
 func (pm *PartitionMapper) ExtractKafkaPartitionFromSMQRange(rangeStart int32) int32 {
 	rangeSize := pm.GetRangeSize()
+
 	return rangeStart / rangeSize
 }
 
@@ -64,8 +66,8 @@ func (pm *PartitionMapper) ValidateKafkaPartition(kafkaPartition int32) bool {
 }
 
 // GetPartitionMappingInfo returns debug information about the partition mapping
-func (pm *PartitionMapper) GetPartitionMappingInfo() map[string]interface{} {
-	return map[string]interface{}{
+func (pm *PartitionMapper) GetPartitionMappingInfo() map[string]any {
+	return map[string]any{
 		"ring_size":            pub_balancer.MaxPartitionCount,
 		"range_size":           pm.GetRangeSize(),
 		"max_kafka_partitions": pm.GetMaxKafkaPartitions(),
@@ -162,7 +164,7 @@ func TestPartitionMapper_RoundTrip(t *testing.T) {
 	// Test round-trip conversion for all valid Kafka partitions
 	maxPartitions := mapper.GetMaxKafkaPartitions()
 
-	for kafkaPartition := int32(0); kafkaPartition < maxPartitions; kafkaPartition++ {
+	for kafkaPartition := range maxPartitions {
 		// Kafka -> SMQ -> Kafka
 		rangeStart, rangeStop := mapper.MapKafkaPartitionToSMQRange(kafkaPartition)
 		extractedKafka := mapper.ExtractKafkaPartitionFromSMQRange(rangeStart)
@@ -190,21 +192,21 @@ func TestPartitionMapper_CreateSMQPartition(t *testing.T) {
 
 	partition := mapper.CreateSMQPartition(kafkaPartition, unixTimeNs)
 
-	if partition.RingSize != pub_balancer.MaxPartitionCount {
-		t.Errorf("Expected ring size %d, got %d", pub_balancer.MaxPartitionCount, partition.RingSize)
+	if partition.GetRingSize() != pub_balancer.MaxPartitionCount {
+		t.Errorf("Expected ring size %d, got %d", pub_balancer.MaxPartitionCount, partition.GetRingSize())
 	}
 
 	expectedStart, expectedStop := mapper.MapKafkaPartitionToSMQRange(kafkaPartition)
-	if partition.RangeStart != expectedStart {
-		t.Errorf("Expected range start %d, got %d", expectedStart, partition.RangeStart)
+	if partition.GetRangeStart() != expectedStart {
+		t.Errorf("Expected range start %d, got %d", expectedStart, partition.GetRangeStart())
 	}
 
-	if partition.RangeStop != expectedStop {
-		t.Errorf("Expected range stop %d, got %d", expectedStop, partition.RangeStop)
+	if partition.GetRangeStop() != expectedStop {
+		t.Errorf("Expected range stop %d, got %d", expectedStop, partition.GetRangeStop())
 	}
 
-	if partition.UnixTimeNs != unixTimeNs {
-		t.Errorf("Expected timestamp %d, got %d", unixTimeNs, partition.UnixTimeNs)
+	if partition.GetUnixTimeNs() != unixTimeNs {
+		t.Errorf("Expected timestamp %d, got %d", unixTimeNs, partition.GetUnixTimeNs())
 	}
 }
 
@@ -251,7 +253,7 @@ func TestPartitionMapper_ConsistencyWithGlobalFunctions(t *testing.T) {
 	partition1 := mapper.CreateSMQPartition(kafkaPartition, unixTimeNs)
 	partition2 := CreateSMQPartition(kafkaPartition, unixTimeNs)
 
-	if partition1.RangeStart != partition2.RangeStart || partition1.RangeStop != partition2.RangeStop {
+	if partition1.GetRangeStart() != partition2.GetRangeStart() || partition1.GetRangeStop() != partition2.GetRangeStop() {
 		t.Errorf("Global CreateSMQPartition inconsistent")
 	}
 

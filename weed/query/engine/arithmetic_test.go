@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
@@ -67,7 +66,7 @@ func TestArithmeticExpressionParsing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use CockroachDB parser to parse the expression
 			cockroachParser := NewCockroachSQLParser()
-			dummySelect := fmt.Sprintf("SELECT %s", tt.expression)
+			dummySelect := "SELECT " + tt.expression
 			stmt, err := cockroachParser.ParseSQL(dummySelect)
 
 			var result *ArithmeticExpr
@@ -85,11 +84,13 @@ func TestArithmeticExpressionParsing(t *testing.T) {
 				if result != nil {
 					t.Errorf("Expected nil for %s, got %v", tt.expression, result)
 				}
+
 				return
 			}
 
 			if result == nil {
 				t.Errorf("Expected arithmetic expression for %s, got nil", tt.expression)
+
 				return
 			}
 
@@ -138,7 +139,7 @@ func TestArithmeticExpressionEvaluation(t *testing.T) {
 	tests := []struct {
 		name       string
 		expression string
-		expected   interface{}
+		expected   any
 	}{
 		{
 			name:       "integer addition",
@@ -171,7 +172,7 @@ func TestArithmeticExpressionEvaluation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Parse the arithmetic expression using CockroachDB parser
 			cockroachParser := NewCockroachSQLParser()
-			dummySelect := fmt.Sprintf("SELECT %s", tt.expression)
+			dummySelect := "SELECT " + tt.expression
 			stmt, err := cockroachParser.ParseSQL(dummySelect)
 			if err != nil {
 				t.Fatalf("Failed to parse expression %s: %v", tt.expression, err)
@@ -203,28 +204,28 @@ func TestArithmeticExpressionEvaluation(t *testing.T) {
 			// Check the result
 			switch expected := tt.expected.(type) {
 			case int64:
-				if intVal, ok := value.Kind.(*schema_pb.Value_Int64Value); ok {
+				if intVal, ok := value.GetKind().(*schema_pb.Value_Int64Value); ok {
 					if intVal.Int64Value != expected {
 						t.Errorf("Expected %d, got %d", expected, intVal.Int64Value)
 					}
 				} else {
-					t.Errorf("Expected int64 result, got %T", value.Kind)
+					t.Errorf("Expected int64 result, got %T", value.GetKind())
 				}
 			case float64:
-				if doubleVal, ok := value.Kind.(*schema_pb.Value_DoubleValue); ok {
+				if doubleVal, ok := value.GetKind().(*schema_pb.Value_DoubleValue); ok {
 					if doubleVal.DoubleValue != expected {
 						t.Errorf("Expected %f, got %f", expected, doubleVal.DoubleValue)
 					}
 				} else {
-					t.Errorf("Expected double result, got %T", value.Kind)
+					t.Errorf("Expected double result, got %T", value.GetKind())
 				}
 			case string:
-				if stringVal, ok := value.Kind.(*schema_pb.Value_StringValue); ok {
+				if stringVal, ok := value.GetKind().(*schema_pb.Value_StringValue); ok {
 					if stringVal.StringValue != expected {
 						t.Errorf("Expected %s, got %s", expected, stringVal.StringValue)
 					}
 				} else {
-					t.Errorf("Expected string result, got %T", value.Kind)
+					t.Errorf("Expected string result, got %T", value.GetKind())
 				}
 			}
 		})

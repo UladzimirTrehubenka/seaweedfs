@@ -129,21 +129,16 @@ func TestCTRDecryptionWithNonBlockAlignedOffset(t *testing.T) {
 			expectedPlaintext := plaintext[offset:]
 			if !bytes.Equal(decryptedFromOffset, expectedPlaintext) {
 				t.Errorf("Decryption mismatch at offset %d (skip=%d)", offset, skip)
-				previewLen := 32
-				if len(expectedPlaintext) < previewLen {
-					previewLen = len(expectedPlaintext)
-				}
+				previewLen := min(len(expectedPlaintext), 32)
 				t.Errorf("  Expected first 32 bytes: %x", expectedPlaintext[:previewLen])
-				previewLen2 := 32
-				if len(decryptedFromOffset) < previewLen2 {
-					previewLen2 = len(decryptedFromOffset)
-				}
+				previewLen2 := min(len(decryptedFromOffset), 32)
 				t.Errorf("  Got first 32 bytes:      %x", decryptedFromOffset[:previewLen2])
 
 				// Find first mismatch
 				for i := 0; i < len(expectedPlaintext) && i < len(decryptedFromOffset); i++ {
 					if expectedPlaintext[i] != decryptedFromOffset[i] {
 						t.Errorf("  First mismatch at byte %d: expected %02x, got %02x", i, expectedPlaintext[i], decryptedFromOffset[i])
+
 						break
 					}
 				}
@@ -226,15 +221,9 @@ func TestCTRRangeRequestSimulation(t *testing.T) {
 			if !bytes.Equal(decryptedRange, expectedPlaintext) {
 				t.Errorf("Range decryption mismatch for %s (offset=%d, size=%d, skip=%d)",
 					rt.name, rt.start, rangeSize, skip)
-				previewLen := 64
-				if len(expectedPlaintext) < previewLen {
-					previewLen = len(expectedPlaintext)
-				}
+				previewLen := min(len(expectedPlaintext), 64)
 				t.Errorf("  Expected: %x", expectedPlaintext[:previewLen])
-				previewLen2 := previewLen
-				if len(decryptedRange) < previewLen2 {
-					previewLen2 = len(decryptedRange)
-				}
+				previewLen2 := min(len(decryptedRange), previewLen)
 				t.Errorf("  Got:      %x", decryptedRange[:previewLen2])
 			}
 		})

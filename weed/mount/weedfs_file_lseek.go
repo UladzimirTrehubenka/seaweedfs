@@ -73,6 +73,7 @@ func (wfs *WFS) Lseek(cancel <-chan struct{}, in *fuse.LseekIn, out *fuse.LseekO
 	found, offset := fh.entryChunkGroup.SearchChunks(ctx, offset, fileSize, in.Whence)
 	if found {
 		out.Offset = uint64(offset)
+
 		return fuse.OK
 	}
 

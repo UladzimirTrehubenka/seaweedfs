@@ -12,11 +12,10 @@ import (
 )
 
 func (wfs *WFS) saveDataAsChunk(fullPath util.FullPath) filer.SaveDataAsChunkFunctionType {
-
 	return func(reader io.Reader, filename string, offset int64, tsNs int64) (chunk *filer_pb.FileChunk, err error) {
 		uploader, err := operation.NewUploader()
 		if err != nil {
-			return
+			return chunk, err
 		}
 
 		fileId, uploadResult, err, data := uploader.UploadWithRetry(
@@ -42,6 +41,7 @@ func (wfs *WFS) saveDataAsChunk(fullPath util.FullPath) filer.SaveDataAsChunkFun
 				if wfs.option.VolumeServerAccess == "filerProxy" {
 					fileUrl = fmt.Sprintf("http://%s/?proxyChunkId=%s", wfs.getCurrentFiler(), fileId)
 				}
+
 				return fileUrl
 			},
 			reader,
@@ -49,10 +49,12 @@ func (wfs *WFS) saveDataAsChunk(fullPath util.FullPath) filer.SaveDataAsChunkFun
 
 		if err != nil {
 			glog.V(0).Infof("upload data %v: %v", filename, err)
+
 			return nil, fmt.Errorf("upload data: %w", err)
 		}
 		if uploadResult.Error != "" {
 			glog.V(0).Infof("upload failure %v: %v", filename, err)
+
 			return nil, fmt.Errorf("upload result: %v", uploadResult.Error)
 		}
 
@@ -61,6 +63,7 @@ func (wfs *WFS) saveDataAsChunk(fullPath util.FullPath) filer.SaveDataAsChunkFun
 		}
 
 		chunk = uploadResult.ToPbFileChunk(fileId, offset, tsNs)
+
 		return chunk, nil
 	}
 }

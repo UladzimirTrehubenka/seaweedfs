@@ -2,6 +2,7 @@ package credential
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -16,14 +17,14 @@ func MigrateCredentials(fromStoreName, toStoreName CredentialStoreTypeName, conf
 	// Create source credential manager
 	fromCM, err := NewCredentialManager(fromStoreName, configuration, fromPrefix)
 	if err != nil {
-		return fmt.Errorf("failed to create source credential manager (%s): %v", fromStoreName, err)
+		return fmt.Errorf("failed to create source credential manager (%s): %w", fromStoreName, err)
 	}
 	defer fromCM.Shutdown()
 
 	// Create destination credential manager
 	toCM, err := NewCredentialManager(toStoreName, configuration, toPrefix)
 	if err != nil {
-		return fmt.Errorf("failed to create destination credential manager (%s): %v", toStoreName, err)
+		return fmt.Errorf("failed to create destination credential manager (%s): %w", toStoreName, err)
 	}
 	defer toCM.Shutdown()
 
@@ -34,41 +35,45 @@ func MigrateCredentials(fromStoreName, toStoreName CredentialStoreTypeName, conf
 		return fmt.Errorf("failed to load configuration from source store: %w", err)
 	}
 
-	if config == nil || len(config.Identities) == 0 {
+	if config == nil || len(config.GetIdentities()) == 0 {
 		glog.Info("No identities found in source store")
+
 		return nil
 	}
 
-	glog.Infof("Found %d identities in source store", len(config.Identities))
+	glog.Infof("Found %d identities in source store", len(config.GetIdentities()))
 
 	// Migrate each identity
 	var migrated, failed int
-	for _, identity := range config.Identities {
-		glog.V(1).Infof("Migrating user: %s", identity.Name)
+	for _, identity := range config.GetIdentities() {
+		glog.V(1).Infof("Migrating user: %s", identity.GetName())
 
 		// Check if user already exists in destination
-		existingUser, err := toCM.GetUser(ctx, identity.Name)
-		if err != nil && err != ErrUserNotFound {
-			glog.Errorf("Failed to check if user %s exists in destination: %v", identity.Name, err)
+		existingUser, err := toCM.GetUser(ctx, identity.GetName())
+		if err != nil && !errors.Is(err, ErrUserNotFound) {
+			glog.Errorf("Failed to check if user %s exists in destination: %v", identity.GetName(), err)
 			failed++
+
 			continue
 		}
 
 		if existingUser != nil {
-			glog.Warningf("User %s already exists in destination store, skipping", identity.Name)
+			glog.Warningf("User %s already exists in destination store, skipping", identity.GetName())
+
 			continue
 		}
 
 		// Create user in destination
 		err = toCM.CreateUser(ctx, identity)
 		if err != nil {
-			glog.Errorf("Failed to create user %s in destination store: %v", identity.Name, err)
+			glog.Errorf("Failed to create user %s in destination store: %v", identity.GetName(), err)
 			failed++
+
 			continue
 		}
 
 		migrated++
-		glog.V(1).Infof("Successfully migrated user: %s", identity.Name)
+		glog.V(1).Infof("Successfully migrated user: %s", identity.GetName())
 	}
 
 	glog.Infof("Migration completed: %d migrated, %d failed", migrated, failed)
@@ -87,7 +92,7 @@ func ExportCredentials(storeName CredentialStoreTypeName, configuration util.Con
 	// Create credential manager
 	cm, err := NewCredentialManager(storeName, configuration, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create credential manager (%s): %v", storeName, err)
+		return nil, fmt.Errorf("failed to create credential manager (%s): %w", storeName, err)
 	}
 	defer cm.Shutdown()
 
@@ -107,38 +112,41 @@ func ImportCredentials(storeName CredentialStoreTypeName, configuration util.Con
 	// Create credential manager
 	cm, err := NewCredentialManager(storeName, configuration, prefix)
 	if err != nil {
-		return fmt.Errorf("failed to create credential manager (%s): %v", storeName, err)
+		return fmt.Errorf("failed to create credential manager (%s): %w", storeName, err)
 	}
 	defer cm.Shutdown()
 
 	// Import each identity
 	var imported, failed int
-	for _, identity := range config.Identities {
-		glog.V(1).Infof("Importing user: %s", identity.Name)
+	for _, identity := range config.GetIdentities() {
+		glog.V(1).Infof("Importing user: %s", identity.GetName())
 
 		// Check if user already exists
-		existingUser, err := cm.GetUser(ctx, identity.Name)
-		if err != nil && err != ErrUserNotFound {
-			glog.Errorf("Failed to check if user %s exists: %v", identity.Name, err)
+		existingUser, err := cm.GetUser(ctx, identity.GetName())
+		if err != nil && !errors.Is(err, ErrUserNotFound) {
+			glog.Errorf("Failed to check if user %s exists: %v", identity.GetName(), err)
 			failed++
+
 			continue
 		}
 
 		if existingUser != nil {
-			glog.Warningf("User %s already exists, skipping", identity.Name)
+			glog.Warningf("User %s already exists, skipping", identity.GetName())
+
 			continue
 		}
 
 		// Create user
 		err = cm.CreateUser(ctx, identity)
 		if err != nil {
-			glog.Errorf("Failed to create user %s: %v", identity.Name, err)
+			glog.Errorf("Failed to create user %s: %v", identity.GetName(), err)
 			failed++
+
 			continue
 		}
 
 		imported++
-		glog.V(1).Infof("Successfully imported user: %s", identity.Name)
+		glog.V(1).Infof("Successfully imported user: %s", identity.GetName())
 	}
 
 	glog.Infof("Import completed: %d imported, %d failed", imported, failed)
@@ -157,7 +165,7 @@ func ValidateCredentials(storeName CredentialStoreTypeName, configuration util.C
 	// Create credential manager
 	cm, err := NewCredentialManager(storeName, configuration, prefix)
 	if err != nil {
-		return fmt.Errorf("failed to create credential manager (%s): %v", storeName, err)
+		return fmt.Errorf("failed to create credential manager (%s): %w", storeName, err)
 	}
 	defer cm.Shutdown()
 
@@ -167,48 +175,53 @@ func ValidateCredentials(storeName CredentialStoreTypeName, configuration util.C
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	if config == nil || len(config.Identities) == 0 {
+	if config == nil || len(config.GetIdentities()) == 0 {
 		glog.Info("No identities found in store")
+
 		return nil
 	}
 
-	glog.Infof("Validating %d identities...", len(config.Identities))
+	glog.Infof("Validating %d identities...", len(config.GetIdentities()))
 
 	// Validate each identity
 	var validated, failed int
-	for _, identity := range config.Identities {
+	for _, identity := range config.GetIdentities() {
 		// Check if user can be retrieved
-		user, err := cm.GetUser(ctx, identity.Name)
+		user, err := cm.GetUser(ctx, identity.GetName())
 		if err != nil {
-			glog.Errorf("Failed to retrieve user %s: %v", identity.Name, err)
+			glog.Errorf("Failed to retrieve user %s: %v", identity.GetName(), err)
 			failed++
+
 			continue
 		}
 
 		if user == nil {
-			glog.Errorf("User %s not found", identity.Name)
+			glog.Errorf("User %s not found", identity.GetName())
 			failed++
+
 			continue
 		}
 
 		// Validate access keys
-		for _, credential := range identity.Credentials {
-			accessKeyUser, err := cm.GetUserByAccessKey(ctx, credential.AccessKey)
+		for _, credential := range identity.GetCredentials() {
+			accessKeyUser, err := cm.GetUserByAccessKey(ctx, credential.GetAccessKey())
 			if err != nil {
-				glog.Errorf("Failed to retrieve user by access key %s: %v", credential.AccessKey, err)
+				glog.Errorf("Failed to retrieve user by access key %s: %v", credential.GetAccessKey(), err)
 				failed++
+
 				continue
 			}
 
-			if accessKeyUser == nil || accessKeyUser.Name != identity.Name {
-				glog.Errorf("Access key %s does not map to correct user %s", credential.AccessKey, identity.Name)
+			if accessKeyUser == nil || accessKeyUser.GetName() != identity.GetName() {
+				glog.Errorf("Access key %s does not map to correct user %s", credential.GetAccessKey(), identity.GetName())
 				failed++
+
 				continue
 			}
 		}
 
 		validated++
-		glog.V(1).Infof("Successfully validated user: %s", identity.Name)
+		glog.V(1).Infof("Successfully validated user: %s", identity.GetName())
 	}
 
 	glog.Infof("Validation completed: %d validated, %d failed", validated, failed)

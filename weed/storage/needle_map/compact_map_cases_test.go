@@ -1,5 +1,4 @@
 //go:build 5BytesOffset
-// +build 5BytesOffset
 
 package needle_map
 
@@ -9,8 +8,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 )
 
 func Test5bytesIndexLoading(t *testing.T) {

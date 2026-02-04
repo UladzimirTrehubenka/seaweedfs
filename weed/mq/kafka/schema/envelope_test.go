@@ -57,6 +57,7 @@ func TestParseConfluentEnvelope(t *testing.T) {
 
 			if ok != tt.expectOK {
 				t.Errorf("ParseConfluentEnvelope() ok = %v, want %v", ok, tt.expectOK)
+
 				return
 			}
 
@@ -203,6 +204,7 @@ func TestCreateConfluentEnvelope(t *testing.T) {
 
 			if len(result) != len(tt.expected) {
 				t.Errorf("CreateConfluentEnvelope() length = %v, want %v", len(result), len(tt.expected))
+
 				return
 			}
 
@@ -304,8 +306,7 @@ func BenchmarkParseConfluentEnvelope(b *testing.B) {
 		testMsg[i] = byte(i % 256)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = ParseConfluentEnvelope(testMsg)
 	}
 }
@@ -313,8 +314,7 @@ func BenchmarkParseConfluentEnvelope(b *testing.B) {
 func BenchmarkIsSchematized(b *testing.B) {
 	testMsg := []byte{0x00, 0x00, 0x00, 0x00, 0x01, 0x48, 0x65, 0x6c, 0x6c, 0x6f}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = IsSchematized(testMsg)
 	}
 }

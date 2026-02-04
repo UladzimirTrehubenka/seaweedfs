@@ -2,6 +2,7 @@ package weed_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -29,7 +30,6 @@ import (
 //	If-Match
 //	If-None-Match
 func checkPreconditions(w http.ResponseWriter, r *http.Request, entry *filer.Entry) bool {
-
 	etag := filer.ETagEntry(entry)
 	/// When more than one conditional request header field is present in a
 	/// request, the order in which the fields are evaluated becomes
@@ -39,7 +39,7 @@ func checkPreconditions(w http.ResponseWriter, r *http.Request, entry *filer.Ent
 	/// validation, a validated cache is more efficient than a partial
 	/// response, and entity tags are presumed to be more accurate than date
 	/// validators. https://tools.ietf.org/html/rfc7232#section-5
-	if entry.Attr.Mtime.IsZero() {
+	if entry.Mtime.IsZero() {
 		return false
 	}
 	w.Header().Set("Last-Modified", entry.Attr.Mtime.UTC().Format(http.TimeFormat))
@@ -49,12 +49,14 @@ func checkPreconditions(w http.ResponseWriter, r *http.Request, entry *filer.Ent
 	if ifMatchETagHeader != "" {
 		if util.CanonicalizeETag(etag) != util.CanonicalizeETag(ifMatchETagHeader) {
 			w.WriteHeader(http.StatusPreconditionFailed)
+
 			return true
 		}
 	} else if ifUnmodifiedSinceHeader != "" {
 		if t, parseError := time.Parse(http.TimeFormat, ifUnmodifiedSinceHeader); parseError == nil {
-			if t.Before(entry.Attr.Mtime) {
+			if t.Before(entry.Mtime) {
 				w.WriteHeader(http.StatusPreconditionFailed)
+
 				return true
 			}
 		}
@@ -66,13 +68,15 @@ func checkPreconditions(w http.ResponseWriter, r *http.Request, entry *filer.Ent
 		if util.CanonicalizeETag(etag) == util.CanonicalizeETag(ifNoneMatchETagHeader) {
 			SetEtag(w, etag)
 			w.WriteHeader(http.StatusNotModified)
+
 			return true
 		}
 	} else if ifModifiedSinceHeader != "" {
 		if t, parseError := time.Parse(http.TimeFormat, ifModifiedSinceHeader); parseError == nil {
-			if !t.Before(entry.Attr.Mtime) {
+			if !t.Before(entry.Mtime) {
 				SetEtag(w, etag)
 				w.WriteHeader(http.StatusNotModified)
+
 				return true
 			}
 		}
@@ -93,9 +97,10 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		if path == "/" {
 			fs.listDirectoryHandler(w, r)
+
 			return
 		}
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			glog.V(2).InfofCtx(ctx, "Not found %s: %v", path, err)
 			stats.FilerHandlerCounter.WithLabelValues(stats.ErrorReadNotFound).Inc()
 			w.WriteHeader(http.StatusNotFound)
@@ -104,6 +109,7 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 			stats.FilerHandlerCounter.WithLabelValues(stats.ErrorReadInternal).Inc()
 			w.WriteHeader(http.StatusInternalServerError)
 		}
+
 		return
 	}
 
@@ -112,14 +118,17 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 	if entry.IsDirectory() {
 		if fs.option.DisableDirListing {
 			w.WriteHeader(http.StatusForbidden)
+
 			return
 		}
 		if query.Get("metadata") == "true" {
 			writeJsonQuiet(w, r, http.StatusOK, entry)
+
 			return
 		}
 		// listDirectoryHandler checks ExposeDirectoryData internally
 		fs.listDirectoryHandler(w, r)
+
 		return
 	}
 
@@ -131,10 +140,12 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 				entry.GetChunks(), 0, math.MaxInt64); err != nil {
 				err = fmt.Errorf("failed to resolve chunk manifest, err: %s", err.Error())
 				writeJsonError(w, r, http.StatusInternalServerError, err)
+
 				return
 			}
 		}
 		writeJsonQuiet(w, r, http.StatusOK, entry)
+
 		return
 	}
 
@@ -147,7 +158,7 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	// mime type
-	mimeType := entry.Attr.Mime
+	mimeType := entry.Mime
 	if mimeType == "" {
 		if ext := filepath.Ext(entry.Name()); ext != "" {
 			mimeType = mime.TypeByExtension(ext)
@@ -167,7 +178,7 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	//Seaweed custom header are not visible to Vue or javascript
+	// Seaweed custom header are not visible to Vue or javascript
 	seaweedHeaders := []string{}
 	for header := range w.Header() {
 		if strings.HasPrefix(header, "Seaweed-") {
@@ -189,6 +200,7 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 
 	if r.Method == http.MethodHead {
 		w.Header().Set("Content-Length", strconv.FormatInt(totalSize, 10))
+
 		return
 	}
 
@@ -200,21 +212,23 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 					stats.FilerHandlerCounter.WithLabelValues(stats.ErrorWriteEntry).Inc()
 					glog.ErrorfCtx(ctx, "failed to write entry content: %v", err)
 				}
+
 				return err
 			}, nil
 		}
 		chunks := entry.GetChunks()
 		if entry.IsInRemoteOnly() {
-			dir, name := entry.FullPath.DirAndName()
+			dir, name := entry.DirAndName()
 			if resp, err := fs.CacheRemoteObjectToLocalCluster(ctx, &filer_pb.CacheRemoteObjectToLocalClusterRequest{
 				Directory: dir,
 				Name:      name,
 			}); err != nil {
 				stats.FilerHandlerCounter.WithLabelValues(stats.ErrorReadCache).Inc()
 				glog.ErrorfCtx(ctx, "CacheRemoteObjectToLocalCluster %s: %v", entry.FullPath, err)
-				return nil, fmt.Errorf("cache %s: %v", entry.FullPath, err)
+
+				return nil, fmt.Errorf("cache %s: %w", entry.FullPath, err)
 			} else {
-				chunks = resp.Entry.GetChunks()
+				chunks = resp.GetEntry().GetChunks()
 			}
 		}
 
@@ -228,8 +242,10 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 			streamCancel()
 			stats.FilerHandlerCounter.WithLabelValues(stats.ErrorReadStream).Inc()
 			glog.ErrorfCtx(ctx, "failed to prepare stream content %s: %v", r.URL, err)
+
 			return nil, err
 		}
+
 		return func(writer io.Writer) error {
 			defer streamCancel()
 			err := streamFn(writer)
@@ -237,6 +253,7 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 				stats.FilerHandlerCounter.WithLabelValues(stats.ErrorReadStream).Inc()
 				glog.ErrorfCtx(ctx, "failed to stream content %s: %v", r.URL, err)
 			}
+
 			return err
 		}, nil
 	})

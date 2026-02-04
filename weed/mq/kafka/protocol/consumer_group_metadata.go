@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -28,7 +29,7 @@ type ConnectionContext struct {
 	// Per-connection broker client for isolated gRPC streams
 	// Each Kafka connection MUST have its own gRPC streams to avoid interference
 	// when multiple consumers or requests are active on different connections
-	BrokerClient interface{} // Will be set to *integration.BrokerClient
+	BrokerClient any // Will be set to *integration.BrokerClient
 
 	// Persistent partition readers - one goroutine per topic-partition that maintains position
 	// and streams forward, eliminating repeated offset lookups and reducing broker CPU load
@@ -75,14 +76,14 @@ func ParseConsumerProtocolMetadata(metadata []byte, strategyName string) (*Consu
 
 	// Parse version (2 bytes)
 	if len(metadata) < offset+2 {
-		return nil, fmt.Errorf("metadata too short for version field")
+		return nil, errors.New("metadata too short for version field")
 	}
 	result.Version = int16(binary.BigEndian.Uint16(metadata[offset : offset+2]))
 	offset += 2
 
 	// Parse topics array
 	if len(metadata) < offset+4 {
-		return nil, fmt.Errorf("metadata too short for topics count")
+		return nil, errors.New("metadata too short for topics count")
 	}
 	topicsCount := binary.BigEndian.Uint32(metadata[offset : offset+4])
 	offset += 4
@@ -130,6 +131,7 @@ func ParseConsumerProtocolMetadata(metadata []byte, strategyName string) (*Consu
 		// Handle -1 (0xFFFFFFFF) as null/empty user data (Kafka protocol convention)
 		if userDataLength == 0xFFFFFFFF {
 			result.UserData = []byte{}
+
 			return result, nil
 		}
 

@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
@@ -11,7 +12,7 @@ import (
 // ValidateTrustPolicyForPrincipal validates if a principal is allowed to assume a role
 func (m *IAMManager) ValidateTrustPolicyForPrincipal(ctx context.Context, roleArn, principalArn string) error {
 	if !m.initialized {
-		return fmt.Errorf("IAM manager not initialized")
+		return errors.New("IAM manager not initialized")
 	}
 
 	// Extract role name from ARN
@@ -24,7 +25,7 @@ func (m *IAMManager) ValidateTrustPolicyForPrincipal(ctx context.Context, roleAr
 	}
 
 	if roleDef.TrustPolicy == nil {
-		return fmt.Errorf("role has no trust policy")
+		return errors.New("role has no trust policy")
 	}
 
 	// Create evaluation context

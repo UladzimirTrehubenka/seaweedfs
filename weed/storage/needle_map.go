@@ -5,10 +5,11 @@ import (
 	"os"
 	"sync"
 
+	"github.com/syndtr/goleveldb/leveldb/opt"
+
 	"github.com/seaweedfs/seaweedfs/weed/storage/idx"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle_map"
 	. "github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 type NeedleMapKind int
@@ -55,6 +56,7 @@ func (nm *baseNeedleMapper) IndexFileSize() uint64 {
 	if err == nil {
 		return uint64(stat.Size())
 	}
+
 	return 0
 }
 
@@ -67,6 +69,7 @@ func (nm *baseNeedleMapper) appendToIndexFile(key NeedleId, offset Offset, size 
 	if err == nil {
 		nm.indexFileOffset += int64(written)
 	}
+
 	return err
 }
 
@@ -88,5 +91,6 @@ func (nm *baseNeedleMapper) ReadIndexEntry(n int64) (key NeedleId, offset Offset
 		}
 	}
 	key, offset, size = idx.IdxFileEntry(bytes)
+
 	return
 }

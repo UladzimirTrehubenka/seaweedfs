@@ -93,7 +93,6 @@ func TestInflightMessageTracker2(t *testing.T) {
 	// Test AcknowledgeMessage method
 	assert.True(t, tracker.AcknowledgeMessage([]byte("2"), int64(2)))
 	assert.Equal(t, int64(2), tracker.GetOldestAckedTimestamp())
-
 }
 
 func TestInflightMessageTracker3(t *testing.T) {
@@ -116,7 +115,6 @@ func TestInflightMessageTracker3(t *testing.T) {
 	assert.Equal(t, int64(6), tracker.GetOldestAckedTimestamp())
 	assert.True(t, tracker.AcknowledgeMessage([]byte("7"), int64(7)))
 	assert.Equal(t, int64(7), tracker.GetOldestAckedTimestamp())
-
 }
 
 func TestInflightMessageTracker4(t *testing.T) {
@@ -130,5 +128,4 @@ func TestInflightMessageTracker4(t *testing.T) {
 	tracker.EnflightMessage([]byte("3"), int64(3))
 	assert.True(t, tracker.AcknowledgeMessage([]byte("3"), int64(3)))
 	assert.Equal(t, int64(3), tracker.GetOldestAckedTimestamp())
-
 }

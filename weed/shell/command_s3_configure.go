@@ -3,17 +3,19 @@ package shell
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 )
 
 func init() {
@@ -43,7 +45,6 @@ func (c *commandS3Configure) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	s3ConfigureCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	actions := s3ConfigureCommand.String("actions", "", "comma separated actions names: Read,Write,List,Tagging,Admin")
 	user := s3ConfigureCommand.String("user", "", "user name")
@@ -78,7 +79,7 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 		})
 
 		if getErr == nil {
-			identity = resp.Identity
+			identity = resp.GetIdentity()
 			if identity == nil {
 				// Should not happen if err is nil, but handle defensively
 				isNewUser = true
@@ -95,7 +96,7 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 					PolicyNames: []string{},
 				}
 			} else {
-				return fmt.Errorf("failed to get user %s: %v", *user, getErr)
+				return fmt.Errorf("failed to get user %s: %w", *user, getErr)
 			}
 		}
 
@@ -112,6 +113,7 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 
 		if !*apply {
 			infoAboutSimulationMode(writer, *apply, "-apply")
+
 			return nil
 		}
 
@@ -119,14 +121,17 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 		if *isDelete && *actions == "" && *accessKey == "" && *buckets == "" && *policies == "" {
 			// Delete User
 			_, err := client.DeleteUser(context.Background(), &iam_pb.DeleteUserRequest{Username: *user})
+
 			return err
 		} else {
 			// Create or Update User
 			if isNewUser {
 				_, err := client.CreateUser(context.Background(), &iam_pb.CreateUserRequest{Identity: identity})
+
 				return err
 			} else {
 				_, err := client.UpdateUser(context.Background(), &iam_pb.UpdateUserRequest{Username: *user, Identity: identity})
+
 				return err
 			}
 		}
@@ -143,18 +148,18 @@ func (c *commandS3Configure) listConfiguration(commandEnv *CommandEnv, writer io
 			return err
 		}
 		var buf bytes.Buffer
-		filer.ProtoToText(&buf, resp.Configuration)
+		filer.ProtoToText(&buf, resp.GetConfiguration())
 		fmt.Fprint(writer, buf.String())
 		fmt.Fprintln(writer)
+
 		return nil
 	}, commandEnv.option.FilerAddress.ToGrpcAddress(), false, commandEnv.option.GrpcDialOption)
 }
 
 func (c *commandS3Configure) applyChanges(identity *iam_pb.Identity, isNewUser bool, actions, buckets, accessKey, secretKey, policies *string, isDelete *bool, accountId, accountDisplayName, accountEmail *string) error {
-
 	// Helper to update account info
 	if *accountId != "" || *accountDisplayName != "" || *accountEmail != "" {
-		if identity.Account == nil {
+		if identity.GetAccount() == nil {
 			identity.Account = &iam_pb.Account{}
 		}
 		if *accountId != "" {
@@ -171,11 +176,11 @@ func (c *commandS3Configure) applyChanges(identity *iam_pb.Identity, isNewUser b
 	// Prepare lists
 	var cmdActions []string
 	if *actions != "" {
-		for _, action := range strings.Split(*actions, ",") {
+		for action := range strings.SplitSeq(*actions, ",") {
 			if *buckets == "" {
 				cmdActions = append(cmdActions, action)
 			} else {
-				for _, bucket := range strings.Split(*buckets, ",") {
+				for bucket := range strings.SplitSeq(*buckets, ",") {
 					cmdActions = append(cmdActions, fmt.Sprintf("%s:%s", action, bucket))
 				}
 			}
@@ -184,7 +189,7 @@ func (c *commandS3Configure) applyChanges(identity *iam_pb.Identity, isNewUser b
 
 	var cmdPolicies []string
 	if *policies != "" {
-		for _, policy := range strings.Split(*policies, ",") {
+		for policy := range strings.SplitSeq(*policies, ",") {
 			if policy != "" {
 				cmdPolicies = append(cmdPolicies, policy)
 			}
@@ -196,14 +201,14 @@ func (c *commandS3Configure) applyChanges(identity *iam_pb.Identity, isNewUser b
 
 		// Remove Actions
 		if len(cmdActions) > 0 {
-			identity.Actions = removeFromSlice(identity.Actions, cmdActions)
+			identity.Actions = removeFromSlice(identity.GetActions(), cmdActions)
 		}
 
 		// Remove Credentials
 		if *accessKey != "" {
 			var keepCredentials []*iam_pb.Credential
-			for _, cred := range identity.Credentials {
-				if cred.AccessKey != *accessKey {
+			for _, cred := range identity.GetCredentials() {
+				if cred.GetAccessKey() != *accessKey {
 					keepCredentials = append(keepCredentials, cred)
 				}
 			}
@@ -212,30 +217,30 @@ func (c *commandS3Configure) applyChanges(identity *iam_pb.Identity, isNewUser b
 
 		// Remove Policies
 		if len(cmdPolicies) > 0 {
-			identity.PolicyNames = removeFromSlice(identity.PolicyNames, cmdPolicies)
+			identity.PolicyNames = removeFromSlice(identity.GetPolicyNames(), cmdPolicies)
 		}
-
 	} else {
 		// ADD/UPDATE LOGIC
 
 		// Add Actions
-		identity.Actions = addUniqueToSlice(identity.Actions, cmdActions)
+		identity.Actions = addUniqueToSlice(identity.GetActions(), cmdActions)
 
 		// Add/Update Credentials
-		if *accessKey != "" && identity.Name != "anonymous" {
+		if *accessKey != "" && identity.GetName() != "anonymous" {
 			found := false
-			for _, cred := range identity.Credentials {
-				if cred.AccessKey == *accessKey {
+			for _, cred := range identity.GetCredentials() {
+				if cred.GetAccessKey() == *accessKey {
 					found = true
 					if *secretKey != "" {
 						cred.SecretKey = *secretKey
 					}
+
 					break
 				}
 			}
 			if !found {
 				if *secretKey == "" {
-					return fmt.Errorf("secret_key is required when adding a new access_key")
+					return errors.New("secret_key is required when adding a new access_key")
 				}
 				identity.Credentials = append(identity.Credentials, &iam_pb.Credential{
 					AccessKey: *accessKey,
@@ -245,7 +250,7 @@ func (c *commandS3Configure) applyChanges(identity *iam_pb.Identity, isNewUser b
 		}
 
 		// Add Policies
-		identity.PolicyNames = addUniqueToSlice(identity.PolicyNames, cmdPolicies)
+		identity.PolicyNames = addUniqueToSlice(identity.GetPolicyNames(), cmdPolicies)
 	}
 
 	return nil
@@ -263,6 +268,7 @@ func removeFromSlice(current []string, toRemove []string) []string {
 			result = append(result, item)
 		}
 	}
+
 	return result
 }
 
@@ -277,5 +283,6 @@ func addUniqueToSlice(current []string, toAdd []string) []string {
 			current = append(current, item)
 		}
 	}
+
 	return current
 }

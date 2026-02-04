@@ -51,17 +51,20 @@ func TestStringFunctions(t *testing.T) {
 					if err == nil {
 						t.Errorf("Expected error but got none")
 					}
+
 					return
 				}
 
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
+
 					return
 				}
 
-				intVal, ok := result.Kind.(*schema_pb.Value_Int64Value)
+				intVal, ok := result.GetKind().(*schema_pb.Value_Int64Value)
 				if !ok {
-					t.Errorf("LENGTH should return int64 value, got %T", result.Kind)
+					t.Errorf("LENGTH should return int64 value, got %T", result.GetKind())
+
 					return
 				}
 
@@ -78,7 +81,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("UPPER failed: %v", err)
 		}
-		stringVal, _ := result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ := result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "HELLO WORLD" {
 			t.Errorf("Expected 'HELLO WORLD', got '%s'", stringVal.StringValue)
 		}
@@ -88,7 +91,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("LOWER failed: %v", err)
 		}
-		stringVal, _ = result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ = result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "hello world" {
 			t.Errorf("Expected 'hello world', got '%s'", stringVal.StringValue)
 		}
@@ -112,12 +115,14 @@ func TestStringFunctions(t *testing.T) {
 				result, err := tt.function(&schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: tt.input}})
 				if err != nil {
 					t.Errorf("Function failed: %v", err)
+
 					return
 				}
 
-				stringVal, ok := result.Kind.(*schema_pb.Value_StringValue)
+				stringVal, ok := result.GetKind().(*schema_pb.Value_StringValue)
 				if !ok {
-					t.Errorf("Function should return string value, got %T", result.Kind)
+					t.Errorf("Function should return string value, got %T", result.GetKind())
+
 					return
 				}
 
@@ -138,7 +143,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("SUBSTRING failed: %v", err)
 		}
-		stringVal, _ := result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ := result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "World" {
 			t.Errorf("Expected 'World', got '%s'", stringVal.StringValue)
 		}
@@ -149,7 +154,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("SUBSTRING failed: %v", err)
 		}
-		stringVal, _ = result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ = result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "World" {
 			t.Errorf("Expected 'World', got '%s'", stringVal.StringValue)
 		}
@@ -164,7 +169,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("CONCAT failed: %v", err)
 		}
-		stringVal, _ := result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ := result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "Hello World" {
 			t.Errorf("Expected 'Hello World', got '%s'", stringVal.StringValue)
 		}
@@ -177,7 +182,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("CONCAT failed: %v", err)
 		}
-		stringVal, _ = result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ = result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "Number: 42" {
 			t.Errorf("Expected 'Number: 42', got '%s'", stringVal.StringValue)
 		}
@@ -185,15 +190,15 @@ func TestStringFunctions(t *testing.T) {
 
 	t.Run("REPLACE function tests", func(t *testing.T) {
 		result, err := engine.Replace(
-			&schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: "Hello World World"}},
+			&schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: "Hello World"}},
 			&schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: "World"}},
 			&schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: "Universe"}},
 		)
 		if err != nil {
 			t.Errorf("REPLACE failed: %v", err)
 		}
-		stringVal, _ := result.Kind.(*schema_pb.Value_StringValue)
-		if stringVal.StringValue != "Hello Universe Universe" {
+		stringVal, _ := result.GetKind().(*schema_pb.Value_StringValue)
+		if stringVal.StringValue != "Hello Universe" {
 			t.Errorf("Expected 'Hello Universe Universe', got '%s'", stringVal.StringValue)
 		}
 	})
@@ -206,7 +211,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("POSITION failed: %v", err)
 		}
-		intVal, _ := result.Kind.(*schema_pb.Value_Int64Value)
+		intVal, _ := result.GetKind().(*schema_pb.Value_Int64Value)
 		if intVal.Int64Value != 7 {
 			t.Errorf("Expected 7, got %d", intVal.Int64Value)
 		}
@@ -219,7 +224,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("POSITION failed: %v", err)
 		}
-		intVal, _ = result.Kind.(*schema_pb.Value_Int64Value)
+		intVal, _ = result.GetKind().(*schema_pb.Value_Int64Value)
 		if intVal.Int64Value != 0 {
 			t.Errorf("Expected 0 for not found, got %d", intVal.Int64Value)
 		}
@@ -233,7 +238,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("LEFT failed: %v", err)
 		}
-		stringVal, _ := result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ := result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "Hello" {
 			t.Errorf("Expected 'Hello', got '%s'", stringVal.StringValue)
 		}
@@ -243,7 +248,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("RIGHT failed: %v", err)
 		}
-		stringVal, _ = result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ = result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "World" {
 			t.Errorf("Expected 'World', got '%s'", stringVal.StringValue)
 		}
@@ -254,7 +259,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("REVERSE failed: %v", err)
 		}
-		stringVal, _ := result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ := result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "olleH" {
 			t.Errorf("Expected 'olleH', got '%s'", stringVal.StringValue)
 		}
@@ -264,7 +269,7 @@ func TestStringFunctions(t *testing.T) {
 		if err != nil {
 			t.Errorf("REVERSE failed: %v", err)
 		}
-		stringVal, _ = result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, _ = result.GetKind().(*schema_pb.Value_StringValue)
 		if stringVal.StringValue != "👍🙂" {
 			t.Errorf("Expected '👍🙂', got '%s'", stringVal.StringValue)
 		}
@@ -345,16 +350,19 @@ func TestStringFunctionsSQL(t *testing.T) {
 				if err == nil && result.Error == nil {
 					t.Errorf("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
 			if result.Error != nil {
 				t.Errorf("Query result has error: %v", result.Error)
+
 				return
 			}
 

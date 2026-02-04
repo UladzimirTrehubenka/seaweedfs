@@ -264,7 +264,7 @@ func TestComprehensiveSQLSuite(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Capture panics
-			var panicValue interface{}
+			var panicValue any
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -278,10 +278,12 @@ func TestComprehensiveSQLSuite(t *testing.T) {
 					if panicValue == nil {
 						t.Errorf("FAIL: Expected panic for %s, but query completed normally", tc.desc)
 						panicTests = append(panicTests, "FAIL: "+tc.desc)
+
 						return
 					} else {
 						t.Logf("PASS: EXPECTED PANIC: %s - %v", tc.desc, panicValue)
 						panicTests = append(panicTests, "PASS: "+tc.desc+" (reproduced)")
+
 						return
 					}
 				}
@@ -289,6 +291,7 @@ func TestComprehensiveSQLSuite(t *testing.T) {
 				if panicValue != nil {
 					t.Errorf("FAIL: Unexpected panic for %s: %v", tc.desc, panicValue)
 					panicTests = append(panicTests, "FAIL: "+tc.desc+" (unexpected panic)")
+
 					return
 				}
 
@@ -296,10 +299,12 @@ func TestComprehensiveSQLSuite(t *testing.T) {
 					if err == nil && (result == nil || result.Error == nil) {
 						t.Errorf("FAIL: Expected error for %s, but query succeeded", tc.desc)
 						errorTests = append(errorTests, "FAIL: "+tc.desc)
+
 						return
 					} else {
 						t.Logf("PASS: Expected error: %s", tc.desc)
 						errorTests = append(errorTests, "PASS: "+tc.desc)
+
 						return
 					}
 				}
@@ -307,12 +312,14 @@ func TestComprehensiveSQLSuite(t *testing.T) {
 				if err != nil {
 					t.Errorf("FAIL: Unexpected error for %s: %v", tc.desc, err)
 					errorTests = append(errorTests, "FAIL: "+tc.desc+" (unexpected error)")
+
 					return
 				}
 
 				if result != nil && result.Error != nil {
 					t.Errorf("FAIL: Unexpected result error for %s: %v", tc.desc, result.Error)
 					errorTests = append(errorTests, "FAIL: "+tc.desc+" (unexpected result error)")
+
 					return
 				}
 

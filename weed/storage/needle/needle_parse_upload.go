@@ -46,7 +46,7 @@ func ParseUpload(r *http.Request, sizeLimit int64, bytesBuffer *bytes.Buffer) (p
 	e = parseUpload(r, sizeLimit, pu)
 
 	if e != nil {
-		return
+		return pu, e
 	}
 
 	pu.ModifiedTime, _ = strconv.ParseUint(r.FormValue("ts"), 10, 64)
@@ -90,15 +90,15 @@ func ParseUpload(r *http.Request, sizeLimit int64, bytesBuffer *bytes.Buffer) (p
 		pu.ContentMd5 = base64.StdEncoding.EncodeToString(h.Sum(nil))
 		if expectedChecksum != pu.ContentMd5 {
 			e = fmt.Errorf("Content-MD5 did not match md5 of file data expected [%s] received [%s] size %d", expectedChecksum, pu.ContentMd5, len(pu.UncompressedData))
-			return
+
+			return pu, e
 		}
 	}
 
-	return
+	return pu, e
 }
 
 func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
-
 	defer func() {
 		if e != nil && r.Body != nil {
 			io.Copy(io.Discard, r.Body)
@@ -115,7 +115,8 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 		if fe != nil {
 			glog.V(0).Infoln("MultipartReader [ERROR]", fe)
 			e = fe
-			return
+
+			return e
 		}
 
 		// first multi-part item
@@ -123,7 +124,8 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 		if fe != nil {
 			glog.V(0).Infoln("Reading Multi part [ERROR]", fe)
 			e = fe
-			return
+
+			return e
 		}
 
 		pu.FileName = part.FileName()
@@ -134,11 +136,13 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 		dataSize, e = pu.bytesBuffer.ReadFrom(io.LimitReader(part, sizeLimit+1))
 		if e != nil {
 			glog.V(0).Infoln("Reading Content [ERROR]", e)
-			return
+
+			return e
 		}
 		if dataSize == sizeLimit+1 {
 			e = fmt.Errorf("file over the limited %d bytes", sizeLimit)
-			return
+
+			return e
 		}
 		pu.Data = pu.bytesBuffer.Bytes()
 
@@ -160,11 +164,13 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 				if fe2 != nil {
 					glog.V(0).Infoln("Reading Content [ERROR]", fe2)
 					e = fe2
-					return
+
+					return e
 				}
 				if dataSize2 == sizeLimit+1 {
 					e = fmt.Errorf("file over the limited %d bytes", sizeLimit)
-					return
+
+					return e
 				}
 
 				// update
@@ -172,18 +178,17 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 				pu.FileName = util.CleanWindowsPathBase(fName)
 				contentType = part.Header.Get("Content-Type")
 				part = part2
+
 				break
 			}
 		}
 
 		pu.IsGzipped = part.Header.Get("Content-Encoding") == "gzip"
 		// pu.IsZstd = part.Header.Get("Content-Encoding") == "zstd"
-
 	} else {
 		disposition := r.Header.Get("Content-Disposition")
 
 		if strings.Contains(disposition, "name=") {
-
 			if !strings.HasPrefix(disposition, "inline") && !strings.HasPrefix(disposition, "attachment") {
 				disposition = "attachment; " + disposition
 			}
@@ -199,9 +204,7 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 				} else if hasName {
 					pu.FileName = dpName
 				}
-
 			}
-
 		} else {
 			pu.FileName = ""
 		}
@@ -216,11 +219,13 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 
 		if e != nil {
 			glog.V(0).Infoln("Reading Content [ERROR]", e)
-			return
+
+			return e
 		}
 		if dataSize == sizeLimit+1 {
 			e = fmt.Errorf("file over the limited %d bytes", sizeLimit)
-			return
+
+			return e
 		}
 
 		pu.Data = pu.bytesBuffer.Bytes()
@@ -232,7 +237,6 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 	pu.IsChunkedFile, _ = strconv.ParseBool(r.FormValue("cm"))
 
 	if !pu.IsChunkedFile {
-
 		dotIndex := strings.LastIndex(pu.FileName, ".")
 		ext, mtype := "", ""
 
@@ -246,8 +250,7 @@ func parseUpload(r *http.Request, sizeLimit int64, pu *ParsedUpload) (e error) {
 		} else if mtype != "" && pu.MimeType == "" && mtype != "application/octet-stream" {
 			pu.MimeType = mtype
 		}
-
 	}
 
-	return
+	return e
 }

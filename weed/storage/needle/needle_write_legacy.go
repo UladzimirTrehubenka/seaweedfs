@@ -28,6 +28,7 @@ func (n *Needle) LegacyPrepareWriteBuffer(version Version, writeBytes *bytes.Buf
 		padding := PaddingLength(n.Size, version)
 		util.Uint32toBytes(header[0:NeedleChecksumSize], uint32(n.Checksum))
 		writeBytes.Write(header[0 : NeedleChecksumSize+padding])
+
 		return size, actualSize, nil
 	case Version2, Version3:
 		header := make([]byte, NeedleHeaderSize+TimestampSize) // adding timestamp to reuse it and avoid extra allocation
@@ -119,11 +120,13 @@ func (n *Needle) LegacyAppend(w backend.BackendStorageFile, version Version) (of
 		offset = uint64(end)
 	} else {
 		err = fmt.Errorf("Cannot Read Current Volume Position: %w", e)
-		return
+
+		return offset, size, actualSize, err
 	}
 	if offset >= MaxPossibleVolumeSize && len(n.Data) != 0 {
 		err = fmt.Errorf("Volume Size %d Exceeded %d", offset, MaxPossibleVolumeSize)
-		return
+
+		return offset, size, actualSize, err
 	}
 
 	bytesBuffer := buffer_pool.SyncPoolGetBuffer()

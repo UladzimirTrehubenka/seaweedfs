@@ -2,12 +2,14 @@ package broker
 
 import (
 	"context"
+	"errors"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/sub_coordinator"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // SubscriberToSubCoordinator coordinates the subscribers
@@ -29,13 +31,13 @@ func (b *MessageQueueBroker) SubscriberToSubCoordinator(stream mq_pb.SeaweedMess
 		if err != nil {
 			return status.Errorf(codes.InvalidArgument, "failed to add subscriber: %v", err)
 		}
-		glog.V(0).Infof("subscriber %s/%s/%s connected", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic)
+		glog.V(0).Infof("subscriber %s/%s/%s connected", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic())
 	} else {
 		return status.Errorf(codes.InvalidArgument, "subscriber init message is empty")
 	}
 	defer func() {
 		b.SubCoordinator.RemoveSubscriber(initMessage)
-		glog.V(0).Infof("subscriber %s/%s/%s disconnected: %v", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic, err)
+		glog.V(0).Infof("subscriber %s/%s/%s disconnected: %v", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic(), err)
 	}()
 
 	ctx := stream.Context()
@@ -45,25 +47,26 @@ func (b *MessageQueueBroker) SubscriberToSubCoordinator(stream mq_pb.SeaweedMess
 		for {
 			req, err := stream.Recv()
 			if err != nil {
-				glog.V(0).Infof("subscriber %s/%s/%s receive: %v", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic, err)
+				glog.V(0).Infof("subscriber %s/%s/%s receive: %v", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic(), err)
 			}
 
 			if ackUnAssignment := req.GetAckUnAssignment(); ackUnAssignment != nil {
-				glog.V(0).Infof("subscriber %s/%s/%s ack close of %v", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic, ackUnAssignment)
+				glog.V(0).Infof("subscriber %s/%s/%s ack close of %v", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic(), ackUnAssignment)
 				cg.AckUnAssignment(cgi, ackUnAssignment)
 			}
 			if ackAssignment := req.GetAckAssignment(); ackAssignment != nil {
-				glog.V(0).Infof("subscriber %s/%s/%s ack assignment %v", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic, ackAssignment)
+				glog.V(0).Infof("subscriber %s/%s/%s ack assignment %v", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic(), ackAssignment)
 				cg.AckAssignment(cgi, ackAssignment)
 			}
 
 			select {
 			case <-ctx.Done():
 				err := ctx.Err()
-				if err == context.Canceled {
+				if errors.Is(err, context.Canceled) {
 					// Client disconnected
 					return
 				}
+
 				return
 			default:
 				// Continue processing the request
@@ -76,16 +79,17 @@ func (b *MessageQueueBroker) SubscriberToSubCoordinator(stream mq_pb.SeaweedMess
 		select {
 		case <-ctx.Done():
 			err := ctx.Err()
-			if err == context.Canceled {
+			if errors.Is(err, context.Canceled) {
 				// Client disconnected
 				return err
 			}
-			glog.V(0).Infof("subscriber %s/%s/%s disconnected: %v", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic, err)
+			glog.V(0).Infof("subscriber %s/%s/%s disconnected: %v", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic(), err)
+
 			return err
 		case message := <-cgi.ResponseChan:
-			glog.V(0).Infof("subscriber %s/%s/%s send: %v", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic, message)
+			glog.V(0).Infof("subscriber %s/%s/%s send: %v", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic(), message)
 			if err := stream.Send(message); err != nil {
-				glog.V(0).Infof("subscriber %s/%s/%s send: %v", initMessage.ConsumerGroup, initMessage.ConsumerGroupInstanceId, initMessage.Topic, err)
+				glog.V(0).Infof("subscriber %s/%s/%s send: %v", initMessage.GetConsumerGroup(), initMessage.GetConsumerGroupInstanceId(), initMessage.GetTopic(), err)
 			}
 		}
 	}

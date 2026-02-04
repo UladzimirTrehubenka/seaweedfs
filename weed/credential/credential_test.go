@@ -2,6 +2,8 @@ package credential
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"testing"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
@@ -21,13 +23,7 @@ func TestCredentialStoreInterface(t *testing.T) {
 
 	// Add PostgreSQL if it's available (build tags dependent)
 	for _, storeName := range storeNames {
-		found := false
-		for _, expected := range append(expectedStores, string(StoreTypePostgres)) {
-			if string(storeName) == expected {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(append(expectedStores, string(StoreTypePostgres)), string(storeName))
 		if !found {
 			t.Errorf("Unexpected store found: %s", storeName)
 		}
@@ -149,8 +145,8 @@ func testCredentialInterfaceWithStore(t *testing.T, storeName CredentialStoreTyp
 	if err != nil {
 		t.Fatalf("GetUser failed: %v", err)
 	}
-	if user.Name != "testuser" {
-		t.Errorf("Expected user name 'testuser', got %s", user.Name)
+	if user.GetName() != "testuser" {
+		t.Errorf("Expected user name 'testuser', got %s", user.GetName())
 	}
 
 	// Test ListUsers
@@ -167,8 +163,8 @@ func testCredentialInterfaceWithStore(t *testing.T, storeName CredentialStoreTyp
 	if err != nil {
 		t.Fatalf("GetUserByAccessKey failed: %v", err)
 	}
-	if userByKey.Name != "testuser" {
-		t.Errorf("Expected user name 'testuser', got %s", userByKey.Name)
+	if userByKey.GetName() != "testuser" {
+		t.Errorf("Expected user name 'testuser', got %s", userByKey.GetName())
 	}
 }
 
@@ -253,8 +249,8 @@ func TestCredentialManagerIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get user by access key: %v", err)
 	}
-	if foundUser.Name != "user1" {
-		t.Errorf("Expected user1, got %s", foundUser.Name)
+	if foundUser.GetName() != "user1" {
+		t.Errorf("Expected user1, got %s", foundUser.GetName())
 	}
 
 	// Delete user
@@ -265,7 +261,7 @@ func TestCredentialManagerIntegration(t *testing.T) {
 
 	// Verify user is deleted
 	_, err = cm.GetUser(ctx, "user1")
-	if err != ErrUserNotFound {
+	if !errors.Is(err, ErrUserNotFound) {
 		t.Errorf("Expected ErrUserNotFound, got %v", err)
 	}
 
@@ -321,13 +317,7 @@ func TestGetAvailableStores(t *testing.T) {
 
 	// Add PostgreSQL if it's available (build tags dependent)
 	for _, storeName := range storeNames {
-		found := false
-		for _, expected := range append(expectedStores, string(StoreTypePostgres)) {
-			if storeName == expected {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(append(expectedStores, string(StoreTypePostgres)), storeName)
 		if !found {
 			t.Errorf("Unexpected store found: %s", storeName)
 		}

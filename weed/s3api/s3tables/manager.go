@@ -34,7 +34,7 @@ func (m *Manager) SetAccountID(accountID string) {
 }
 
 // Execute runs an S3 Tables operation and decodes the response into resp (if provided).
-func (m *Manager) Execute(ctx context.Context, filerClient FilerClient, operation string, req interface{}, resp interface{}, identity string) error {
+func (m *Manager) Execute(ctx context.Context, filerClient FilerClient, operation string, req any, resp any, identity string) error {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return err
@@ -51,10 +51,11 @@ func (m *Manager) Execute(ctx context.Context, filerClient FilerClient, operatio
 	}
 	recorder := httptest.NewRecorder()
 	m.handler.HandleRequest(recorder, httpReq, filerClient)
+
 	return decodeS3TablesHTTPResponse(recorder, resp)
 }
 
-func decodeS3TablesHTTPResponse(recorder *httptest.ResponseRecorder, resp interface{}) error {
+func decodeS3TablesHTTPResponse(recorder *httptest.ResponseRecorder, resp any) error {
 	result := recorder.Result()
 	defer result.Body.Close()
 	data, err := io.ReadAll(result.Body)
@@ -68,6 +69,7 @@ func decodeS3TablesHTTPResponse(recorder *httptest.ResponseRecorder, resp interf
 				return &errResp
 			}
 		}
+
 		return &S3TablesError{Type: ErrCodeInternalError, Message: string(bytes.TrimSpace(data))}
 	}
 	if resp == nil || len(data) == 0 {
@@ -76,6 +78,7 @@ func decodeS3TablesHTTPResponse(recorder *httptest.ResponseRecorder, resp interf
 	if err := json.Unmarshal(data, resp); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -94,5 +97,6 @@ func (m *ManagerClient) WithFilerClient(streamingMode bool, fn func(client filer
 	if m.client == nil {
 		return errors.New("nil filer client")
 	}
+
 	return fn(m.client)
 }

@@ -23,24 +23,26 @@ func (store *FilerEtcStore) loadServiceAccountsFromMultiFile(ctx context.Context
 		dir := filer.IamConfigDirectory + "/" + IamServiceAccountsDirectory
 		entries, err := listEntries(ctx, client, dir)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 
 		for _, entry := range entries {
-			if entry.IsDirectory {
+			if entry.GetIsDirectory() {
 				continue
 			}
 
 			var content []byte
-			if len(entry.Content) > 0 {
-				content = entry.Content
+			if len(entry.GetContent()) > 0 {
+				content = entry.GetContent()
 			} else {
-				c, err := filer.ReadInsideFiler(client, dir, entry.Name)
+				c, err := filer.ReadInsideFiler(client, dir, entry.GetName())
 				if err != nil {
-					glog.Warningf("Failed to read service account file %s: %v", entry.Name, err)
+					glog.Warningf("Failed to read service account file %s: %v", entry.GetName(), err)
+
 					continue
 				}
 				content = c
@@ -49,29 +51,33 @@ func (store *FilerEtcStore) loadServiceAccountsFromMultiFile(ctx context.Context
 			if len(content) > 0 {
 				sa := &iam_pb.ServiceAccount{}
 				if err := json.Unmarshal(content, sa); err != nil {
-					glog.Warningf("Failed to unmarshal service account %s: %v", entry.Name, err)
+					glog.Warningf("Failed to unmarshal service account %s: %v", entry.GetName(), err)
+
 					continue
 				}
 				s3cfg.ServiceAccounts = append(s3cfg.ServiceAccounts, sa)
 			}
 		}
+
 		return nil
 	})
 }
 
 func (store *FilerEtcStore) saveServiceAccount(ctx context.Context, sa *iam_pb.ServiceAccount) error {
 	if sa == nil {
-		return fmt.Errorf("service account is nil")
+		return errors.New("service account is nil")
 	}
-	if err := validateServiceAccountId(sa.Id); err != nil {
+	if err := validateServiceAccountId(sa.GetId()); err != nil {
 		return err
 	}
+
 	return store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		data, err := json.MarshalIndent(sa, "", "  ")
 		if err != nil {
 			return err
 		}
-		return filer.SaveInsideFiler(client, filer.IamConfigDirectory+"/"+IamServiceAccountsDirectory, sa.Id+".json", data)
+
+		return filer.SaveInsideFiler(client, filer.IamConfigDirectory+"/"+IamServiceAccountsDirectory, sa.GetId()+".json", data)
 	})
 }
 
@@ -79,6 +85,7 @@ func (store *FilerEtcStore) deleteServiceAccount(ctx context.Context, saId strin
 	if err := validateServiceAccountId(saId); err != nil {
 		return err
 	}
+
 	return store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		resp, err := client.DeleteEntry(ctx, &filer_pb.DeleteEntryRequest{
 			Directory: filer.IamConfigDirectory + "/" + IamServiceAccountsDirectory,
@@ -88,38 +95,43 @@ func (store *FilerEtcStore) deleteServiceAccount(ctx context.Context, saId strin
 			if strings.Contains(err.Error(), filer_pb.ErrNotFound.Error()) {
 				return credential.ErrServiceAccountNotFound
 			}
+
 			return err
 		}
-		if resp != nil && resp.Error != "" {
-			if strings.Contains(resp.Error, filer_pb.ErrNotFound.Error()) {
+		if resp != nil && resp.GetError() != "" {
+			if strings.Contains(resp.GetError(), filer_pb.ErrNotFound.Error()) {
 				return credential.ErrServiceAccountNotFound
 			}
-			return fmt.Errorf("delete service account %s: %s", saId, resp.Error)
+
+			return fmt.Errorf("delete service account %s: %s", saId, resp.GetError())
 		}
+
 		return nil
 	})
 }
 
 func (store *FilerEtcStore) CreateServiceAccount(ctx context.Context, sa *iam_pb.ServiceAccount) error {
-	existing, err := store.GetServiceAccount(ctx, sa.Id)
+	existing, err := store.GetServiceAccount(ctx, sa.GetId())
 	if err != nil {
 		if !errors.Is(err, credential.ErrServiceAccountNotFound) {
 			return err
 		}
 	} else if existing != nil {
-		return fmt.Errorf("service account %s already exists", sa.Id)
+		return fmt.Errorf("service account %s already exists", sa.GetId())
 	}
+
 	return store.saveServiceAccount(ctx, sa)
 }
 
 func (store *FilerEtcStore) UpdateServiceAccount(ctx context.Context, id string, sa *iam_pb.ServiceAccount) error {
-	if sa.Id != id {
-		return fmt.Errorf("service account ID mismatch")
+	if sa.GetId() != id {
+		return errors.New("service account ID mismatch")
 	}
 	_, err := store.GetServiceAccount(ctx, id)
 	if err != nil {
 		return err
 	}
+
 	return store.saveServiceAccount(ctx, sa)
 }
 
@@ -135,17 +147,20 @@ func (store *FilerEtcStore) GetServiceAccount(ctx context.Context, id string) (*
 	err := store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		data, err := filer.ReadInsideFiler(client, filer.IamConfigDirectory+"/"+IamServiceAccountsDirectory, id+".json")
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return credential.ErrServiceAccountNotFound
 			}
+
 			return err
 		}
 		if len(data) == 0 {
 			return credential.ErrServiceAccountNotFound
 		}
 		sa = &iam_pb.ServiceAccount{}
+
 		return json.Unmarshal(data, sa)
 	})
+
 	return sa, err
 }
 
@@ -155,24 +170,26 @@ func (store *FilerEtcStore) ListServiceAccounts(ctx context.Context) ([]*iam_pb.
 		dir := filer.IamConfigDirectory + "/" + IamServiceAccountsDirectory
 		entries, err := listEntries(ctx, client, dir)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 
 		for _, entry := range entries {
-			if entry.IsDirectory {
+			if entry.GetIsDirectory() {
 				continue
 			}
 
 			var content []byte
-			if len(entry.Content) > 0 {
-				content = entry.Content
+			if len(entry.GetContent()) > 0 {
+				content = entry.GetContent()
 			} else {
-				c, err := filer.ReadInsideFiler(client, dir, entry.Name)
+				c, err := filer.ReadInsideFiler(client, dir, entry.GetName())
 				if err != nil {
-					glog.Warningf("Failed to read service account file %s: %v", entry.Name, err)
+					glog.Warningf("Failed to read service account file %s: %v", entry.GetName(), err)
+
 					continue
 				}
 				content = c
@@ -181,14 +198,17 @@ func (store *FilerEtcStore) ListServiceAccounts(ctx context.Context) ([]*iam_pb.
 			if len(content) > 0 {
 				sa := &iam_pb.ServiceAccount{}
 				if err := json.Unmarshal(content, sa); err != nil {
-					glog.Warningf("Failed to unmarshal service account %s: %v", entry.Name, err)
+					glog.Warningf("Failed to unmarshal service account %s: %v", entry.GetName(), err)
+
 					continue
 				}
 				accounts = append(accounts, sa)
 			}
 		}
+
 		return nil
 	})
+
 	return accounts, err
 }
 
@@ -198,9 +218,10 @@ func (store *FilerEtcStore) GetServiceAccountByAccessKey(ctx context.Context, ac
 		return nil, err
 	}
 	for _, sa := range accounts {
-		if sa.Credential != nil && sa.Credential.AccessKey == accessKey {
+		if sa.GetCredential() != nil && sa.GetCredential().GetAccessKey() == accessKey {
 			return sa, nil
 		}
 	}
+
 	return nil, credential.ErrAccessKeyNotFound
 }

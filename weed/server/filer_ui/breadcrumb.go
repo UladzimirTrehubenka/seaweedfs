@@ -17,7 +17,7 @@ func ToBreadcrumb(fullpath string) (crumbs []Breadcrumb) {
 		parts = []string{""}
 	}
 
-	for i := 0; i < len(parts); i++ {
+	for i := range parts {
 		name := parts[i]
 		if name == "" {
 			name = "/"

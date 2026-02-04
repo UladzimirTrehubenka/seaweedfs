@@ -32,7 +32,6 @@ func (c *commandVacuum) HasTag(CommandTag) bool {
 }
 
 func (c *commandVacuum) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	volumeVacuumCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	garbageThreshold := volumeVacuumCommand.Float64("garbageThreshold", 0.3, "vacuum when garbage is more than this limit")
 	collection := volumeVacuumCommand.String("collection", "", "vacuum this collection")
@@ -51,6 +50,7 @@ func (c *commandVacuum) Do(args []string, commandEnv *CommandEnv, writer io.Writ
 			VolumeId:         uint32(*volumeId),
 			Collection:       *collection,
 		})
+
 		return err
 	})
 	if err != nil {

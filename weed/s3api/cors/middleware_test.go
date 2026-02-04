@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 )
 
@@ -20,6 +21,7 @@ func (m *mockBucketChecker) CheckBucket(r *http.Request, bucket string) s3err.Er
 	if m.bucketExists {
 		return s3err.ErrNone
 	}
+
 	return s3err.ErrNoSuchBucket
 }
 
@@ -298,7 +300,7 @@ func TestMiddlewareFallbackConfigWithMultipleOrigins(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/testbucket/testobject", nil)
+			req := httptest.NewRequest(http.MethodGet, "/testbucket/testobject", nil)
 			req = mux.SetURLVars(req, map[string]string{
 				"bucket": "testbucket",
 				"object": "testobject",
@@ -382,7 +384,7 @@ func TestMiddlewareFallbackWithError(t *testing.T) {
 
 			middleware := NewMiddleware(bucketChecker, configGetter, fallbackConfig)
 
-			req := httptest.NewRequest("GET", "/testbucket/testobject", nil)
+			req := httptest.NewRequest(http.MethodGet, "/testbucket/testobject", nil)
 			req = mux.SetURLVars(req, map[string]string{
 				"bucket": "testbucket",
 				"object": "testobject",
@@ -470,7 +472,7 @@ func TestMiddlewareVaryHeader(t *testing.T) {
 			middleware := NewMiddleware(bucketChecker, configGetter, nil)
 
 			// Create request WITHOUT Origin header
-			req := httptest.NewRequest("GET", "/testbucket/testobject", nil)
+			req := httptest.NewRequest(http.MethodGet, "/testbucket/testobject", nil)
 			req = mux.SetURLVars(req, map[string]string{
 				"bucket": "testbucket",
 				"object": "testobject",
@@ -523,7 +525,7 @@ func TestHandleOptionsRequestVaryHeader(t *testing.T) {
 	middleware := NewMiddleware(bucketChecker, configGetter, nil)
 
 	// Create OPTIONS request
-	req := httptest.NewRequest("OPTIONS", "/testbucket/testobject", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/testbucket/testobject", nil)
 	req = mux.SetURLVars(req, map[string]string{
 		"bucket": "testbucket",
 		"object": "testobject",
@@ -554,11 +556,12 @@ func TestHandleOptionsRequestVaryHeader(t *testing.T) {
 func hasVaryOrigin(header http.Header) bool {
 	varyHeaders := header["Vary"]
 	for _, h := range varyHeaders {
-		for _, v := range strings.Split(h, ",") {
+		for v := range strings.SplitSeq(h, ",") {
 			if strings.TrimSpace(v) == "Origin" {
 				return true
 			}
 		}
 	}
+
 	return false
 }

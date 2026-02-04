@@ -5,17 +5,20 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
 
 // MockOIDCProvider is a mock implementation for testing
 type MockOIDCProvider struct {
 	*OIDCProvider
+
 	TestTokens map[string]*providers.TokenClaims
 	TestUsers  map[string]*providers.ExternalIdentity
 }
@@ -42,11 +45,11 @@ func (m *MockOIDCProvider) AddTestUser(userID string, identity *providers.Extern
 // Authenticate overrides the parent Authenticate method to use mock data
 func (m *MockOIDCProvider) Authenticate(ctx context.Context, token string) (*providers.ExternalIdentity, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if token == "" {
-		return nil, fmt.Errorf("token cannot be empty")
+		return nil, errors.New("token cannot be empty")
 	}
 
 	// Validate token using mock validation
@@ -72,19 +75,19 @@ func (m *MockOIDCProvider) Authenticate(ctx context.Context, token string) (*pro
 // ValidateToken validates tokens using test data
 func (m *MockOIDCProvider) ValidateToken(ctx context.Context, token string) (*providers.TokenClaims, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if token == "" {
-		return nil, fmt.Errorf("token cannot be empty")
+		return nil, errors.New("token cannot be empty")
 	}
 
 	// Special test tokens
 	if token == "expired_token" {
-		return nil, fmt.Errorf("token has expired")
+		return nil, errors.New("token has expired")
 	}
 	if token == "invalid_token" {
-		return nil, fmt.Errorf("invalid token")
+		return nil, errors.New("invalid token")
 	}
 
 	// Try to parse as JWT token first
@@ -113,7 +116,7 @@ func (m *MockOIDCProvider) ValidateToken(ctx context.Context, token string) (*pr
 						Audience:  audience,
 						ExpiresAt: expiresAt,
 						IssuedAt:  issuedAt,
-						Claims: map[string]interface{}{
+						Claims: map[string]any{
 							"email": subject + "@test-domain.com",
 							"name":  "Test User " + subject,
 						},
@@ -136,7 +139,7 @@ func (m *MockOIDCProvider) ValidateToken(ctx context.Context, token string) (*pr
 			Audience:  m.config.ClientID,
 			ExpiresAt: time.Now().Add(time.Hour),
 			IssuedAt:  time.Now(),
-			Claims: map[string]interface{}{
+			Claims: map[string]any{
 				"email":  "test@example.com",
 				"name":   "Test User",
 				"groups": []string{"developers", "users"},
@@ -150,11 +153,11 @@ func (m *MockOIDCProvider) ValidateToken(ctx context.Context, token string) (*pr
 // GetUserInfo returns test user info
 func (m *MockOIDCProvider) GetUserInfo(ctx context.Context, userID string) (*providers.ExternalIdentity, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if userID == "" {
-		return nil, fmt.Errorf("user ID cannot be empty")
+		return nil, errors.New("user ID cannot be empty")
 	}
 
 	// Check test users
@@ -180,7 +183,7 @@ func (m *MockOIDCProvider) SetupDefaultTestData() {
 		Audience:  "test-client-id",
 		ExpiresAt: time.Now().Add(time.Hour),
 		IssuedAt:  time.Now(),
-		Claims: map[string]interface{}{
+		Claims: map[string]any{
 			"email":  "testuser@example.com",
 			"name":   "Test User",
 			"groups": []string{"developers"},

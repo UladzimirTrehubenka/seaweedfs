@@ -64,6 +64,7 @@ func runDownload(cmd *Command, args []string) bool {
 			fmt.Println("Download Error: ", fid, e)
 		}
 	}
+
 	return true
 }
 
@@ -96,8 +97,8 @@ func downloadToFile(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpti
 		if err != nil {
 			return err
 		}
-		fids := strings.Split(string(content), "\n")
-		for _, partId := range fids {
+		fids := strings.SplitSeq(string(content), "\n")
+		for partId := range fids {
 			var n int
 			_, part, err := fetchContent(masterFn, grpcDialOption, partId)
 			if err == nil {
@@ -114,8 +115,8 @@ func downloadToFile(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpti
 		if _, err = io.Copy(f, rc.Body); err != nil {
 			return err
 		}
-
 	}
+
 	return nil
 }
 
@@ -130,6 +131,7 @@ func fetchContent(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption
 	}
 	defer util_http.CloseResponse(rc)
 	content, e = io.ReadAll(rc.Body)
+
 	return
 }
 
@@ -143,5 +145,6 @@ func WriteFile(filename string, data []byte, perm os.FileMode) error {
 	if err == nil && n < len(data) {
 		err = io.ErrShortWrite
 	}
+
 	return err
 }

@@ -3,6 +3,7 @@ package leveldb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -41,6 +42,7 @@ func (store *LevelDBStore) GetName() string {
 
 func (store *LevelDBStore) Initialize(configuration weed_util.Configuration, prefix string) (err error) {
 	dir := configuration.GetString(prefix + "dir")
+
 	return store.initialize(dir)
 }
 
@@ -48,7 +50,7 @@ func (store *LevelDBStore) initialize(dir string) (err error) {
 	glog.V(0).Infof("filer store dir: %s", dir)
 	os.MkdirAll(dir, 0755)
 	if err := weed_util.TestFolderWritable(dir); err != nil {
-		return fmt.Errorf("Check Level Folder %s Writable: %s", dir, err)
+		return fmt.Errorf("Check Level Folder %s Writable: %w", dir, err)
 	}
 
 	opts := &opt.Options{
@@ -63,9 +65,11 @@ func (store *LevelDBStore) initialize(dir string) (err error) {
 		}
 		if err != nil {
 			glog.Infof("filer store open dir %s: %v", dir, err)
+
 			return
 		}
 	}
+
 	return
 }
 
@@ -84,7 +88,7 @@ func (store *LevelDBStore) InsertEntry(ctx context.Context, entry *filer.Entry) 
 
 	value, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encoding %s %+v: %v", entry.FullPath, entry.Attr, err)
+		return fmt.Errorf("encoding %s %+v: %w", entry.FullPath, entry.Attr, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -94,7 +98,7 @@ func (store *LevelDBStore) InsertEntry(ctx context.Context, entry *filer.Entry) 
 	err = store.db.Put(key, value, nil)
 
 	if err != nil {
-		return fmt.Errorf("persisting %s : %v", entry.FullPath, err)
+		return fmt.Errorf("persisting %s : %w", entry.FullPath, err)
 	}
 
 	// println("saved", entry.FullPath, "chunks", len(entry.GetChunks()))
@@ -103,7 +107,6 @@ func (store *LevelDBStore) InsertEntry(ctx context.Context, entry *filer.Entry) 
 }
 
 func (store *LevelDBStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	return store.InsertEntry(ctx, entry)
 }
 
@@ -145,11 +148,11 @@ func (store *LevelDBStore) FindEntry(ctx context.Context, fullpath weed_util.Ful
 
 	data, err := store.db.Get(key, nil)
 
-	if err == leveldb.ErrNotFound {
+	if errors.Is(err, leveldb.ErrNotFound) {
 		return nil, filer_pb.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get %s : %v", fullpath, err)
+		return nil, fmt.Errorf("get %s : %w", fullpath, err)
 	}
 
 	entry = &filer.Entry{
@@ -157,7 +160,7 @@ func (store *LevelDBStore) FindEntry(ctx context.Context, fullpath weed_util.Ful
 	}
 	err = entry.DecodeAttributesAndChunks(weed_util.MaybeDecompressData((data)))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	// println("read", entry.FullPath, "chunks", len(entry.GetChunks()), "data", len(data), string(data))
@@ -170,14 +173,13 @@ func (store *LevelDBStore) DeleteEntry(ctx context.Context, fullpath weed_util.F
 
 	err = store.db.Delete(key, nil)
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
 }
 
 func (store *LevelDBStore) DeleteFolderChildren(ctx context.Context, fullpath weed_util.FullPath) (err error) {
-
 	batch := new(leveldb.Batch)
 
 	directoryPrefix := genDirectoryKeyPrefix(fullpath, "")
@@ -198,7 +200,7 @@ func (store *LevelDBStore) DeleteFolderChildren(ctx context.Context, fullpath we
 	err = store.db.Write(batch, nil)
 
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -209,7 +211,6 @@ func (store *LevelDBStore) ListDirectoryEntries(ctx context.Context, dirPath wee
 }
 
 func (store *LevelDBStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPath weed_util.FullPath, startFileName string, includeStartFile bool, limit int64, prefix string, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
-
 	directoryPrefix := genDirectoryKeyPrefix(dirPath, prefix)
 	lastFileStart := directoryPrefix
 	if startFileName != "" {
@@ -240,12 +241,14 @@ func (store *LevelDBStore) ListDirectoryPrefixedEntries(ctx context.Context, dir
 		if decodeErr := entry.DecodeAttributesAndChunks(weed_util.MaybeDecompressData(iter.Value())); decodeErr != nil {
 			err = decodeErr
 			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
+
 			break
 		}
 
 		resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 		if resEachEntryFuncErr != nil {
 			err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 			break
 		}
 
@@ -262,6 +265,7 @@ func genKey(dirPath, fileName string) (key []byte) {
 	key = []byte(dirPath)
 	key = append(key, DIR_FILE_SEPARATOR)
 	key = append(key, []byte(fileName)...)
+
 	return key
 }
 
@@ -271,18 +275,17 @@ func genDirectoryKeyPrefix(fullpath weed_util.FullPath, startFileName string) (k
 	if len(startFileName) > 0 {
 		keyPrefix = append(keyPrefix, []byte(startFileName)...)
 	}
+
 	return keyPrefix
 }
 
 func getNameFromKey(key []byte) string {
-
 	sepIndex := len(key) - 1
 	for sepIndex >= 0 && key[sepIndex] != DIR_FILE_SEPARATOR {
 		sepIndex--
 	}
 
 	return string(key[sepIndex+1:])
-
 }
 
 func (store *LevelDBStore) Shutdown() {

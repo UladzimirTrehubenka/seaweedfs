@@ -4,8 +4,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestAliasTimestampIntegration tests that SQL aliases work correctly with timestamp query fixes

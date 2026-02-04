@@ -50,7 +50,7 @@ func TestJobQueue(t *testing.T) {
 	println("enqueue", 7)
 	queue.Enqueue(Job[string]{ID: 7, Action: "task7", Data: "7!"})
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		println("dequeue ...")
 		job, ok = queue.Dequeue()
 		if !ok {
@@ -63,11 +63,11 @@ func TestJobQueue(t *testing.T) {
 		t.Errorf("Expected queue size of 0, got %d", queue.Size())
 	}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		println("enqueue", i+8)
 		queue.Enqueue(Job[string]{ID: i + 8, Action: "task", Data: "data"})
 	}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		job, ok = queue.Dequeue()
 		if !ok {
 			t.Errorf("Expected dequeue to return true")
@@ -77,7 +77,6 @@ func TestJobQueue(t *testing.T) {
 		}
 		println("dequeued", job.ID)
 	}
-
 }
 
 func TestJobQueueClose(t *testing.T) {
@@ -100,13 +99,12 @@ func TestJobQueueClose(t *testing.T) {
 		}
 	}()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		queue.Enqueue(Job[string]{ID: i + 3, Action: "task", Data: "data"})
 	}
 
 	queue.CloseInput()
 	wg.Wait()
-
 }
 
 func BenchmarkBufferedQueue(b *testing.B) {
@@ -118,11 +116,10 @@ func BenchmarkBufferedQueue(b *testing.B) {
 
 	queue := NewBufferedQueue[Job[string]](1024)
 
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		queue.Enqueue(Job[string]{ID: i, Action: "task", Data: "data"})
 	}
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = queue.Dequeue()
 	}
-
 }

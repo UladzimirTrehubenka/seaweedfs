@@ -2,6 +2,7 @@ package weed_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -28,6 +29,7 @@ func (ms *MasterServer) collectionDeleteHandler(w http.ResponseWriter, r *http.R
 	collection, ok := ms.Topo.FindCollection(collectionName)
 	if !ok {
 		writeJsonError(w, r, http.StatusBadRequest, fmt.Errorf("collection %s does not exist", collectionName))
+
 		return
 	}
 	for _, server := range collection.ListVolumeServers() {
@@ -35,21 +37,24 @@ func (ms *MasterServer) collectionDeleteHandler(w http.ResponseWriter, r *http.R
 			_, deleteErr := client.DeleteCollection(context.Background(), &volume_server_pb.DeleteCollectionRequest{
 				Collection: collection.Name,
 			})
+
 			return deleteErr
 		})
 		if err != nil {
 			writeJsonError(w, r, http.StatusInternalServerError, err)
+
 			return
 		}
 	}
 	ms.Topo.DeleteCollection(collectionName)
 
 	w.WriteHeader(http.StatusNoContent)
+
 	return
 }
 
 func (ms *MasterServer) dirStatusHandler(w http.ResponseWriter, r *http.Request) {
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["Version"] = version.Version()
 	m["Topology"] = ms.Topo.ToInfo()
 	writeJsonQuiet(w, r, http.StatusOK, m)
@@ -64,6 +69,7 @@ func (ms *MasterServer) volumeVacuumHandler(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			glog.V(0).Infof("garbageThreshold %s is not a valid float number: %v", gcString, err)
 			writeJsonError(w, r, http.StatusNotAcceptable, fmt.Errorf("garbageThreshold %s is not a valid float number", gcString))
+
 			return
 		}
 	}
@@ -77,6 +83,7 @@ func (ms *MasterServer) volumeGrowHandler(w http.ResponseWriter, r *http.Request
 	option, err := ms.getVolumeGrowOption(r)
 	if err != nil {
 		writeJsonError(w, r, http.StatusNotAcceptable, err)
+
 		return
 	}
 	glog.V(0).Infof("volumeGrowHandler received %v from %v", option.String(), r.RemoteAddr)
@@ -99,12 +106,12 @@ func (ms *MasterServer) volumeGrowHandler(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		writeJsonError(w, r, http.StatusNotAcceptable, err)
 	} else {
-		writeJsonQuiet(w, r, http.StatusOK, map[string]interface{}{"count": count})
+		writeJsonQuiet(w, r, http.StatusOK, map[string]any{"count": count})
 	}
 }
 
 func (ms *MasterServer) volumeStatusHandler(w http.ResponseWriter, r *http.Request) {
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["Version"] = version.Version()
 	m["Volumes"] = ms.Topo.ToVolumeMap()
 	writeJsonQuiet(w, r, http.StatusOK, m)
@@ -164,7 +171,7 @@ func (ms *MasterServer) getVolumeGrowOption(r *http.Request) (*topology.VolumeGr
 	if r.FormValue("preallocate") != "" {
 		preallocate, err = strconv.ParseInt(r.FormValue("preallocate"), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to parse int64 preallocate = %s: %v", r.FormValue("preallocate"), err)
+			return nil, fmt.Errorf("Failed to parse int64 preallocate = %s: %w", r.FormValue("preallocate"), err)
 		}
 	}
 	ver := needle.GetCurrentVersion()
@@ -180,33 +187,36 @@ func (ms *MasterServer) getVolumeGrowOption(r *http.Request) (*topology.VolumeGr
 		MemoryMapMaxSizeMb: memoryMapMaxSizeMb,
 		Version:            uint32(ver),
 	}
+
 	return volumeGrowOption, nil
 }
 
 func (ms *MasterServer) collectionInfoHandler(w http.ResponseWriter, r *http.Request) {
-	//get collection from request
+	// get collection from request
 	collectionName := r.FormValue("collection")
 	if collectionName == "" {
-		writeJsonError(w, r, http.StatusBadRequest, fmt.Errorf("collection is required"))
+		writeJsonError(w, r, http.StatusBadRequest, errors.New("collection is required"))
+
 		return
 	}
-	//output details of the volumes?
+	// output details of the volumes?
 	detail := r.FormValue("detail") == "true"
-	//collect collection info
+	// collect collection info
 	collection, ok := ms.Topo.FindCollection(collectionName)
 	if !ok {
 		writeJsonError(w, r, http.StatusBadRequest, fmt.Errorf("collection %s does not exist", collectionName))
+
 		return
 	}
 
 	volumeLayouts := collection.GetAllVolumeLayouts()
 
 	if detail {
-		//prepare the json response
-		all_stats := make([]map[string]interface{}, len(volumeLayouts))
+		// prepare the json response
+		all_stats := make([]map[string]any, len(volumeLayouts))
 		for i, volumeLayout := range volumeLayouts {
 			volumeLayoutStats := volumeLayout.Stats()
-			m := make(map[string]interface{})
+			m := make(map[string]any)
 			m["Version"] = version.Version()
 			m["Collection"] = collectionName
 			m["TotalSize"] = volumeLayoutStats.TotalSize
@@ -214,11 +224,11 @@ func (ms *MasterServer) collectionInfoHandler(w http.ResponseWriter, r *http.Req
 			m["UsedSize"] = volumeLayoutStats.UsedSize
 			all_stats[i] = m
 		}
-		//write it
+		// write it
 		writeJsonQuiet(w, r, http.StatusOK, all_stats)
 	} else {
-		//prepare the json response
-		collectionStats := map[string]interface{}{
+		// prepare the json response
+		collectionStats := map[string]any{
 			"Version":     version.Version(),
 			"Collection":  collectionName,
 			"TotalSize":   uint64(0),
@@ -233,7 +243,7 @@ func (ms *MasterServer) collectionInfoHandler(w http.ResponseWriter, r *http.Req
 			collectionStats["UsedSize"] = collectionStats["UsedSize"].(uint64) + volumeLayoutStats.UsedSize
 			collectionStats["VolumeCount"] = collectionStats["VolumeCount"].(uint64) + 1
 		}
-		//write it
+		// write it
 		writeJsonQuiet(w, r, http.StatusOK, collectionStats)
 	}
 }

@@ -2,14 +2,15 @@ package leveldb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/syndtr/goleveldb/leveldb"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 )
 
 func (store *LevelDB3Store) KvPut(ctx context.Context, key []byte, value []byte) (err error) {
-
 	err = store.dbs[DEFAULT].Put(key, value, nil)
 
 	if err != nil {
@@ -20,10 +21,9 @@ func (store *LevelDB3Store) KvPut(ctx context.Context, key []byte, value []byte)
 }
 
 func (store *LevelDB3Store) KvGet(ctx context.Context, key []byte) (value []byte, err error) {
-
 	value, err = store.dbs[DEFAULT].Get(key, nil)
 
-	if err == leveldb.ErrNotFound {
+	if errors.Is(err, leveldb.ErrNotFound) {
 		return nil, filer.ErrKvNotFound
 	}
 
@@ -35,7 +35,6 @@ func (store *LevelDB3Store) KvGet(ctx context.Context, key []byte) (value []byte
 }
 
 func (store *LevelDB3Store) KvDelete(ctx context.Context, key []byte) (err error) {
-
 	err = store.dbs[DEFAULT].Delete(key, nil)
 
 	if err != nil {

@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/seaweedfs/seaweedfs/weed/iam/oidc"
-	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/iam/oidc"
+	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
 
 // Test-only constants for mock providers
@@ -19,7 +20,7 @@ const (
 
 // createMockOIDCProvider creates a mock OIDC provider for testing
 // This is only available in test builds
-func createMockOIDCProvider(name string, config map[string]interface{}) (providers.IdentityProvider, error) {
+func createMockOIDCProvider(name string, config map[string]any) (providers.IdentityProvider, error) {
 	// Convert config to OIDC format
 	factory := NewProviderFactory()
 	oidcConfig, err := factory.convertToOIDCConfig(config)
@@ -55,6 +56,7 @@ func createMockJWT(t *testing.T, issuer, subject string) string {
 
 	tokenString, err := token.SignedString([]byte("test-signing-key"))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -75,7 +77,7 @@ func TestCrossInstanceTokenUsage(t *testing.T) {
 				Name:    "company-oidc",
 				Type:    ProviderTypeOIDC,
 				Enabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					ConfigFieldIssuer:   "https://sso.company.com/realms/production",
 					ConfigFieldClientID: "seaweedfs-cluster",
 					ConfigFieldJWKSUri:  "https://sso.company.com/realms/production/protocol/openid-connect/certs",
@@ -106,7 +108,7 @@ func TestCrossInstanceTokenUsage(t *testing.T) {
 	instanceC.SetTrustPolicyValidator(mockValidator)
 
 	// Manually register mock provider for testing (not available in production)
-	mockProviderConfig := map[string]interface{}{
+	mockProviderConfig := map[string]any{
 		ConfigFieldIssuer:   "http://test-mock:9999",
 		ConfigFieldClientID: TestClientID,
 	}
@@ -359,7 +361,7 @@ func TestSTSDistributedConfigurationRequirements(t *testing.T) {
 
 		// Create multiple instances with identical config
 		instances := make([]*STSService, 5)
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			instances[i] = NewSTSService()
 			err := instances[i].Initialize(identicalConfig)
 			require.NoError(t, err, "Instance %d should initialize", i)
@@ -402,7 +404,7 @@ func TestSTSRealWorldDistributedScenarios(t *testing.T) {
 					Name:    "corporate-oidc",
 					Type:    "oidc",
 					Enabled: true,
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"issuer":       "https://sso.company.com/realms/production",
 						"clientId":     "seaweedfs-prod-cluster",
 						"clientSecret": "supersecret-prod-key",
@@ -433,7 +435,7 @@ func TestSTSRealWorldDistributedScenarios(t *testing.T) {
 		gateway3.SetTrustPolicyValidator(mockValidator)
 
 		// Manually register mock provider for testing (not available in production)
-		mockProviderConfig := map[string]interface{}{
+		mockProviderConfig := map[string]any{
 			ConfigFieldIssuer:   "http://test-mock:9999",
 			ConfigFieldClientID: "test-client-id",
 		}

@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"reflect"
 	"sort"
@@ -20,6 +21,7 @@ func (h H) String() string {
 	}
 	sort.Strings(pairs)
 	join := strings.Join(pairs, "\n")
+
 	return "\n" + join + "\n"
 }
 
@@ -411,6 +413,7 @@ func transferHToHeader(data map[string]string) http.Header {
 	for k, v := range data {
 		header.Add(k, v)
 	}
+
 	return header
 }
 
@@ -419,6 +422,7 @@ func transferHToBytesArr(data map[string]string) map[string][]byte {
 	for k, v := range data {
 		m[k] = []byte(v)
 	}
+
 	return m
 }
 
@@ -427,6 +431,7 @@ func transferBytesArrToH(data map[string][]byte) H {
 	for k, v := range data {
 		m[k] = string(v)
 	}
+
 	return m
 }
 
@@ -435,6 +440,7 @@ func transferHeaderToH(data map[string][]string) H {
 	for k, v := range data {
 		m[k] = v[len(v)-1]
 	}
+
 	return m
 }
 
@@ -527,9 +533,7 @@ func TestCleanupVersioningMetadata(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a copy of the source metadata
 			dstMetadata := make(map[string][]byte)
-			for k, v := range tc.sourceMetadata {
-				dstMetadata[k] = v
-			}
+			maps.Copy(dstMetadata, tc.sourceMetadata)
 
 			// Call the actual production function
 			cleanupVersioningMetadata(dstMetadata)
@@ -618,9 +622,7 @@ func TestCopyVersioningIntegration(t *testing.T) {
 
 			// Test metadata cleanup using production function
 			metadata := make(map[string][]byte)
-			for k, v := range tc.sourceMetadata {
-				metadata[k] = v
-			}
+			maps.Copy(metadata, tc.sourceMetadata)
 
 			if !shouldCreateVersion {
 				cleanupVersioningMetadata(metadata)

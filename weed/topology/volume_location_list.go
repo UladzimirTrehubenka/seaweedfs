@@ -21,21 +21,23 @@ func (dnll *VolumeLocationList) String() string {
 func (dnll *VolumeLocationList) Copy() *VolumeLocationList {
 	list := make([]*DataNode, len(dnll.list))
 	copy(list, dnll.list)
+
 	return &VolumeLocationList{
 		list: list,
 	}
 }
 
 func (dnll *VolumeLocationList) Head() *DataNode {
-	//mark first node as master volume
+	// mark first node as master volume
 	if dnll.Length() == 0 {
 		return nil
 	}
+
 	return dnll.list[0]
 }
 
 func (dnll *VolumeLocationList) Rest() []*DataNode {
-	//mark first node as master volume
+	// mark first node as master volume
 	return dnll.list[1:]
 }
 
@@ -43,6 +45,7 @@ func (dnll *VolumeLocationList) Length() int {
 	if dnll == nil {
 		return 0
 	}
+
 	return len(dnll.list)
 }
 
@@ -50,6 +53,7 @@ func (dnll *VolumeLocationList) Set(loc *DataNode) {
 	for i := 0; i < len(dnll.list); i++ {
 		if loc.Ip == dnll.list[i].Ip && loc.Port == dnll.list[i].Port {
 			dnll.list[i] = loc
+
 			return
 		}
 	}
@@ -60,9 +64,11 @@ func (dnll *VolumeLocationList) Remove(loc *DataNode) bool {
 	for i, dnl := range dnll.list {
 		if loc.Ip == dnl.Ip && loc.Port == dnl.Port {
 			dnll.list = append(dnll.list[:i], dnll.list[i+1:]...)
+
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -71,6 +77,7 @@ func (dnll *VolumeLocationList) Refresh(freshThreshHold int64) {
 	for _, dnl := range dnll.list {
 		if dnl.LastSeen < freshThreshHold {
 			changed = true
+
 			break
 		}
 	}
@@ -95,5 +102,6 @@ func (dnll *VolumeLocationList) Stats(vid needle.VolumeId, freshThreshHold int64
 			}
 		}
 	}
+
 	return 0, 0
 }

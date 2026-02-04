@@ -1,9 +1,10 @@
 package command
 
 import (
+	"google.golang.org/grpc/reflection"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/agent"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_agent_pb"
-	"google.golang.org/grpc/reflection"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -42,17 +43,14 @@ var cmdMqAgent = &Command{
 }
 
 func runMqAgent(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 
 	mqAgentOptions.brokers = pb.ServerAddresses(*mqAgentOptions.brokersString).ToAddresses()
 
 	return mqAgentOptions.startQueueAgent()
-
 }
 
 func (mqAgentOpt *MessageQueueAgentOptions) startQueueAgent() bool {
-
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.msg_agent")
 
 	agentServer := agent.NewMessageQueueAgent(&agent.MessageQueueAgentOptions{
@@ -87,5 +85,4 @@ func (mqAgentOpt *MessageQueueAgentOptions) startQueueAgent() bool {
 	grpcS.Serve(grpcL)
 
 	return true
-
 }

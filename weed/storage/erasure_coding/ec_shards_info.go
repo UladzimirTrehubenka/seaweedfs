@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/dustin/go-humanize"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 )
 
@@ -24,6 +25,7 @@ func (sb ShardBits) Set(id ShardId) ShardBits {
 	if id >= MaxShardCount {
 		return sb
 	}
+
 	return sb | (1 << id)
 }
 
@@ -32,6 +34,7 @@ func (sb ShardBits) Clear(id ShardId) ShardBits {
 	if id >= MaxShardCount {
 		return sb
 	}
+
 	return sb &^ (1 << id)
 }
 
@@ -63,6 +66,7 @@ func ShardsInfoFromVolume(ev *EcVolume) *ShardsInfo {
 		res.shards[i] = NewShardInfo(s.ShardId, ShardSize(s.Size()))
 		res.shardBits = res.shardBits.Set(s.ShardId)
 	}
+
 	return res
 }
 
@@ -77,11 +81,11 @@ func ShardsInfoFromVolumeEcShardInformationMessage(vi *master_pb.VolumeEcShardIn
 	var j int
 	// Build shards directly to avoid locking in Set() since res is not yet shared
 	newShards := make([]ShardInfo, 0, 8)
-	for bitmap := vi.EcIndexBits; bitmap != 0; bitmap >>= 1 {
+	for bitmap := vi.GetEcIndexBits(); bitmap != 0; bitmap >>= 1 {
 		if bitmap&1 != 0 {
 			var size ShardSize
-			if j < len(vi.ShardSizes) {
-				size = ShardSize(vi.ShardSizes[j])
+			if j < len(vi.GetShardSizes()) {
+				size = ShardSize(vi.GetShardSizes()[j])
 			}
 			j++
 			newShards = append(newShards, NewShardInfo(id, size))
@@ -89,7 +93,7 @@ func ShardsInfoFromVolumeEcShardInformationMessage(vi *master_pb.VolumeEcShardIn
 		id++
 	}
 	res.shards = newShards
-	res.shardBits = ShardBits(vi.EcIndexBits)
+	res.shardBits = ShardBits(vi.GetEcIndexBits())
 
 	return res
 }
@@ -99,7 +103,8 @@ func GetShardCount(vi *master_pb.VolumeEcShardInformationMessage) int {
 	if vi == nil {
 		return 0
 	}
-	return ShardBits(vi.EcIndexBits).Count()
+
+	return ShardBits(vi.GetEcIndexBits()).Count()
 }
 
 // Returns a string representation for a ShardsInfo.
@@ -113,6 +118,7 @@ func (sp *ShardsInfo) String() string {
 		}
 		fmt.Fprintf(&sb, "%d:%s", s.Id, humanize.Bytes(uint64(s.Size)))
 	}
+
 	return sb.String()
 }
 
@@ -122,6 +128,7 @@ func (si *ShardsInfo) AsSlice() []ShardInfo {
 	defer si.mu.RUnlock()
 	res := make([]ShardInfo, len(si.shards))
 	copy(res, si.shards)
+
 	return res
 }
 
@@ -129,6 +136,7 @@ func (si *ShardsInfo) AsSlice() []ShardInfo {
 func (si *ShardsInfo) Count() int {
 	si.mu.RLock()
 	defer si.mu.RUnlock()
+
 	return si.shardBits.Count()
 }
 
@@ -136,6 +144,7 @@ func (si *ShardsInfo) Count() int {
 func (si *ShardsInfo) Has(id ShardId) bool {
 	si.mu.RLock()
 	defer si.mu.RUnlock()
+
 	return si.shardBits.Has(id)
 }
 
@@ -147,6 +156,7 @@ func (si *ShardsInfo) Ids() []ShardId {
 	for i, s := range si.shards {
 		ids[i] = s.Id
 	}
+
 	return ids
 }
 
@@ -157,6 +167,7 @@ func (si *ShardsInfo) IdsInt() []int {
 	for i, id := range ids {
 		res[i] = int(id)
 	}
+
 	return res
 }
 
@@ -180,6 +191,7 @@ func (si *ShardsInfo) Set(shard ShardInfo) {
 		if idx >= 0 {
 			si.shards[idx] = shard
 		}
+
 		return
 	}
 
@@ -222,6 +234,7 @@ func (si *ShardsInfo) Delete(id ShardId) {
 func (si *ShardsInfo) Bitmap() uint32 {
 	si.mu.RLock()
 	defer si.mu.RUnlock()
+
 	return uint32(si.shardBits)
 }
 
@@ -241,6 +254,7 @@ func (si *ShardsInfo) Size(id ShardId) ShardSize {
 	if idx >= 0 {
 		return si.shards[idx].Size
 	}
+
 	return 0
 }
 
@@ -252,6 +266,7 @@ func (si *ShardsInfo) TotalSize() ShardSize {
 	for _, s := range si.shards {
 		total += s.Size
 	}
+
 	return total
 }
 
@@ -264,6 +279,7 @@ func (si *ShardsInfo) Sizes() []ShardSize {
 	for i, s := range si.shards {
 		res[i] = s.Size
 	}
+
 	return res
 }
 
@@ -274,6 +290,7 @@ func (si *ShardsInfo) SizesInt64() []int64 {
 	for i, s := range sizes {
 		res[i] = int64(s)
 	}
+
 	return res
 }
 
@@ -302,6 +319,7 @@ func (si *ShardsInfo) DeleteParityShards() {
 func (si *ShardsInfo) MinusParityShards() *ShardsInfo {
 	result := si.Copy()
 	result.DeleteParityShards()
+
 	return result
 }
 
@@ -335,6 +353,7 @@ func (si *ShardsInfo) Subtract(other *ShardsInfo) {
 func (si *ShardsInfo) Plus(other *ShardsInfo) *ShardsInfo {
 	result := si.Copy()
 	result.Add(other)
+
 	return result
 }
 
@@ -342,6 +361,7 @@ func (si *ShardsInfo) Plus(other *ShardsInfo) *ShardsInfo {
 func (si *ShardsInfo) Minus(other *ShardsInfo) *ShardsInfo {
 	result := si.Copy()
 	result.Subtract(other)
+
 	return result
 }
 
@@ -354,5 +374,6 @@ func (si *ShardsInfo) findIndex(id ShardId) int {
 	if idx < len(si.shards) && si.shards[idx].Id == id {
 		return idx
 	}
+
 	return -1
 }

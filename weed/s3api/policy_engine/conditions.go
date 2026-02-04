@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,8 +59,10 @@ func (c *NormalizedValueCache) Get(key string) ([]string, bool) {
 	if node, exists := c.cache[key]; exists {
 		// Move to head (most recently used) - O(1) operation
 		c.moveToHead(node)
+
 		return node.value, true
 	}
+
 	return nil, false
 }
 
@@ -72,6 +75,7 @@ func (c *NormalizedValueCache) Set(key string, value []string) {
 		// Update existing node and move to head
 		node.value = value
 		c.moveToHead(node)
+
 		return
 	}
 
@@ -115,6 +119,7 @@ func (c *NormalizedValueCache) removeNode(node *LRUNode) {
 func (c *NormalizedValueCache) removeTail() *LRUNode {
 	lastNode := c.tail.prev
 	c.removeNode(lastNode)
+
 	return lastNode
 }
 
@@ -137,6 +142,7 @@ func (c *NormalizedValueCache) Clear() {
 func (c *NormalizedValueCache) GetStats() (size int, maxSize int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
 	return len(c.cache), c.maxSize
 }
 
@@ -144,7 +150,7 @@ func (c *NormalizedValueCache) GetStats() (size int, maxSize int) {
 var normalizedValueCache = NewNormalizedValueCache(1000)
 
 // getCachedNormalizedValues returns cached normalized values or caches new ones
-func getCachedNormalizedValues(value interface{}) []string {
+func getCachedNormalizedValues(value any) []string {
 	// Create a string key for caching - more efficient than fmt.Sprintf
 	typeStr := reflect.TypeOf(value).String()
 	cacheKey := typeStr + ":" + fmt.Sprint(value)
@@ -170,43 +176,41 @@ func getCachedNormalizedValues(value interface{}) []string {
 
 // ConditionEvaluator evaluates policy conditions
 type ConditionEvaluator interface {
-	Evaluate(conditionValue interface{}, contextValues []string) bool
+	Evaluate(conditionValue any, contextValues []string) bool
 }
 
 // StringEqualsEvaluator evaluates StringEquals conditions
 type StringEqualsEvaluator struct{}
 
-func (e *StringEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *StringEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
-		for _, contextValue := range contextValues {
-			if expected == contextValue {
-				return true
-			}
+		if slices.Contains(contextValues, expected) {
+			return true
 		}
 	}
+
 	return false
 }
 
 // StringNotEqualsEvaluator evaluates StringNotEquals conditions
 type StringNotEqualsEvaluator struct{}
 
-func (e *StringNotEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *StringNotEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
-		for _, contextValue := range contextValues {
-			if expected == contextValue {
-				return false
-			}
+		if slices.Contains(contextValues, expected) {
+			return false
 		}
 	}
+
 	return true
 }
 
 // StringLikeEvaluator evaluates StringLike conditions (supports wildcards)
 type StringLikeEvaluator struct{}
 
-func (e *StringLikeEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *StringLikeEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	patterns := getCachedNormalizedValues(conditionValue)
 	for _, pattern := range patterns {
 		for _, contextValue := range contextValues {
@@ -215,13 +219,14 @@ func (e *StringLikeEvaluator) Evaluate(conditionValue interface{}, contextValues
 			}
 		}
 	}
+
 	return false
 }
 
 // StringNotLikeEvaluator evaluates StringNotLike conditions
 type StringNotLikeEvaluator struct{}
 
-func (e *StringNotLikeEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *StringNotLikeEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	patterns := getCachedNormalizedValues(conditionValue)
 	for _, pattern := range patterns {
 		for _, contextValue := range contextValues {
@@ -230,13 +235,14 @@ func (e *StringNotLikeEvaluator) Evaluate(conditionValue interface{}, contextVal
 			}
 		}
 	}
+
 	return true
 }
 
 // NumericEqualsEvaluator evaluates NumericEquals conditions
 type NumericEqualsEvaluator struct{}
 
-func (e *NumericEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NumericEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedFloat, err := strconv.ParseFloat(expected, 64)
@@ -253,13 +259,14 @@ func (e *NumericEqualsEvaluator) Evaluate(conditionValue interface{}, contextVal
 			}
 		}
 	}
+
 	return false
 }
 
 // NumericNotEqualsEvaluator evaluates NumericNotEquals conditions
 type NumericNotEqualsEvaluator struct{}
 
-func (e *NumericNotEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NumericNotEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedFloat, err := strconv.ParseFloat(expected, 64)
@@ -276,13 +283,14 @@ func (e *NumericNotEqualsEvaluator) Evaluate(conditionValue interface{}, context
 			}
 		}
 	}
+
 	return true
 }
 
 // NumericLessThanEvaluator evaluates NumericLessThan conditions
 type NumericLessThanEvaluator struct{}
 
-func (e *NumericLessThanEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NumericLessThanEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedFloat, err := strconv.ParseFloat(expected, 64)
@@ -299,13 +307,14 @@ func (e *NumericLessThanEvaluator) Evaluate(conditionValue interface{}, contextV
 			}
 		}
 	}
+
 	return false
 }
 
 // NumericLessThanEqualsEvaluator evaluates NumericLessThanEquals conditions
 type NumericLessThanEqualsEvaluator struct{}
 
-func (e *NumericLessThanEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NumericLessThanEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedFloat, err := strconv.ParseFloat(expected, 64)
@@ -322,13 +331,14 @@ func (e *NumericLessThanEqualsEvaluator) Evaluate(conditionValue interface{}, co
 			}
 		}
 	}
+
 	return false
 }
 
 // NumericGreaterThanEvaluator evaluates NumericGreaterThan conditions
 type NumericGreaterThanEvaluator struct{}
 
-func (e *NumericGreaterThanEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NumericGreaterThanEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedFloat, err := strconv.ParseFloat(expected, 64)
@@ -345,13 +355,14 @@ func (e *NumericGreaterThanEvaluator) Evaluate(conditionValue interface{}, conte
 			}
 		}
 	}
+
 	return false
 }
 
 // NumericGreaterThanEqualsEvaluator evaluates NumericGreaterThanEquals conditions
 type NumericGreaterThanEqualsEvaluator struct{}
 
-func (e *NumericGreaterThanEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NumericGreaterThanEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedFloat, err := strconv.ParseFloat(expected, 64)
@@ -368,13 +379,14 @@ func (e *NumericGreaterThanEqualsEvaluator) Evaluate(conditionValue interface{},
 			}
 		}
 	}
+
 	return false
 }
 
 // DateEqualsEvaluator evaluates DateEquals conditions
 type DateEqualsEvaluator struct{}
 
-func (e *DateEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *DateEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedTime, err := time.Parse(time.RFC3339, expected)
@@ -391,13 +403,14 @@ func (e *DateEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues
 			}
 		}
 	}
+
 	return false
 }
 
 // DateNotEqualsEvaluator evaluates DateNotEquals conditions
 type DateNotEqualsEvaluator struct{}
 
-func (e *DateNotEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *DateNotEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedTime, err := time.Parse(time.RFC3339, expected)
@@ -414,13 +427,14 @@ func (e *DateNotEqualsEvaluator) Evaluate(conditionValue interface{}, contextVal
 			}
 		}
 	}
+
 	return true
 }
 
 // DateLessThanEvaluator evaluates DateLessThan conditions
 type DateLessThanEvaluator struct{}
 
-func (e *DateLessThanEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *DateLessThanEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedTime, err := time.Parse(time.RFC3339, expected)
@@ -437,13 +451,14 @@ func (e *DateLessThanEvaluator) Evaluate(conditionValue interface{}, contextValu
 			}
 		}
 	}
+
 	return false
 }
 
 // DateLessThanEqualsEvaluator evaluates DateLessThanEquals conditions
 type DateLessThanEqualsEvaluator struct{}
 
-func (e *DateLessThanEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *DateLessThanEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedTime, err := time.Parse(time.RFC3339, expected)
@@ -460,13 +475,14 @@ func (e *DateLessThanEqualsEvaluator) Evaluate(conditionValue interface{}, conte
 			}
 		}
 	}
+
 	return false
 }
 
 // DateGreaterThanEvaluator evaluates DateGreaterThan conditions
 type DateGreaterThanEvaluator struct{}
 
-func (e *DateGreaterThanEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *DateGreaterThanEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedTime, err := time.Parse(time.RFC3339, expected)
@@ -483,13 +499,14 @@ func (e *DateGreaterThanEvaluator) Evaluate(conditionValue interface{}, contextV
 			}
 		}
 	}
+
 	return false
 }
 
 // DateGreaterThanEqualsEvaluator evaluates DateGreaterThanEquals conditions
 type DateGreaterThanEqualsEvaluator struct{}
 
-func (e *DateGreaterThanEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *DateGreaterThanEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedTime, err := time.Parse(time.RFC3339, expected)
@@ -506,28 +523,30 @@ func (e *DateGreaterThanEqualsEvaluator) Evaluate(conditionValue interface{}, co
 			}
 		}
 	}
+
 	return false
 }
 
 // BoolEvaluator evaluates Bool conditions
 type BoolEvaluator struct{}
 
-func (e *BoolEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *BoolEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		for _, contextValue := range contextValues {
-			if strings.ToLower(expected) == strings.ToLower(contextValue) {
+			if strings.EqualFold(expected, contextValue) {
 				return true
 			}
 		}
 	}
+
 	return false
 }
 
 // IpAddressEvaluator evaluates IpAddress conditions
 type IpAddressEvaluator struct{}
 
-func (e *IpAddressEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *IpAddressEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		_, expectedNet, err := net.ParseCIDR(expected)
@@ -536,12 +555,14 @@ func (e *IpAddressEvaluator) Evaluate(conditionValue interface{}, contextValues 
 			expectedIP := net.ParseIP(expected)
 			if expectedIP == nil {
 				glog.V(3).Infof("Failed to parse expected IP address: %s", expected)
+
 				continue
 			}
 			for _, contextValue := range contextValues {
 				contextIP := net.ParseIP(contextValue)
 				if contextIP == nil {
 					glog.V(3).Infof("Failed to parse IP address: %s", contextValue)
+
 					continue
 				}
 				if contextIP.Equal(expectedIP) {
@@ -554,6 +575,7 @@ func (e *IpAddressEvaluator) Evaluate(conditionValue interface{}, contextValues 
 				contextIP := net.ParseIP(contextValue)
 				if contextIP == nil {
 					glog.V(3).Infof("Failed to parse IP address: %s", contextValue)
+
 					continue
 				}
 				if expectedNet.Contains(contextIP) {
@@ -562,13 +584,14 @@ func (e *IpAddressEvaluator) Evaluate(conditionValue interface{}, contextValues 
 			}
 		}
 	}
+
 	return false
 }
 
 // NotIpAddressEvaluator evaluates NotIpAddress conditions
 type NotIpAddressEvaluator struct{}
 
-func (e *NotIpAddressEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NotIpAddressEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		_, expectedNet, err := net.ParseCIDR(expected)
@@ -577,12 +600,14 @@ func (e *NotIpAddressEvaluator) Evaluate(conditionValue interface{}, contextValu
 			expectedIP := net.ParseIP(expected)
 			if expectedIP == nil {
 				glog.V(3).Infof("Failed to parse expected IP address: %s", expected)
+
 				continue
 			}
 			for _, contextValue := range contextValues {
 				contextIP := net.ParseIP(contextValue)
 				if contextIP == nil {
 					glog.V(3).Infof("Failed to parse IP address: %s", contextValue)
+
 					continue
 				}
 				if contextIP.Equal(expectedIP) {
@@ -595,6 +620,7 @@ func (e *NotIpAddressEvaluator) Evaluate(conditionValue interface{}, contextValu
 				contextIP := net.ParseIP(contextValue)
 				if contextIP == nil {
 					glog.V(3).Infof("Failed to parse IP address: %s", contextValue)
+
 					continue
 				}
 				if expectedNet.Contains(contextIP) {
@@ -603,28 +629,28 @@ func (e *NotIpAddressEvaluator) Evaluate(conditionValue interface{}, contextValu
 			}
 		}
 	}
+
 	return true
 }
 
 // ArnEqualsEvaluator evaluates ArnEquals conditions
 type ArnEqualsEvaluator struct{}
 
-func (e *ArnEqualsEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *ArnEqualsEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
-		for _, contextValue := range contextValues {
-			if expected == contextValue {
-				return true
-			}
+		if slices.Contains(contextValues, expected) {
+			return true
 		}
 	}
+
 	return false
 }
 
 // ArnLikeEvaluator evaluates ArnLike conditions
 type ArnLikeEvaluator struct{}
 
-func (e *ArnLikeEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *ArnLikeEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	patterns := getCachedNormalizedValues(conditionValue)
 	for _, pattern := range patterns {
 		for _, contextValue := range contextValues {
@@ -633,13 +659,14 @@ func (e *ArnLikeEvaluator) Evaluate(conditionValue interface{}, contextValues []
 			}
 		}
 	}
+
 	return false
 }
 
 // NullEvaluator evaluates Null conditions
 type NullEvaluator struct{}
 
-func (e *NullEvaluator) Evaluate(conditionValue interface{}, contextValues []string) bool {
+func (e *NullEvaluator) Evaluate(conditionValue any, contextValues []string) bool {
 	expectedValues := getCachedNormalizedValues(conditionValue)
 	for _, expected := range expectedValues {
 		expectedBool := strings.ToLower(expected) == "true"
@@ -651,6 +678,7 @@ func (e *NullEvaluator) Evaluate(conditionValue interface{}, contextValues []str
 			return true // Key should not be null and it isn't
 		}
 	}
+
 	return false
 }
 
@@ -724,19 +752,21 @@ func getConditionContextValue(key string, contextValues map[string][]string, obj
 				return []string{string(tagValue)}
 			}
 		}
+
 		return []string{}
 	}
 
 	if vals, exists := contextValues[key]; exists {
 		return vals
 	}
+
 	return []string{}
 }
 
 // EvaluateConditions evaluates all conditions in a policy statement
 // objectEntry is the object's metadata from entry.Extended (can be nil)
 // claims are JWT claims for jwt:* policy variables (can be nil)
-func EvaluateConditions(conditions PolicyConditions, contextValues map[string][]string, objectEntry map[string][]byte, claims map[string]interface{}) bool {
+func EvaluateConditions(conditions PolicyConditions, contextValues map[string][]string, objectEntry map[string][]byte, claims map[string]any) bool {
 	if len(conditions) == 0 {
 		return true // No conditions means always true
 	}
@@ -745,6 +775,7 @@ func EvaluateConditions(conditions PolicyConditions, contextValues map[string][]
 		conditionEvaluator, err := GetConditionEvaluator(operator)
 		if err != nil {
 			glog.Warningf("Unsupported condition operator: %s", operator)
+
 			continue
 		}
 
@@ -771,7 +802,7 @@ func EvaluateConditions(conditions PolicyConditions, contextValues map[string][]
 
 // EvaluateConditionsLegacy evaluates conditions using the old interface{} format for backward compatibility
 // objectEntry is the object's metadata from entry.Extended (can be nil)
-func EvaluateConditionsLegacy(conditions map[string]interface{}, contextValues map[string][]string, objectEntry map[string][]byte) bool {
+func EvaluateConditionsLegacy(conditions map[string]any, contextValues map[string][]string, objectEntry map[string][]byte) bool {
 	if len(conditions) == 0 {
 		return true // No conditions means always true
 	}
@@ -780,12 +811,14 @@ func EvaluateConditionsLegacy(conditions map[string]interface{}, contextValues m
 		conditionEvaluator, err := GetConditionEvaluator(operator)
 		if err != nil {
 			glog.Warningf("Unsupported condition operator: %s", operator)
+
 			continue
 		}
 
-		conditionMapTyped, ok := conditionMap.(map[string]interface{})
+		conditionMapTyped, ok := conditionMap.(map[string]any)
 		if !ok {
 			glog.Warningf("Invalid condition format for operator: %s", operator)
+
 			continue
 		}
 

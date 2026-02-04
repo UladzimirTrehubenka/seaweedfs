@@ -201,6 +201,7 @@ func TestCompileWildcardPattern(t *testing.T) {
 			regex, err := CompileWildcardPattern(tt.pattern)
 			if err != nil {
 				t.Errorf("CompileWildcardPattern() error = %v", err)
+
 				return
 			}
 			got := regex.MatchString(tt.input)
@@ -236,7 +237,7 @@ func BenchmarkWildcardMatchingPerformance(b *testing.B) {
 	}
 
 	b.Run("WithoutCache", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			for _, pattern := range patterns {
 				for _, input := range inputs {
 					MatchesWildcard(pattern, input)
@@ -246,7 +247,7 @@ func BenchmarkWildcardMatchingPerformance(b *testing.B) {
 	})
 
 	b.Run("WithCache", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			for _, pattern := range patterns {
 				for _, input := range inputs {
 					FastMatchesWildcard(pattern, input)
@@ -262,14 +263,14 @@ func BenchmarkWildcardMatcherReuse(b *testing.B) {
 	input := "s3:GetObject"
 
 	b.Run("NewMatcherEveryTime", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			matcher, _ := NewWildcardMatcher(pattern)
 			matcher.Match(input)
 		}
 	})
 
 	b.Run("CachedMatcher", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			matcher, _ := GetCachedWildcardMatcher(pattern)
 			matcher.Match(input)
 		}

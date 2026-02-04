@@ -1,7 +1,7 @@
 package lock_manager
 
 import (
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -17,6 +17,7 @@ type LockRingSnapshot struct {
 
 type LockRing struct {
 	sync.RWMutex
+
 	snapshots        []*LockRingSnapshot
 	candidateServers map[pb.ServerAddress]struct{}
 	lastUpdateTime   time.Time
@@ -48,6 +49,7 @@ func (r *LockRing) AddServer(server pb.ServerAddress) {
 	if _, found := r.candidateServers[server]; found {
 		glog.V(0).Infof("add server: already exists %v", server)
 		r.Unlock()
+
 		return
 	}
 	r.lastUpdateTime = time.Now()
@@ -64,6 +66,7 @@ func (r *LockRing) RemoveServer(server pb.ServerAddress) {
 
 	if _, found := r.candidateServers[server]; !found {
 		r.Unlock()
+
 		return
 	}
 	r.lastUpdateTime = time.Now()
@@ -74,10 +77,7 @@ func (r *LockRing) RemoveServer(server pb.ServerAddress) {
 }
 
 func (r *LockRing) SetSnapshot(servers []pb.ServerAddress) {
-
-	sort.Slice(servers, func(i, j int) bool {
-		return servers[i] < servers[j]
-	})
+	slices.Sort(servers)
 
 	r.Lock()
 	r.lastUpdateTime = time.Now()
@@ -161,9 +161,8 @@ func (r *LockRing) getSortedServers() []pb.ServerAddress {
 	for server := range r.candidateServers {
 		sortedServers = append(sortedServers, server)
 	}
-	sort.Slice(sortedServers, func(i, j int) bool {
-		return sortedServers[i] < sortedServers[j]
-	})
+	slices.Sort(sortedServers)
+
 	return sortedServers
 }
 
@@ -174,6 +173,7 @@ func (r *LockRing) GetSnapshot() (servers []pb.ServerAddress) {
 	if len(r.snapshots) == 0 {
 		return
 	}
+
 	return r.snapshots[0].servers
 }
 
@@ -187,6 +187,7 @@ func (r *LockRing) WaitForCleanup() {
 func (r *LockRing) GetSnapshotCount() int {
 	r.RLock()
 	defer r.RUnlock()
+
 	return len(r.snapshots)
 }
 
@@ -199,5 +200,6 @@ func hashKeyToServer(key string, servers []pb.ServerAddress) pb.ServerAddress {
 		x = -x
 	}
 	x = x % int64(len(servers))
+
 	return servers[x]
 }

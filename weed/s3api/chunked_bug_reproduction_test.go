@@ -24,7 +24,7 @@ func TestChunkedEncodingMixedFormat(t *testing.T) {
 		"\r\n"
 
 	// Create HTTP request with unsigned streaming headers
-	req, _ := http.NewRequest("PUT", "/test-bucket/test-object", bytes.NewReader([]byte(mixedFormatPayload)))
+	req, _ := http.NewRequest(http.MethodPut, "/test-bucket/test-object", bytes.NewReader([]byte(mixedFormatPayload)))
 	req.Header.Set("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
 	req.Header.Set("x-amz-trailer", "x-amz-checksum-crc32")
 
@@ -51,5 +51,6 @@ func TestChunkedEncodingMixedFormat(t *testing.T) {
 // setupTestIAM creates a test IAM instance using the same pattern as existing tests
 func setupTestIAM() *IdentityAccessManagement {
 	iam := &IdentityAccessManagement{}
+
 	return iam
 }

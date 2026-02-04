@@ -1,6 +1,8 @@
 package vacuum
 
 import (
+	"slices"
+
 	"github.com/seaweedfs/seaweedfs/weed/worker/tasks/base"
 	"github.com/seaweedfs/seaweedfs/weed/worker/types"
 )
@@ -25,10 +27,8 @@ func Scheduling(task *types.TaskInput, runningTasks []*types.TaskInput, availabl
 	// Check for available workers with vacuum capability
 	for _, worker := range availableWorkers {
 		if worker.CurrentLoad < worker.MaxConcurrent {
-			for _, capability := range worker.Capabilities {
-				if capability == types.TaskTypeVacuum {
-					return true
-				}
+			if slices.Contains(worker.Capabilities, types.TaskTypeVacuum) {
+				return true
 			}
 		}
 	}

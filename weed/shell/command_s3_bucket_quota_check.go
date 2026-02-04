@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -36,7 +37,6 @@ func (c *commandS3BucketQuotaEnforce) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	applyQuotaLimit := bucketCommand.Bool("apply", false, "actually change the buckets readonly attribute")
 	if err = bucketCommand.Parse(args); err != nil {
@@ -68,10 +68,10 @@ func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, 
 	// process each bucket
 	hasConfChanges := false
 	err = filer_pb.List(context.Background(), commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
-		if !entry.IsDirectory {
+		if !entry.GetIsDirectory() {
 			return nil
 		}
-		collection := getCollectionName(commandEnv, entry.Name)
+		collection := getCollectionName(commandEnv, entry.GetName())
 		var collectionSize float64
 		if collectionInfo, found := collectionInfos[collection]; found {
 			collectionSize = collectionInfo.Size
@@ -79,6 +79,7 @@ func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, 
 		if c.processEachBucket(fc, filerBucketsPath, entry, writer, collectionSize) {
 			hasConfChanges = true
 		}
+
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
@@ -87,60 +88,57 @@ func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, 
 
 	// apply the configuration changes
 	if hasConfChanges && *applyQuotaLimit {
-
 		var buf2 bytes.Buffer
 		fc.ToText(&buf2)
 
 		if err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 			return filer.SaveInsideFiler(client, filer.DirectoryEtcSeaweedFS, filer.FilerConfName, buf2.Bytes())
-		}); err != nil && err != filer_pb.ErrNotFound {
+		}); err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 			return err
 		}
 	}
 
 	return err
-
 }
 
 func (c *commandS3BucketQuotaEnforce) processEachBucket(fc *filer.FilerConf, filerBucketsPath string, entry *filer_pb.Entry, writer io.Writer, collectionSize float64) (hasConfChanges bool) {
-
-	locPrefix := filerBucketsPath + "/" + entry.Name + "/"
+	locPrefix := filerBucketsPath + "/" + entry.GetName() + "/"
 	existingConf := fc.MatchStorageRule(locPrefix)
 
 	// Create a mutable copy for modification
 	locConf := filer.ClonePathConf(existingConf)
 	locConf.LocationPrefix = locPrefix
 
-	if entry.Quota > 0 {
-		if locConf.ReadOnly {
-			if collectionSize < float64(entry.Quota) {
+	if entry.GetQuota() > 0 {
+		if locConf.GetReadOnly() {
+			if collectionSize < float64(entry.GetQuota()) {
 				locConf.ReadOnly = false
 				hasConfChanges = true
 			}
 		} else {
-			if collectionSize > float64(entry.Quota) {
+			if collectionSize > float64(entry.GetQuota()) {
 				locConf.ReadOnly = true
 				hasConfChanges = true
 			}
 		}
 	} else {
-		if locConf.ReadOnly {
+		if locConf.GetReadOnly() {
 			locConf.ReadOnly = false
 			hasConfChanges = true
 		}
 	}
 
 	if hasConfChanges {
-		fmt.Fprintf(writer, "  %s\tsize:%.0f", entry.Name, collectionSize)
-		fmt.Fprintf(writer, "\tquota:%d\tusage:%.2f%%", entry.Quota, collectionSize*100/float64(entry.Quota))
+		fmt.Fprintf(writer, "  %s\tsize:%.0f", entry.GetName(), collectionSize)
+		fmt.Fprintf(writer, "\tquota:%d\tusage:%.2f%%", entry.GetQuota(), collectionSize*100/float64(entry.GetQuota()))
 		fmt.Fprintln(writer)
-		if locConf.ReadOnly {
-			fmt.Fprintf(writer, "    changing bucket %s to read only!\n", entry.Name)
+		if locConf.GetReadOnly() {
+			fmt.Fprintf(writer, "    changing bucket %s to read only!\n", entry.GetName())
 		} else {
-			fmt.Fprintf(writer, "    changing bucket %s to writable.\n", entry.Name)
+			fmt.Fprintf(writer, "    changing bucket %s to writable.\n", entry.GetName())
 		}
 		fc.SetLocationConf(locConf)
 	}
 
-	return
+	return hasConfChanges
 }

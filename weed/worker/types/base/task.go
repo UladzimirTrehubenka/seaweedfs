@@ -76,6 +76,7 @@ func (t *BaseTask) GetProgress() float64 {
 // Cancel marks the task as cancelled
 func (t *BaseTask) Cancel() error {
 	t.cancelled = true
+
 	return nil
 }
 

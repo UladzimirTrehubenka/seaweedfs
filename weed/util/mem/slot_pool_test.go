@@ -24,7 +24,6 @@ func TestAllocateFree(t *testing.T) {
 	if len(buf) != 4883 {
 		t.Errorf("size error")
 	}
-
 }
 
 func TestAllocateFreeEdgeCases(t *testing.T) {
@@ -45,5 +44,4 @@ func TestBitCount(t *testing.T) {
 	if count != bitCount(min_size) {
 		t.Errorf("bitCount error count=%d", count)
 	}
-
 }

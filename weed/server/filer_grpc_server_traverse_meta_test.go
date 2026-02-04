@@ -15,16 +15,19 @@ func TestPtrie(t *testing.T) {
 
 	assert.True(t, excludedTrie.MatchPrefix(b, func(key []byte, value bool) bool {
 		println("matched1", string(key))
+
 		return true
 	}))
 
 	assert.True(t, excludedTrie.MatchAll(b, func(key []byte, value bool) bool {
 		println("matched2", string(key))
+
 		return true
 	}))
 
 	assert.False(t, excludedTrie.MatchAll([]byte("/topics/ab"), func(key []byte, value bool) bool {
 		println("matched3", string(key))
+
 		return true
 	}))
 

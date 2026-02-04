@@ -6,8 +6,9 @@ import (
 	"io"
 	"sort"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -37,7 +38,6 @@ func (c *commandFsMetaCat) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsMetaCat) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -50,7 +50,6 @@ func (c *commandFsMetaCat) Do(args []string, commandEnv *CommandEnv, writer io.W
 	dir, name := util.FullPath(path).DirAndName()
 
 	return commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.LookupDirectoryEntryRequest{
 			Name:      name,
 			Directory: dir,
@@ -60,21 +59,19 @@ func (c *commandFsMetaCat) Do(args []string, commandEnv *CommandEnv, writer io.W
 			return err
 		}
 
-		chunks := respLookupEntry.Entry.Chunks
+		chunks := respLookupEntry.GetEntry().GetChunks()
 		sort.Slice(chunks, func(i, j int) bool {
-			return chunks[i].Offset < chunks[j].Offset
+			return chunks[i].GetOffset() < chunks[j].GetOffset()
 		})
 
-		filer.ProtoToText(writer, respLookupEntry.Entry)
+		filer.ProtoToText(writer, respLookupEntry.GetEntry())
 
-		bytes, _ := proto.Marshal(respLookupEntry.Entry)
+		bytes, _ := proto.Marshal(respLookupEntry.GetEntry())
 		gzippedBytes, _ := util.GzipData(bytes)
 		// zstdBytes, _ := util.ZstdData(bytes)
 		// fmt.Fprintf(writer, "chunks %d meta size: %d gzip:%d zstd:%d\n", len(respLookupEntry.Entry.GetChunks()), len(bytes), len(gzippedBytes), len(zstdBytes))
-		fmt.Fprintf(writer, "chunks %d meta size: %d gzip:%d\n", len(respLookupEntry.Entry.GetChunks()), len(bytes), len(gzippedBytes))
+		fmt.Fprintf(writer, "chunks %d meta size: %d gzip:%d\n", len(respLookupEntry.GetEntry().GetChunks()), len(bytes), len(gzippedBytes))
 
 		return nil
-
 	})
-
 }

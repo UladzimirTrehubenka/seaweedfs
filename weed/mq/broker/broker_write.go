@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -37,7 +38,7 @@ func (b *MessageQueueBroker) appendToFileWithBufferIndex(targetFile string, data
 	dir, name := fullpath.DirAndName()
 	entry, err := filer_pb.GetEntry(context.Background(), b, fullpath)
 	var offset int64 = 0
-	if err == filer_pb.ErrNotFound {
+	if errors.Is(err, filer_pb.ErrNotFound) {
 		entry = &filer_pb.Entry{
 			Name:        name,
 			IsDirectory: false,
@@ -72,7 +73,7 @@ func (b *MessageQueueBroker) appendToFileWithBufferIndex(targetFile string, data
 			entry.Extended[mq.ExtendedAttrOffsetMax] = maxOffsetBytes
 		}
 	} else if err != nil {
-		return fmt.Errorf("find %s: %v", fullpath, err)
+		return fmt.Errorf("find %s: %w", fullpath, err)
 	} else {
 		offset = int64(filer.TotalSize(entry.GetChunks()))
 
@@ -83,7 +84,7 @@ func (b *MessageQueueBroker) appendToFileWithBufferIndex(targetFile string, data
 			}
 
 			// Check for existing buffer start (binary format)
-			if existingData, exists := entry.Extended[mq.ExtendedAttrBufferStart]; exists {
+			if existingData, exists := entry.GetExtended()[mq.ExtendedAttrBufferStart]; exists {
 				if len(existingData) == 8 {
 					existingStartIndex := int64(binary.BigEndian.Uint64(existingData))
 
@@ -109,7 +110,7 @@ func (b *MessageQueueBroker) appendToFileWithBufferIndex(targetFile string, data
 		// Update offset range metadata for existing files
 		if minOffset > 0 && maxOffset >= minOffset {
 			// Update minimum offset if this chunk has a lower minimum
-			if existingMinData, exists := entry.Extended[mq.ExtendedAttrOffsetMin]; exists && len(existingMinData) == 8 {
+			if existingMinData, exists := entry.GetExtended()[mq.ExtendedAttrOffsetMin]; exists && len(existingMinData) == 8 {
 				existingMin := int64(binary.BigEndian.Uint64(existingMinData))
 				if minOffset < existingMin {
 					minOffsetBytes := make([]byte, 8)
@@ -124,7 +125,7 @@ func (b *MessageQueueBroker) appendToFileWithBufferIndex(targetFile string, data
 			}
 
 			// Update maximum offset if this chunk has a higher maximum
-			if existingMaxData, exists := entry.Extended[mq.ExtendedAttrOffsetMax]; exists && len(existingMaxData) == 8 {
+			if existingMaxData, exists := entry.GetExtended()[mq.ExtendedAttrOffsetMax]; exists && len(existingMaxData) == 8 {
 				existingMax := int64(binary.BigEndian.Uint64(existingMaxData))
 				if maxOffset > existingMax {
 					maxOffsetBytes := make([]byte, 8)
@@ -153,12 +154,11 @@ func (b *MessageQueueBroker) appendToFileWithBufferIndex(targetFile string, data
 }
 
 func (b *MessageQueueBroker) assignAndUpload(targetFile string, data []byte) (fileId string, uploadResult *operation.UploadResult, err error) {
-
 	reader := util.NewBytesReader(data)
 
 	uploader, err := operation.NewUploader()
 	if err != nil {
-		return
+		return fileId, uploadResult, err
 	}
 
 	fileId, uploadResult, err, _ = uploader.UploadWithRetry(
@@ -180,9 +180,11 @@ func (b *MessageQueueBroker) assignAndUpload(targetFile string, data []byte) (fi
 			if b.option.VolumeServerAccess == "filerProxy" {
 				fileUrl = fmt.Sprintf("http://%s/?proxyChunkId=%s", b.currentFiler, fileId)
 			}
+
 			return fileUrl
 		},
 		reader,
 	)
-	return
+
+	return fileId, uploadResult, err
 }

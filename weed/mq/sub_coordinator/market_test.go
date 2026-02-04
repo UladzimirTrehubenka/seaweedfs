@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 )
 
 var partitions = []topic.Partition{
@@ -39,7 +40,7 @@ func TestAddConsumerInstance(t *testing.T) {
 	}
 	err := market.AddConsumerInstance(consumer)
 
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	time.Sleep(1 * time.Second) // Allow time for background rebalancing
 	market.ShutdownMarket()
 	for adjustment := range market.AdjustmentChan {
@@ -99,5 +100,4 @@ func TestConfirmAdjustment(t *testing.T) {
 		fmt.Printf("%+v\n", adjustment)
 		market.ConfirmAdjustment(adjustment)
 	}
-
 }

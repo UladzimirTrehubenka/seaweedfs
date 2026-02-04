@@ -13,7 +13,7 @@ func TestManager_DecodeMessage(t *testing.T) {
 	// Create mock schema registry
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/schemas/ids/1" {
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema": `{
 					"type": "record",
 					"name": "User",
@@ -59,7 +59,7 @@ func TestManager_DecodeMessage(t *testing.T) {
 	}
 
 	// Create test data
-	testRecord := map[string]interface{}{
+	testRecord := map[string]any{
 		"id":   int32(123),
 		"name": "John Doe",
 	}
@@ -97,12 +97,12 @@ func TestManager_DecodeMessage(t *testing.T) {
 		t.Fatal("Expected non-nil RecordValue")
 	}
 
-	idValue := decodedMsg.RecordValue.Fields["id"]
+	idValue := decodedMsg.RecordValue.GetFields()["id"]
 	if idValue == nil || idValue.GetInt32Value() != 123 {
 		t.Errorf("Expected id=123, got %v", idValue)
 	}
 
-	nameValue := decodedMsg.RecordValue.Fields["name"]
+	nameValue := decodedMsg.RecordValue.GetFields()["name"]
 	if nameValue == nil || nameValue.GetStringValue() != "John Doe" {
 		t.Errorf("Expected name='John Doe', got %v", nameValue)
 	}
@@ -155,7 +155,7 @@ func TestManager_GetSchemaInfo(t *testing.T) {
 	// Create mock schema registry
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/schemas/ids/42" {
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema": `{
 					"type": "record",
 					"name": "Product",
@@ -232,7 +232,7 @@ func TestManager_EncodeMessage(t *testing.T) {
 	// Create mock schema registry
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/schemas/ids/1" {
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema": `{
 					"type": "record",
 					"name": "User",
@@ -261,7 +261,7 @@ func TestManager_EncodeMessage(t *testing.T) {
 	}
 
 	// Create test RecordValue
-	testMap := map[string]interface{}{
+	testMap := map[string]any{
 		"id":   int32(456),
 		"name": "Jane Smith",
 	}
@@ -294,11 +294,11 @@ func TestManager_EncodeMessage(t *testing.T) {
 	}
 
 	// Verify round-trip data integrity
-	if decodedMsg.RecordValue.Fields["id"].GetInt32Value() != 456 {
+	if decodedMsg.RecordValue.GetFields()["id"].GetInt32Value() != 456 {
 		t.Error("Round-trip failed for id field")
 	}
 
-	if decodedMsg.RecordValue.Fields["name"].GetStringValue() != "Jane Smith" {
+	if decodedMsg.RecordValue.GetFields()["name"].GetStringValue() != "Jane Smith" {
 		t.Error("Round-trip failed for name field")
 	}
 }
@@ -307,7 +307,7 @@ func TestManager_EncodeMessage(t *testing.T) {
 func BenchmarkManager_DecodeMessage(b *testing.B) {
 	// Setup (similar to TestManager_DecodeMessage but simplified)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := map[string]interface{}{
+		response := map[string]any{
 			"schema":  `{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}`,
 			"subject": "user-value",
 			"version": 1,
@@ -321,11 +321,10 @@ func BenchmarkManager_DecodeMessage(b *testing.B) {
 
 	// Create test message
 	codec, _ := goavro.NewCodec(`{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}`)
-	avroBinary, _ := codec.BinaryFromNative(nil, map[string]interface{}{"id": int32(123)})
+	avroBinary, _ := codec.BinaryFromNative(nil, map[string]any{"id": int32(123)})
 	testMsg := CreateConfluentEnvelope(FormatAvro, 1, nil, avroBinary)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = manager.DecodeMessage(testMsg)
 	}
 }

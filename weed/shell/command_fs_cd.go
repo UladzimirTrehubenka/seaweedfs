@@ -33,7 +33,6 @@ func (c *commandFsCd) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsCd) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -45,6 +44,7 @@ func (c *commandFsCd) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 
 	if path == "/" {
 		commandEnv.option.Directory = "/"
+
 		return nil
 	}
 

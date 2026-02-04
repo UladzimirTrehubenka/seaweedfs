@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -57,10 +58,10 @@ func (c *commandRaftLeaderTransfer) Do(args []string, commandEnv *CommandEnv, wr
 
 	// Validate: id and address must be specified together
 	if *targetId != "" && *targetAddress == "" {
-		return fmt.Errorf("-address is required when -id is specified")
+		return errors.New("-address is required when -id is specified")
 	}
 	if *targetAddress != "" && *targetId == "" {
-		return fmt.Errorf("-id is required when -address is specified")
+		return errors.New("-id is required when -address is specified")
 	}
 
 	// First, show current cluster status
@@ -73,23 +74,25 @@ func (c *commandRaftLeaderTransfer) Do(args []string, commandEnv *CommandEnv, wr
 
 		resp, err := client.RaftListClusterServers(ctx, &master_pb.RaftListClusterServersRequest{})
 		if err != nil {
-			return fmt.Errorf("failed to list cluster servers: %v", err)
+			return fmt.Errorf("failed to list cluster servers: %w", err)
 		}
 
-		if len(resp.ClusterServers) == 0 {
+		if len(resp.GetClusterServers()) == 0 {
 			fmt.Fprintf(writer, "No raft cluster configured (single master mode)\n")
-			return fmt.Errorf("leadership transfer not available in single master mode")
+
+			return errors.New("leadership transfer not available in single master mode")
 		}
 
-		fmt.Fprintf(writer, "Raft cluster has %d servers:\n", len(resp.ClusterServers))
-		for _, server := range resp.ClusterServers {
+		fmt.Fprintf(writer, "Raft cluster has %d servers:\n", len(resp.GetClusterServers()))
+		for _, server := range resp.GetClusterServers() {
 			suffix := ""
-			if server.IsLeader {
+			if server.GetIsLeader() {
 				suffix = " <- current leader"
-				currentLeader = server.Id
+				currentLeader = server.GetId()
 			}
-			fmt.Fprintf(writer, "  %s %s [%s]%s\n", server.Id, server.Address, server.Suffrage, suffix)
+			fmt.Fprintf(writer, "  %s %s [%s]%s\n", server.GetId(), server.GetAddress(), server.GetSuffrage(), suffix)
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -97,7 +100,7 @@ func (c *commandRaftLeaderTransfer) Do(args []string, commandEnv *CommandEnv, wr
 	}
 
 	if currentLeader == "" {
-		return fmt.Errorf("no leader found in cluster")
+		return errors.New("no leader found in cluster")
 	}
 
 	// Perform the transfer
@@ -116,17 +119,18 @@ func (c *commandRaftLeaderTransfer) Do(args []string, commandEnv *CommandEnv, wr
 			TargetAddress: *targetAddress,
 		})
 		if err != nil {
-			return fmt.Errorf("leadership transfer failed: %v", err)
+			return fmt.Errorf("leadership transfer failed: %w", err)
 		}
 
-		if resp.PreviousLeader != resp.NewLeader {
+		if resp.GetPreviousLeader() != resp.GetNewLeader() {
 			fmt.Fprintf(writer, "Leadership successfully transferred.\n")
-			fmt.Fprintf(writer, "  Previous leader: %s\n", resp.PreviousLeader)
-			fmt.Fprintf(writer, "  New leader: %s\n", resp.NewLeader)
+			fmt.Fprintf(writer, "  Previous leader: %s\n", resp.GetPreviousLeader())
+			fmt.Fprintf(writer, "  New leader: %s\n", resp.GetNewLeader())
 		} else {
 			fmt.Fprintf(writer, "Leadership transfer initiated, but the same leader was re-elected.\n")
-			fmt.Fprintf(writer, "  Current leader: %s\n", resp.NewLeader)
+			fmt.Fprintf(writer, "  Current leader: %s\n", resp.GetNewLeader())
 		}
+
 		return nil
 	})
 
@@ -136,6 +140,7 @@ func (c *commandRaftLeaderTransfer) Do(args []string, commandEnv *CommandEnv, wr
 		fmt.Fprintf(writer, "  - Ensure you are connected to the current leader\n")
 		fmt.Fprintf(writer, "  - Ensure target server is a voting member (use 'cluster.raft.ps')\n")
 		fmt.Fprintf(writer, "  - Ensure target server is healthy and reachable\n")
+
 		return err
 	}
 

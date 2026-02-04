@@ -29,19 +29,19 @@ var (
 
 	TestLimitCases = []*TestLimitCase{
 
-		//bucket-LimitTypeCount
+		// bucket-LimitTypeCount
 		{action, s3_constants.LimitTypeCount, 5, 6, 60, 5},
 		{action, s3_constants.LimitTypeCount, 0, 6, 6, 0},
 
-		//global-LimitTypeCount
+		// global-LimitTypeCount
 		{action, s3_constants.LimitTypeCount, 6, 5, 6, 5},
 		{action, s3_constants.LimitTypeCount, 6, 0, 6, 0},
 
-		//bucket-LimitTypeBytes
+		// bucket-LimitTypeBytes
 		{action, s3_constants.LimitTypeBytes, 1000, 1020, 6, 5},
 		{action, s3_constants.LimitTypeBytes, 0, 1020, 6, 0},
 
-		//global-LimitTypeBytes
+		// global-LimitTypeBytes
 		{action, s3_constants.LimitTypeBytes, 1020, 1000, 6, 5},
 		{action, s3_constants.LimitTypeBytes, 1020, 0, 6, 0},
 	}
@@ -86,7 +86,7 @@ func doLimit(circuitBreaker *CircuitBreaker, routineCount int, r *http.Request, 
 	var successCounter int64
 	resultCh := make(chan []func(), routineCount)
 	var wg sync.WaitGroup
-	for i := 0; i < routineCount; i++ {
+	for range routineCount {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -104,5 +104,6 @@ func doLimit(circuitBreaker *CircuitBreaker, routineCount int, r *http.Request, 
 			fn()
 		}
 	}
+
 	return successCounter
 }

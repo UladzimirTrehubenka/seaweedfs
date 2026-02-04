@@ -38,6 +38,7 @@ func TestConvertMQSchemaToTableInfo_NoSchema(t *testing.T) {
 					expectedType, ok := expectedCols[col.Name]
 					if !ok {
 						t.Errorf("Unexpected column: %s", col.Name)
+
 						continue
 					}
 					if col.Type != expectedType {
@@ -72,16 +73,19 @@ func TestConvertMQSchemaToTableInfo_NoSchema(t *testing.T) {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
 			if tableInfo == nil {
 				t.Error("Expected tableInfo but got nil")
+
 				return
 			}
 

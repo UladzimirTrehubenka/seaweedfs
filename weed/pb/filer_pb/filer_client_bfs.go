@@ -2,6 +2,7 @@ package filer_pb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -33,12 +34,13 @@ func TraverseBfs(ctx context.Context, filerClient FilerClient, parentPath util.F
 		}
 		pending.Add(1)
 		queue.Enqueue(p)
+
 		return true
 	}
 
 	done := make(chan struct{})
 	var workers sync.WaitGroup
-	for i := 0; i < K; i++ {
+	for range K {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
@@ -84,25 +86,23 @@ func TraverseBfs(ctx context.Context, filerClient FilerClient, parentPath util.F
 }
 
 func processOneDirectory(ctx context.Context, filerClient FilerClient, parentPath util.FullPath, enqueue func(p util.FullPath) bool, fn func(parentPath util.FullPath, entry *Entry) error) (err error) {
-
 	return ReadDirAllEntries(ctx, filerClient, parentPath, "", func(entry *Entry, isLast bool) error {
-
 		if err := fn(parentPath, entry); err != nil {
 			return err
 		}
 
-		if entry.IsDirectory {
-			subDir := fmt.Sprintf("%s/%s", parentPath, entry.Name)
+		if entry.GetIsDirectory() {
+			subDir := fmt.Sprintf("%s/%s", parentPath, entry.GetName())
 			if parentPath == "/" {
-				subDir = "/" + entry.Name
+				subDir = "/" + entry.GetName()
 			}
 			if !enqueue(util.FullPath(subDir)) {
 				return ctx.Err()
 			}
 		}
+
 		return nil
 	})
-
 }
 
 func StreamBfs(client SeaweedFilerClient, dir util.FullPath, olderThanTsNs int64, fn func(parentPath util.FullPath, entry *Entry) error) (err error) {
@@ -118,14 +118,16 @@ func StreamBfs(client SeaweedFilerClient, dir util.FullPath, olderThanTsNs int64
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
+
 			return fmt.Errorf("traverse bfs metadata: %w", err)
 		}
-		if err := fn(util.FullPath(resp.Directory), resp.Entry); err != nil {
+		if err := fn(util.FullPath(resp.GetDirectory()), resp.GetEntry()); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }

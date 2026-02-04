@@ -4,6 +4,7 @@ import "net/http"
 
 type StatusRecorder struct {
 	http.ResponseWriter
+
 	Status int
 }
 

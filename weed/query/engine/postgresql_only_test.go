@@ -68,6 +68,7 @@ func TestPostgreSQLOnlySupport(t *testing.T) {
 				// We expect this query to fail
 				if err == nil && result.Error == nil {
 					t.Errorf("Expected error for %s, but query succeeded", tc.desc)
+
 					return
 				}
 
@@ -82,6 +83,7 @@ func TestPostgreSQLOnlySupport(t *testing.T) {
 
 					if !strings.Contains(errorText, tc.errorMsg) {
 						t.Errorf("Expected error containing '%s', got: %s", tc.errorMsg, errorText)
+
 						return
 					}
 				}
@@ -92,11 +94,13 @@ func TestPostgreSQLOnlySupport(t *testing.T) {
 				// We expect this query to succeed
 				if err != nil {
 					t.Errorf("Unexpected error for %s: %v", tc.desc, err)
+
 					return
 				}
 
 				if result.Error != nil {
 					t.Errorf("Unexpected result error for %s: %v", tc.desc, result.Error)
+
 					return
 				}
 

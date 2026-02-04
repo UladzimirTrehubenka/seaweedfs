@@ -3,12 +3,15 @@ package logstore
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"strings"
 
 	"github.com/parquet-go/parquet-go"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/mq"
 	"github.com/seaweedfs/seaweedfs/weed/mq/schema"
@@ -18,7 +21,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util/chunk_cache"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -32,20 +34,20 @@ var (
 // 3. Entries with no data
 func isControlEntry(logEntry *filer_pb.LogEntry) bool {
 	// Skip entries with no data
-	if len(logEntry.Data) == 0 {
+	if len(logEntry.GetData()) == 0 {
 		return true
 	}
 
 	// Skip entries with empty keys (same logic as subscriber)
-	if len(logEntry.Key) == 0 {
+	if len(logEntry.GetKey()) == 0 {
 		return true
 	}
 
 	// Check if this is a DataMessage with control field populated
 	dataMessage := &mq_pb.DataMessage{}
-	if err := proto.Unmarshal(logEntry.Data, dataMessage); err == nil {
+	if err := proto.Unmarshal(logEntry.GetData(), dataMessage); err == nil {
 		// If it has a control field, it's a control message
-		if dataMessage.Ctrl != nil {
+		if dataMessage.GetCtrl() != nil {
 			return true
 		}
 	}
@@ -63,6 +65,7 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 	var err error
 	if err := filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		topicConf, err = t.ReadConfFile(client)
+
 		return err
 	}); err != nil {
 		// Return a no-op function for test environments or when topic config can't be read
@@ -77,7 +80,7 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 		recordType = topicConf.GetMessageRecordType()
 	}
 
-	if recordType == nil || len(recordType.Fields) == 0 {
+	if recordType == nil || len(recordType.GetFields()) == 0 {
 		// Return a no-op function if no schema is available
 		return func(startPosition log_buffer.MessagePosition, stopTsNs int64, eachLogEntryFn log_buffer.EachLogEntryFuncType) (log_buffer.MessagePosition, bool, error) {
 			return startPosition, true, nil
@@ -98,7 +101,7 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 	eachFileFn := func(entry *filer_pb.Entry, eachLogEntryFn log_buffer.EachLogEntryFuncType, starTsNs, stopTsNs int64) (processedTsNs int64, err error) {
 		// create readerAt for the parquet file
 		fileSize := filer.FileSize(entry)
-		visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, entry.Chunks, 0, int64(fileSize))
+		visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, entry.GetChunks(), 0, int64(fileSize))
 		chunkViews := filer.ViewFromVisibleIntervals(visibleIntervals, 0, int64(fileSize))
 		readerCache := filer.NewReaderCache(32, chunkCache, lookupFileIdFn)
 		readerAt := filer.NewChunkReaderAtFromClient(context.Background(), readerCache, chunkViews, int64(fileSize), filer.DefaultPrefetchCount)
@@ -110,14 +113,14 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 			rowCount, readErr := parquetReader.ReadRows(rows)
 
 			// Process the rows first, even if EOF is returned
-			for i := 0; i < rowCount; i++ {
+			for i := range rowCount {
 				row := rows[i]
 				// convert parquet row to schema_pb.RecordValue
 				recordValue, err := schema.ToRecordValue(recordType, parquetLevels, row)
 				if err != nil {
 					return processedTsNs, fmt.Errorf("ToRecordValue failed: %w", err)
 				}
-				processedTsNs = recordValue.Fields[SW_COLUMN_NAME_TS].GetInt64Value()
+				processedTsNs = recordValue.GetFields()[SW_COLUMN_NAME_TS].GetInt64Value()
 				if processedTsNs <= starTsNs {
 					continue
 				}
@@ -132,12 +135,12 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 
 				// Get offset from parquet, default to 0 if not present (backward compatibility)
 				var offset int64 = 0
-				if offsetValue, exists := recordValue.Fields[SW_COLUMN_NAME_OFFSET]; exists {
+				if offsetValue, exists := recordValue.GetFields()[SW_COLUMN_NAME_OFFSET]; exists {
 					offset = offsetValue.GetInt64Value()
 				}
 
 				logEntry := &filer_pb.LogEntry{
-					Key:    recordValue.Fields[SW_COLUMN_NAME_KEY].GetBytesValue(),
+					Key:    recordValue.GetFields()[SW_COLUMN_NAME_KEY].GetBytesValue(),
 					TsNs:   processedTsNs,
 					Data:   data,
 					Offset: offset,
@@ -157,9 +160,10 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 
 			// Check for end conditions after processing rows
 			if readErr != nil {
-				if readErr == io.EOF {
+				if errors.Is(readErr, io.EOF) {
 					return processedTsNs, nil
 				}
+
 				return processedTsNs, readErr
 			}
 			if rowCount == 0 {
@@ -174,27 +178,26 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 		var processedTsNs int64
 
 		err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 			return filer_pb.SeaweedList(context.Background(), client, partitionDir, "", func(entry *filer_pb.Entry, isLast bool) error {
-				if entry.IsDirectory {
+				if entry.GetIsDirectory() {
 					return nil
 				}
-				if !strings.HasSuffix(entry.Name, ".parquet") {
+				if !strings.HasSuffix(entry.GetName(), ".parquet") {
 					return nil
 				}
-				if len(entry.Extended) == 0 {
+				if len(entry.GetExtended()) == 0 {
 					return nil
 				}
 
 				// read minTs from the parquet file
-				minTsBytes := entry.Extended[mq.ExtendedAttrTimestampMin]
+				minTsBytes := entry.GetExtended()[mq.ExtendedAttrTimestampMin]
 				if len(minTsBytes) != 8 {
 					return nil
 				}
 				minTsNs := int64(binary.BigEndian.Uint64(minTsBytes))
 
 				// read max ts
-				maxTsBytes := entry.Extended[mq.ExtendedAttrTimestampMax]
+				maxTsBytes := entry.GetExtended()[mq.ExtendedAttrTimestampMax]
 				if len(maxTsBytes) != 8 {
 					return nil
 				}
@@ -202,6 +205,7 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 
 				if stopTsNs != 0 && stopTsNs <= minTsNs {
 					isDone = true
+
 					return nil
 				}
 
@@ -212,11 +216,12 @@ func GenParquetReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic
 				if processedTsNs, err = eachFileFn(entry, eachLogEntryFn, startTsNs, stopTsNs); err != nil {
 					return err
 				}
-				return nil
 
+				return nil
 			}, startFileName, true, math.MaxInt32)
 		})
 		lastReadPosition = log_buffer.NewMessagePosition(processedTsNs, -2)
-		return
+
+		return lastReadPosition, isDone, err
 	}
 }

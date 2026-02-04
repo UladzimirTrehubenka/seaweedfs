@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
-	"google.golang.org/grpc"
 )
 
 // PubBalancer <= PublisherToPubBalancer() <= Broker <=> Publish()
@@ -22,7 +23,7 @@ func (balancer *PubBalancer) ExecuteBalanceActionMove(move *BalanceActionMove, g
 
 	err := pb.WithBrokerGrpcClient(false, move.TargetBroker, grpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
 		_, err := client.AssignTopicPartitions(context.Background(), &mq_pb.AssignTopicPartitionsRequest{
-			Topic: move.TopicPartition.Topic.ToPbTopic(),
+			Topic: move.TopicPartition.ToPbTopic(),
 			BrokerPartitionAssignments: []*mq_pb.BrokerPartitionAssignment{
 				{
 					Partition: move.TopicPartition.ToPbPartition(),
@@ -31,15 +32,16 @@ func (balancer *PubBalancer) ExecuteBalanceActionMove(move *BalanceActionMove, g
 			IsLeader:   true,
 			IsDraining: false,
 		})
+
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("assign topic partition %v to %s: %v", move.TopicPartition, move.TargetBroker, err)
+		return fmt.Errorf("assign topic partition %v to %s: %w", move.TopicPartition, move.TargetBroker, err)
 	}
 
 	err = pb.WithBrokerGrpcClient(false, move.SourceBroker, grpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
 		_, err := client.AssignTopicPartitions(context.Background(), &mq_pb.AssignTopicPartitionsRequest{
-			Topic: move.TopicPartition.Topic.ToPbTopic(),
+			Topic: move.TopicPartition.ToPbTopic(),
 			BrokerPartitionAssignments: []*mq_pb.BrokerPartitionAssignment{
 				{
 					Partition: move.TopicPartition.ToPbPartition(),
@@ -48,12 +50,12 @@ func (balancer *PubBalancer) ExecuteBalanceActionMove(move *BalanceActionMove, g
 			IsLeader:   true,
 			IsDraining: true,
 		})
+
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("assign topic partition %v to %s: %v", move.TopicPartition, move.SourceBroker, err)
+		return fmt.Errorf("assign topic partition %v to %s: %w", move.TopicPartition, move.SourceBroker, err)
 	}
 
 	return nil
-
 }

@@ -43,7 +43,6 @@ func (c *commandRemoteUnmount) HasTag(CommandTag) bool {
 }
 
 func (c *commandRemoteUnmount) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	remoteMountCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 
 	dir := remoteMountCommand.String("dir", "", "a directory in filer")
@@ -60,7 +59,7 @@ func (c *commandRemoteUnmount) Do(args []string, commandEnv *CommandEnv, writer 
 		return jsonPrintln(writer, mappings)
 	}
 
-	_, found := mappings.Mappings[*dir]
+	_, found := mappings.GetMappings()[*dir]
 	if !found {
 		return fmt.Errorf("directory %s is not mounted", *dir)
 	}
@@ -79,14 +78,13 @@ func (c *commandRemoteUnmount) Do(args []string, commandEnv *CommandEnv, writer 
 
 	// reset remote sync offset in case the folder is mounted again
 	if err = remote_storage.SetSyncOffset(commandEnv.option.GrpcDialOption, commandEnv.option.FilerAddress, *dir, time.Now().UnixNano()); err != nil {
-		return fmt.Errorf("reset remote.sync offset for %s: %v", *dir, err)
+		return fmt.Errorf("reset remote.sync offset for %s: %w", *dir, err)
 	}
 
 	return nil
 }
 
 func (c *commandRemoteUnmount) purgeMountedData(commandEnv *CommandEnv, dir string) error {
-
 	// find existing directory, and ensure the directory is empty
 	err := commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		ctx := context.Background()
@@ -96,24 +94,24 @@ func (c *commandRemoteUnmount) purgeMountedData(commandEnv *CommandEnv, dir stri
 			Name:      name,
 		})
 		if lookupErr != nil {
-			return fmt.Errorf("lookup %s: %v", dir, lookupErr)
+			return fmt.Errorf("lookup %s: %w", dir, lookupErr)
 		}
 
-		oldEntry := lookupResp.Entry
+		oldEntry := lookupResp.GetEntry()
 
 		deleteError := filer_pb.DoRemove(ctx, client, parent, name, true, true, true, false, nil)
 		if deleteError != nil {
-			return fmt.Errorf("delete %s: %v", dir, deleteError)
+			return fmt.Errorf("delete %s: %w", dir, deleteError)
 		}
 
 		mkdirErr := filer_pb.DoMkdir(ctx, client, parent, name, func(entry *filer_pb.Entry) {
-			entry.Attributes = oldEntry.Attributes
-			entry.Extended = oldEntry.Extended
+			entry.Attributes = oldEntry.GetAttributes()
+			entry.Extended = oldEntry.GetExtended()
 			entry.Attributes.Crtime = time.Now().Unix()
 			entry.Attributes.Mtime = time.Now().Unix()
 		})
 		if mkdirErr != nil {
-			return fmt.Errorf("mkdir %s: %v", dir, mkdirErr)
+			return fmt.Errorf("mkdir %s: %w", dir, mkdirErr)
 		}
 
 		return nil

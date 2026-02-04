@@ -13,13 +13,12 @@ import (
 )
 
 func (fs *FilerServer) AtomicRenameEntry(ctx context.Context, req *filer_pb.AtomicRenameEntryRequest) (*filer_pb.AtomicRenameEntryResponse, error) {
-
 	glog.V(1).Infof("AtomicRenameEntry %v", req)
 
-	oldParent := util.FullPath(filepath.ToSlash(req.OldDirectory))
-	newParent := util.FullPath(filepath.ToSlash(req.NewDirectory))
+	oldParent := util.FullPath(filepath.ToSlash(req.GetOldDirectory()))
+	newParent := util.FullPath(filepath.ToSlash(req.GetNewDirectory()))
 
-	if err := fs.filer.CanRename(ctx, oldParent, newParent, req.OldName); err != nil {
+	if err := fs.filer.CanRename(ctx, oldParent, newParent, req.GetOldName()); err != nil {
 		return nil, err
 	}
 
@@ -28,20 +27,23 @@ func (fs *FilerServer) AtomicRenameEntry(ctx context.Context, req *filer_pb.Atom
 		return nil, err
 	}
 
-	oldEntry, err := fs.filer.FindEntry(ctx, oldParent.Child(req.OldName))
+	oldEntry, err := fs.filer.FindEntry(ctx, oldParent.Child(req.GetOldName()))
 	if err != nil {
 		fs.filer.RollbackTransaction(ctx)
-		return nil, fmt.Errorf("%s/%s not found: %v", req.OldDirectory, req.OldName, err)
+
+		return nil, fmt.Errorf("%s/%s not found: %w", req.GetOldDirectory(), req.GetOldName(), err)
 	}
 
-	moveErr := fs.moveEntry(ctx, nil, oldParent, oldEntry, newParent, req.NewName, req.Signatures)
+	moveErr := fs.moveEntry(ctx, nil, oldParent, oldEntry, newParent, req.GetNewName(), req.GetSignatures())
 	if moveErr != nil {
 		fs.filer.RollbackTransaction(ctx)
-		return nil, fmt.Errorf("%s/%s move error: %v", req.OldDirectory, req.OldName, moveErr)
+
+		return nil, fmt.Errorf("%s/%s move error: %w", req.GetOldDirectory(), req.GetOldName(), moveErr)
 	} else {
 		if commitError := fs.filer.CommitTransaction(ctx); commitError != nil {
 			fs.filer.RollbackTransaction(ctx)
-			return nil, fmt.Errorf("%s/%s move commit error: %v", req.OldDirectory, req.OldName, commitError)
+
+			return nil, fmt.Errorf("%s/%s move commit error: %w", req.GetOldDirectory(), req.GetOldName(), commitError)
 		}
 	}
 
@@ -49,13 +51,12 @@ func (fs *FilerServer) AtomicRenameEntry(ctx context.Context, req *filer_pb.Atom
 }
 
 func (fs *FilerServer) StreamRenameEntry(req *filer_pb.StreamRenameEntryRequest, stream filer_pb.SeaweedFiler_StreamRenameEntryServer) (err error) {
-
 	glog.V(1).Infof("StreamRenameEntry %v", req)
 
-	oldParent := util.FullPath(filepath.ToSlash(req.OldDirectory))
-	newParent := util.FullPath(filepath.ToSlash(req.NewDirectory))
+	oldParent := util.FullPath(filepath.ToSlash(req.GetOldDirectory()))
+	newParent := util.FullPath(filepath.ToSlash(req.GetNewDirectory()))
 
-	if err := fs.filer.CanRename(stream.Context(), oldParent, newParent, req.OldName); err != nil {
+	if err := fs.filer.CanRename(stream.Context(), oldParent, newParent, req.GetOldName()); err != nil {
 		return err
 	}
 
@@ -66,19 +67,21 @@ func (fs *FilerServer) StreamRenameEntry(req *filer_pb.StreamRenameEntryRequest,
 		return err
 	}
 
-	oldEntry, err := fs.filer.FindEntry(ctx, oldParent.Child(req.OldName))
+	oldEntry, err := fs.filer.FindEntry(ctx, oldParent.Child(req.GetOldName()))
 	if err != nil {
 		fs.filer.RollbackTransaction(ctx)
-		return fmt.Errorf("%s/%s not found: %v", req.OldDirectory, req.OldName, err)
+
+		return fmt.Errorf("%s/%s not found: %w", req.GetOldDirectory(), req.GetOldName(), err)
 	}
 
 	if oldEntry.IsDirectory() {
 		// follow https://pubs.opengroup.org/onlinepubs/000095399/functions/rename.html
-		targetDir := newParent.Child(req.NewName)
+		targetDir := newParent.Child(req.GetNewName())
 		newEntry, err := fs.filer.FindEntry(ctx, targetDir)
 		if err == nil {
 			if !newEntry.IsDirectory() {
 				fs.filer.RollbackTransaction(ctx)
+
 				return fmt.Errorf("%s is not directory", targetDir)
 			}
 			if entries, _, _ := fs.filer.ListDirectoryEntries(context.Background(), targetDir, "", false, 1, "", "", ""); len(entries) > 0 {
@@ -87,14 +90,16 @@ func (fs *FilerServer) StreamRenameEntry(req *filer_pb.StreamRenameEntryRequest,
 		}
 	}
 
-	moveErr := fs.moveEntry(ctx, stream, oldParent, oldEntry, newParent, req.NewName, req.Signatures)
+	moveErr := fs.moveEntry(ctx, stream, oldParent, oldEntry, newParent, req.GetNewName(), req.GetSignatures())
 	if moveErr != nil {
 		fs.filer.RollbackTransaction(ctx)
-		return fmt.Errorf("%s/%s move error: %v", req.OldDirectory, req.OldName, moveErr)
+
+		return fmt.Errorf("%s/%s move error: %w", req.GetOldDirectory(), req.GetOldName(), moveErr)
 	} else {
 		if commitError := fs.filer.CommitTransaction(ctx); commitError != nil {
 			fs.filer.RollbackTransaction(ctx)
-			return fmt.Errorf("%s/%s move commit error: %v", req.OldDirectory, req.OldName, commitError)
+
+			return fmt.Errorf("%s/%s move commit error: %w", req.GetOldDirectory(), req.GetOldName(), commitError)
 		}
 	}
 
@@ -102,23 +107,22 @@ func (fs *FilerServer) StreamRenameEntry(req *filer_pb.StreamRenameEntryRequest,
 }
 
 func (fs *FilerServer) moveEntry(ctx context.Context, stream filer_pb.SeaweedFiler_StreamRenameEntryServer, oldParent util.FullPath, entry *filer.Entry, newParent util.FullPath, newName string, signatures []int32) error {
-
 	if err := fs.moveSelfEntry(ctx, stream, oldParent, entry, newParent, newName, func() error {
 		if entry.IsDirectory() {
 			if err := fs.moveFolderSubEntries(ctx, stream, oldParent, entry, newParent, newName, signatures); err != nil {
 				return err
 			}
 		}
+
 		return nil
 	}, signatures); err != nil {
-		return fmt.Errorf("fail to move %s => %s: %v", oldParent.Child(entry.Name()), newParent.Child(newName), err)
+		return fmt.Errorf("fail to move %s => %s: %w", oldParent.Child(entry.Name()), newParent.Child(newName), err)
 	}
 
 	return nil
 }
 
 func (fs *FilerServer) moveFolderSubEntries(ctx context.Context, stream filer_pb.SeaweedFiler_StreamRenameEntryServer, oldParent util.FullPath, entry *filer.Entry, newParent util.FullPath, newName string, signatures []int32) error {
-
 	currentDirPath := oldParent.Child(entry.Name())
 	newDirPath := newParent.Child(newName)
 
@@ -127,7 +131,6 @@ func (fs *FilerServer) moveFolderSubEntries(ctx context.Context, stream filer_pb
 	lastFileName := ""
 	includeLastFile := false
 	for {
-
 		entries, hasMore, err := fs.filer.ListDirectoryEntries(ctx, currentDirPath, lastFileName, includeLastFile, 1024, "", "", "")
 		if err != nil {
 			return err
@@ -147,17 +150,18 @@ func (fs *FilerServer) moveFolderSubEntries(ctx context.Context, stream filer_pb
 			break
 		}
 	}
+
 	return nil
 }
 
 func (fs *FilerServer) moveSelfEntry(ctx context.Context, stream filer_pb.SeaweedFiler_StreamRenameEntryServer, oldParent util.FullPath, entry *filer.Entry, newParent util.FullPath, newName string, moveFolderSubEntries func() error, signatures []int32) error {
-
 	oldPath, newPath := oldParent.Child(entry.Name()), newParent.Child(newName)
 
 	glog.V(1).Infof("moving entry %s => %s", oldPath, newPath)
 
 	if oldPath == newPath {
 		glog.V(1).Infof("skip moving entry %s => %s", oldPath, newPath)
+
 		return nil
 	}
 
@@ -227,5 +231,4 @@ func (fs *FilerServer) moveSelfEntry(ctx context.Context, stream filer_pb.Seawee
 	}
 
 	return nil
-
 }

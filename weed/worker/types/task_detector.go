@@ -24,5 +24,5 @@ type PolicyConfigurableDetector interface {
 	TaskDetector
 
 	// ConfigureFromPolicy configures the detector based on the maintenance policy
-	ConfigureFromPolicy(policy interface{})
+	ConfigureFromPolicy(policy any)
 }

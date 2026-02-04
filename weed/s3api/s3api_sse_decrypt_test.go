@@ -89,15 +89,9 @@ func TestSSECDecryptChunkView_NoOffsetAdjustment(t *testing.T) {
 		t.Errorf("CRITICAL: Offset-adjusted IV produced correct plaintext! This shouldn't happen for SSE-C.")
 	} else {
 		t.Logf("✓ Verified: Offset-adjusted IV produces corrupted data (as expected for SSE-C)")
-		maxLen := 20
-		if len(plaintext) < maxLen {
-			maxLen = len(plaintext)
-		}
+		maxLen := min(len(plaintext), 20)
 		t.Logf("  Plaintext:  %q", plaintext[:maxLen])
-		maxLen2 := 20
-		if len(decryptedWrong) < maxLen2 {
-			maxLen2 = len(decryptedWrong)
-		}
+		maxLen2 := min(len(decryptedWrong), 20)
 		t.Logf("  Corrupted:  %q", decryptedWrong[:maxLen2])
 	}
 }

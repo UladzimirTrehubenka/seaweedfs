@@ -2,6 +2,7 @@ package offset
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -158,6 +159,7 @@ func (m *MigrationManager) ApplyMigrations() error {
 		_, err = tx.Exec(migration.SQL)
 		if err != nil {
 			tx.Rollback()
+
 			return fmt.Errorf("failed to execute migration %d: %w", migration.Version, err)
 		}
 
@@ -170,6 +172,7 @@ func (m *MigrationManager) ApplyMigrations() error {
 		)
 		if err != nil {
 			tx.Rollback()
+
 			return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
 		}
 
@@ -189,7 +192,7 @@ func (m *MigrationManager) ApplyMigrations() error {
 func (m *MigrationManager) RollbackMigration(version int) error {
 	// TODO: Implement rollback functionality
 	// ASSUMPTION: For now, rollbacks are not supported as they require careful planning
-	return fmt.Errorf("migration rollbacks not implemented - manual intervention required")
+	return errors.New("migration rollbacks not implemented - manual intervention required")
 }
 
 // GetAppliedMigrations returns a list of all applied migrations
@@ -272,6 +275,7 @@ func CreateDatabase(dbPath string) (*sql.DB, error) {
 		_, err := db.Exec(pragma)
 		if err != nil {
 			db.Close()
+
 			return nil, fmt.Errorf("failed to set pragma %s: %w", pragma, err)
 		}
 	}
@@ -281,6 +285,7 @@ func CreateDatabase(dbPath string) (*sql.DB, error) {
 	err = migrationManager.ApplyMigrations()
 	if err != nil {
 		db.Close()
+
 		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
@@ -291,12 +296,12 @@ func CreateDatabase(dbPath string) (*sql.DB, error) {
 func BackupDatabase(sourceDB *sql.DB, backupPath string) error {
 	// TODO: Implement database backup functionality
 	// ASSUMPTION: This would use database-specific backup mechanisms
-	return fmt.Errorf("database backup not implemented yet")
+	return errors.New("database backup not implemented yet")
 }
 
 // RestoreDatabase restores a database from a backup
 func RestoreDatabase(backupPath, targetPath string) error {
 	// TODO: Implement database restore functionality
 	// ASSUMPTION: This would use database-specific restore mechanisms
-	return fmt.Errorf("database restore not implemented yet")
+	return errors.New("database restore not implemented yet")
 }

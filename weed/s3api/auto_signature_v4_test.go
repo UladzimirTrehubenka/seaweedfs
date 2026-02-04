@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,11 +19,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 )
 
 // TestIsRequestPresignedSignatureV4 - Test validates the logic for presign signature version v4 detection.
@@ -129,7 +133,6 @@ func TestCheckaAnonymousRequestAuthType(t *testing.T) {
 			t.Errorf("Test %d: Unexpected AuthType returned wanted %s, got %s", i, "Anonymous", testCase.Request.Header.Get(s3_constants.AmzAuthType))
 		}
 	}
-
 }
 
 func TestCheckAdminRequestAuthType(t *testing.T) {
@@ -170,8 +173,8 @@ func BenchmarkGetSignature(b *testing.B) {
 	t := time.Now()
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		signingKey := getSigningKey("secret-key", t.Format(yyyymmdd), "us-east-1", "s3")
 		getSignature(signingKey, "random data")
 	}
@@ -183,6 +186,7 @@ func mustNewRequest(method string, urlStr string, contentLength int64, body io.R
 	if err != nil {
 		t.Fatalf("Unable to initialize new http request %s", err)
 	}
+
 	return req
 }
 
@@ -194,6 +198,7 @@ func mustNewSignedRequest(method string, urlStr string, contentLength int64, bod
 	if err := signRequestV4(req, cred.AccessKey, cred.SecretKey); err != nil {
 		t.Fatalf("Unable to initialized new signed http request %s", err)
 	}
+
 	return req
 }
 
@@ -205,6 +210,7 @@ func mustNewPresignedRequest(iam *IdentityAccessManagement, method string, urlSt
 	if err := preSignV4(iam, req, cred.AccessKey, cred.SecretKey, int64(10*time.Minute.Seconds())); err != nil {
 		t.Fatalf("Unable to initialized new signed http request %s", err)
 	}
+
 	return req
 }
 
@@ -223,7 +229,7 @@ func preSignV4(iam *IdentityAccessManagement, req *http.Request, accessKey, secr
 	query.Set("X-Amz-Algorithm", signV4Algorithm)
 	query.Set("X-Amz-Credential", credential)
 	query.Set("X-Amz-Date", dateStr)
-	query.Set("X-Amz-Expires", fmt.Sprintf("%d", expires))
+	query.Set("X-Amz-Expires", strconv.FormatInt(expires, 10))
 	query.Set("X-Amz-SignedHeaders", "host")
 
 	// Set the query on the URL (without signature yet)
@@ -272,6 +278,7 @@ func newTestIAM() *IdentityAccessManagement {
 	// Initialize the access key map for lookup
 	iam.accessKeyIdent = make(map[string]*Identity)
 	iam.accessKeyIdent["AKIAIOSFODNN7EXAMPLE"] = iam.identities[0]
+
 	return iam
 }
 
@@ -796,6 +803,7 @@ func TestPresignedSignatureV4WithForwardedPrefix(t *testing.T) {
 			err = preSignV4WithPath(iam, r, "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", 3600, tt.originalPath)
 			if err != nil {
 				t.Errorf("Failed to presign request: %v", err)
+
 				return
 			}
 
@@ -870,6 +878,7 @@ func TestPresignedSignatureV4WithForwardedPrefixTrailingSlash(t *testing.T) {
 			err = preSignV4WithPath(iam, r, "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", 3600, tt.originalPath)
 			if err != nil {
 				t.Errorf("Failed to presign request: %v", err)
+
 				return
 			}
 
@@ -907,7 +916,7 @@ func preSignV4WithPath(iam *IdentityAccessManagement, req *http.Request, accessK
 	query.Set("X-Amz-Algorithm", signV4Algorithm)
 	query.Set("X-Amz-Credential", credential)
 	query.Set("X-Amz-Date", dateStr)
-	query.Set("X-Amz-Expires", fmt.Sprintf("%d", expires))
+	query.Set("X-Amz-Expires", strconv.FormatInt(expires, 10))
 	query.Set("X-Amz-SignedHeaders", "host")
 
 	// Set the query on the URL (without signature yet)
@@ -994,8 +1003,8 @@ func newTestRequest(method, urlStr string, contentLength int64, body io.ReadSeek
 	// Save for subsequent use
 	var hashedPayload string
 	var md5Base64 string
-	switch {
-	case body == nil:
+	switch body {
+	case nil:
 		hashedPayload = getSHA256Hash([]byte{})
 	default:
 		payloadBytes, err := io.ReadAll(body)
@@ -1035,6 +1044,7 @@ func getMD5HashBase64(data []byte) string {
 func getSHA256Sum(data []byte) []byte {
 	hash := sha256.New()
 	hash.Write(data)
+
 	return hash.Sum(nil)
 }
 
@@ -1042,6 +1052,7 @@ func getSHA256Sum(data []byte) []byte {
 func getMD5Sum(data []byte) []byte {
 	hash := md5.New()
 	hash.Write(data)
+
 	return hash.Sum(nil)
 }
 
@@ -1061,7 +1072,6 @@ var ignoredHeaders = map[string]bool{
 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 // This time it's a PUT request uploading the file with content "Welcome to Amazon S3."
 func TestGetStringToSignPUT(t *testing.T) {
-
 	canonicalRequest := `PUT
 /test%24file.text
 
@@ -1095,7 +1105,6 @@ date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class
 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 // The GET request example with empty string hash.
 func TestGetStringToSignGETEmptyStringHash(t *testing.T) {
-
 	canonicalRequest := `GET
 /test.txt
 
@@ -1129,7 +1138,7 @@ func signRequestV4(req *http.Request, accessKey, secretKey string) error {
 	// Get hashed payload.
 	hashedPayload := req.Header.Get("x-amz-content-sha256")
 	if hashedPayload == "" {
-		return fmt.Errorf("Invalid hashed payload")
+		return errors.New("Invalid hashed payload")
 	}
 
 	currTime := time.Now().UTC()
@@ -1160,9 +1169,10 @@ func signRequestV4(req *http.Request, accessKey, secretKey string) error {
 	for _, k := range headers {
 		buf.WriteString(k)
 		buf.WriteByte(':')
-		switch {
-		case k == "host":
+		switch k {
+		case "host":
 			buf.WriteString(req.URL.Host)
+
 			fallthrough
 		default:
 			for idx, v := range headerMap[k] {
@@ -1180,7 +1190,7 @@ func signRequestV4(req *http.Request, accessKey, secretKey string) error {
 	signedHeaders := strings.Join(headers, ";")
 
 	// Get canonical query string.
-	req.URL.RawQuery = strings.Replace(req.URL.Query().Encode(), "+", "%20", -1)
+	req.URL.RawQuery = strings.ReplaceAll(req.URL.Query().Encode(), "+", "%20")
 
 	// Get canonical URI.
 	canonicalURI := EncodePath(req.URL.Path)
@@ -1246,14 +1256,17 @@ func EncodePath(pathName string) string {
 		return pathName
 	}
 	var encodedPathname string
+	var encodedPathnameSb1249 strings.Builder
 	for _, s := range pathName {
 		if 'A' <= s && s <= 'Z' || 'a' <= s && s <= 'z' || '0' <= s && s <= '9' { // §2.3 Unreserved characters (mark)
-			encodedPathname = encodedPathname + string(s)
+			encodedPathnameSb1249.WriteRune(s)
+
 			continue
 		}
 		switch s {
 		case '-', '_', '.', '~', '/': // §2.3 Unreserved characters (mark)
 			encodedPathname = encodedPathname + string(s)
+
 			continue
 		default:
 			runeLen := utf8.RuneLen(s)
@@ -1269,6 +1282,8 @@ func EncodePath(pathName string) string {
 			}
 		}
 	}
+	encodedPathname += encodedPathnameSb1249.String()
+
 	return encodedPathname
 }
 
@@ -1302,7 +1317,7 @@ func TestIAMPayloadHashComputation(t *testing.T) {
 	testPayload := "Action=CreateAccessKey&UserName=testuser&Version=2010-05-08"
 
 	// Create request with body (typical IAM request)
-	req, err := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(testPayload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(testPayload))
 	assert.NoError(t, err)
 
 	// Set required headers for IAM request
@@ -1367,7 +1382,7 @@ func TestS3PayloadHashNoRegression(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Create S3 request (no body, should use emptySHA256)
-	req, err := http.NewRequest("GET", "http://localhost:8333/bucket/object", nil)
+	req, err := http.NewRequest(http.MethodGet, "http://localhost:8333/bucket/object", nil)
 	assert.NoError(t, err)
 
 	req.Header.Set("Host", "localhost:8333")
@@ -1418,7 +1433,7 @@ func TestIAMEmptyBodyPayloadHash(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Create IAM request with empty body
-	req, err := http.NewRequest("POST", "http://localhost:8111/", bytes.NewReader([]byte{}))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", bytes.NewReader([]byte{}))
 	assert.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
@@ -1472,7 +1487,7 @@ func TestSTSPayloadHashComputation(t *testing.T) {
 	testPayload := "Action=AssumeRole&RoleArn=arn:aws:iam::123456789012:role/TestRole&RoleSessionName=test&Version=2011-06-15"
 
 	// Create request with body (typical STS request)
-	req, err := http.NewRequest("POST", "http://localhost:8112/", strings.NewReader(testPayload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8112/", strings.NewReader(testPayload))
 	assert.NoError(t, err)
 
 	// Set required headers for STS request
@@ -1535,7 +1550,7 @@ func TestGitHubIssue7080Scenario(t *testing.T) {
 	testPayload := "Action=CreateAccessKey&UserName=admin&Version=2010-05-08"
 
 	// Create the request that was failing
-	req, err := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(testPayload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(testPayload))
 	assert.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
@@ -1603,7 +1618,7 @@ func TestIAMSignatureServiceMatching(t *testing.T) {
 	dateStamp := now.Format(yyyymmdd)
 
 	// Create request exactly as shown in logs
-	req, err := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(testPayload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(testPayload))
 	assert.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
@@ -1709,7 +1724,7 @@ func TestIAMLargeBodySecurityLimit(t *testing.T) {
 	largePayload := strings.Repeat("A", 11*(1<<20)) // 11 MiB
 
 	// Create IAM request with large body
-	req, err := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(largePayload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(largePayload))
 	assert.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
@@ -1736,7 +1751,7 @@ func TestIAMLargeBodySecurityLimit(t *testing.T) {
 	// Verify the body was truncated to the limit (10 MiB)
 	bodyBytes, err := io.ReadAll(req.Body)
 	assert.NoError(t, err)
-	assert.Equal(t, 10*(1<<20), len(bodyBytes))                         // Should be exactly 10 MiB
+	assert.Len(t, bodyBytes, 10*(1<<20))                                // Should be exactly 10 MiB
 	assert.Equal(t, strings.Repeat("A", 10*(1<<20)), string(bodyBytes)) // All As, but truncated
 }
 
@@ -1767,7 +1782,7 @@ func TestStreamHashRequestBody(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create request with the test payload
-			req, err := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(tc.payload))
+			req, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(tc.payload))
 			assert.NoError(t, err)
 
 			// Compute expected hash directly for comparison
@@ -1804,7 +1819,7 @@ func TestStreamingVsNonStreamingConsistency(t *testing.T) {
 	for i, payload := range testPayloads {
 		t.Run(fmt.Sprintf("payload_%d", i), func(t *testing.T) {
 			// Test streaming approach
-			req1, err := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(payload))
+			req1, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(payload))
 			assert.NoError(t, err)
 
 			streamHash, err := streamHashRequestBody(req1, iamRequestBodyLimit)
@@ -1833,7 +1848,7 @@ func TestStreamingWithSizeLimit(t *testing.T) {
 	// Create a payload larger than the limit
 	largePayload := strings.Repeat("A", 11*(1<<20)) // 11 MiB
 
-	req, err := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(largePayload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(largePayload))
 	assert.NoError(t, err)
 
 	// Stream with the limit
@@ -1850,7 +1865,7 @@ func TestStreamingWithSizeLimit(t *testing.T) {
 	// Verify the body was truncated
 	bodyBytes, err := io.ReadAll(req.Body)
 	assert.NoError(t, err)
-	assert.Equal(t, 10*(1<<20), len(bodyBytes))
+	assert.Len(t, bodyBytes, 10*(1<<20))
 	assert.Equal(t, truncatedPayload, string(bodyBytes))
 }
 
@@ -1861,17 +1876,17 @@ func BenchmarkStreamingVsNonStreaming(b *testing.B) {
 
 	b.Run("streaming", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			req, _ := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(payload))
+		for range b.N {
+			req, _ := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(payload))
 			streamHashRequestBody(req, iamRequestBodyLimit)
 		}
 	})
 
 	b.Run("direct", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			// Simulate the old approach of reading all at once
-			req, _ := http.NewRequest("POST", "http://localhost:8111/", strings.NewReader(payload))
+			req, _ := http.NewRequest(http.MethodPost, "http://localhost:8111/", strings.NewReader(payload))
 			io.ReadAll(req.Body)
 			sha256.Sum256([]byte(payload))
 		}

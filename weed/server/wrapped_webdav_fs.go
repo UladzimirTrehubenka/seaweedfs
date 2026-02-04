@@ -27,6 +27,7 @@ func NewWrappedFs(fs webdav.FileSystem, subFolder string) webdav.FileSystem {
 
 func (w wrappedFs) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
 	name = w.subFolder + name
+
 	return w.FileSystem.Mkdir(ctx, name, perm)
 }
 
@@ -43,12 +44,14 @@ func (w wrappedFs) OpenFile(ctx context.Context, name string, flag int, perm os.
 
 func (w wrappedFs) RemoveAll(ctx context.Context, name string) error {
 	name = w.subFolder + name
+
 	return w.FileSystem.RemoveAll(ctx, name)
 }
 
 func (w wrappedFs) Rename(ctx context.Context, oldName, newName string) error {
 	oldName = w.subFolder + oldName
 	newName = w.subFolder + newName
+
 	return w.FileSystem.Rename(ctx, oldName, newName)
 }
 
@@ -59,11 +62,13 @@ func (w wrappedFs) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 		subFolder: &w.subFolder,
 		FileInfo:  info,
 	}
+
 	return info, err
 }
 
 type wrappedFile struct {
 	webdav.File
+
 	subFolder *string
 }
 
@@ -75,6 +80,7 @@ func (w wrappedFile) Readdir(count int) ([]fs.FileInfo, error) {
 			FileInfo:  info,
 		}
 	}
+
 	return infos, err
 }
 
@@ -84,6 +90,7 @@ func (w wrappedFile) Stat() (fs.FileInfo, error) {
 		subFolder: w.subFolder,
 		FileInfo:  info,
 	}
+
 	return info, err
 }
 
@@ -94,6 +101,7 @@ type wrappedFileInfo struct {
 
 func (w wrappedFileInfo) Name() string {
 	name := w.FileInfo.Name()
+
 	return strings.TrimPrefix(name, *w.subFolder)
 }
 
@@ -102,5 +110,6 @@ func (w wrappedFileInfo) ETag(ctx context.Context) (string, error) {
 	if len(etag) == 0 {
 		return etag, webdav.ErrNotImplemented
 	}
+
 	return etag, nil
 }

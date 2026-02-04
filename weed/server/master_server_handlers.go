@@ -28,6 +28,7 @@ func (ms *MasterServer) lookupVolumeId(vids []string, collection string) (volume
 		}
 		volumeLocations[vid] = ms.findVolumeLocation(collection, vid)
 	}
+
 	return
 }
 
@@ -104,6 +105,7 @@ func (ms *MasterServer) findVolumeLocation(collection, vid string) operation.Loo
 	if err != nil {
 		ret.Error = err.Error()
 	}
+
 	return ret
 }
 
@@ -122,6 +124,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 	option, err := ms.getVolumeGrowOption(r)
 	if err != nil {
 		writeJsonQuiet(w, r, http.StatusNotAcceptable, operation.AssignResult{Error: err.Error()})
+
 		return
 	}
 
@@ -137,6 +140,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 		writeJsonQuiet(w, r, http.StatusBadRequest, operation.AssignResult{
 			Error: fmt.Sprintf("data center %v not found in topology", option.DataCenter),
 		})
+
 		return
 	}
 
@@ -158,6 +162,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 			stats.MasterPickForWriteErrorCounter.Inc()
 			lastErr = err
 			time.Sleep(200 * time.Millisecond)
+
 			continue
 		} else {
 			ms.maybeAddJwtAuthorization(w, fid, true)
@@ -166,6 +171,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 				continue
 			}
 			writeJsonQuiet(w, r, http.StatusOK, operation.AssignResult{Fid: fid, Url: dn.Url(), PublicUrl: dn.PublicUrl, Count: count})
+
 			return
 		}
 	}

@@ -36,7 +36,6 @@ func (c *commandFsMetaNotify) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsMetaNotify) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -53,23 +52,23 @@ func (c *commandFsMetaNotify) Do(args []string, commandEnv *CommandEnv, writer i
 	var dirCount, fileCount uint64
 
 	err = filer_pb.TraverseBfs(context.Background(), commandEnv, util.FullPath(path), func(parentPath util.FullPath, entry *filer_pb.Entry) error {
-
-		if entry.IsDirectory {
+		if entry.GetIsDirectory() {
 			dirCount++
 		} else {
 			fileCount++
 		}
 
 		notifyErr := notification.Queue.SendMessage(
-			string(parentPath.Child(entry.Name)),
+			string(parentPath.Child(entry.GetName())),
 			&filer_pb.EventNotification{
 				NewEntry: entry,
 			},
 		)
 
 		if notifyErr != nil {
-			fmt.Fprintf(writer, "fail to notify new entry event for %s: %v\n", parentPath.Child(entry.Name), notifyErr)
+			fmt.Fprintf(writer, "fail to notify new entry event for %s: %v\n", parentPath.Child(entry.GetName()), notifyErr)
 		}
+
 		return nil
 	})
 
@@ -78,5 +77,4 @@ func (c *commandFsMetaNotify) Do(args []string, commandEnv *CommandEnv, writer i
 	}
 
 	return err
-
 }

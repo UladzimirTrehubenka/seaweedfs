@@ -66,6 +66,7 @@ func IsSSES3EncryptedInternal(metadata map[string][]byte) bool {
 	// Must also have the actual encryption key to be considered encrypted
 	// Without the key, the object cannot be decrypted and should be treated as unencrypted
 	_, hasKey := metadata[s3_constants.SeaweedFSSSES3Key]
+
 	return hasKey
 }
 
@@ -177,7 +178,7 @@ func SerializeSSES3Metadata(key *SSES3Key) ([]byte, error) {
 // DeserializeSSES3Metadata deserializes SSE-S3 metadata from storage and decrypts the DEK
 func DeserializeSSES3Metadata(data []byte, keyManager *SSES3KeyManager) (*SSES3Key, error) {
 	if len(data) == 0 {
-		return nil, fmt.Errorf("empty SSE-S3 metadata")
+		return nil, errors.New("empty SSE-S3 metadata")
 	}
 
 	// Parse the JSON metadata
@@ -188,7 +189,7 @@ func DeserializeSSES3Metadata(data []byte, keyManager *SSES3KeyManager) (*SSES3K
 
 	keyID, exists := metadata["keyId"]
 	if !exists {
-		return nil, fmt.Errorf("keyId not found in SSE-S3 metadata")
+		return nil, errors.New("keyId not found in SSE-S3 metadata")
 	}
 
 	algorithm, exists := metadata["algorithm"]
@@ -199,7 +200,7 @@ func DeserializeSSES3Metadata(data []byte, keyManager *SSES3KeyManager) (*SSES3K
 	// Decode the encrypted DEK and nonce
 	encryptedDEKStr, exists := metadata["encryptedDEK"]
 	if !exists {
-		return nil, fmt.Errorf("encryptedDEK not found in SSE-S3 metadata")
+		return nil, errors.New("encryptedDEK not found in SSE-S3 metadata")
 	}
 	encryptedDEK, err := base64.StdEncoding.DecodeString(encryptedDEKStr)
 	if err != nil {
@@ -208,7 +209,7 @@ func DeserializeSSES3Metadata(data []byte, keyManager *SSES3KeyManager) (*SSES3K
 
 	nonceStr, exists := metadata["nonce"]
 	if !exists {
-		return nil, fmt.Errorf("nonce not found in SSE-S3 metadata")
+		return nil, errors.New("nonce not found in SSE-S3 metadata")
 	}
 	nonce, err := base64.StdEncoding.DecodeString(nonceStr)
 	if err != nil {
@@ -217,7 +218,7 @@ func DeserializeSSES3Metadata(data []byte, keyManager *SSES3KeyManager) (*SSES3K
 
 	// Decrypt the DEK using the key manager
 	if keyManager == nil {
-		return nil, fmt.Errorf("key manager is required for SSE-S3 key retrieval")
+		return nil, errors.New("key manager is required for SSE-S3 key retrieval")
 	}
 
 	dekBytes, err := keyManager.decryptKeyWithSuperKey(encryptedDEK, nonce)
@@ -281,10 +282,11 @@ func (km *SSES3KeyManager) InitializeWithFiler(filerClient filer_pb.FilerClient)
 
 	// Try to load existing KEK from filer with retries to handle transient connectivity issues during startup
 	var err error
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		err = km.loadSuperKeyFromFiler()
 		if err == nil {
 			glog.V(1).Infof("SSE-S3 KeyManager: Loaded KEK from filer %s", km.kekPath)
+
 			return nil
 		}
 		if errors.Is(err, filer_pb.ErrNotFound) {
@@ -292,6 +294,7 @@ func (km *SSES3KeyManager) InitializeWithFiler(filerClient filer_pb.FilerClient)
 			if genErr := km.generateAndSaveSuperKeyToFiler(); genErr != nil {
 				return fmt.Errorf("failed to generate and save SSE-S3 super key: %w", genErr)
 			}
+
 			return nil
 		}
 		glog.Warningf("SSE-S3 KeyManager: failed to load KEK (attempt %d/10): %v", i+1, err)
@@ -305,7 +308,7 @@ func (km *SSES3KeyManager) InitializeWithFiler(filerClient filer_pb.FilerClient)
 // loadSuperKeyFromFiler loads the KEK from the filer
 func (km *SSES3KeyManager) loadSuperKeyFromFiler() error {
 	if km.filerClient == nil {
-		return fmt.Errorf("filer client not initialized")
+		return errors.New("filer client not initialized")
 	}
 
 	// Get the entry from filer
@@ -315,12 +318,12 @@ func (km *SSES3KeyManager) loadSuperKeyFromFiler() error {
 	}
 
 	// Read the content
-	if len(entry.Content) == 0 {
-		return fmt.Errorf("KEK entry is empty")
+	if len(entry.GetContent()) == 0 {
+		return errors.New("KEK entry is empty")
 	}
 
 	// Decode hex-encoded key
-	key, err := hex.DecodeString(string(entry.Content))
+	key, err := hex.DecodeString(string(entry.GetContent()))
 	if err != nil {
 		return fmt.Errorf("failed to decode KEK: %w", err)
 	}
@@ -330,13 +333,14 @@ func (km *SSES3KeyManager) loadSuperKeyFromFiler() error {
 	}
 
 	km.superKey = key
+
 	return nil
 }
 
 // generateAndSaveSuperKeyToFiler generates a new KEK and saves it to the filer
 func (km *SSES3KeyManager) generateAndSaveSuperKeyToFiler() error {
 	if km.filerClient == nil {
-		return fmt.Errorf("filer client not initialized")
+		return errors.New("filer client not initialized")
 	}
 
 	// Generate a random 256-bit super key (KEK)
@@ -372,6 +376,7 @@ func (km *SSES3KeyManager) generateAndSaveSuperKeyToFiler() error {
 
 	km.superKey = superKey
 	glog.Infof("SSE-S3 KeyManager: Generated and saved new KEK to filer %s", km.kekPath)
+
 	return nil
 }
 
@@ -500,7 +505,7 @@ func ProcessSSES3Request(r *http.Request) (map[string][]byte, error) {
 func GetSSES3KeyFromMetadata(metadata map[string][]byte, keyManager *SSES3KeyManager) (*SSES3Key, error) {
 	keyData, exists := metadata[s3_constants.SeaweedFSSSES3Key]
 	if !exists {
-		return nil, fmt.Errorf("SSE-S3 key not found in metadata")
+		return nil, errors.New("SSE-S3 key not found in metadata")
 	}
 
 	return DeserializeSSES3Metadata(keyData, keyManager)
@@ -528,7 +533,7 @@ func GetSSES3IV(entry *filer_pb.Entry, sseS3Key *SSES3Key, keyManager *SSES3KeyM
 		}
 	}
 
-	return nil, fmt.Errorf("SSE-S3 IV not found in object or chunk metadata")
+	return nil, errors.New("SSE-S3 IV not found in object or chunk metadata")
 }
 
 // CreateSSES3EncryptedReaderWithBaseIV creates an encrypted reader using a base IV for multipart upload consistency.
@@ -536,7 +541,7 @@ func GetSSES3IV(entry *filer_pb.Entry, sseS3Key *SSES3Key, keyManager *SSES3KeyM
 func CreateSSES3EncryptedReaderWithBaseIV(reader io.Reader, key *SSES3Key, baseIV []byte, offset int64) (io.Reader, []byte /* derivedIV */, error) {
 	// Validate key to prevent panics and security issues
 	if key == nil {
-		return nil, nil, fmt.Errorf("SSES3Key is nil")
+		return nil, nil, errors.New("SSES3Key is nil")
 	}
 	if key.Key == nil || len(key.Key) != SSES3KeySize {
 		return nil, nil, fmt.Errorf("invalid SSES3Key: must be %d bytes, got %d", SSES3KeySize, len(key.Key))
@@ -557,5 +562,6 @@ func CreateSSES3EncryptedReaderWithBaseIV(reader io.Reader, key *SSES3Key, baseI
 
 	stream := cipher.NewCTR(block, iv)
 	encryptedReader := &cipher.StreamReader{S: stream, R: reader}
+
 	return encryptedReader, iv, nil
 }

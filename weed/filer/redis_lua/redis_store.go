@@ -2,6 +2,7 @@ package redis_lua
 
 import (
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
@@ -38,5 +39,6 @@ func (store *RedisLuaStore) initialize(hostPort string, username string, passwor
 	})
 	store.keyPrefix = keyPrefix
 	store.loadSuperLargeDirectories(superLargeDirectories)
+
 	return
 }

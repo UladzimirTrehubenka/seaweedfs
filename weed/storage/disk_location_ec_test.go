@@ -140,7 +140,7 @@ func TestIncompleteEcEncodingCleanup(t *testing.T) {
 			}
 
 			// Create EC shard files
-			for i := 0; i < tt.numShards; i++ {
+			for i := range tt.numShards {
 				shardFile, err := os.Create(baseFileName + erasure_coding.ToExt(i))
 				if err != nil {
 					t.Fatalf("Failed to create shard file: %v", err)
@@ -211,7 +211,7 @@ func TestIncompleteEcEncodingCleanup(t *testing.T) {
 				if util.FileExists(baseFileName + ".ecj") {
 					t.Errorf("Expected .ecj to be cleaned up but it still exists")
 				}
-				for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+				for i := range erasure_coding.TotalShardsCount {
 					shardFile := baseFileName + erasure_coding.ToExt(i)
 					if util.FileExists(shardFile) {
 						t.Errorf("Expected shard %d to be cleaned up but it still exists", i)
@@ -223,7 +223,7 @@ func TestIncompleteEcEncodingCleanup(t *testing.T) {
 				}
 			} else {
 				// Check that files were NOT cleaned up
-				for i := 0; i < tt.numShards; i++ {
+				for i := range tt.numShards {
 					shardFile := baseFileName + erasure_coding.ToExt(i)
 					if !util.FileExists(shardFile) {
 						t.Errorf("Expected shard %d to remain but it was cleaned up", i)
@@ -240,7 +240,6 @@ func TestIncompleteEcEncodingCleanup(t *testing.T) {
 					t.Errorf("Expected EC shards to be loaded for volume %d", tt.volumeId)
 				}
 			}
-
 		})
 	}
 }
@@ -339,7 +338,7 @@ func TestValidateEcVolume(t *testing.T) {
 			}
 
 			// Create EC shard files with correct size
-			for i := 0; i < tt.numShards; i++ {
+			for i := range tt.numShards {
 				shardFile, err := os.Create(baseFileName + erasure_coding.ToExt(i))
 				if err != nil {
 					t.Fatalf("Failed to create shard file: %v", err)
@@ -356,7 +355,7 @@ func TestValidateEcVolume(t *testing.T) {
 
 			// For zero-byte test case, create empty files for all data shards
 			if tt.volumeId == 204 {
-				for i := 0; i < erasure_coding.DataShardsCount; i++ {
+				for i := range erasure_coding.DataShardsCount {
 					shardFile, err := os.Create(baseFileName + erasure_coding.ToExt(i))
 					if err != nil {
 						t.Fatalf("Failed to create empty shard file: %v", err)
@@ -368,7 +367,7 @@ func TestValidateEcVolume(t *testing.T) {
 
 			// For mismatched shard size test case, create shards with different sizes
 			if tt.volumeId == 205 {
-				for i := 0; i < erasure_coding.DataShardsCount; i++ {
+				for i := range erasure_coding.DataShardsCount {
 					shardFile, err := os.Create(baseFileName + erasure_coding.ToExt(i))
 					if err != nil {
 						t.Fatalf("Failed to create shard file: %v", err)
@@ -429,7 +428,7 @@ func TestRemoveEcVolumeFiles(t *testing.T) {
 			idxBaseFileName := erasure_coding.EcShardFileName(collection, idxDir, int(volumeId))
 
 			// Create all EC shard files in data directory
-			for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+			for i := range erasure_coding.TotalShardsCount {
 				shardFile, err := os.Create(dataBaseFileName + erasure_coding.ToExt(i))
 				if err != nil {
 					t.Fatalf("Failed to create shard file: %v", err)
@@ -486,7 +485,7 @@ func TestRemoveEcVolumeFiles(t *testing.T) {
 			diskLocation.removeEcVolumeFiles(collection, volumeId)
 
 			// Verify all EC shard files are removed from data directory
-			for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+			for i := range erasure_coding.TotalShardsCount {
 				shardFile := dataBaseFileName + erasure_coding.ToExt(i)
 				if util.FileExists(shardFile) {
 					t.Errorf("Shard file %d should be removed but still exists", i)
@@ -536,7 +535,7 @@ func TestEcCleanupWithSeparateIdxDirectory(t *testing.T) {
 
 	// Create shards in data directory (shards only go to Directory, not IdxDirectory)
 	dataBaseFileName := erasure_coding.EcShardFileName(collection, dataDir, int(volumeId))
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		shardFile, err := os.Create(dataBaseFileName + erasure_coding.ToExt(i))
 		if err != nil {
 			t.Fatalf("Failed to create shard file: %v", err)
@@ -573,7 +572,7 @@ func TestEcCleanupWithSeparateIdxDirectory(t *testing.T) {
 	})
 
 	// Verify cleanup occurred in data directory (shards)
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		shardFile := dataBaseFileName + erasure_coding.ToExt(i)
 		if util.FileExists(shardFile) {
 			t.Errorf("Shard file %d should be cleaned up but still exists", i)
@@ -608,7 +607,7 @@ func TestDistributedEcVolumeNoFileDeletion(t *testing.T) {
 
 	// Create EC shards (only 5 shards - less than DataShardsCount, but OK for distributed EC)
 	numDistributedShards := 5
-	for i := 0; i < numDistributedShards; i++ {
+	for i := range numDistributedShards {
 		shardFile, err := os.Create(baseFileName + erasure_coding.ToExt(i))
 		if err != nil {
 			t.Fatalf("Failed to create shard file: %v", err)
@@ -647,7 +646,7 @@ func TestDistributedEcVolumeNoFileDeletion(t *testing.T) {
 	})
 
 	// CRITICAL CHECK: Verify shard files still exist (should NOT be deleted)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		shardFile := baseFileName + erasure_coding.ToExt(i)
 		if !util.FileExists(shardFile) {
 			t.Errorf("CRITICAL BUG: Shard file %s was deleted for distributed EC volume!", shardFile)

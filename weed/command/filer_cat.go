@@ -7,11 +7,12 @@ import (
 	"os"
 	"strings"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -37,10 +38,11 @@ func (fco *FilerCatOptions) GetLookupFileIdFunction() wdclient.LookupFileIdFunct
 		if err != nil {
 			return nil, err
 		}
-		locations := resp.LocationsMap[vid]
-		for _, loc := range locations.Locations {
-			targetUrls = append(targetUrls, fmt.Sprintf("http://%s/%s", loc.Url, fileId))
+		locations := resp.GetLocationsMap()[vid]
+		for _, loc := range locations.GetLocations() {
+			targetUrls = append(targetUrls, fmt.Sprintf("http://%s/%s", loc.GetUrl(), fileId))
 		}
+
 		return
 	}
 }
@@ -59,7 +61,6 @@ var cmdFilerCat = &Command{
 }
 
 func runFilerCat(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 
 	if len(args) == 0 {
@@ -70,11 +71,13 @@ func runFilerCat(cmd *Command, args []string) bool {
 	filerUrl, err := url.Parse(filerSource)
 	if err != nil {
 		fmt.Printf("The last argument should be a URL on filer: %v\n", err)
+
 		return false
 	}
 	urlPath := filerUrl.Path
 	if strings.HasSuffix(urlPath, "/") {
 		fmt.Printf("The last argument should be a file: %v\n", err)
+
 		return false
 	}
 
@@ -85,12 +88,12 @@ func runFilerCat(cmd *Command, args []string) bool {
 
 	writer := os.Stdout
 	if *filerCat.output != "" {
-
 		fmt.Printf("saving %s to %s\n", filerSource, *filerCat.output)
 
 		f, err := os.OpenFile(*filerCat.output, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 		if err != nil {
 			fmt.Printf("open file %s: %v\n", *filerCat.output, err)
+
 			return false
 		}
 		defer f.Close()
@@ -98,7 +101,6 @@ func runFilerCat(cmd *Command, args []string) bool {
 	}
 
 	pb.WithFilerClient(false, util.RandomInt32(), filerCat.filerAddress, filerCat.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.LookupDirectoryEntryRequest{
 			Name:      name,
 			Directory: dir,
@@ -108,15 +110,15 @@ func runFilerCat(cmd *Command, args []string) bool {
 			return err
 		}
 
-		if len(respLookupEntry.Entry.Content) > 0 {
-			_, err = writer.Write(respLookupEntry.Entry.Content)
+		if len(respLookupEntry.GetEntry().GetContent()) > 0 {
+			_, err = writer.Write(respLookupEntry.GetEntry().GetContent())
+
 			return err
 		}
 
 		filerCat.filerClient = client
 
-		return filer.StreamContent(&filerCat, writer, respLookupEntry.Entry.GetChunks(), 0, int64(filer.FileSize(respLookupEntry.Entry)))
-
+		return filer.StreamContent(&filerCat, writer, respLookupEntry.GetEntry().GetChunks(), 0, int64(filer.FileSize(respLookupEntry.GetEntry())))
 	})
 
 	return true

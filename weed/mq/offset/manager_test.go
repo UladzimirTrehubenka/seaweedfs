@@ -26,7 +26,7 @@ func TestPartitionOffsetManager_BasicAssignment(t *testing.T) {
 	}
 
 	// Test sequential offset assignment
-	for i := int64(0); i < 10; i++ {
+	for i := range int64(10) {
 		offset := manager.AssignOffset()
 		if offset != i {
 			t.Errorf("Expected offset %d, got %d", i, offset)
@@ -85,7 +85,7 @@ func TestPartitionOffsetManager_Recovery(t *testing.T) {
 	}
 
 	// Assign offsets and simulate records
-	for i := 0; i < 150; i++ { // More than checkpoint interval
+	for range 150 { // More than checkpoint interval
 		offset := manager1.AssignOffset()
 		storage.AddRecord("test-namespace", "test-topic", partition, offset)
 	}
@@ -115,7 +115,7 @@ func TestPartitionOffsetManager_RecoveryFromStorage(t *testing.T) {
 	partition := createTestPartition()
 
 	// Simulate existing records in storage without checkpoint
-	for i := int64(0); i < 50; i++ {
+	for i := range int64(50) {
 		storage.AddRecord("test-namespace", "test-topic", partition, i)
 	}
 
@@ -350,12 +350,13 @@ func TestConcurrentOffsetAssignment(t *testing.T) {
 	results := make(chan int64, numGoroutines*offsetsPerGoroutine)
 
 	// Start concurrent offset assignments
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
-			for j := 0; j < offsetsPerGoroutine; j++ {
+			for range offsetsPerGoroutine {
 				offset, err := registry.AssignOffset("test-namespace", "test-topic", partition)
 				if err != nil {
 					t.Errorf("Failed to assign offset: %v", err)
+
 					return
 				}
 				results <- offset
@@ -365,7 +366,7 @@ func TestConcurrentOffsetAssignment(t *testing.T) {
 
 	// Collect all results
 	offsets := make(map[int64]bool)
-	for i := 0; i < numGoroutines*offsetsPerGoroutine; i++ {
+	for range numGoroutines * offsetsPerGoroutine {
 		offset := <-results
 		if offsets[offset] {
 			t.Errorf("Duplicate offset assigned: %d", offset)

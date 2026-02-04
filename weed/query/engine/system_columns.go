@@ -24,6 +24,7 @@ const (
 // isSystemColumn checks if a column is a system column (_ts_ns, _key, _source)
 func (e *SQLEngine) isSystemColumn(columnName string) bool {
 	lowerName := strings.ToLower(columnName)
+
 	return lowerName == SW_COLUMN_NAME_TIMESTAMP ||
 		lowerName == SW_COLUMN_NAME_KEY ||
 		lowerName == SW_COLUMN_NAME_SOURCE
@@ -53,6 +54,7 @@ func (e *SQLEngine) getSystemColumnDisplayName(columnName string) string {
 // isSystemColumnDisplayName checks if a column name is a system column display name
 func (e *SQLEngine) isSystemColumnDisplayName(columnName string) bool {
 	lowerName := strings.ToLower(columnName)
+
 	return lowerName == SW_DISPLAY_NAME_TIMESTAMP ||
 		lowerName == SW_COLUMN_NAME_KEY ||
 		lowerName == SW_COLUMN_NAME_SOURCE
@@ -86,7 +88,7 @@ func (e *SQLEngine) formatTimestampColumn(timestampNs int64) sqltypes.Value {
 }
 
 // getSystemColumnGlobalMin computes global min for system columns using file metadata
-func (e *SQLEngine) getSystemColumnGlobalMin(columnName string, allFileStats map[string][]*ParquetFileStats) interface{} {
+func (e *SQLEngine) getSystemColumnGlobalMin(columnName string, allFileStats map[string][]*ParquetFileStats) any {
 	lowerName := strings.ToLower(columnName)
 
 	switch lowerName {
@@ -123,7 +125,7 @@ func (e *SQLEngine) getSystemColumnGlobalMin(columnName string, allFileStats map
 }
 
 // getSystemColumnGlobalMax computes global max for system columns using file metadata
-func (e *SQLEngine) getSystemColumnGlobalMax(columnName string, allFileStats map[string][]*ParquetFileStats) interface{} {
+func (e *SQLEngine) getSystemColumnGlobalMax(columnName string, allFileStats map[string][]*ParquetFileStats) any {
 	lowerName := strings.ToLower(columnName)
 
 	switch lowerName {

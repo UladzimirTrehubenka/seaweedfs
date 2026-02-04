@@ -15,5 +15,6 @@ func GetPort(addr net.Addr) (int, error) {
 	if err != nil {
 		return -1, err
 	}
+
 	return lportInt, nil
 }

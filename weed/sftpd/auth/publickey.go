@@ -1,10 +1,11 @@
 package auth
 
 import (
-	"fmt"
+	"errors"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
-	"golang.org/x/crypto/ssh"
 )
 
 // PublicKeyAuthenticator handles public key-based authentication
@@ -32,7 +33,7 @@ func (a *PublicKeyAuthenticator) Authenticate(conn ssh.ConnMetadata, key ssh.Pub
 
 	// Check if public key auth is enabled
 	if !a.enabled {
-		return nil, fmt.Errorf("public key authentication disabled")
+		return nil, errors.New("public key authentication disabled")
 	}
 
 	// Convert key to string format for comparison
@@ -47,5 +48,5 @@ func (a *PublicKeyAuthenticator) Authenticate(conn ssh.ConnMetadata, key ssh.Pub
 		}, nil
 	}
 
-	return nil, fmt.Errorf("authentication failed")
+	return nil, errors.New("authentication failed")
 }

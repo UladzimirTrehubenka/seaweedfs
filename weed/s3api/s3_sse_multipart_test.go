@@ -57,10 +57,7 @@ func TestSSECMultipartUpload(t *testing.T) {
 		var partIVs [][]byte
 
 		for i := 0; i < len(testData); i += partSize {
-			end := i + partSize
-			if end > len(testData) {
-				end = len(testData)
-			}
+			end := min(i+partSize, len(testData))
 
 			partData := testData[i:end]
 
@@ -110,10 +107,7 @@ func TestSSECMultipartUpload(t *testing.T) {
 				var partIVs [][]byte
 
 				for i := 0; i < len(testData); i += partSize {
-					end := i + partSize
-					if end > len(testData) {
-						end = len(testData)
-					}
+					end := min(i+partSize, len(testData))
 
 					partData := testData[i:end]
 
@@ -200,10 +194,7 @@ func TestSSEKMSMultipartUpload(t *testing.T) {
 		var sseKeys []*SSEKMSKey
 
 		for i := 0; i < len(testData); i += partSize {
-			end := i + partSize
-			if end > len(testData) {
-				end = len(testData)
-			}
+			end := min(i+partSize, len(testData))
 
 			partData := testData[i:end]
 
@@ -250,10 +241,7 @@ func TestSSEKMSMultipartUpload(t *testing.T) {
 		var sseKeys []*SSEKMSKey
 
 		for i := 0; i < len(testData); i += partSize {
-			end := i + partSize
-			if end > len(testData) {
-				end = len(testData)
-			}
+			end := min(i+partSize, len(testData))
 
 			partData := testData[i:end]
 
@@ -273,7 +261,7 @@ func TestSSEKMSMultipartUpload(t *testing.T) {
 		}
 
 		// Verify each part has different encrypted data keys (they should be unique)
-		for i := 0; i < len(sseKeys); i++ {
+		for i := range sseKeys {
 			for j := i + 1; j < len(sseKeys); j++ {
 				if bytes.Equal(sseKeys[i].EncryptedDataKey, sseKeys[j].EncryptedDataKey) {
 					t.Errorf("Parts %d and %d have identical encrypted data keys (should be unique)", i, j)
@@ -439,7 +427,7 @@ func TestMultipartSSEPerformance(t *testing.T) {
 		partSize := 64 * 1024 // 64KB parts
 		numParts := 10
 
-		for partNum := 0; partNum < numParts; partNum++ {
+		for partNum := range numParts {
 			partData := make([]byte, partSize)
 			for i := range partData {
 				partData[i] = byte((partNum + i) % 256)
@@ -481,7 +469,7 @@ func TestMultipartSSEPerformance(t *testing.T) {
 		numParts := 5         // Fewer parts for KMS due to overhead
 		encryptionContext := BuildEncryptionContext("test-bucket", "test-object", false)
 
-		for partNum := 0; partNum < numParts; partNum++ {
+		for partNum := range numParts {
 			partData := make([]byte, partSize)
 			for i := range partData {
 				partData[i] = byte((partNum + i) % 256)

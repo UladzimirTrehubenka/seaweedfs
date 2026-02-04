@@ -16,5 +16,6 @@ func MemStat() *volume_server_pb.MemStatus {
 	mem.Stack = memStat.StackInuse
 
 	fillInMemStatus(mem)
+
 	return mem
 }

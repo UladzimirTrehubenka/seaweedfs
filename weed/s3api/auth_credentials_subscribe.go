@@ -14,22 +14,20 @@ import (
 )
 
 func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, lastTsNs int64, prefix string, directoriesToWatch []string) {
-
 	processEventFn := func(resp *filer_pb.SubscribeMetadataResponse) error {
-
-		message := resp.EventNotification
+		message := resp.GetEventNotification()
 
 		// For rename/move operations, NewParentPath contains the destination directory
-		dir := resp.Directory
-		if message.NewParentPath != "" {
-			dir = message.NewParentPath
+		dir := resp.GetDirectory()
+		if message.GetNewParentPath() != "" {
+			dir = message.GetNewParentPath()
 		}
 
 		// Handle all metadata changes (create, update, delete, rename)
 		// These handlers check for nil entries internally
-		_ = s3a.onBucketMetadataChange(dir, message.OldEntry, message.NewEntry)
-		_ = s3a.onIamConfigChange(dir, message.OldEntry, message.NewEntry)
-		_ = s3a.onCircuitBreakerConfigChange(dir, message.OldEntry, message.NewEntry)
+		_ = s3a.onBucketMetadataChange(dir, message.GetOldEntry(), message.GetNewEntry())
+		_ = s3a.onIamConfigChange(dir, message.GetOldEntry(), message.GetNewEntry())
+		_ = s3a.onCircuitBreakerConfigChange(dir, message.GetOldEntry(), message.GetNewEntry())
 
 		return nil
 	}
@@ -48,9 +46,11 @@ func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, lastTsNs int64, p
 	}
 	util.RetryUntil("followIamChanges", func() error {
 		metadataFollowOption.ClientEpoch++
+
 		return pb.WithFilerClientFollowMetadata(s3a, metadataFollowOption, processEventFn)
 	}, func(err error) bool {
 		glog.V(1).Infof("iam follow metadata changes: %v", err)
+
 		return true
 	})
 }
@@ -59,28 +59,32 @@ func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, lastTsNs int64, p
 func (s3a *S3ApiServer) onIamConfigChange(dir string, oldEntry *filer_pb.Entry, newEntry *filer_pb.Entry) error {
 	if s3a.iam != nil && s3a.iam.IsStaticConfig() {
 		glog.V(1).Infof("Skipping IAM config update for static configuration")
+
 		return nil
 	}
 
 	// 1. Handle traditional single identity.json file
 	if dir == filer.IamConfigDirectory {
 		// Handle deletion: reset to empty config
-		if newEntry == nil && oldEntry != nil && oldEntry.Name == filer.IamIdentityFile {
+		if newEntry == nil && oldEntry != nil && oldEntry.GetName() == filer.IamIdentityFile {
 			glog.V(1).Infof("IAM config file deleted, clearing identities")
 			if err := s3a.iam.LoadS3ApiConfigurationFromBytes([]byte{}); err != nil {
 				glog.Warningf("failed to clear IAM config on deletion: %v", err)
+
 				return err
 			}
+
 			return nil
 		}
 
 		// Handle create/update
-		if newEntry != nil && newEntry.Name == filer.IamIdentityFile {
-			if err := s3a.iam.LoadS3ApiConfigurationFromBytes(newEntry.Content); err != nil {
+		if newEntry != nil && newEntry.GetName() == filer.IamIdentityFile {
+			if err := s3a.iam.LoadS3ApiConfigurationFromBytes(newEntry.GetContent()); err != nil {
 				return err
 			}
-			glog.V(1).Infof("updated %s/%s", dir, newEntry.Name)
+			glog.V(1).Infof("updated %s/%s", dir, newEntry.GetName())
 		}
+
 		return nil
 	}
 
@@ -95,6 +99,7 @@ func (s3a *S3ApiServer) onIamConfigChange(dir string, oldEntry *filer_pb.Entry, 
 		glog.V(1).Infof("IAM change detected in %s, reloading configuration", dir)
 		if err := s3a.iam.LoadS3ApiConfigurationFromCredentialManager(); err != nil {
 			glog.Errorf("failed to reload IAM configuration after change in %s: %v", dir, err)
+
 			return err
 		}
 	}
@@ -109,22 +114,25 @@ func (s3a *S3ApiServer) onCircuitBreakerConfigChange(dir string, oldEntry *filer
 	}
 
 	// Handle deletion: reset to empty config
-	if newEntry == nil && oldEntry != nil && oldEntry.Name == s3_constants.CircuitBreakerConfigFile {
+	if newEntry == nil && oldEntry != nil && oldEntry.GetName() == s3_constants.CircuitBreakerConfigFile {
 		glog.V(1).Infof("Circuit breaker config file deleted, resetting to defaults")
 		if err := s3a.cb.LoadS3ApiConfigurationFromBytes([]byte{}); err != nil {
 			glog.Warningf("failed to reset circuit breaker config on deletion: %v", err)
+
 			return err
 		}
+
 		return nil
 	}
 
 	// Handle create/update
-	if newEntry != nil && newEntry.Name == s3_constants.CircuitBreakerConfigFile {
-		if err := s3a.cb.LoadS3ApiConfigurationFromBytes(newEntry.Content); err != nil {
+	if newEntry != nil && newEntry.GetName() == s3_constants.CircuitBreakerConfigFile {
+		if err := s3a.cb.LoadS3ApiConfigurationFromBytes(newEntry.GetContent()); err != nil {
 			return err
 		}
-		glog.V(1).Infof("updated %s/%s", dir, newEntry.Name)
+		glog.V(1).Infof("updated %s/%s", dir, newEntry.GetName())
 	}
+
 	return nil
 }
 
@@ -134,19 +142,20 @@ func (s3a *S3ApiServer) onBucketMetadataChange(dir string, oldEntry *filer_pb.En
 		if newEntry != nil {
 			// Update bucket registry (existing functionality)
 			s3a.bucketRegistry.LoadBucketMetadata(newEntry)
-			glog.V(1).Infof("updated bucketMetadata %s/%s", dir, newEntry.Name)
+			glog.V(1).Infof("updated bucketMetadata %s/%s", dir, newEntry.GetName())
 
 			// Update bucket configuration cache with new entry
 			s3a.updateBucketConfigCacheFromEntry(newEntry)
 		} else if oldEntry != nil {
 			// Remove from bucket registry (existing functionality)
 			s3a.bucketRegistry.RemoveBucketMetadata(oldEntry)
-			glog.V(1).Infof("remove bucketMetadata %s/%s", dir, oldEntry.Name)
+			glog.V(1).Infof("remove bucketMetadata %s/%s", dir, oldEntry.GetName())
 
 			// Remove from bucket configuration cache
-			s3a.invalidateBucketConfigCache(oldEntry.Name)
+			s3a.invalidateBucketConfigCache(oldEntry.GetName())
 		}
 	}
+
 	return nil
 }
 
@@ -156,10 +165,10 @@ func (s3a *S3ApiServer) updateBucketConfigCacheFromEntry(entry *filer_pb.Entry) 
 		return
 	}
 
-	bucket := entry.Name
+	bucket := entry.GetName()
 
 	glog.V(3).Infof("updateBucketConfigCacheFromEntry: called for bucket %s, ExtObjectLockEnabledKey=%s",
-		bucket, string(entry.Extended[s3_constants.ExtObjectLockEnabledKey]))
+		bucket, string(entry.GetExtended()[s3_constants.ExtObjectLockEnabledKey]))
 
 	// Create new bucket config from the entry
 	config := &BucketConfig{
@@ -170,13 +179,13 @@ func (s3a *S3ApiServer) updateBucketConfigCacheFromEntry(entry *filer_pb.Entry) 
 
 	// Extract configuration from extended attributes
 	if entry.Extended != nil {
-		if versioning, exists := entry.Extended[s3_constants.ExtVersioningKey]; exists {
+		if versioning, exists := entry.GetExtended()[s3_constants.ExtVersioningKey]; exists {
 			config.Versioning = string(versioning)
 		}
-		if ownership, exists := entry.Extended[s3_constants.ExtOwnershipKey]; exists {
+		if ownership, exists := entry.GetExtended()[s3_constants.ExtOwnershipKey]; exists {
 			config.Ownership = string(ownership)
 		}
-		if acl, exists := entry.Extended[s3_constants.ExtAmzAclKey]; exists {
+		if acl, exists := entry.GetExtended()[s3_constants.ExtAmzAclKey]; exists {
 			config.ACL = acl
 			// Parse ACL and cache public-read status
 			config.IsPublicRead = parseAndCachePublicReadStatus(acl)
@@ -184,7 +193,7 @@ func (s3a *S3ApiServer) updateBucketConfigCacheFromEntry(entry *filer_pb.Entry) 
 			// No ACL means private bucket
 			config.IsPublicRead = false
 		}
-		if owner, exists := entry.Extended[s3_constants.ExtAmzOwnerKey]; exists {
+		if owner, exists := entry.GetExtended()[s3_constants.ExtAmzOwnerKey]; exists {
 			config.Owner = string(owner)
 		}
 		// Parse Object Lock configuration if present

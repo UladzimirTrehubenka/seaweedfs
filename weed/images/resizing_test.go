@@ -20,5 +20,4 @@ func TestResizing(t *testing.T) {
 	util.WriteFile("resized1.png", buf.Bytes(), 0644)
 
 	os.Remove("resized1.png")
-
 }

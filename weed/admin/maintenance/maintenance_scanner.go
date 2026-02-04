@@ -58,15 +58,18 @@ func (ms *MaintenanceScanner) ScanForMaintenanceTasks() ([]*TaskDetectionResult,
 		results, err := ms.integration.ScanWithTaskDetectors(taskMetrics)
 		if err != nil {
 			glog.Errorf("Task scanning failed: %v", err)
+
 			return nil, err
 		}
 
 		glog.V(1).Infof("Maintenance scan completed: found %d tasks", len(results))
+
 		return results, nil
 	}
 
 	// No integration available
 	glog.Warningf("No integration available, no tasks will be scheduled")
+
 	return []*TaskDetectionResult{}, nil
 }
 
@@ -76,58 +79,58 @@ func (ms *MaintenanceScanner) getVolumeHealthMetrics() ([]*VolumeHealthMetrics, 
 
 	glog.V(1).Infof("Collecting volume health metrics from master")
 	err := ms.adminClient.WithMasterClient(func(client master_pb.SeaweedClient) error {
-
 		resp, err := client.VolumeList(context.Background(), &master_pb.VolumeListRequest{})
 		if err != nil {
 			return err
 		}
 
-		if resp.TopologyInfo == nil {
+		if resp.GetTopologyInfo() == nil {
 			glog.Warningf("No topology info received from master")
+
 			return nil
 		}
 
-		volumeSizeLimitBytes := uint64(resp.VolumeSizeLimitMb) * 1024 * 1024 // Convert MB to bytes
+		volumeSizeLimitBytes := uint64(resp.GetVolumeSizeLimitMb()) * 1024 * 1024 // Convert MB to bytes
 
 		// Track all nodes discovered in topology
 		var allNodesInTopology []string
 		var nodesWithVolumes []string
 		var nodesWithoutVolumes []string
 
-		for _, dc := range resp.TopologyInfo.DataCenterInfos {
-			glog.V(2).Infof("Processing datacenter: %s", dc.Id)
-			for _, rack := range dc.RackInfos {
-				glog.V(2).Infof("Processing rack: %s in datacenter: %s", rack.Id, dc.Id)
-				for _, node := range rack.DataNodeInfos {
-					allNodesInTopology = append(allNodesInTopology, node.Id)
-					glog.V(2).Infof("Found volume server in topology: %s (disks: %d)", node.Id, len(node.DiskInfos))
+		for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+			glog.V(2).Infof("Processing datacenter: %s", dc.GetId())
+			for _, rack := range dc.GetRackInfos() {
+				glog.V(2).Infof("Processing rack: %s in datacenter: %s", rack.GetId(), dc.GetId())
+				for _, node := range rack.GetDataNodeInfos() {
+					allNodesInTopology = append(allNodesInTopology, node.GetId())
+					glog.V(2).Infof("Found volume server in topology: %s (disks: %d)", node.GetId(), len(node.GetDiskInfos()))
 
 					hasVolumes := false
 					// Process each disk on this node
-					for diskType, diskInfo := range node.DiskInfos {
-						if len(diskInfo.VolumeInfos) > 0 {
+					for diskType, diskInfo := range node.GetDiskInfos() {
+						if len(diskInfo.GetVolumeInfos()) > 0 {
 							hasVolumes = true
-							glog.V(2).Infof("Volume server %s disk %s has %d volumes", node.Id, diskType, len(diskInfo.VolumeInfos))
+							glog.V(2).Infof("Volume server %s disk %s has %d volumes", node.GetId(), diskType, len(diskInfo.GetVolumeInfos()))
 						}
 
 						// Process volumes on this specific disk
-						for _, volInfo := range diskInfo.VolumeInfos {
+						for _, volInfo := range diskInfo.GetVolumeInfos() {
 							metric := &VolumeHealthMetrics{
-								VolumeID:         volInfo.Id,
-								Server:           node.Id,
-								ServerAddress:    node.Address,
-								DiskType:         diskType,       // Track which disk this volume is on
-								DiskId:           volInfo.DiskId, // Use disk ID from volume info
-								DataCenter:       dc.Id,          // Data center from current loop
-								Rack:             rack.Id,        // Rack from current loop
-								Collection:       volInfo.Collection,
-								Size:             volInfo.Size,
-								DeletedBytes:     volInfo.DeletedByteCount,
-								LastModified:     time.Unix(int64(volInfo.ModifiedAtSecond), 0),
-								IsReadOnly:       volInfo.ReadOnly,
+								VolumeID:         volInfo.GetId(),
+								Server:           node.GetId(),
+								ServerAddress:    node.GetAddress(),
+								DiskType:         diskType,            // Track which disk this volume is on
+								DiskId:           volInfo.GetDiskId(), // Use disk ID from volume info
+								DataCenter:       dc.GetId(),          // Data center from current loop
+								Rack:             rack.GetId(),        // Rack from current loop
+								Collection:       volInfo.GetCollection(),
+								Size:             volInfo.GetSize(),
+								DeletedBytes:     volInfo.GetDeletedByteCount(),
+								LastModified:     time.Unix(int64(volInfo.GetModifiedAtSecond()), 0),
+								IsReadOnly:       volInfo.GetReadOnly(),
 								IsECVolume:       false, // Will be determined from volume structure
 								ReplicaCount:     1,     // Will be counted
-								ExpectedReplicas: int(volInfo.ReplicaPlacement),
+								ExpectedReplicas: int(volInfo.GetReplicaPlacement()),
 							}
 
 							// Calculate derived metrics
@@ -146,10 +149,10 @@ func (ms *MaintenanceScanner) getVolumeHealthMetrics() ([]*VolumeHealthMetrics, 
 					}
 
 					if hasVolumes {
-						nodesWithVolumes = append(nodesWithVolumes, node.Id)
+						nodesWithVolumes = append(nodesWithVolumes, node.GetId())
 					} else {
-						nodesWithoutVolumes = append(nodesWithoutVolumes, node.Id)
-						glog.V(1).Infof("Volume server %s found in topology but has no volumes", node.Id)
+						nodesWithoutVolumes = append(nodesWithoutVolumes, node.GetId())
+						glog.V(1).Infof("Volume server %s found in topology but has no volumes", node.GetId())
 					}
 				}
 			}
@@ -161,13 +164,14 @@ func (ms *MaintenanceScanner) getVolumeHealthMetrics() ([]*VolumeHealthMetrics, 
 		glog.Infof("  - Volume servers without volumes: %d (%v)", len(nodesWithoutVolumes), nodesWithoutVolumes)
 
 		// Store topology info for volume shard tracker
-		ms.lastTopologyInfo = resp.TopologyInfo
+		ms.lastTopologyInfo = resp.GetTopologyInfo()
 
 		return nil
 	})
 
 	if err != nil {
 		glog.Errorf("Failed to get volume health metrics: %v", err)
+
 		return nil, err
 	}
 
@@ -229,5 +233,6 @@ func (ms *MaintenanceScanner) convertToTaskMetrics(metrics []*VolumeHealthMetric
 	}
 
 	glog.V(2).Infof("Converted %d volume metrics with disk ID information for task detection", len(simplified))
+
 	return simplified
 }

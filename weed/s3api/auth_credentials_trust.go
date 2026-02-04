@@ -2,7 +2,7 @@ package s3api
 
 import (
 	"context"
-	"fmt"
+	"errors"
 )
 
 // ValidateTrustPolicyForPrincipal validates if a principal is allowed to assume a role
@@ -11,5 +11,6 @@ func (iam *IdentityAccessManagement) ValidateTrustPolicyForPrincipal(ctx context
 	if iam.iamIntegration != nil {
 		return iam.iamIntegration.ValidateTrustPolicyForPrincipal(ctx, roleArn, principalArn)
 	}
-	return fmt.Errorf("IAM integration not available")
+
+	return errors.New("IAM integration not available")
 }

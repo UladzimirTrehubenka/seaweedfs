@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -80,6 +83,7 @@ func (iam *IdentityAccessManagement) ValidatePresignedURLWithIAM(r *http.Request
 	iamIdentity, errCode := iam.iamIntegration.AuthenticateJWT(ctx, authReq)
 	if errCode != s3err.ErrNone {
 		glog.V(3).Infof("JWT authentication failed for presigned URL: %v", errCode)
+
 		return errCode
 	}
 
@@ -88,23 +92,25 @@ func (iam *IdentityAccessManagement) ValidatePresignedURLWithIAM(r *http.Request
 	if errCode != s3err.ErrNone {
 		glog.V(3).Infof("IAM authorization failed for presigned URL: principal=%s action=%s bucket=%s object=%s",
 			iamIdentity.Principal, action, bucket, object)
+
 		return errCode
 	}
 
 	glog.V(3).Infof("IAM authorization succeeded for presigned URL: principal=%s action=%s bucket=%s object=%s",
 		iamIdentity.Principal, action, bucket, object)
+
 	return s3err.ErrNone
 }
 
 // GeneratePresignedURLWithIAM generates a presigned URL with IAM policy validation
 func (pm *S3PresignedURLManager) GeneratePresignedURLWithIAM(ctx context.Context, req *PresignedURLRequest, baseURL string) (*PresignedURLResponse, error) {
 	if pm.s3iam == nil || !pm.s3iam.enabled {
-		return nil, fmt.Errorf("IAM integration not enabled")
+		return nil, errors.New("IAM integration not enabled")
 	}
 
 	// Validate session token and get identity
 	// Use a proper ARN format for the principal
-	principalArn := fmt.Sprintf("arn:aws:sts::assumed-role/PresignedUser/presigned-session")
+	principalArn := "arn:aws:sts::assumed-role/PresignedUser/presigned-session"
 	iamIdentity := &IAMIdentity{
 		SessionToken: req.SessionToken,
 		Principal:    principalArn,
@@ -146,9 +152,7 @@ func (pm *S3PresignedURLManager) generatePresignedURL(req *PresignedURLRequest, 
 
 	// Create query parameters for AWS signature v4
 	queryParams := make(map[string]string)
-	for k, v := range req.QueryParams {
-		queryParams[k] = v
-	}
+	maps.Copy(queryParams, req.QueryParams)
 
 	// Add AWS signature v4 parameters
 	queryParams["X-Amz-Algorithm"] = "AWS4-HMAC-SHA256"
@@ -176,9 +180,7 @@ func (pm *S3PresignedURLManager) generatePresignedURL(req *PresignedURLRequest, 
 
 	// Prepare response
 	headers := make(map[string]string)
-	for k, v := range req.Headers {
-		headers[k] = v
-	}
+	maps.Copy(headers, req.Headers)
 
 	return &PresignedURLResponse{
 		URL:            fullURL,
@@ -270,6 +272,7 @@ func generateMockSignature(method, path, query, sessionToken string) string {
 	// In production, use proper AWS signature v4 calculation
 	data := fmt.Sprintf("%s\n%s\n%s\n%s", method, path, query, sessionToken)
 	hash := sha256.Sum256([]byte(data))
+
 	return hex.EncodeToString(hash[:])[:16] // Truncate for readability
 }
 
@@ -282,26 +285,26 @@ func ValidatePresignedURLExpiration(r *http.Request) error {
 	expiresStr := query.Get("X-Amz-Expires")
 
 	if dateStr == "" || expiresStr == "" {
-		return fmt.Errorf("missing required presigned URL parameters")
+		return errors.New("missing required presigned URL parameters")
 	}
 
 	// Parse date (always in UTC)
 	signedDate, err := time.Parse("20060102T150405Z", dateStr)
 	if err != nil {
-		return fmt.Errorf("invalid X-Amz-Date format: %v", err)
+		return fmt.Errorf("invalid X-Amz-Date format: %w", err)
 	}
 
 	// Parse expires
 	expires, err := strconv.Atoi(expiresStr)
 	if err != nil {
-		return fmt.Errorf("invalid X-Amz-Expires format: %v", err)
+		return fmt.Errorf("invalid X-Amz-Expires format: %w", err)
 	}
 
 	// Check expiration - compare in UTC
 	expirationTime := signedDate.Add(time.Duration(expires) * time.Second)
 	now := time.Now().UTC()
 	if now.After(expirationTime) {
-		return fmt.Errorf("presigned URL has expired")
+		return errors.New("presigned URL has expired")
 	}
 
 	return nil
@@ -335,13 +338,7 @@ func (policy *PresignedURLSecurityPolicy) ValidatePresignedURLRequest(req *Presi
 	}
 
 	// Check HTTP method
-	methodAllowed := false
-	for _, allowedMethod := range policy.AllowedMethods {
-		if req.Method == allowedMethod {
-			methodAllowed = true
-			break
-		}
-	}
+	methodAllowed := slices.Contains(policy.AllowedMethods, req.Method)
 	if !methodAllowed {
 		return fmt.Errorf("HTTP method %s is not allowed", req.Method)
 	}

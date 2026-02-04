@@ -6,11 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -53,7 +54,7 @@ func (fds *FilerDiscoveryService) discoverFilersFromMaster(masterAddr pb.ServerA
 
 	conn, err := grpc.NewClient(grpcAddr, fds.grpcDialOption)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to master at %s: %v", grpcAddr, err)
+		return nil, fmt.Errorf("failed to connect to master at %s: %w", grpcAddr, err)
 	}
 	defer conn.Close()
 
@@ -66,13 +67,14 @@ func (fds *FilerDiscoveryService) discoverFilersFromMaster(masterAddr pb.ServerA
 	})
 	if err != nil {
 		glog.Errorf("FILER DISCOVERY: ListClusterNodes failed for master %s: %v", masterAddr, err)
-		return nil, fmt.Errorf("failed to list filers from master %s: %v", masterAddr, err)
+
+		return nil, fmt.Errorf("failed to list filers from master %s: %w", masterAddr, err)
 	}
 
 	var filers []pb.ServerAddress
-	for _, node := range resp.ClusterNodes {
+	for _, node := range resp.GetClusterNodes() {
 		// Return HTTP address (lock client will convert to gRPC when needed)
-		filers = append(filers, pb.ServerAddress(node.Address))
+		filers = append(filers, pb.ServerAddress(node.GetAddress()))
 	}
 
 	return filers, nil
@@ -91,6 +93,7 @@ func (fds *FilerDiscoveryService) refreshFilers() {
 		if err != nil {
 			discoveryErrors = append(discoveryErrors, err)
 			glog.V(1).Infof("Failed to discover filers from master %s: %v", masterAddr, err)
+
 			continue
 		}
 
@@ -131,6 +134,7 @@ func (fds *FilerDiscoveryService) GetFilers() []pb.ServerAddress {
 	// Return a copy to avoid concurrent modification
 	filers := make([]pb.ServerAddress, len(fds.filers))
 	copy(filers, fds.filers)
+
 	return filers
 }
 
@@ -171,6 +175,7 @@ func (fds *FilerDiscoveryService) Start() error {
 				}
 			case <-fds.stopChan:
 				glog.V(1).Info("Filer discovery service stopping")
+
 				return
 			}
 		}

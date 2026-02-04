@@ -3,8 +3,9 @@ package schema
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 func TestToParquetLevels(t *testing.T) {
@@ -96,7 +97,7 @@ func TestToParquetLevels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ToParquetLevels(tt.args.recordType)
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equalf(t, tt.want, got, "ToParquetLevels(%v)", tt.args.recordType)
 		})
 	}

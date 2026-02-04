@@ -2,6 +2,7 @@ package kms
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -22,20 +23,20 @@ type CiphertextEnvelope struct {
 	Version int `json:"version"`
 
 	// ProviderSpecific contains provider-specific metadata if needed
-	ProviderSpecific map[string]interface{} `json:"provider_specific,omitempty"`
+	ProviderSpecific map[string]any `json:"provider_specific,omitempty"`
 }
 
 // CreateEnvelope creates a ciphertext envelope for consistent KMS provider behavior
-func CreateEnvelope(provider, keyID, ciphertext string, providerSpecific map[string]interface{}) ([]byte, error) {
+func CreateEnvelope(provider, keyID, ciphertext string, providerSpecific map[string]any) ([]byte, error) {
 	// Validate required fields
 	if provider == "" {
-		return nil, fmt.Errorf("provider cannot be empty")
+		return nil, errors.New("provider cannot be empty")
 	}
 	if keyID == "" {
-		return nil, fmt.Errorf("keyID cannot be empty")
+		return nil, errors.New("keyID cannot be empty")
 	}
 	if ciphertext == "" {
-		return nil, fmt.Errorf("ciphertext cannot be empty")
+		return nil, errors.New("ciphertext cannot be empty")
 	}
 
 	envelope := CiphertextEnvelope{
@@ -52,7 +53,7 @@ func CreateEnvelope(provider, keyID, ciphertext string, providerSpecific map[str
 // ParseEnvelope parses a ciphertext envelope to extract key information
 func ParseEnvelope(ciphertextBlob []byte) (*CiphertextEnvelope, error) {
 	if len(ciphertextBlob) == 0 {
-		return nil, fmt.Errorf("ciphertext blob cannot be empty")
+		return nil, errors.New("ciphertext blob cannot be empty")
 	}
 
 	// Parse as envelope format
@@ -63,13 +64,13 @@ func ParseEnvelope(ciphertextBlob []byte) (*CiphertextEnvelope, error) {
 
 	// Validate required fields
 	if envelope.Provider == "" {
-		return nil, fmt.Errorf("envelope missing provider field")
+		return nil, errors.New("envelope missing provider field")
 	}
 	if envelope.KeyID == "" {
-		return nil, fmt.Errorf("envelope missing key_id field")
+		return nil, errors.New("envelope missing key_id field")
 	}
 	if envelope.Ciphertext == "" {
-		return nil, fmt.Errorf("envelope missing ciphertext field")
+		return nil, errors.New("envelope missing ciphertext field")
 	}
 	if envelope.Version == 0 {
 		envelope.Version = 1 // Default to version 1

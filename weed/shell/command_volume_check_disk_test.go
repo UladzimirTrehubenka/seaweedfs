@@ -257,13 +257,14 @@ func TestShouldSkipVolume(t *testing.T) {
 				// In unit tests, we expect no errors from shouldSkipVolume
 				// since we're using test data without actual network calls
 				t.Errorf("shouldSkipVolume() returned unexpected error: %v", err)
+
 				return
 			}
 			if result != tt.shouldSkipVolume {
 				t.Errorf("shouldSkipVolume() = %v, want %v\nFileCount A=%d B=%d, DeleteCount A=%d B=%d",
 					result, tt.shouldSkipVolume,
-					tt.a.info.FileCount, tt.b.info.FileCount,
-					tt.a.info.DeleteCount, tt.b.info.DeleteCount)
+					tt.a.info.GetFileCount(), tt.b.info.GetFileCount(),
+					tt.a.info.GetDeleteCount(), tt.b.info.GetDeleteCount())
 			}
 		})
 	}

@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -63,18 +64,15 @@ var cmdWebDav = &Command{
 }
 
 func runWebDav(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 
 	listenAddress := fmt.Sprintf("%s:%d", *webDavStandaloneOptions.ipBind, *webDavStandaloneOptions.port)
 	glog.V(0).Infof("Starting Seaweed WebDav Server %s at %s", version.Version(), listenAddress)
 
 	return webDavStandaloneOptions.startWebDav()
-
 }
 
 func (wo *WebDavOption) startWebDav() bool {
-
 	// detect current user
 	uid, gid := uint32(0), uint32(0)
 	if u, err := user.Current(); err == nil {
@@ -97,9 +95,10 @@ func (wo *WebDavOption) startWebDav() bool {
 		err := pb.WithGrpcFilerClient(false, 0, filerAddress, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 			if err != nil {
-				return fmt.Errorf("get filer %s configuration: %v", filerAddress, err)
+				return fmt.Errorf("get filer %s configuration: %w", filerAddress, err)
 			}
-			cipher = resp.Cipher
+			cipher = resp.GetCipher()
+
 			return nil
 		})
 		if err != nil {
@@ -107,6 +106,7 @@ func (wo *WebDavOption) startWebDav() bool {
 			time.Sleep(time.Second)
 		} else {
 			glog.V(0).Infof("connected to filer %s grpc address %s", *wo.filer, filerAddress.ToGrpcAddress())
+
 			break
 		}
 	}
@@ -146,16 +146,15 @@ func (wo *WebDavOption) startWebDav() bool {
 
 	if *wo.tlsPrivateKey != "" {
 		glog.V(0).Infof("Start Seaweed WebDav Server %s at https %s", version.Version(), listenAddress)
-		if err = httpS.ServeTLS(webDavListener, *wo.tlsCertificate, *wo.tlsPrivateKey); err != nil && err != http.ErrServerClosed {
+		if err = httpS.ServeTLS(webDavListener, *wo.tlsCertificate, *wo.tlsPrivateKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			glog.Fatalf("WebDav Server Fail to serve: %v", err)
 		}
 	} else {
 		glog.V(0).Infof("Start Seaweed WebDav Server %s at http %s", version.Version(), listenAddress)
-		if err = httpS.Serve(webDavListener); err != nil && err != http.ErrServerClosed {
+		if err = httpS.Serve(webDavListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			glog.Fatalf("WebDav Server Fail to serve: %v", err)
 		}
 	}
 
 	return true
-
 }

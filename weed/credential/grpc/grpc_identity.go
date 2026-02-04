@@ -13,9 +13,11 @@ func (store *IamGrpcStore) LoadConfiguration(ctx context.Context) (*iam_pb.S3Api
 		if err != nil {
 			return err
 		}
-		config = resp.Configuration
+		config = resp.GetConfiguration()
+
 		return nil
 	})
+
 	return config, err
 }
 
@@ -24,6 +26,7 @@ func (store *IamGrpcStore) SaveConfiguration(ctx context.Context, config *iam_pb
 		_, err := client.PutConfiguration(ctx, &iam_pb.PutConfigurationRequest{
 			Configuration: config,
 		})
+
 		return err
 	})
 }
@@ -33,6 +36,7 @@ func (store *IamGrpcStore) CreateUser(ctx context.Context, identity *iam_pb.Iden
 		_, err := client.CreateUser(ctx, &iam_pb.CreateUserRequest{
 			Identity: identity,
 		})
+
 		return err
 	})
 }
@@ -46,9 +50,11 @@ func (store *IamGrpcStore) GetUser(ctx context.Context, username string) (*iam_p
 		if err != nil {
 			return err
 		}
-		identity = resp.Identity
+		identity = resp.GetIdentity()
+
 		return nil
 	})
+
 	return identity, err
 }
 
@@ -58,6 +64,7 @@ func (store *IamGrpcStore) UpdateUser(ctx context.Context, username string, iden
 			Username: username,
 			Identity: identity,
 		})
+
 		return err
 	})
 }
@@ -67,6 +74,7 @@ func (store *IamGrpcStore) DeleteUser(ctx context.Context, username string) erro
 		_, err := client.DeleteUser(ctx, &iam_pb.DeleteUserRequest{
 			Username: username,
 		})
+
 		return err
 	})
 }
@@ -78,9 +86,11 @@ func (store *IamGrpcStore) ListUsers(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		usernames = resp.Usernames
+		usernames = resp.GetUsernames()
+
 		return nil
 	})
+
 	return usernames, err
 }
 
@@ -93,9 +103,11 @@ func (store *IamGrpcStore) GetUserByAccessKey(ctx context.Context, accessKey str
 		if err != nil {
 			return err
 		}
-		identity = resp.Identity
+		identity = resp.GetIdentity()
+
 		return nil
 	})
+
 	return identity, err
 }
 
@@ -105,6 +117,7 @@ func (store *IamGrpcStore) CreateAccessKey(ctx context.Context, username string,
 			Username:   username,
 			Credential: credential,
 		})
+
 		return err
 	})
 }
@@ -115,6 +128,7 @@ func (store *IamGrpcStore) DeleteAccessKey(ctx context.Context, username string,
 			Username:  username,
 			AccessKey: accessKey,
 		})
+
 		return err
 	})
 }

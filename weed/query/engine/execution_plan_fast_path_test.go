@@ -3,8 +3,9 @@ package engine
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestExecutionPlanFastPathDisplay tests that the execution plan correctly shows
@@ -69,11 +70,11 @@ func TestExecutionPlanFastPathDisplay(t *testing.T) {
 			"Data sources should NOT contain 'parquet_files' when fast path is used")
 
 		// Test that the formatting works correctly
-		formattedSource := engine.SQLEngine.formatDataSource("parquet_stats")
+		formattedSource := engine.formatDataSource("parquet_stats")
 		assert.Equal(t, "Parquet Statistics (fast path)", formattedSource,
 			"parquet_stats should format to 'Parquet Statistics (fast path)'")
 
-		formattedFullScan := engine.SQLEngine.formatDataSource("parquet_files")
+		formattedFullScan := engine.formatDataSource("parquet_files")
 		assert.Equal(t, "Parquet Files (full scan)", formattedFullScan,
 			"parquet_files should format to 'Parquet Files (full scan)'")
 	})
@@ -102,12 +103,12 @@ func TestExecutionPlanFastPathDisplay(t *testing.T) {
 		// Test just the data source formatting which is the key fix
 
 		// Test parquet_stats formatting (fast path)
-		fastPathFormatted := engine.SQLEngine.formatDataSource("parquet_stats")
+		fastPathFormatted := engine.formatDataSource("parquet_stats")
 		assert.Equal(t, "Parquet Statistics (fast path)", fastPathFormatted,
 			"parquet_stats should format to show fast path usage")
 
 		// Test parquet_files formatting (slow path)
-		slowPathFormatted := engine.SQLEngine.formatDataSource("parquet_files")
+		slowPathFormatted := engine.formatDataSource("parquet_files")
 		assert.Equal(t, "Parquet Files (full scan)", slowPathFormatted,
 			"parquet_files should format to show full scan")
 

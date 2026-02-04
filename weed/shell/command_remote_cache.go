@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -57,7 +58,6 @@ func (c *commandRemoteCache) HasTag(CommandTag) bool {
 }
 
 func (c *commandRemoteCache) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	remoteCacheCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 
 	dir := remoteCacheCommand.String("dir", "", "a directory in filer")
@@ -72,12 +72,13 @@ func (c *commandRemoteCache) Do(args []string, commandEnv *CommandEnv, writer io
 	}
 
 	if *dir == "" {
-		return fmt.Errorf("need to specify -dir option")
+		return errors.New("need to specify -dir option")
 	}
 
 	mappings, localMountedDir, remoteStorageMountedLocation, remoteStorageConf, detectErr := detectMountInfo(commandEnv, writer, *dir)
 	if detectErr != nil {
 		jsonPrintln(writer, mappings)
+
 		return detectErr
 	}
 
@@ -86,7 +87,6 @@ func (c *commandRemoteCache) Do(args []string, commandEnv *CommandEnv, writer io
 }
 
 func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer io.Writer, localMountedDir util.FullPath, remoteMountedLocation *remote_pb.RemoteStorageLocation, dirToSync util.FullPath, remoteConf *remote_pb.RemoteConf, shouldCache bool, deleteLocalExtra bool, concurrency int, dryRun bool, fileFilter *FileFilter) error {
-
 	// visit remote storage
 	remoteStorage, err := remote_storage.GetRemoteStorage(remoteConf)
 	if err != nil {
@@ -101,6 +101,7 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 		localDir := filer.MapRemoteStorageLocationPathToFullPath(localMountedDir, remoteMountedLocation, remoteDir)
 		fullPath := string(localDir.Child(name))
 		remoteFiles[fullPath] = remoteEntry
+
 		return nil
 	})
 	if err != nil {
@@ -113,10 +114,11 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 	localFiles := make(map[string]*filer_pb.Entry)
 	if deleteLocalExtra {
 		err = recursivelyTraverseDirectory(commandEnv, dirToSync, func(dir util.FullPath, entry *filer_pb.Entry) bool {
-			if entry.RemoteEntry != nil { // only consider files that are part of remote mount
-				fullPath := string(dir.Child(entry.Name))
+			if entry.GetRemoteEntry() != nil { // only consider files that are part of remote mount
+				fullPath := string(dir.Child(entry.GetName()))
 				localFiles[fullPath] = entry
 			}
+
 			return true
 		})
 		if err != nil {
@@ -147,9 +149,9 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 			// When deleteLocalExtra is enabled, we have localFiles to compare with
 			if localEntry, exists := localFiles[remotePath]; exists {
 				// File exists locally, check if it needs updating
-				if localEntry.RemoteEntry == nil ||
-					localEntry.RemoteEntry.RemoteETag != remoteEntry.RemoteETag ||
-					localEntry.RemoteEntry.RemoteMtime < remoteEntry.RemoteMtime {
+				if localEntry.GetRemoteEntry() == nil ||
+					localEntry.GetRemoteEntry().GetRemoteETag() != remoteEntry.GetRemoteETag() ||
+					localEntry.GetRemoteEntry().GetRemoteMtime() < remoteEntry.GetRemoteMtime() {
 					filesToUpdate = append(filesToUpdate, remotePath)
 				}
 				// Check if it needs caching
@@ -175,11 +177,12 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 						Name:      name,
 					})
 					if lookupErr == nil {
-						localEntry := lookupResp.Entry
+						localEntry := lookupResp.GetEntry()
 						if shouldCacheToLocal(localEntry) && fileFilter.matches(localEntry) {
 							filesToCache = append(filesToCache, remotePath)
 						}
 					}
+
 					return nil // Don't propagate lookup errors here
 				})
 				if err != nil {
@@ -204,6 +207,7 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 		for _, path := range filesToCache {
 			fmt.Fprintf(writer, "CACHE: %s\n", path)
 		}
+
 		return nil
 	}
 
@@ -227,6 +231,7 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 				})
 				if err != nil {
 					fmt.Fprintf(writer, "failed: %v\n", err)
+
 					return err
 				}
 				fmt.Fprintf(writer, "done\n")
@@ -246,13 +251,14 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 				Name:      name,
 			})
 
-			if lookupErr != nil && lookupErr != filer_pb.ErrNotFound {
+			if lookupErr != nil && !errors.Is(lookupErr, filer_pb.ErrNotFound) {
 				fmt.Fprintf(writer, "failed to lookup: %v\n", lookupErr)
+
 				continue
 			}
 
-			isDirectory := remoteEntry.RemoteSize == 0 && remoteEntry.RemoteMtime == 0
-			if lookupErr == filer_pb.ErrNotFound {
+			isDirectory := remoteEntry.GetRemoteSize() == 0 && remoteEntry.GetRemoteMtime() == 0
+			if errors.Is(lookupErr, filer_pb.ErrNotFound) {
 				// Create new entry
 				_, createErr := client.CreateEntry(ctx, &filer_pb.CreateEntryRequest{
 					Directory: string(localDir),
@@ -260,8 +266,8 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 						Name:        name,
 						IsDirectory: isDirectory,
 						Attributes: &filer_pb.FuseAttributes{
-							FileSize: uint64(remoteEntry.RemoteSize),
-							Mtime:    remoteEntry.RemoteMtime,
+							FileSize: uint64(remoteEntry.GetRemoteSize()),
+							Mtime:    remoteEntry.GetRemoteMtime(),
 							FileMode: uint32(0644),
 						},
 						RemoteEntry: remoteEntry,
@@ -269,20 +275,22 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 				})
 				if createErr != nil {
 					fmt.Fprintf(writer, "failed to create: %v\n", createErr)
+
 					continue
 				}
 			} else {
 				// Update existing entry
-				existingEntry := lookupResp.Entry
-				if existingEntry.RemoteEntry == nil {
+				existingEntry := lookupResp.GetEntry()
+				if existingEntry.GetRemoteEntry() == nil {
 					// This is a local file, skip to avoid overwriting
 					fmt.Fprintf(writer, "skipped (local file)\n")
+
 					continue
 				}
 
 				existingEntry.RemoteEntry = remoteEntry
-				existingEntry.Attributes.FileSize = uint64(remoteEntry.RemoteSize)
-				existingEntry.Attributes.Mtime = remoteEntry.RemoteMtime
+				existingEntry.Attributes.FileSize = uint64(remoteEntry.GetRemoteSize())
+				existingEntry.Attributes.Mtime = remoteEntry.GetRemoteMtime()
 				existingEntry.Attributes.Md5 = nil
 				existingEntry.Chunks = nil
 				existingEntry.Content = nil
@@ -293,6 +301,7 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 				})
 				if updateErr != nil {
 					fmt.Fprintf(writer, "failed to update: %v\n", updateErr)
+
 					continue
 				}
 			}
@@ -319,6 +328,7 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 						localEntry = localFiles[pathToCacheCopy]
 						if localEntry == nil {
 							fmt.Fprintf(writer, "Warning: skipping cache for %s (local entry not found)\n", pathToCacheCopy)
+
 							return
 						}
 					} else {
@@ -330,12 +340,14 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 								Name:      name,
 							})
 							if err == nil {
-								localEntry = lookupResp.Entry
+								localEntry = lookupResp.GetEntry()
 							}
+
 							return err
 						})
 						if lookupErr != nil {
 							fmt.Fprintf(writer, "Warning: failed to lookup local entry for caching %s: %v\n", pathToCacheCopy, lookupErr)
+
 							return
 						}
 					}
@@ -350,6 +362,7 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 						if executionErr == nil {
 							executionErr = err
 						}
+
 						return
 					}
 					fmt.Fprintf(writer, "done\n")
@@ -367,13 +380,12 @@ func (c *commandRemoteCache) doComprehensiveSync(commandEnv *CommandEnv, writer 
 }
 
 func recursivelyTraverseDirectory(filerClient filer_pb.FilerClient, dirPath util.FullPath, visitEntry func(dir util.FullPath, entry *filer_pb.Entry) bool) (err error) {
-
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, dirPath, "", func(entry *filer_pb.Entry, isLast bool) error {
-		if entry.IsDirectory {
+		if entry.GetIsDirectory() {
 			if !visitEntry(dirPath, entry) {
 				return nil
 			}
-			subDir := dirPath.Child(entry.Name)
+			subDir := dirPath.Child(entry.GetName())
 			if err := recursivelyTraverseDirectory(filerClient, subDir, visitEntry); err != nil {
 				return err
 			}
@@ -382,33 +394,37 @@ func recursivelyTraverseDirectory(filerClient filer_pb.FilerClient, dirPath util
 				return nil
 			}
 		}
+
 		return nil
 	})
+
 	return
 }
 
 func shouldCacheToLocal(entry *filer_pb.Entry) bool {
-	if entry.IsDirectory {
+	if entry.GetIsDirectory() {
 		return false
 	}
-	if entry.RemoteEntry == nil {
+	if entry.GetRemoteEntry() == nil {
 		return false
 	}
-	if entry.RemoteEntry.LastLocalSyncTsNs == 0 && entry.RemoteEntry.RemoteSize > 0 {
+	if entry.GetRemoteEntry().GetLastLocalSyncTsNs() == 0 && entry.GetRemoteEntry().GetRemoteSize() > 0 {
 		return true
 	}
+
 	return false
 }
 
 func mayHaveCachedToLocal(entry *filer_pb.Entry) bool {
-	if entry.IsDirectory {
+	if entry.GetIsDirectory() {
 		return false
 	}
-	if entry.RemoteEntry == nil {
+	if entry.GetRemoteEntry() == nil {
 		return false // should not uncache an entry that is not in remote
 	}
-	if entry.RemoteEntry.LastLocalSyncTsNs > 0 {
+	if entry.GetRemoteEntry().GetLastLocalSyncTsNs() > 0 {
 		return true
 	}
+
 	return false
 }

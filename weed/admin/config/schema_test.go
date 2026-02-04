@@ -23,6 +23,7 @@ func (c *TestBaseConfigForSchema) Validate() error {
 
 type TestTaskConfigForSchema struct {
 	TestBaseConfigForSchema
+
 	TaskSpecificField    float64 `json:"task_specific_field"`
 	AnotherSpecificField string  `json:"another_specific_field"`
 }
@@ -162,7 +163,7 @@ func TestApplyDefaults_NonPointer(t *testing.T) {
 
 func TestApplyDefaults_NonStruct(t *testing.T) {
 	schema := createTestSchema()
-	var config interface{} = "not a struct"
+	var config any = "not a struct"
 	err := schema.ApplyDefaultsToProtobuf(config)
 	if err == nil {
 		t.Fatal("Expected error for non-struct config, but got nil")
@@ -219,8 +220,7 @@ func BenchmarkApplyDefaults(b *testing.B) {
 	schema := createTestSchema()
 	config := &TestTaskConfigForSchema{}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = schema.ApplyDefaultsToConfig(config)
 	}
 }

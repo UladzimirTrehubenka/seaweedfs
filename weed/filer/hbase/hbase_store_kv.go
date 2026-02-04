@@ -4,8 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/tsuna/gohbase/hrpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 )
 
 const (
@@ -28,11 +29,12 @@ func (store *HbaseStore) doPut(ctx context.Context, cf string, key, value []byte
 	if ttlSecond > 0 {
 		return store.doPutWithOptions(ctx, cf, key, value, hrpc.Durability(hrpc.AsyncWal), hrpc.TTL(time.Duration(ttlSecond)*time.Second))
 	}
+
 	return store.doPutWithOptions(ctx, cf, key, value, hrpc.Durability(hrpc.AsyncWal))
 }
 
 func (store *HbaseStore) doPutWithOptions(ctx context.Context, cf string, key, value []byte, options ...func(hrpc.Call) error) (err error) {
-	values := map[string]map[string][]byte{cf: map[string][]byte{}}
+	values := map[string]map[string][]byte{cf: {}}
 	values[cf][COLUMN_NAME] = value
 	putRequest, err := hrpc.NewPut(ctx, store.table, key, values, options...)
 	if err != nil {
@@ -42,6 +44,7 @@ func (store *HbaseStore) doPutWithOptions(ctx context.Context, cf string, key, v
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -63,7 +66,7 @@ func (store *HbaseStore) doGet(ctx context.Context, cf string, key []byte) (valu
 }
 
 func (store *HbaseStore) doDelete(ctx context.Context, cf string, key []byte) (err error) {
-	values := map[string]map[string][]byte{cf: map[string][]byte{}}
+	values := map[string]map[string][]byte{cf: {}}
 	values[cf][COLUMN_NAME] = nil
 	deleteRequest, err := hrpc.NewDel(ctx, store.table, key, values, hrpc.Durability(hrpc.AsyncWal))
 	if err != nil {
@@ -73,5 +76,6 @@ func (store *HbaseStore) doDelete(ctx context.Context, cf string, key []byte) (e
 	if err != nil {
 		return err
 	}
+
 	return nil
 }

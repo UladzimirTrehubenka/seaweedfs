@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	parquet "github.com/parquet-go/parquet-go"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -24,10 +25,11 @@ func toParquetFieldType(fieldType *schema_pb.Type) (dataType parquet.Node, err e
 }
 
 func toParquetFieldTypeList(listType *schema_pb.ListType) (parquet.Node, error) {
-	elementType, err := toParquetFieldType(listType.ElementType)
+	elementType, err := toParquetFieldType(listType.GetElementType())
 	if err != nil {
 		return nil, err
 	}
+
 	return parquet.Repeated(elementType), nil
 }
 
@@ -69,19 +71,20 @@ func toParquetFieldTypeScalar(scalarType schema_pb.ScalarType) (parquet.Node, er
 }
 func toParquetFieldTypeRecord(recordType *schema_pb.RecordType) (parquet.Node, error) {
 	recordNode := parquet.Group{}
-	for _, field := range recordType.Fields {
-		parquetFieldType, err := toParquetFieldTypeWithRequirement(field.Type, field.IsRequired)
+	for _, field := range recordType.GetFields() {
+		parquetFieldType, err := toParquetFieldTypeWithRequirement(field.GetType(), field.GetIsRequired())
 		if err != nil {
 			return nil, err
 		}
-		recordNode[field.Name] = parquetFieldType
+		recordNode[field.GetName()] = parquetFieldType
 	}
+
 	return recordNode, nil
 }
 
 // toParquetFieldTypeWithRequirement creates parquet field type respecting required/optional constraints
 func toParquetFieldTypeWithRequirement(fieldType *schema_pb.Type, isRequired bool) (dataType parquet.Node, err error) {
-	switch fieldType.Kind.(type) {
+	switch fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		dataType, err = toParquetFieldTypeScalar(fieldType.GetScalarType())
 		if err != nil {
@@ -112,6 +115,6 @@ func toParquetFieldTypeWithRequirement(fieldType *schema_pb.Type, isRequired boo
 		// Lists are typically optional by nature
 		return dataType, nil
 	default:
-		return nil, fmt.Errorf("unknown field type: %T", fieldType.Kind)
+		return nil, fmt.Errorf("unknown field type: %T", fieldType.GetKind())
 	}
 }

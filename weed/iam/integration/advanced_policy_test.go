@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
-	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
+	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 )
 
 // TestPolicyVariableSubstitution tests dynamic policy variables like ${oidc:sub} in Resource fields
@@ -24,7 +25,7 @@ func TestPolicyVariableSubstitution(t *testing.T) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -72,7 +73,7 @@ func TestPolicyVariableSubstitution(t *testing.T) {
 		Principal: "arn:aws:sts::assumed-role/DynamicUserRole/alice-session",
 		Action:    "s3:GetObject",
 		Resource:  "arn:aws:s3:::mybucket/alice/file.txt",
-		RequestContext: map[string]interface{}{
+		RequestContext: map[string]any{
 			"oidc:sub": "alice",
 		},
 	}
@@ -101,11 +102,11 @@ func TestConditionWithNumericComparison(t *testing.T) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"NumericLessThanEquals": {
 							"sts:DurationSeconds": 3600, // Max 1 hour
 						},
@@ -178,7 +179,7 @@ func TestMultipleConditionOperators(t *testing.T) {
 				Resource: []string{
 					"arn:aws:s3:::secure-bucket/*",
 				},
-				Condition: map[string]map[string]interface{}{
+				Condition: map[string]map[string]any{
 					"StringEquals": {
 						"oidc:aud": "my-app-id",
 					},
@@ -225,7 +226,7 @@ func TestMultipleConditionOperators(t *testing.T) {
 				Principal: "arn:aws:sts::assumed-role/TestRole/session",
 				Action:    "s3:GetObject",
 				Resource:  "arn:aws:s3:::secure-bucket/file.txt",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"oidc:aud": tt.aud,
 					"oidc:sub": tt.sub,
 				},

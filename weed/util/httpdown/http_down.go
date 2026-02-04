@@ -6,6 +6,7 @@ package httpdown
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -108,6 +109,7 @@ func (h HTTP) Serve(s *http.Server, l net.Listener) Server {
 	s.ConnState = ss.connState
 	go ss.manage()
 	go ss.serve()
+
 	return ss
 }
 
@@ -127,11 +129,13 @@ func (h HTTP) ListenAndServe(s *http.Server) (Server, error) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		stats.BumpSum(h.Stats, "listen.error", 1)
+
 		return nil, err
 	}
 	if s.TLSConfig != nil {
 		l = tls.NewListener(l, s.TLSConfig)
 	}
+
 	return h.Serve(s, l), nil
 }
 
@@ -250,12 +254,14 @@ func (s *server) manage() {
 			// connection and we're done.
 			if stopDone != nil && len(conns) == 0 {
 				close(stopDone)
+
 				return
 			}
 		case stopDone = <-s.stop:
 			// if we're already all empty, we're already done
 			if len(conns) == 0 {
 				close(stopDone)
+
 				return
 			}
 
@@ -282,7 +288,6 @@ func (s *server) manage() {
 			// continue the loop and we wait for all the ConnState updates and will
 			// return from this goroutine when we're all done. otherwise we'll try to
 			// send those ConnState updates on closed channels.
-
 		}
 	}
 }
@@ -302,6 +307,7 @@ func (s *server) Wait() error {
 	if err := <-s.serveErr; !isUseOfClosedError(err) {
 		return err
 	}
+
 	return nil
 }
 
@@ -344,6 +350,7 @@ func (s *server) Stop() error {
 			s.stopErr = closeErr
 		}
 	})
+
 	return s.stopErr
 }
 
@@ -351,9 +358,11 @@ func isUseOfClosedError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if opErr, ok := err.(*net.OpError); ok {
+	opErr := &net.OpError{}
+	if errors.As(err, &opErr) {
 		err = opErr.Err
 	}
+
 	return err.Error() == "use of closed network connection"
 }
 
@@ -391,5 +400,6 @@ func ListenAndServe(s *http.Server, hd *HTTP) error {
 			return err
 		}
 	}
+
 	return nil
 }

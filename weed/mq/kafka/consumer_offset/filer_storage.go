@@ -3,6 +3,7 @@ package consumer_offset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -156,6 +157,7 @@ func (f *FilerStorage) DeleteGroup(group string) error {
 	}
 
 	groupPath := f.getGroupPath(group)
+
 	return f.deleteDirectory(groupPath)
 }
 
@@ -171,6 +173,7 @@ func (f *FilerStorage) ListGroups() ([]string, error) {
 // Close releases resources
 func (f *FilerStorage) Close() error {
 	f.closed = true
+
 	return nil
 }
 
@@ -189,11 +192,11 @@ func (f *FilerStorage) getPartitionPath(group, topic string, partition int32) st
 }
 
 func (f *FilerStorage) getOffsetPath(group, topic string, partition int32) string {
-	return fmt.Sprintf("%s/offset", f.getPartitionPath(group, topic, partition))
+	return f.getPartitionPath(group, topic, partition) + "/offset"
 }
 
 func (f *FilerStorage) getMetadataPath(group, topic string, partition int32) string {
-	return fmt.Sprintf("%s/metadata", f.getPartitionPath(group, topic, partition))
+	return f.getPartitionPath(group, topic, partition) + "/metadata"
 }
 
 func (f *FilerStorage) writeFile(path string, data []byte) error {
@@ -242,24 +245,26 @@ func (f *FilerStorage) readFile(path string) ([]byte, error) {
 			return err
 		}
 
-		entry := resp.Entry
-		if entry.IsDirectory {
-			return fmt.Errorf("path is a directory")
+		entry := resp.GetEntry()
+		if entry.GetIsDirectory() {
+			return errors.New("path is a directory")
 		}
 
 		// Read inline content if available
-		if len(entry.Content) > 0 {
-			data = entry.Content
+		if len(entry.GetContent()) > 0 {
+			data = entry.GetContent()
+
 			return nil
 		}
 
 		// If no chunks, file is empty
-		if len(entry.Chunks) == 0 {
+		if len(entry.GetChunks()) == 0 {
 			data = []byte{}
+
 			return nil
 		}
 
-		return fmt.Errorf("chunked files not supported for offset storage")
+		return errors.New("chunked files not supported for offset storage")
 	})
 
 	return data, err
@@ -278,15 +283,15 @@ func (f *FilerStorage) listDirectory(path string) ([]string, error) {
 
 		for {
 			resp, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
 				return err
 			}
 
-			if resp.Entry.IsDirectory {
-				entries = append(entries, resp.Entry.Name)
+			if resp.GetEntry().GetIsDirectory() {
+				entries = append(entries, resp.GetEntry().GetName())
 			}
 		}
 
@@ -308,6 +313,7 @@ func (f *FilerStorage) deleteDirectory(path string) error {
 			IsRecursive:          true,
 			IgnoreRecursiveError: true,
 		})
+
 		return err
 	})
 }
@@ -322,5 +328,6 @@ func normalizePath(path string) string {
 			normalized = append(normalized, part)
 		}
 	}
+
 	return "/" + strings.Join(normalized, "/")
 }

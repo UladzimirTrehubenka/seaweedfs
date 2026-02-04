@@ -3,6 +3,7 @@ package weed_server
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -23,7 +24,6 @@ import (
 )
 
 func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *http.Request, contentLength int64, so *operation.StorageOption) {
-
 	// autoChunking can be set at the command-line level or as a query param. Query param overrides command-line
 	query := r.URL.Query()
 
@@ -100,7 +100,8 @@ func (fs *FilerServer) doPostAutoChunk(ctx context.Context, w http.ResponseWrite
 		buf.ReadFrom(part1)
 		filerResult, replyerr = fs.saveMetaData(ctx, r, fileName, contentType, so, nil, nil, 0, buf.Bytes())
 		bufPool.Put(buf)
-		return
+
+		return filerResult, md5bytes, replyerr
 	}
 
 	fileChunks, md5Hash, chunkOffset, err, smallContent := fs.uploadRequestToChunks(ctx, w, r, part1, chunkSize, fileName, contentType, contentLength, so)
@@ -110,8 +111,9 @@ func (fs *FilerServer) doPostAutoChunk(ctx context.Context, w http.ResponseWrite
 
 	md5bytes = md5Hash.Sum(nil)
 	headerMd5 := r.Header.Get("Content-Md5")
-	if headerMd5 != "" && !(util.Base64Encode(md5bytes) == headerMd5 || fmt.Sprintf("%x", md5bytes) == headerMd5) {
+	if headerMd5 != "" && (util.Base64Encode(md5bytes) != headerMd5 && hex.EncodeToString(md5bytes) != headerMd5) {
 		fs.filer.DeleteUncommittedChunks(ctx, fileChunks)
+
 		return nil, nil, errors.New(constants.ErrMsgBadDigest)
 	}
 	filerResult, replyerr = fs.saveMetaData(ctx, r, fileName, contentType, so, md5bytes, fileChunks, chunkOffset, smallContent)
@@ -119,11 +121,10 @@ func (fs *FilerServer) doPostAutoChunk(ctx context.Context, w http.ResponseWrite
 		fs.filer.DeleteUncommittedChunks(ctx, fileChunks)
 	}
 
-	return
+	return filerResult, md5bytes, replyerr
 }
 
 func (fs *FilerServer) doPutAutoChunk(ctx context.Context, w http.ResponseWriter, r *http.Request, chunkSize int32, contentLength int64, so *operation.StorageOption) (filerResult *FilerPostResult, md5bytes []byte, replyerr error) {
-
 	fileName := path.Base(r.URL.Path)
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "application/octet-stream" {
@@ -142,8 +143,9 @@ func (fs *FilerServer) doPutAutoChunk(ctx context.Context, w http.ResponseWriter
 
 	md5bytes = md5Hash.Sum(nil)
 	headerMd5 := r.Header.Get("Content-Md5")
-	if headerMd5 != "" && !(util.Base64Encode(md5bytes) == headerMd5 || fmt.Sprintf("%x", md5bytes) == headerMd5) {
+	if headerMd5 != "" && (util.Base64Encode(md5bytes) != headerMd5 && hex.EncodeToString(md5bytes) != headerMd5) {
 		fs.filer.DeleteUncommittedChunks(ctx, fileChunks)
+
 		return nil, nil, errors.New(constants.ErrMsgBadDigest)
 	}
 	filerResult, replyerr = fs.saveMetaData(ctx, r, fileName, contentType, so, md5bytes, fileChunks, chunkOffset, smallContent)
@@ -177,7 +179,7 @@ func (fs *FilerServer) checkPermissions(ctx context.Context, r *http.Request, fi
 
 func (fs *FilerServer) wormEnforcedForEntry(ctx context.Context, fullPath string) (bool, error) {
 	rule := fs.filer.FilerConf.MatchStorageRule(fullPath)
-	if !rule.Worm {
+	if !rule.GetWorm() {
 		return false, nil
 	}
 
@@ -196,14 +198,14 @@ func (fs *FilerServer) wormEnforcedForEntry(ctx context.Context, fullPath string
 	}
 
 	// worm will never expire
-	if rule.WormRetentionTimeSeconds == 0 {
+	if rule.GetWormRetentionTimeSeconds() == 0 {
 		return true, nil
 	}
 
 	enforcedAt := time.Unix(0, entry.WORMEnforcedAtTsNs)
 
 	// worm is expired
-	if time.Now().Sub(enforcedAt).Seconds() >= float64(rule.WormRetentionTimeSeconds) {
+	if time.Since(enforcedAt).Seconds() >= float64(rule.GetWormRetentionTimeSeconds()) {
 		return false, nil
 	}
 
@@ -231,7 +233,6 @@ func (fs *FilerServer) fixFilePath(ctx context.Context, r *http.Request, fileNam
 }
 
 func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileName string, contentType string, so *operation.StorageOption, md5bytes []byte, fileChunks []*filer_pb.FileChunk, chunkOffset int64, content []byte) (filerResult *FilerPostResult, replyerr error) {
-
 	// detect file mode
 	modeStr := r.URL.Query().Get("mode")
 	if modeStr == "" {
@@ -251,11 +252,11 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 	var mergedChunks []*filer_pb.FileChunk
 
 	isAppend := isAppend(r)
-	isOffsetWrite := len(fileChunks) > 0 && fileChunks[0].Offset > 0
+	isOffsetWrite := len(fileChunks) > 0 && fileChunks[0].GetOffset() > 0
 	// when it is an append
 	if isAppend || isOffsetWrite {
 		existingEntry, findErr := fs.filer.FindEntry(ctx, util.FullPath(path))
-		if findErr != nil && findErr != filer_pb.ErrNotFound {
+		if findErr != nil && !errors.Is(findErr, filer_pb.ErrNotFound) {
 			glog.V(0).InfofCtx(ctx, "failing to find %s: %v", path, findErr)
 		}
 		entry = existingEntry
@@ -274,10 +275,10 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 
 		// TODO
 		if len(entry.Content) > 0 {
-			replyerr = fmt.Errorf("append to small file is not supported yet")
-			return
-		}
+			replyerr = errors.New("append to small file is not supported yet")
 
+			return filerResult, replyerr
+		}
 	} else {
 		glog.V(4).InfolnCtx(ctx, "saving", path)
 		newChunks = fileChunks
@@ -309,7 +310,8 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 	mergedChunks, replyerr = filer.MaybeManifestize(fs.saveAsChunk(ctx, so), mergedChunks)
 	if replyerr != nil {
 		glog.V(0).InfofCtx(ctx, "manifestize %s: %v", r.RequestURI, replyerr)
-		return
+
+		return filerResult, replyerr
 	}
 	entry.Chunks = mergedChunks
 	if isOffsetWrite {
@@ -345,11 +347,11 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 		filerResult.Error = dbErr.Error()
 		glog.V(0).InfofCtx(ctx, "failing to write %s to filer server : %v", path, dbErr)
 	}
+
 	return filerResult, replyerr
 }
 
 func (fs *FilerServer) saveAsChunk(ctx context.Context, so *operation.StorageOption) filer.SaveDataAsChunkFunctionType {
-
 	return func(reader io.Reader, name string, offset int64, tsNs int64) (*filer_pb.FileChunk, error) {
 		var fileId string
 		var uploadResult *operation.UploadResult
@@ -385,6 +387,7 @@ func (fs *FilerServer) saveAsChunk(ctx context.Context, so *operation.StorageOpt
 			if uploadErr != nil {
 				return uploadErr
 			}
+
 			return nil
 		})
 		if err != nil {
@@ -396,7 +399,6 @@ func (fs *FilerServer) saveAsChunk(ctx context.Context, so *operation.StorageOpt
 }
 
 func (fs *FilerServer) mkdir(ctx context.Context, w http.ResponseWriter, r *http.Request, so *operation.StorageOption) (filerResult *FilerPostResult, replyerr error) {
-
 	// detect file mode
 	modeStr := r.URL.Query().Get("mode")
 	if modeStr == "" {
@@ -417,7 +419,8 @@ func (fs *FilerServer) mkdir(ctx context.Context, w http.ResponseWriter, r *http
 	existingEntry, err := fs.filer.FindEntry(ctx, util.FullPath(path))
 	if err == nil && existingEntry != nil {
 		replyerr = fmt.Errorf("dir %s already exists", path)
-		return
+
+		return filerResult, replyerr
 	}
 
 	glog.V(4).InfolnCtx(ctx, "mkdir", path)
@@ -442,5 +445,6 @@ func (fs *FilerServer) mkdir(ctx context.Context, w http.ResponseWriter, r *http
 		filerResult.Error = dbErr.Error()
 		glog.V(0).InfofCtx(ctx, "failing to create dir %s on filer server : %v", path, dbErr)
 	}
+
 	return filerResult, replyerr
 }

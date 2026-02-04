@@ -29,7 +29,7 @@ func TestMaintenanceManager_ErrorHandling(t *testing.T) {
 		t.Errorf("Expected error count to be 1, got %d", manager.errorCount)
 	}
 
-	if manager.lastError != err {
+	if !errors.Is(manager.lastError, err) {
 		t.Errorf("Expected last error to be set")
 	}
 
@@ -46,7 +46,7 @@ func TestMaintenanceManager_ErrorHandling(t *testing.T) {
 	}
 
 	// Test backoff cap
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		manager.handleScanError(err)
 	}
 
@@ -110,7 +110,7 @@ func TestMaintenanceManager_GetErrorState(t *testing.T) {
 	manager.handleScanError(err)
 
 	errorCount, lastError, backoffDelay = manager.GetErrorState()
-	if errorCount != 2 || lastError != err || backoffDelay != 2*time.Second {
+	if errorCount != 2 || !errors.Is(lastError, err) || backoffDelay != 2*time.Second {
 		t.Errorf("Expected error state to be tracked correctly: count=%d, err=%v, delay=%v",
 			errorCount, lastError, backoffDelay)
 	}
@@ -125,7 +125,7 @@ func TestMaintenanceManager_LogThrottling(t *testing.T) {
 	err := errors.New("test error")
 
 	// Generate many errors to test throttling
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		manager.handleScanError(err)
 	}
 

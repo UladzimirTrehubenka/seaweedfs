@@ -85,8 +85,8 @@ func TestReadTsValidBuffer(t *testing.T) {
 		t.Errorf("Expected size=%d, got %d", len(data), size)
 	}
 
-	if ts != logEntry.TsNs {
-		t.Errorf("Expected ts=%d, got %d", logEntry.TsNs, ts)
+	if ts != logEntry.GetTsNs() {
+		t.Errorf("Expected ts=%d, got %d", logEntry.GetTsNs(), ts)
 	}
 
 	t.Logf("✓ readTs correctly parsed valid buffer: size=%d, ts=%d", size, ts)

@@ -18,6 +18,7 @@ func (n *Needle) readNeedleTail(needleBody []byte, version Version) error {
 			// with seaweed version using crc.Value() instead of uint32(crc), which appears in commit 056c480eb
 			// and switch appeared in version 3.09.
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorCRC).Inc()
+
 			return fmt.Errorf("invalid CRC for needle %v (got %08x, want %08x), data on disk corrupted", n.Id, dataChecksum, expectedChecksum)
 		}
 		n.Checksum = dataChecksum
@@ -30,6 +31,7 @@ func (n *Needle) readNeedleTail(needleBody []byte, version Version) error {
 		tsOffset := NeedleChecksumSize
 		n.AppendAtNs = util.BytesToUint64(needleBody[tsOffset : tsOffset+TimestampSize])
 	}
+
 	return nil
 }
 
@@ -38,6 +40,7 @@ func PaddingLength(needleSize Size, version Version) Size {
 		// this is same value as version2, but just listed here for clarity
 		return NeedlePaddingSize - ((NeedleHeaderSize + needleSize + NeedleChecksumSize + TimestampSize) % NeedlePaddingSize)
 	}
+
 	return NeedlePaddingSize - ((NeedleHeaderSize + needleSize + NeedleChecksumSize) % NeedlePaddingSize)
 }
 
@@ -45,5 +48,6 @@ func NeedleBodyLength(needleSize Size, version Version) int64 {
 	if version == Version3 {
 		return int64(needleSize) + NeedleChecksumSize + TimestampSize + int64(PaddingLength(needleSize, version))
 	}
+
 	return int64(needleSize) + NeedleChecksumSize + int64(PaddingLength(needleSize, version))
 }

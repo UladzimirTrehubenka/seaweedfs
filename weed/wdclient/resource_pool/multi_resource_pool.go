@@ -31,7 +31,6 @@ type multiResourcePool struct {
 func NewMultiResourcePool(
 	options Options,
 	createPool func(Options) ResourcePool) ResourcePool {
-
 	if createPool == nil {
 		createPool = NewSimpleResourcePool
 	}
@@ -55,6 +54,7 @@ func (p *multiResourcePool) NumActive() int32 {
 	for _, pool := range p.locationPools {
 		total += pool.NumActive()
 	}
+
 	return total
 }
 
@@ -71,6 +71,7 @@ func (p *multiResourcePool) ActiveHighWaterMark() int32 {
 			high = val
 		}
 	}
+
 	return high
 }
 
@@ -84,6 +85,7 @@ func (p *multiResourcePool) NumIdle() int {
 	for _, pool := range p.locationPools {
 		total += pool.NumIdle()
 	}
+
 	return total
 }
 
@@ -112,6 +114,7 @@ func (p *multiResourcePool) Register(resourceLocation string) error {
 	}
 
 	p.locationPools[resourceLocation] = pool
+
 	return nil
 }
 
@@ -125,6 +128,7 @@ func (p *multiResourcePool) Unregister(resourceLocation string) error {
 		pool.EnterLameDuckMode()
 		delete(p.locationPools, resourceLocation)
 	}
+
 	return nil
 }
 
@@ -133,7 +137,7 @@ func (p *multiResourcePool) ListRegistered() []string {
 	defer p.rwMutex.RUnlock()
 
 	result := make([]string, 0, len(p.locationPools))
-	for key, _ := range p.locationPools {
+	for key := range p.locationPools {
 		result = append(result, key)
 	}
 
@@ -143,13 +147,13 @@ func (p *multiResourcePool) ListRegistered() []string {
 // See ResourcePool for documentation.
 func (p *multiResourcePool) Get(
 	resourceLocation string) (ManagedHandle, error) {
-
 	pool := p.getPool(resourceLocation)
 	if pool == nil {
 		return nil, fmt.Errorf(
 			"%s is not registered in the resource pool",
 			resourceLocation)
 	}
+
 	return pool.Get(resourceLocation)
 }
 
@@ -196,5 +200,6 @@ func (p *multiResourcePool) getPool(resourceLocation string) ResourcePool {
 	if pool, inMap := p.locationPools[resourceLocation]; inMap {
 		return pool
 	}
+
 	return nil
 }

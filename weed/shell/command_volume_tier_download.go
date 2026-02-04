@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -51,7 +52,6 @@ func (c *commandVolumeTierDownload) HasTag(CommandTag) bool {
 }
 
 func (c *commandVolumeTierDownload) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	tierCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	volumeId := tierCommand.Int("volumeId", 0, "the volume id")
 	collection := tierCommand.String("collection", "", "the collection name")
@@ -60,7 +60,7 @@ func (c *commandVolumeTierDownload) Do(args []string, commandEnv *CommandEnv, wr
 	}
 
 	if err = commandEnv.confirmIsLocked(args); err != nil {
-		return
+		return err
 	}
 
 	vid := needle.VolumeId(*volumeId)
@@ -96,15 +96,15 @@ func collectRemoteVolumes(topoInfo *master_pb.TopologyInfo, collectionPattern st
 	// compile regex pattern for collection matching
 	collectionRegex, err := compileCollectionPattern(collectionPattern)
 	if err != nil {
-		return nil, fmt.Errorf("invalid collection pattern '%s': %v", collectionPattern, err)
+		return nil, fmt.Errorf("invalid collection pattern '%s': %w", collectionPattern, err)
 	}
 
 	vidMap := make(map[uint32]bool)
 	eachDataNode(topoInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
-		for _, diskInfo := range dn.DiskInfos {
-			for _, v := range diskInfo.VolumeInfos {
-				if collectionRegex.MatchString(v.Collection) && v.RemoteStorageKey != "" && v.RemoteStorageName != "" {
-					vidMap[v.Id] = true
+		for _, diskInfo := range dn.GetDiskInfos() {
+			for _, v := range diskInfo.GetVolumeInfos() {
+				if collectionRegex.MatchString(v.GetCollection()) && v.GetRemoteStorageKey() != "" && v.GetRemoteStorageName() != "" {
+					vidMap[v.GetId()] = true
 				}
 			}
 		}
@@ -129,7 +129,7 @@ func doVolumeTierDownload(commandEnv *CommandEnv, writer io.Writer, collection s
 		// copy the .dat file from remote tier to local
 		err = downloadDatFromRemoteTier(commandEnv.option.GrpcDialOption, writer, needle.VolumeId(vid), collection, loc.ServerAddress())
 		if err != nil {
-			return fmt.Errorf("download dat file for volume %d to %s: %v", vid, loc.Url, err)
+			return fmt.Errorf("download dat file for volume %d to %s: %w", vid, loc.Url, err)
 		}
 	}
 
@@ -137,7 +137,6 @@ func doVolumeTierDownload(commandEnv *CommandEnv, writer io.Writer, collection s
 }
 
 func downloadDatFromRemoteTier(grpcDialOption grpc.DialOption, writer io.Writer, volumeId needle.VolumeId, collection string, targetVolumeServer pb.ServerAddress) error {
-
 	err := operation.WithVolumeServerClient(true, targetVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		stream, downloadErr := volumeServerClient.VolumeTierMoveDatFromRemote(context.Background(), &volume_server_pb.VolumeTierMoveDatFromRemoteRequest{
 			VolumeId:   uint32(volumeId),
@@ -148,18 +147,18 @@ func downloadDatFromRemoteTier(grpcDialOption grpc.DialOption, writer io.Writer,
 		for {
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break
 				} else {
 					return recvErr
 				}
 			}
 
-			processingSpeed := float64(resp.Processed-lastProcessed) / 1024.0 / 1024.0
+			processingSpeed := float64(resp.GetProcessed()-lastProcessed) / 1024.0 / 1024.0
 
-			fmt.Fprintf(writer, "downloaded %.2f%%, %d bytes, %.2fMB/s\n", resp.ProcessedPercentage, resp.Processed, processingSpeed)
+			fmt.Fprintf(writer, "downloaded %.2f%%, %d bytes, %.2fMB/s\n", resp.GetProcessedPercentage(), resp.GetProcessed(), processingSpeed)
 
-			lastProcessed = resp.Processed
+			lastProcessed = resp.GetProcessed()
 		}
 		if downloadErr != nil {
 			return downloadErr
@@ -183,5 +182,4 @@ func downloadDatFromRemoteTier(grpcDialOption grpc.DialOption, writer io.Writer,
 	})
 
 	return err
-
 }

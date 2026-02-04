@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/linkedin/goavro/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -54,6 +55,7 @@ func TestNewAvroDecoder(t *testing.T) {
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("NewAvroDecoder() error = %v, expectErr %v", err, tt.expectErr)
+
 				return
 			}
 
@@ -82,10 +84,10 @@ func TestAvroDecoder_Decode(t *testing.T) {
 
 	// Create test data
 	codec, _ := goavro.NewCodec(schema)
-	testRecord := map[string]interface{}{
+	testRecord := map[string]any{
 		"id":   int32(123),
 		"name": "John Doe",
-		"email": map[string]interface{}{
+		"email": map[string]any{
 			"string": "john@example.com", // Avro union format
 		},
 	}
@@ -112,7 +114,7 @@ func TestAvroDecoder_Decode(t *testing.T) {
 	}
 
 	// For union types, Avro returns a map with the type name as key
-	if emailMap, ok := result["email"].(map[string]interface{}); ok {
+	if emailMap, ok := result["email"].(map[string]any); ok {
 		if emailMap["string"] != "john@example.com" {
 			t.Errorf("Expected email='john@example.com', got %v", emailMap["string"])
 		}
@@ -138,7 +140,7 @@ func TestAvroDecoder_DecodeToRecordValue(t *testing.T) {
 
 	// Create and encode test data
 	codec, _ := goavro.NewCodec(schema)
-	testRecord := map[string]interface{}{
+	testRecord := map[string]any{
 		"id":   int32(456),
 		"name": "Jane Smith",
 	}
@@ -159,7 +161,7 @@ func TestAvroDecoder_DecodeToRecordValue(t *testing.T) {
 		t.Fatal("Expected non-nil fields")
 	}
 
-	idValue := recordValue.Fields["id"]
+	idValue := recordValue.GetFields()["id"]
 	if idValue == nil {
 		t.Fatal("Expected id field")
 	}
@@ -168,7 +170,7 @@ func TestAvroDecoder_DecodeToRecordValue(t *testing.T) {
 		t.Errorf("Expected id=456, got %v", idValue.GetInt32Value())
 	}
 
-	nameValue := recordValue.Fields["name"]
+	nameValue := recordValue.GetFields()["name"]
 	if nameValue == nil {
 		t.Fatal("Expected name field")
 	}
@@ -179,7 +181,7 @@ func TestAvroDecoder_DecodeToRecordValue(t *testing.T) {
 }
 
 func TestMapToRecordValue(t *testing.T) {
-	testMap := map[string]interface{}{
+	testMap := map[string]any{
 		"bool_field":   true,
 		"int32_field":  int32(123),
 		"int64_field":  int64(456),
@@ -188,8 +190,8 @@ func TestMapToRecordValue(t *testing.T) {
 		"string_field": "hello",
 		"bytes_field":  []byte("world"),
 		"null_field":   nil,
-		"array_field":  []interface{}{"a", "b", "c"},
-		"nested_field": map[string]interface{}{
+		"array_field":  []any{"a", "b", "c"},
+		"nested_field": map[string]any{
 			"inner": "value",
 		},
 	}
@@ -197,52 +199,52 @@ func TestMapToRecordValue(t *testing.T) {
 	recordValue := MapToRecordValue(testMap)
 
 	// Test each field type
-	if !recordValue.Fields["bool_field"].GetBoolValue() {
+	if !recordValue.GetFields()["bool_field"].GetBoolValue() {
 		t.Error("Expected bool_field=true")
 	}
 
-	if recordValue.Fields["int32_field"].GetInt32Value() != 123 {
+	if recordValue.GetFields()["int32_field"].GetInt32Value() != 123 {
 		t.Error("Expected int32_field=123")
 	}
 
-	if recordValue.Fields["int64_field"].GetInt64Value() != 456 {
+	if recordValue.GetFields()["int64_field"].GetInt64Value() != 456 {
 		t.Error("Expected int64_field=456")
 	}
 
-	if recordValue.Fields["float_field"].GetFloatValue() != 1.23 {
+	if recordValue.GetFields()["float_field"].GetFloatValue() != 1.23 {
 		t.Error("Expected float_field=1.23")
 	}
 
-	if recordValue.Fields["double_field"].GetDoubleValue() != 4.56 {
+	if recordValue.GetFields()["double_field"].GetDoubleValue() != 4.56 {
 		t.Error("Expected double_field=4.56")
 	}
 
-	if recordValue.Fields["string_field"].GetStringValue() != "hello" {
+	if recordValue.GetFields()["string_field"].GetStringValue() != "hello" {
 		t.Error("Expected string_field='hello'")
 	}
 
-	if string(recordValue.Fields["bytes_field"].GetBytesValue()) != "world" {
+	if string(recordValue.GetFields()["bytes_field"].GetBytesValue()) != "world" {
 		t.Error("Expected bytes_field='world'")
 	}
 
 	// Test null value (converted to empty string)
-	if recordValue.Fields["null_field"].GetStringValue() != "" {
+	if recordValue.GetFields()["null_field"].GetStringValue() != "" {
 		t.Error("Expected null_field to be empty string")
 	}
 
 	// Test array
-	arrayValue := recordValue.Fields["array_field"].GetListValue()
-	if arrayValue == nil || len(arrayValue.Values) != 3 {
+	arrayValue := recordValue.GetFields()["array_field"].GetListValue()
+	if arrayValue == nil || len(arrayValue.GetValues()) != 3 {
 		t.Error("Expected array with 3 elements")
 	}
 
 	// Test nested record
-	nestedValue := recordValue.Fields["nested_field"].GetRecordValue()
+	nestedValue := recordValue.GetFields()["nested_field"].GetRecordValue()
 	if nestedValue == nil {
 		t.Fatal("Expected nested record")
 	}
 
-	if nestedValue.Fields["inner"].GetStringValue() != "value" {
+	if nestedValue.GetFields()["inner"].GetStringValue() != "value" {
 		t.Error("Expected nested inner='value'")
 	}
 }
@@ -250,7 +252,7 @@ func TestMapToRecordValue(t *testing.T) {
 func TestGoValueToSchemaValue(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected func(*schema_pb.Value) bool
 	}{
 		{
@@ -315,51 +317,51 @@ func TestGoValueToSchemaValue(t *testing.T) {
 }
 
 func TestInferRecordTypeFromMap(t *testing.T) {
-	testMap := map[string]interface{}{
+	testMap := map[string]any{
 		"id":       int64(123),
 		"name":     "test",
 		"active":   true,
 		"score":    float64(95.5),
-		"tags":     []interface{}{"tag1", "tag2"},
-		"metadata": map[string]interface{}{"key": "value"},
+		"tags":     []any{"tag1", "tag2"},
+		"metadata": map[string]any{"key": "value"},
 	}
 
 	recordType := InferRecordTypeFromMap(testMap)
 
-	if len(recordType.Fields) != 6 {
-		t.Errorf("Expected 6 fields, got %d", len(recordType.Fields))
+	if len(recordType.GetFields()) != 6 {
+		t.Errorf("Expected 6 fields, got %d", len(recordType.GetFields()))
 	}
 
 	// Create a map for easier field lookup
 	fieldMap := make(map[string]*schema_pb.Field)
-	for _, field := range recordType.Fields {
-		fieldMap[field.Name] = field
+	for _, field := range recordType.GetFields() {
+		fieldMap[field.GetName()] = field
 	}
 
 	// Test field types
-	if fieldMap["id"].Type.GetScalarType() != schema_pb.ScalarType_INT64 {
+	if fieldMap["id"].GetType().GetScalarType() != schema_pb.ScalarType_INT64 {
 		t.Error("Expected id field to be INT64")
 	}
 
-	if fieldMap["name"].Type.GetScalarType() != schema_pb.ScalarType_STRING {
+	if fieldMap["name"].GetType().GetScalarType() != schema_pb.ScalarType_STRING {
 		t.Error("Expected name field to be STRING")
 	}
 
-	if fieldMap["active"].Type.GetScalarType() != schema_pb.ScalarType_BOOL {
+	if fieldMap["active"].GetType().GetScalarType() != schema_pb.ScalarType_BOOL {
 		t.Error("Expected active field to be BOOL")
 	}
 
-	if fieldMap["score"].Type.GetScalarType() != schema_pb.ScalarType_DOUBLE {
+	if fieldMap["score"].GetType().GetScalarType() != schema_pb.ScalarType_DOUBLE {
 		t.Error("Expected score field to be DOUBLE")
 	}
 
 	// Test array field
-	if fieldMap["tags"].Type.GetListType() == nil {
+	if fieldMap["tags"].GetType().GetListType() == nil {
 		t.Error("Expected tags field to be LIST")
 	}
 
 	// Test nested record field
-	if fieldMap["metadata"].Type.GetRecordType() == nil {
+	if fieldMap["metadata"].GetType().GetRecordType() == nil {
 		t.Error("Expected metadata field to be RECORD")
 	}
 }
@@ -367,7 +369,7 @@ func TestInferRecordTypeFromMap(t *testing.T) {
 func TestInferTypeFromValue(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected schema_pb.ScalarType
 	}{
 		{"nil", nil, schema_pb.ScalarType_STRING}, // Default for nil
@@ -440,23 +442,23 @@ func TestAvroDecoder_Integration(t *testing.T) {
 
 	// Create complex test data
 	codec, _ := goavro.NewCodec(schema)
-	testOrder := map[string]interface{}{
+	testOrder := map[string]any{
 		"id":          "order-123",
 		"customer_id": int32(456),
 		"total":       float64(99.99),
-		"items": []interface{}{
-			map[string]interface{}{
+		"items": []any{
+			map[string]any{
 				"product_id": "prod-1",
 				"quantity":   int32(2),
 				"price":      float64(29.99),
 			},
-			map[string]interface{}{
+			map[string]any{
 				"product_id": "prod-2",
 				"quantity":   int32(1),
 				"price":      float64(39.99),
 			},
 		},
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"source":    "web",
 			"timestamp": int64(1234567890),
 		},
@@ -475,27 +477,27 @@ func TestAvroDecoder_Integration(t *testing.T) {
 	}
 
 	// Verify complex structure
-	if recordValue.Fields["id"].GetStringValue() != "order-123" {
+	if recordValue.GetFields()["id"].GetStringValue() != "order-123" {
 		t.Error("Expected order ID to be preserved")
 	}
 
-	if recordValue.Fields["customer_id"].GetInt32Value() != 456 {
+	if recordValue.GetFields()["customer_id"].GetInt32Value() != 456 {
 		t.Error("Expected customer ID to be preserved")
 	}
 
 	// Check array handling
-	itemsArray := recordValue.Fields["items"].GetListValue()
-	if itemsArray == nil || len(itemsArray.Values) != 2 {
+	itemsArray := recordValue.GetFields()["items"].GetListValue()
+	if itemsArray == nil || len(itemsArray.GetValues()) != 2 {
 		t.Fatal("Expected items array with 2 elements")
 	}
 
 	// Check nested record handling
-	metadataRecord := recordValue.Fields["metadata"].GetRecordValue()
+	metadataRecord := recordValue.GetFields()["metadata"].GetRecordValue()
 	if metadataRecord == nil {
 		t.Fatal("Expected metadata record")
 	}
 
-	if metadataRecord.Fields["source"].GetStringValue() != "web" {
+	if metadataRecord.GetFields()["source"].GetStringValue() != "web" {
 		t.Error("Expected metadata source to be preserved")
 	}
 }
@@ -514,29 +516,27 @@ func BenchmarkAvroDecoder_Decode(b *testing.B) {
 	decoder, _ := NewAvroDecoder(schema)
 	codec, _ := goavro.NewCodec(schema)
 
-	testRecord := map[string]interface{}{
+	testRecord := map[string]any{
 		"id":   int32(123),
 		"name": "John Doe",
 	}
 
 	binary, _ := codec.BinaryFromNative(nil, testRecord)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = decoder.Decode(binary)
 	}
 }
 
 func BenchmarkMapToRecordValue(b *testing.B) {
-	testMap := map[string]interface{}{
+	testMap := map[string]any{
 		"id":     int64(123),
 		"name":   "test",
 		"active": true,
 		"score":  float64(95.5),
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = MapToRecordValue(testMap)
 	}
 }

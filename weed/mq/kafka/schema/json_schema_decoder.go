@@ -7,21 +7,22 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/xeipuuv/gojsonschema"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // JSONSchemaDecoder handles JSON Schema validation and conversion to SeaweedMQ format
 type JSONSchemaDecoder struct {
 	schema     *gojsonschema.Schema
-	schemaDoc  map[string]interface{} // Parsed schema document for type inference
-	schemaJSON string                 // Original schema JSON
+	schemaDoc  map[string]any // Parsed schema document for type inference
+	schemaJSON string         // Original schema JSON
 }
 
 // NewJSONSchemaDecoder creates a new JSON Schema decoder from a schema string
 func NewJSONSchemaDecoder(schemaJSON string) (*JSONSchemaDecoder, error) {
 	// Parse the schema JSON
-	var schemaDoc map[string]interface{}
+	var schemaDoc map[string]any
 	if err := json.Unmarshal([]byte(schemaJSON), &schemaDoc); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON schema: %w", err)
 	}
@@ -42,12 +43,12 @@ func NewJSONSchemaDecoder(schemaJSON string) (*JSONSchemaDecoder, error) {
 
 // Decode decodes and validates JSON data against the schema, returning a Go map
 // Uses json.Number to preserve integer precision (important for large int64 like timestamps)
-func (jsd *JSONSchemaDecoder) Decode(data []byte) (map[string]interface{}, error) {
+func (jsd *JSONSchemaDecoder) Decode(data []byte) (map[string]any, error) {
 	// Parse JSON data with Number support to preserve large integers
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 
-	var jsonData interface{}
+	var jsonData any
 	if err := decoder.Decode(&jsonData); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON data: %w", err)
 	}
@@ -65,19 +66,20 @@ func (jsd *JSONSchemaDecoder) Decode(data []byte) (map[string]interface{}, error
 		for _, desc := range result.Errors() {
 			errorMsgs = append(errorMsgs, desc.String())
 		}
+
 		return nil, fmt.Errorf("JSON data validation failed: %v", errorMsgs)
 	}
 
 	// Convert to map[string]interface{} for consistency
 	switch v := jsonData.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		return v, nil
-	case []interface{}:
+	case []any:
 		// Handle array at root level by wrapping in a map
-		return map[string]interface{}{"items": v}, nil
+		return map[string]any{"items": v}, nil
 	default:
 		// Handle primitive values at root level
-		return map[string]interface{}{"value": v}, nil
+		return map[string]any{"value": v}, nil
 	}
 }
 
@@ -95,15 +97,16 @@ func (jsd *JSONSchemaDecoder) DecodeToRecordValue(data []byte) (*schema_pb.Recor
 }
 
 // mapToRecordValueWithSchema converts a map to RecordValue using schema type information
-func (jsd *JSONSchemaDecoder) mapToRecordValueWithSchema(m map[string]interface{}) *schema_pb.RecordValue {
+func (jsd *JSONSchemaDecoder) mapToRecordValueWithSchema(m map[string]any) *schema_pb.RecordValue {
 	fields := make(map[string]*schema_pb.Value)
-	properties, _ := jsd.schemaDoc["properties"].(map[string]interface{})
+	properties, _ := jsd.schemaDoc["properties"].(map[string]any)
 
 	for key, value := range m {
 		// Check if we have schema information for this field
 		if fieldSchema, exists := properties[key]; exists {
-			if fieldSchemaMap, ok := fieldSchema.(map[string]interface{}); ok {
+			if fieldSchemaMap, ok := fieldSchema.(map[string]any); ok {
 				fields[key] = jsd.goValueToSchemaValueWithType(value, fieldSchemaMap)
+
 				continue
 			}
 		}
@@ -117,7 +120,7 @@ func (jsd *JSONSchemaDecoder) mapToRecordValueWithSchema(m map[string]interface{
 }
 
 // goValueToSchemaValueWithType converts a Go value to SchemaValue using schema type hints
-func (jsd *JSONSchemaDecoder) goValueToSchemaValueWithType(value interface{}, schemaDoc map[string]interface{}) *schema_pb.Value {
+func (jsd *JSONSchemaDecoder) goValueToSchemaValueWithType(value any, schemaDoc map[string]any) *schema_pb.Value {
 	if value == nil {
 		return &schema_pb.Value{
 			Kind: &schema_pb.Value_StringValue{StringValue: ""},
@@ -176,14 +179,15 @@ func (jsd *JSONSchemaDecoder) goValueToSchemaValueWithType(value interface{}, sc
 
 	// Handle nested objects
 	if schemaType == "object" {
-		if nestedMap, ok := value.(map[string]interface{}); ok {
-			nestedProperties, _ := schemaDoc["properties"].(map[string]interface{})
+		if nestedMap, ok := value.(map[string]any); ok {
+			nestedProperties, _ := schemaDoc["properties"].(map[string]any)
 			nestedFields := make(map[string]*schema_pb.Value)
 
 			for key, val := range nestedMap {
 				if fieldSchema, exists := nestedProperties[key]; exists {
-					if fieldSchemaMap, ok := fieldSchema.(map[string]interface{}); ok {
+					if fieldSchemaMap, ok := fieldSchema.(map[string]any); ok {
 						nestedFields[key] = jsd.goValueToSchemaValueWithType(val, fieldSchemaMap)
+
 						continue
 					}
 				}
@@ -213,11 +217,12 @@ func (jsd *JSONSchemaDecoder) InferRecordType() (*schema_pb.RecordType, error) {
 // ValidateOnly validates JSON data against the schema without decoding
 func (jsd *JSONSchemaDecoder) ValidateOnly(data []byte) error {
 	_, err := jsd.Decode(data)
+
 	return err
 }
 
 // jsonSchemaToRecordType converts a JSON Schema to SeaweedMQ RecordType
-func (jsd *JSONSchemaDecoder) jsonSchemaToRecordType(schemaDoc map[string]interface{}) *schema_pb.RecordType {
+func (jsd *JSONSchemaDecoder) jsonSchemaToRecordType(schemaDoc map[string]any) *schema_pb.RecordType {
 	schemaType, _ := schemaDoc["type"].(string)
 
 	if schemaType == "object" {
@@ -239,9 +244,9 @@ func (jsd *JSONSchemaDecoder) jsonSchemaToRecordType(schemaDoc map[string]interf
 }
 
 // objectSchemaToRecordType converts an object JSON Schema to RecordType
-func (jsd *JSONSchemaDecoder) objectSchemaToRecordType(schemaDoc map[string]interface{}) *schema_pb.RecordType {
-	properties, _ := schemaDoc["properties"].(map[string]interface{})
-	required, _ := schemaDoc["required"].([]interface{})
+func (jsd *JSONSchemaDecoder) objectSchemaToRecordType(schemaDoc map[string]any) *schema_pb.RecordType {
+	properties, _ := schemaDoc["properties"].(map[string]any)
+	required, _ := schemaDoc["required"].([]any)
 
 	// Create set of required fields for quick lookup
 	requiredFields := make(map[string]bool)
@@ -255,7 +260,7 @@ func (jsd *JSONSchemaDecoder) objectSchemaToRecordType(schemaDoc map[string]inte
 	fieldIndex := int32(0)
 
 	for fieldName, fieldSchema := range properties {
-		fieldSchemaMap, ok := fieldSchema.(map[string]interface{})
+		fieldSchemaMap, ok := fieldSchema.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -278,7 +283,7 @@ func (jsd *JSONSchemaDecoder) objectSchemaToRecordType(schemaDoc map[string]inte
 }
 
 // jsonSchemaTypeToType converts a JSON Schema type to SeaweedMQ Type
-func (jsd *JSONSchemaDecoder) jsonSchemaTypeToType(schemaDoc map[string]interface{}) *schema_pb.Type {
+func (jsd *JSONSchemaDecoder) jsonSchemaTypeToType(schemaDoc map[string]any) *schema_pb.Type {
 	schemaType, _ := schemaDoc["type"].(string)
 
 	switch schemaType {
@@ -346,8 +351,9 @@ func (jsd *JSONSchemaDecoder) jsonSchemaTypeToType(schemaDoc map[string]interfac
 			}
 		}
 	case "array":
-		items, _ := schemaDoc["items"].(map[string]interface{})
+		items, _ := schemaDoc["items"].(map[string]any)
 		elementType := jsd.jsonSchemaTypeToType(items)
+
 		return &schema_pb.Type{
 			Kind: &schema_pb.Type_ListType{
 				ListType: &schema_pb.ListType{
@@ -357,6 +363,7 @@ func (jsd *JSONSchemaDecoder) jsonSchemaTypeToType(schemaDoc map[string]interfac
 		}
 	case "object":
 		nestedRecordType := jsd.objectSchemaToRecordType(schemaDoc)
+
 		return &schema_pb.Type{
 			Kind: &schema_pb.Type_RecordType{
 				RecordType: nestedRecordType,
@@ -364,9 +371,9 @@ func (jsd *JSONSchemaDecoder) jsonSchemaTypeToType(schemaDoc map[string]interfac
 		}
 	default:
 		// Handle union types (oneOf, anyOf, allOf)
-		if oneOf, exists := schemaDoc["oneOf"].([]interface{}); exists && len(oneOf) > 0 {
+		if oneOf, exists := schemaDoc["oneOf"].([]any); exists && len(oneOf) > 0 {
 			// For unions, use the first type as default
-			if firstType, ok := oneOf[0].(map[string]interface{}); ok {
+			if firstType, ok := oneOf[0].(map[string]any); ok {
 				return jsd.jsonSchemaTypeToType(firstType)
 			}
 		}
@@ -381,8 +388,9 @@ func (jsd *JSONSchemaDecoder) jsonSchemaTypeToType(schemaDoc map[string]interfac
 }
 
 // isArrayType checks if a JSON Schema represents an array type
-func (jsd *JSONSchemaDecoder) isArrayType(schemaDoc map[string]interface{}) bool {
+func (jsd *JSONSchemaDecoder) isArrayType(schemaDoc map[string]any) bool {
 	schemaType, _ := schemaDoc["type"].(string)
+
 	return schemaType == "array"
 }
 
@@ -406,8 +414,8 @@ func (jsd *JSONSchemaDecoder) EncodeFromRecordValue(recordValue *schema_pb.Recor
 }
 
 // GetSchemaInfo returns information about the JSON Schema
-func (jsd *JSONSchemaDecoder) GetSchemaInfo() map[string]interface{} {
-	info := make(map[string]interface{})
+func (jsd *JSONSchemaDecoder) GetSchemaInfo() map[string]any {
+	info := make(map[string]any)
 
 	if title, exists := jsd.schemaDoc["title"]; exists {
 		info["title"] = title
@@ -429,7 +437,7 @@ func (jsd *JSONSchemaDecoder) GetSchemaInfo() map[string]interface{} {
 }
 
 // Enhanced JSON value conversion with better type handling
-func (jsd *JSONSchemaDecoder) convertJSONValue(value interface{}, expectedType string) interface{} {
+func (jsd *JSONSchemaDecoder) convertJSONValue(value any, expectedType string) any {
 	if value == nil {
 		return nil
 	}
@@ -487,15 +495,16 @@ func (jsd *JSONSchemaDecoder) ValidateAndNormalize(data []byte) ([]byte, error) 
 }
 
 // normalizeMapTypes normalizes map values according to JSON Schema types
-func (jsd *JSONSchemaDecoder) normalizeMapTypes(data map[string]interface{}, schemaDoc map[string]interface{}) map[string]interface{} {
-	properties, _ := schemaDoc["properties"].(map[string]interface{})
-	result := make(map[string]interface{})
+func (jsd *JSONSchemaDecoder) normalizeMapTypes(data map[string]any, schemaDoc map[string]any) map[string]any {
+	properties, _ := schemaDoc["properties"].(map[string]any)
+	result := make(map[string]any)
 
 	for key, value := range data {
 		if fieldSchema, exists := properties[key]; exists {
-			if fieldSchemaMap, ok := fieldSchema.(map[string]interface{}); ok {
+			if fieldSchemaMap, ok := fieldSchema.(map[string]any); ok {
 				fieldType, _ := fieldSchemaMap["type"].(string)
 				result[key] = jsd.convertJSONValue(value, fieldType)
+
 				continue
 			}
 		}

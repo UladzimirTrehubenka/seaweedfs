@@ -8,25 +8,24 @@ import (
 )
 
 func readResolvedChunks(chunks []*filer_pb.FileChunk, startOffset int64, stopOffset int64) (visibles *IntervalList[*VisibleInterval]) {
-
 	var points []*Point
 	for _, chunk := range chunks {
-		if chunk.IsChunkManifest {
+		if chunk.GetIsChunkManifest() {
 			println("This should not happen! A manifest chunk found:", chunk.GetFileIdString())
 		}
-		start, stop := max(chunk.Offset, startOffset), min(chunk.Offset+int64(chunk.Size), stopOffset)
+		start, stop := max(chunk.GetOffset(), startOffset), min(chunk.GetOffset()+int64(chunk.GetSize()), stopOffset)
 		if start >= stop {
 			continue
 		}
 		points = append(points, &Point{
-			x:       chunk.Offset,
-			ts:      chunk.ModifiedTsNs,
+			x:       chunk.GetOffset(),
+			ts:      chunk.GetModifiedTsNs(),
 			chunk:   chunk,
 			isStart: true,
 		})
 		points = append(points, &Point{
-			x:       chunk.Offset + int64(chunk.Size),
-			ts:      chunk.ModifiedTsNs,
+			x:       chunk.GetOffset() + int64(chunk.GetSize()),
+			ts:      chunk.GetModifiedTsNs(),
 			chunk:   chunk,
 			isStart: false,
 		})
@@ -44,6 +43,7 @@ func readResolvedChunks(chunks []*filer_pb.FileChunk, startOffset int64, stopOff
 		if b.isStart {
 			return -1
 		}
+
 		return 0
 	})
 
@@ -72,6 +72,7 @@ func readResolvedChunks(chunks []*filer_pb.FileChunk, startOffset int64, stopOff
 				for e := queue.Front(); e != nil; e = e.Next() {
 					if e.Value.(*Point).ts > point.ts {
 						queue.InsertBefore(point, e)
+
 						break
 					}
 				}
@@ -81,6 +82,7 @@ func readResolvedChunks(chunks []*filer_pb.FileChunk, startOffset int64, stopOff
 			for e := queue.Back(); e != nil; e = e.Prev() {
 				if e.Value.(*Point).ts == point.ts {
 					queue.Remove(e)
+
 					break
 				}
 				isLast = false
@@ -92,7 +94,7 @@ func readResolvedChunks(chunks []*filer_pb.FileChunk, startOffset int64, stopOff
 		}
 	}
 
-	return
+	return visibles
 }
 
 func addToVisibles(visibles *IntervalList[*VisibleInterval], prevX int64, startPoint *Point, point *Point) {
@@ -102,11 +104,11 @@ func addToVisibles(visibles *IntervalList[*VisibleInterval], prevX int64, startP
 			start:         prevX,
 			stop:          point.x,
 			fileId:        chunk.GetFileIdString(),
-			modifiedTsNs:  chunk.ModifiedTsNs,
-			offsetInChunk: prevX - chunk.Offset,
-			chunkSize:     chunk.Size,
-			cipherKey:     chunk.CipherKey,
-			isGzipped:     chunk.IsCompressed,
+			modifiedTsNs:  chunk.GetModifiedTsNs(),
+			offsetInChunk: prevX - chunk.GetOffset(),
+			chunkSize:     chunk.GetSize(),
+			cipherKey:     chunk.GetCipherKey(),
+			isGzipped:     chunk.GetIsCompressed(),
 		}
 		appendVisibleInterfal(visibles, visible)
 	}

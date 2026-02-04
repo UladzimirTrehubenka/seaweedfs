@@ -1,6 +1,7 @@
 package grace
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
@@ -17,7 +18,7 @@ func StartDebugServer(debugPort int) {
 	go func() {
 		addr := fmt.Sprintf(":%d", debugPort)
 		glog.V(0).Infof("Starting debug server for pprof at http://localhost%s/debug/pprof/", addr)
-		if err := http.ListenAndServe(addr, nil); err != nil && err != http.ErrServerClosed {
+		if err := http.ListenAndServe(addr, nil); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			glog.Errorf("Failed to start debug server on %s: %v", addr, err)
 		}
 	}()
@@ -52,7 +53,6 @@ func SetupProfiling(cpuProfile, memProfile string) {
 			p = pprof.Lookup("mutex")
 			p.WriteTo(mutexF, 0)
 			mutexF.Close()
-
 		})
 	}
 	if memProfile != "" {
@@ -66,5 +66,4 @@ func SetupProfiling(cpuProfile, memProfile string) {
 			f.Close()
 		})
 	}
-
 }

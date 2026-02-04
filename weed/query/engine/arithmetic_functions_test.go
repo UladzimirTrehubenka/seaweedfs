@@ -147,11 +147,13 @@ func TestArithmeticOperations(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
@@ -282,11 +284,13 @@ func TestMathematicalFunctions(t *testing.T) {
 					if err == nil {
 						t.Errorf("Expected error but got none")
 					}
+
 					return
 				}
 
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
+
 					return
 				}
 
@@ -338,11 +342,13 @@ func TestMathematicalFunctions(t *testing.T) {
 					if err == nil {
 						t.Errorf("Expected error but got none")
 					}
+
 					return
 				}
 
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
+
 					return
 				}
 
@@ -394,11 +400,13 @@ func TestMathematicalFunctions(t *testing.T) {
 					if err == nil {
 						t.Errorf("Expected error but got none")
 					}
+
 					return
 				}
 
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
+
 					return
 				}
 
@@ -474,11 +482,13 @@ func TestMathematicalFunctions(t *testing.T) {
 					if err == nil {
 						t.Errorf("Expected error but got none")
 					}
+
 					return
 				}
 
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
+
 					return
 				}
 
@@ -499,29 +509,29 @@ func valuesEqual(v1, v2 *schema_pb.Value) bool {
 		return false
 	}
 
-	switch v1Kind := v1.Kind.(type) {
+	switch v1Kind := v1.GetKind().(type) {
 	case *schema_pb.Value_Int32Value:
-		if v2Kind, ok := v2.Kind.(*schema_pb.Value_Int32Value); ok {
+		if v2Kind, ok := v2.GetKind().(*schema_pb.Value_Int32Value); ok {
 			return v1Kind.Int32Value == v2Kind.Int32Value
 		}
 	case *schema_pb.Value_Int64Value:
-		if v2Kind, ok := v2.Kind.(*schema_pb.Value_Int64Value); ok {
+		if v2Kind, ok := v2.GetKind().(*schema_pb.Value_Int64Value); ok {
 			return v1Kind.Int64Value == v2Kind.Int64Value
 		}
 	case *schema_pb.Value_FloatValue:
-		if v2Kind, ok := v2.Kind.(*schema_pb.Value_FloatValue); ok {
+		if v2Kind, ok := v2.GetKind().(*schema_pb.Value_FloatValue); ok {
 			return v1Kind.FloatValue == v2Kind.FloatValue
 		}
 	case *schema_pb.Value_DoubleValue:
-		if v2Kind, ok := v2.Kind.(*schema_pb.Value_DoubleValue); ok {
+		if v2Kind, ok := v2.GetKind().(*schema_pb.Value_DoubleValue); ok {
 			return v1Kind.DoubleValue == v2Kind.DoubleValue
 		}
 	case *schema_pb.Value_StringValue:
-		if v2Kind, ok := v2.Kind.(*schema_pb.Value_StringValue); ok {
+		if v2Kind, ok := v2.GetKind().(*schema_pb.Value_StringValue); ok {
 			return v1Kind.StringValue == v2Kind.StringValue
 		}
 	case *schema_pb.Value_BoolValue:
-		if v2Kind, ok := v2.Kind.(*schema_pb.Value_BoolValue); ok {
+		if v2Kind, ok := v2.GetKind().(*schema_pb.Value_BoolValue); ok {
 			return v1Kind.BoolValue == v2Kind.BoolValue
 		}
 	}

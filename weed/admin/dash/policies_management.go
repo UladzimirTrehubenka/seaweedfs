@@ -2,7 +2,7 @@ package dash
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
@@ -31,13 +31,13 @@ type PoliciesData struct {
 
 // Policy management request structures
 type CreatePolicyRequest struct {
-	Name         string                       `json:"name" binding:"required"`
-	Document     policy_engine.PolicyDocument `json:"document" binding:"required"`
+	Name         string                       `binding:"required"   json:"name"`
+	Document     policy_engine.PolicyDocument `binding:"required"   json:"document"`
 	DocumentJSON string                       `json:"document_json"`
 }
 
 type UpdatePolicyRequest struct {
-	Document     policy_engine.PolicyDocument `json:"document" binding:"required"`
+	Document     policy_engine.PolicyDocument `binding:"required"   json:"document"`
 	DocumentJSON string                       `json:"document_json"`
 }
 
@@ -89,9 +89,11 @@ func (cspm *CredentialStorePolicyManager) GetPolicy(ctx context.Context, name st
 func (s *AdminServer) GetPolicyManager() credential.PolicyManager {
 	if s.credentialManager == nil {
 		glog.V(1).Infof("Credential manager is nil, policy management not available")
+
 		return nil
 	}
 	glog.V(1).Infof("Credential manager available, creating CredentialStorePolicyManager")
+
 	return NewCredentialStorePolicyManager(s.credentialManager)
 }
 
@@ -99,7 +101,7 @@ func (s *AdminServer) GetPolicyManager() credential.PolicyManager {
 func (s *AdminServer) GetPolicies() ([]IAMPolicy, error) {
 	policyManager := s.GetPolicyManager()
 	if policyManager == nil {
-		return nil, fmt.Errorf("policy manager not available")
+		return nil, errors.New("policy manager not available")
 	}
 
 	ctx := context.Background()
@@ -128,10 +130,11 @@ func (s *AdminServer) GetPolicies() ([]IAMPolicy, error) {
 func (s *AdminServer) CreatePolicy(name string, document policy_engine.PolicyDocument) error {
 	policyManager := s.GetPolicyManager()
 	if policyManager == nil {
-		return fmt.Errorf("policy manager not available")
+		return errors.New("policy manager not available")
 	}
 
 	ctx := context.Background()
+
 	return policyManager.CreatePolicy(ctx, name, document)
 }
 
@@ -139,10 +142,11 @@ func (s *AdminServer) CreatePolicy(name string, document policy_engine.PolicyDoc
 func (s *AdminServer) UpdatePolicy(name string, document policy_engine.PolicyDocument) error {
 	policyManager := s.GetPolicyManager()
 	if policyManager == nil {
-		return fmt.Errorf("policy manager not available")
+		return errors.New("policy manager not available")
 	}
 
 	ctx := context.Background()
+
 	return policyManager.UpdatePolicy(ctx, name, document)
 }
 
@@ -150,10 +154,11 @@ func (s *AdminServer) UpdatePolicy(name string, document policy_engine.PolicyDoc
 func (s *AdminServer) DeletePolicy(name string) error {
 	policyManager := s.GetPolicyManager()
 	if policyManager == nil {
-		return fmt.Errorf("policy manager not available")
+		return errors.New("policy manager not available")
 	}
 
 	ctx := context.Background()
+
 	return policyManager.DeletePolicy(ctx, name)
 }
 
@@ -161,7 +166,7 @@ func (s *AdminServer) DeletePolicy(name string) error {
 func (s *AdminServer) GetPolicy(name string) (*IAMPolicy, error) {
 	policyManager := s.GetPolicyManager()
 	if policyManager == nil {
-		return nil, fmt.Errorf("policy manager not available")
+		return nil, errors.New("policy manager not available")
 	}
 
 	ctx := context.Background()

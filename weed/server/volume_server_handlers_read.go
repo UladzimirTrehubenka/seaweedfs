@@ -50,12 +50,14 @@ func (vs *VolumeServer) proxyReqToTargetServer(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		glog.V(2).Infof("parsing vid %s: %v", r.URL.Path, err)
 		w.WriteHeader(http.StatusBadRequest)
+
 		return
 	}
 	lookupResult, err := operation.LookupVolumeId(vs.GetMaster, vs.grpcDialOption, volumeId.String())
 	if err != nil || len(lookupResult.Locations) <= 0 {
 		glog.V(0).Infoln("lookup error:", err, r.URL.Path)
 		NotFound(w)
+
 		return
 	}
 	if len(lookupResult.Locations) >= 2 {
@@ -69,6 +71,7 @@ func (vs *VolumeServer) proxyReqToTargetServer(w http.ResponseWriter, r *http.Re
 		if !strings.Contains(loc.Url, location) {
 			rawURL, _ := util_http.NormalizeUrl(loc.Url)
 			tragetUrl, _ = url.Parse(rawURL)
+
 			break
 		}
 	}
@@ -76,6 +79,7 @@ func (vs *VolumeServer) proxyReqToTargetServer(w http.ResponseWriter, r *http.Re
 		stats.VolumeServerHandlerCounter.WithLabelValues(stats.EmptyReadProxyLoc).Inc()
 		glog.Errorf("failed lookup target host is empty locations: %+v, %s", lookupResult.Locations, location)
 		NotFound(w)
+
 		return
 	}
 	if vs.ReadMode == "proxy" {
@@ -90,6 +94,7 @@ func (vs *VolumeServer) proxyReqToTargetServer(w http.ResponseWriter, r *http.Re
 		if err != nil {
 			glog.V(0).Infof("failed to instance http request of url %s: %v", r.URL.String(), err)
 			InternalError(w)
+
 			return
 		}
 		for k, vv := range r.Header {
@@ -103,6 +108,7 @@ func (vs *VolumeServer) proxyReqToTargetServer(w http.ResponseWriter, r *http.Re
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.FailedReadProxyReq).Inc()
 			glog.V(0).Infof("request remote url %s: %v", r.URL.String(), err)
 			InternalError(w)
+
 			return
 		}
 		defer util_http.CloseResponse(response)
@@ -119,6 +125,7 @@ func (vs *VolumeServer) proxyReqToTargetServer(w http.ResponseWriter, r *http.Re
 		buf := mem.Allocate(128 * 1024)
 		defer mem.Free(buf)
 		io.CopyBuffer(w, response.Body, buf)
+
 		return
 	} else {
 		// redirect
@@ -131,6 +138,7 @@ func (vs *VolumeServer) proxyReqToTargetServer(w http.ResponseWriter, r *http.Re
 		arg.Set(reqIsProxied, "true")
 		tragetUrl.RawQuery = arg.Encode()
 		http.Redirect(w, r, tragetUrl.String(), http.StatusMovedPermanently)
+
 		return
 	}
 }
@@ -141,6 +149,7 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 
 	if !vs.maybeCheckJwtAuthorization(r, vid, fid, false) {
 		writeJsonError(w, r, http.StatusUnauthorized, errors.New("wrong jwt"))
+
 		return
 	}
 
@@ -148,12 +157,14 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		glog.V(2).Infof("parsing vid %s: %v", r.URL.Path, err)
 		w.WriteHeader(http.StatusBadRequest)
+
 		return
 	}
 	err = n.ParsePath(fid)
 	if err != nil {
 		glog.V(2).Infof("parsing fid %s: %v", r.URL.Path, err)
 		w.WriteHeader(http.StatusBadRequest)
+
 		return
 	}
 
@@ -164,9 +175,11 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 		if vs.ReadMode == "local" {
 			glog.V(0).Infoln("volume is not local:", err, r.URL.Path)
 			NotFound(w)
+
 			return
 		}
 		vs.proxyReqToTargetServer(w, r)
+
 		return
 	}
 	cookie := n.Cookie
@@ -198,23 +211,25 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}()
 
-	if err != nil && err != storage.ErrorDeleted && hasVolume {
+	if err != nil && !errors.Is(err, storage.ErrorDeleted) && hasVolume {
 		glog.V(4).Infof("read needle: %v", err)
 		// start to fix it from other replicas, if not deleted and hasVolume and is not a replicated request
 	}
 	// glog.V(4).Infoln("read bytes", count, "error", err)
 	if err != nil || count < 0 {
 		glog.V(3).Infof("read %s isNormalVolume %v error: %v", r.URL.Path, hasVolume, err)
-		if err == storage.ErrorNotFound || err == storage.ErrorDeleted || errors.Is(err, erasure_coding.NotFoundError) {
+		if errors.Is(err, storage.ErrorNotFound) || errors.Is(err, storage.ErrorDeleted) || errors.Is(err, erasure_coding.NotFoundError) {
 			NotFound(w)
 		} else {
 			InternalError(w)
 		}
+
 		return
 	}
 	if n.Cookie != cookie {
 		glog.V(0).Infof("request %s with cookie:%x expected:%x from %s agent %s", r.URL.Path, cookie, n.Cookie, r.RemoteAddr, r.UserAgent())
 		NotFound(w)
+
 		return
 	}
 	if n.LastModified != 0 {
@@ -223,6 +238,7 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 			if t, parseError := time.Parse(http.TimeFormat, r.Header.Get("If-Modified-Since")); parseError == nil {
 				if t.Unix() >= int64(n.LastModified) {
 					w.WriteHeader(http.StatusNotModified)
+
 					return
 				}
 			}
@@ -230,6 +246,7 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 	}
 	if inm := r.Header.Get("If-None-Match"); inm == "\""+n.Etag()+"\"" {
 		w.WriteHeader(http.StatusNotModified)
+
 		return
 	}
 	SetEtag(w, n.Etag())
@@ -307,6 +324,7 @@ func shouldAttemptStreamWrite(hasLocalVolume bool, ext string, r *http.Request) 
 	if shouldResize || shouldCrop {
 		return false, false
 	}
+
 	return true, false
 }
 
@@ -318,6 +336,7 @@ func (vs *VolumeServer) tryHandleChunkedFile(n *needle.Needle, fileName string, 
 	chunkManifest, e := operation.LoadChunkManifest(n.Data, n.IsCompressed())
 	if e != nil {
 		glog.V(0).Infof("load chunked manifest (%s) error: %v", r.URL.Path, e)
+
 		return false
 	}
 	if fileName == "" && chunkManifest.Name != "" {
@@ -347,6 +366,7 @@ func (vs *VolumeServer) tryHandleChunkedFile(n *needle.Needle, fileName string, 
 	if e := writeResponseContent(fileName, mType, rs, w, r); e != nil {
 		glog.V(2).Infoln("response write error:", e)
 	}
+
 	return true
 }
 
@@ -359,6 +379,7 @@ func conditionallyResizeImages(originalDataReaderSeeker io.ReadSeeker, ext strin
 	if shouldResize {
 		rs, _, _ = images.Resized(ext, originalDataReaderSeeker, width, height, mode)
 	}
+
 	return rs
 }
 
@@ -373,6 +394,7 @@ func shouldResizeImages(ext string, r *http.Request) (width, height int, mode st
 	}
 	mode = r.FormValue("mode")
 	shouldResize = width > 0 || height > 0
+
 	return
 }
 
@@ -389,6 +411,7 @@ func conditionallyCropImages(originalDataReaderSeeker io.ReadSeeker, ext string,
 			glog.Errorf("Cropping images error: %s", err)
 		}
 	}
+
 	return rs
 }
 
@@ -408,6 +431,7 @@ func shouldCropImages(ext string, r *http.Request) (x1, y1, x2, y2 int, shouldCr
 		}
 	}
 	shouldCrop = x1 >= 0 && y1 >= 0 && x2 > x1 && y2 > y1
+
 	return
 }
 
@@ -427,6 +451,7 @@ func writeResponseContent(filename, mimeType string, rs io.ReadSeeker, w http.Re
 
 	if r.Method == http.MethodHead {
 		w.Header().Set("Content-Length", strconv.FormatInt(totalSize, 10))
+
 		return nil
 	}
 
@@ -436,6 +461,7 @@ func writeResponseContent(filename, mimeType string, rs io.ReadSeeker, w http.Re
 				return e
 			}
 			_, e = io.CopyN(writer, rs, size)
+
 			return e
 		}, nil
 	})
@@ -456,6 +482,7 @@ func (vs *VolumeServer) streamWriteResponseContent(filename string, mimeType str
 
 	if r.Method == http.MethodHead {
 		w.Header().Set("Content-Length", strconv.FormatInt(totalSize, 10))
+
 		return
 	}
 
@@ -464,5 +491,4 @@ func (vs *VolumeServer) streamWriteResponseContent(filename string, mimeType str
 			return vs.store.ReadVolumeNeedleDataInto(volumeId, n, readOption, writer, offset, size)
 		}, nil
 	})
-
 }

@@ -63,7 +63,7 @@ func NewLocalKMSProvider(config util.Configuration) (kms.KMSProvider, error) {
 	// Load configuration if provided
 	if config != nil {
 		if err := provider.loadConfig(config); err != nil {
-			return nil, fmt.Errorf("failed to load local KMS config: %v", err)
+			return nil, fmt.Errorf("failed to load local KMS config: %w", err)
 		}
 	}
 
@@ -71,7 +71,7 @@ func NewLocalKMSProvider(config util.Configuration) (kms.KMSProvider, error) {
 	if len(provider.keys) == 0 {
 		defaultKey, err := provider.createDefaultKey()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create default key: %v", err)
+			return nil, fmt.Errorf("failed to create default key: %w", err)
 		}
 		provider.defaultKeyID = defaultKey.KeyID
 		glog.V(1).Infof("Local KMS: Created default key %s", defaultKey.KeyID)
@@ -92,6 +92,7 @@ func (p *LocalKMSProvider) loadConfig(config util.Configuration) error {
 	// For now, rely on default key creation in constructor
 
 	glog.V(2).Infof("Local KMS: enableOnDemandCreate = %v", p.enableOnDemandCreate)
+
 	return nil
 }
 
@@ -108,7 +109,7 @@ func (p *LocalKMSProvider) createDefaultKey() (*LocalKey, error) {
 
 	key := &LocalKey{
 		KeyID:       keyID,
-		ARN:         fmt.Sprintf("arn:aws:kms:local:000000000000:key/%s", keyID),
+		ARN:         "arn:aws:kms:local:000000000000:key/" + keyID,
 		Description: "Default local KMS key for SeaweedFS",
 		KeyMaterial: keyMaterial,
 		KeyUsage:    kms.KeyUsageEncryptDecrypt,
@@ -169,6 +170,7 @@ func (p *LocalKMSProvider) GenerateDataKey(ctx context.Context, req *kms.Generat
 	encryptedDataKey, err := p.encryptDataKey(dataKey, key, req.EncryptionContext)
 	if err != nil {
 		kms.ClearSensitiveData(dataKey)
+
 		return nil, &kms.KMSError{
 			Code:    kms.ErrCodeKMSInternalFailure,
 			Message: fmt.Sprintf("Failed to encrypt data key: %v", err),
@@ -256,6 +258,7 @@ func (p *LocalKMSProvider) GetKeyID(ctx context.Context, keyIdentifier string) (
 	if err != nil {
 		return "", err
 	}
+
 	return key.KeyID, nil
 }
 
@@ -269,6 +272,7 @@ func (p *LocalKMSProvider) Close() error {
 		kms.ClearSensitiveData(key.KeyMaterial)
 	}
 	p.keys = make(map[string]*LocalKey)
+
 	return nil
 }
 
@@ -279,6 +283,7 @@ func (p *LocalKMSProvider) getKey(keyIdentifier string) (*LocalKey, error) {
 	// Try direct lookup first
 	if key, exists := p.keys[keyIdentifier]; exists {
 		p.mu.RUnlock()
+
 		return key, nil
 	}
 
@@ -286,6 +291,7 @@ func (p *LocalKMSProvider) getKey(keyIdentifier string) (*LocalKey, error) {
 	if keyIdentifier == "" && p.defaultKeyID != "" {
 		if key, exists := p.keys[p.defaultKeyID]; exists {
 			p.mu.RUnlock()
+
 			return key, nil
 		}
 	}
@@ -295,7 +301,7 @@ func (p *LocalKMSProvider) getKey(keyIdentifier string) (*LocalKey, error) {
 	// Key doesn't exist - create on-demand if enabled and key identifier is reasonable
 	if keyIdentifier != "" && p.enableOnDemandCreate && p.isReasonableKeyIdentifier(keyIdentifier) {
 		glog.V(1).Infof("Creating on-demand local KMS key: %s", keyIdentifier)
-		key, err := p.CreateKeyWithID(keyIdentifier, fmt.Sprintf("Auto-created local KMS key: %s", keyIdentifier))
+		key, err := p.CreateKeyWithID(keyIdentifier, "Auto-created local KMS key: "+keyIdentifier)
 		if err != nil {
 			return nil, &kms.KMSError{
 				Code:    kms.ErrCodeKMSInternalFailure,
@@ -303,12 +309,13 @@ func (p *LocalKMSProvider) getKey(keyIdentifier string) (*LocalKey, error) {
 				KeyID:   keyIdentifier,
 			}
 		}
+
 		return key, nil
 	}
 
 	return nil, &kms.KMSError{
 		Code:    kms.ErrCodeNotFoundException,
-		Message: fmt.Sprintf("Key not found: %s", keyIdentifier),
+		Message: "Key not found: " + keyIdentifier,
 		KeyID:   keyIdentifier,
 	}
 }
@@ -430,8 +437,9 @@ func (p *LocalKMSProvider) decryptDataKey(metadata *encryptedDataKeyMetadata, ma
 func (p *LocalKMSProvider) parseEncryptedDataKey(ciphertextBlob []byte) (*encryptedDataKeyMetadata, error) {
 	var metadata encryptedDataKeyMetadata
 	if err := json.Unmarshal(ciphertextBlob, &metadata); err != nil {
-		return nil, fmt.Errorf("failed to parse ciphertext blob: %v", err)
+		return nil, fmt.Errorf("failed to parse ciphertext blob: %w", err)
 	}
+
 	return &metadata, nil
 }
 
@@ -445,6 +453,7 @@ func (p *LocalKMSProvider) encryptionContextMatches(ctx1, ctx2 map[string]string
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -473,7 +482,7 @@ func (p *LocalKMSProvider) CreateKey(description string, aliases []string) (*Loc
 
 	key := &LocalKey{
 		KeyID:       keyID,
-		ARN:         fmt.Sprintf("arn:aws:kms:local:000000000000:key/%s", keyID),
+		ARN:         "arn:aws:kms:local:000000000000:key/" + keyID,
 		Description: description,
 		KeyMaterial: keyMaterial,
 		KeyUsage:    kms.KeyUsageEncryptDecrypt,
@@ -508,7 +517,7 @@ func (p *LocalKMSProvider) CreateKeyWithID(keyID, description string) (*LocalKey
 
 	key := &LocalKey{
 		KeyID:       keyID,
-		ARN:         fmt.Sprintf("arn:aws:kms:local:000000000000:key/%s", keyID),
+		ARN:         "arn:aws:kms:local:000000000000:key/" + keyID,
 		Description: description,
 		KeyMaterial: keyMaterial,
 		KeyUsage:    kms.KeyUsageEncryptDecrypt,

@@ -6,6 +6,7 @@ package iceberg
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/apache/iceberg-go/table"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api"
@@ -28,24 +30,29 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, action s3api.
 	identityName := s3_constants.GetIdentityNameFromContext(r)
 	if identityName == "" {
 		writeError(w, http.StatusUnauthorized, "NotAuthorizedException", "Authentication required")
+
 		return false
 	}
 
 	identityObj := s3_constants.GetIdentityFromContext(r)
 	if identityObj == nil {
 		writeError(w, http.StatusForbidden, "ForbiddenException", "Access denied: missing identity")
+
 		return false
 	}
 	identity, ok := identityObj.(*s3api.Identity)
 	if !ok {
 		writeError(w, http.StatusForbidden, "ForbiddenException", "Access denied: invalid identity")
+
 		return false
 	}
 
 	if !identity.CanDo(action, bucketName, "") {
 		writeError(w, http.StatusForbidden, "ForbiddenException", "Access denied")
+
 		return false
 	}
+
 	return true
 }
 
@@ -55,7 +62,7 @@ type FilerClient interface {
 }
 
 type S3Authenticator interface {
-	AuthenticateRequest(r *http.Request) (string, interface{}, s3err.ErrorCode)
+	AuthenticateRequest(r *http.Request) (string, any, s3err.ErrorCode)
 }
 
 // Server implements the Iceberg REST Catalog API.
@@ -69,6 +76,7 @@ type Server struct {
 // NewServer creates a new Iceberg REST Catalog server.
 func NewServer(filerClient FilerClient, authenticator S3Authenticator) *Server {
 	manager := s3tables.NewManager()
+
 	return &Server{
 		filerClient:   filerClient,
 		tablesManager: manager,
@@ -117,6 +125,7 @@ func (s *Server) Auth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.authenticator == nil {
 			writeError(w, http.StatusUnauthorized, "NotAuthorizedException", "Authentication required")
+
 			return
 		}
 
@@ -135,6 +144,7 @@ func (s *Server) Auth(handler http.HandlerFunc) http.HandlerFunc {
 				errorType = "InternalServerError"
 			}
 			writeError(w, apiErr.HTTPStatusCode, errorType, apiErr.Description)
+
 			return
 		}
 
@@ -172,7 +182,7 @@ func (s *Server) saveMetadataFile(ctx context.Context, bucketName, namespace, ta
 			if err == nil {
 				return nil
 			}
-			if err != filer_pb.ErrNotFound {
+			if !errors.Is(err, filer_pb.ErrNotFound) {
 				return fmt.Errorf("lookup %s failed: %w", errorContext, err)
 			}
 
@@ -192,9 +202,10 @@ func (s *Server) saveMetadataFile(ctx context.Context, bucketName, namespace, ta
 			if createErr != nil {
 				return fmt.Errorf("failed to create %s: %w", errorContext, createErr)
 			}
-			if resp.Error != "" && !strings.Contains(resp.Error, "exist") {
-				return fmt.Errorf("failed to create %s: %s", errorContext, resp.Error)
+			if resp.GetError() != "" && !strings.Contains(resp.GetError(), "exist") {
+				return fmt.Errorf("failed to create %s: %s", errorContext, resp.GetError())
 			}
+
 			return nil
 		}
 
@@ -205,7 +216,7 @@ func (s *Server) saveMetadataFile(ctx context.Context, bucketName, namespace, ta
 		}
 
 		// 2. Ensure metadata directory exists: /table-buckets/<bucket>/<namespace>/<table>/metadata
-		metadataDir := fmt.Sprintf("%s/metadata", tableDir)
+		metadataDir := tableDir + "/metadata"
 		if err := ensureDir(tableDir, "metadata", "metadata directory"); err != nil {
 			return err
 		}
@@ -230,9 +241,10 @@ func (s *Server) saveMetadataFile(ctx context.Context, bucketName, namespace, ta
 		if err != nil {
 			return fmt.Errorf("failed to write metadata file: %w", err)
 		}
-		if resp.Error != "" {
-			return fmt.Errorf("failed to write metadata file: %s", resp.Error)
+		if resp.GetError() != "" {
+			return fmt.Errorf("failed to write metadata file: %s", resp.GetError())
 		}
+
 		return nil
 	})
 }
@@ -252,6 +264,7 @@ func parseNamespace(encoded string) []string {
 			result = append(result, p)
 		}
 	}
+
 	return result
 }
 
@@ -261,13 +274,14 @@ func encodeNamespace(parts []string) string {
 }
 
 // writeJSON writes a JSON response.
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if v != nil {
 		data, err := json.Marshal(v)
 		if err != nil {
 			glog.Errorf("Iceberg: failed to encode response: %v", err)
+
 			return
 		}
 		w.Write(data)
@@ -300,6 +314,7 @@ func getBucketFromPrefix(r *http.Request) string {
 // buildTableBucketARN builds an ARN for a table bucket.
 func buildTableBucketARN(bucketName string) string {
 	arn, _ := s3tables.BuildBucketARN(s3tables.DefaultRegion, s3_constants.AccountAdminId, bucketName)
+
 	return arn
 }
 
@@ -333,12 +348,14 @@ func (s *Server) handleListNamespaces(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "ListNamespaces", req, &resp, "")
 	})
 
 	if err != nil {
 		glog.V(1).Infof("Iceberg: ListNamespaces error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -365,11 +382,13 @@ func (s *Server) handleCreateNamespace(w http.ResponseWriter, r *http.Request) {
 	var req CreateNamespaceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Invalid request body")
+
 		return
 	}
 
 	if len(req.Namespace) == 0 {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace is required")
+
 		return
 	}
 
@@ -382,16 +401,19 @@ func (s *Server) handleCreateNamespace(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "CreateNamespace", createReq, &createResp, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			writeError(w, http.StatusConflict, "AlreadyExistsException", err.Error())
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: CreateNamespace error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -414,6 +436,7 @@ func (s *Server) handleGetNamespace(w http.ResponseWriter, r *http.Request) {
 	namespace := parseNamespace(vars["namespace"])
 	if len(namespace) == 0 {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace is required")
+
 		return
 	}
 
@@ -432,16 +455,19 @@ func (s *Server) handleGetNamespace(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "GetNamespace", getReq, &getResp, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "NoSuchNamespaceException", fmt.Sprintf("Namespace does not exist: %v", namespace))
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: GetNamespace error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -458,6 +484,7 @@ func (s *Server) handleNamespaceExists(w http.ResponseWriter, r *http.Request) {
 	namespace := parseNamespace(vars["namespace"])
 	if len(namespace) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
+
 		return
 	}
 
@@ -475,16 +502,19 @@ func (s *Server) handleNamespaceExists(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "GetNamespace", getReq, &getResp, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			w.WriteHeader(http.StatusNotFound)
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: NamespaceExists error: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
+
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -496,6 +526,7 @@ func (s *Server) handleDropNamespace(w http.ResponseWriter, r *http.Request) {
 	namespace := parseNamespace(vars["namespace"])
 	if len(namespace) == 0 {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace is required")
+
 		return
 	}
 
@@ -512,20 +543,24 @@ func (s *Server) handleDropNamespace(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "DeleteNamespace", deleteReq, nil, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "NoSuchNamespaceException", fmt.Sprintf("Namespace does not exist: %v", namespace))
+
 			return
 		}
 		if strings.Contains(err.Error(), "not empty") {
 			writeError(w, http.StatusConflict, "NamespaceNotEmptyException", "Namespace is not empty")
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: DropNamespace error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -538,6 +573,7 @@ func (s *Server) handleListTables(w http.ResponseWriter, r *http.Request) {
 	namespace := parseNamespace(vars["namespace"])
 	if len(namespace) == 0 {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace is required")
+
 		return
 	}
 
@@ -556,16 +592,19 @@ func (s *Server) handleListTables(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "ListTables", listReq, &listResp, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "NoSuchNamespaceException", fmt.Sprintf("Namespace does not exist: %v", namespace))
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: ListTables error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -590,17 +629,20 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	namespace := parseNamespace(vars["namespace"])
 	if len(namespace) == 0 {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace is required")
+
 		return
 	}
 
 	var req CreateTableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Invalid request body")
+
 		return
 	}
 
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Table name is required")
+
 		return
 	}
 
@@ -618,6 +660,7 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	metadata := newTableMetadata(tableUUID, location, req.Schema, req.PartitionSpec, req.WriteOrder, req.Properties)
 	if metadata == nil {
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to build table metadata")
+
 		return
 	}
 
@@ -625,6 +668,7 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to serialize metadata: "+err.Error())
+
 		return
 	}
 
@@ -633,6 +677,7 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	metadataFileName := "v1.metadata.json" // Initial version is always 1
 	if err := s.saveMetadataFile(r.Context(), bucketName, encodeNamespace(namespace), tableName, metadataFileName, metadataBytes); err != nil {
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to save metadata file: "+err.Error())
+
 		return
 	}
 
@@ -657,16 +702,19 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 
 	err = s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "CreateTable", createReq, &createResp, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			writeError(w, http.StatusConflict, "AlreadyExistsException", err.Error())
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: CreateTable error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -692,6 +740,7 @@ func (s *Server) handleLoadTable(w http.ResponseWriter, r *http.Request) {
 
 	if len(namespace) == 0 || tableName == "" {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace and table name are required")
+
 		return
 	}
 
@@ -710,16 +759,19 @@ func (s *Server) handleLoadTable(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "GetTable", getReq, &getResp, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			writeError(w, http.StatusNotFound, "NoSuchTableException", fmt.Sprintf("Table does not exist: %s", tableName))
+			writeError(w, http.StatusNotFound, "NoSuchTableException", "Table does not exist: "+tableName)
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: LoadTable error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -767,6 +819,7 @@ func (s *Server) handleTableExists(w http.ResponseWriter, r *http.Request) {
 
 	if len(namespace) == 0 || tableName == "" {
 		w.WriteHeader(http.StatusBadRequest)
+
 		return
 	}
 
@@ -785,11 +838,13 @@ func (s *Server) handleTableExists(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "GetTable", getReq, &getResp, "")
 	})
 
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
+
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -803,6 +858,7 @@ func (s *Server) handleDropTable(w http.ResponseWriter, r *http.Request) {
 
 	if len(namespace) == 0 || tableName == "" {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace and table name are required")
+
 		return
 	}
 
@@ -820,16 +876,19 @@ func (s *Server) handleDropTable(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "DeleteTable", deleteReq, nil, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			writeError(w, http.StatusNotFound, "NoSuchTableException", fmt.Sprintf("Table does not exist: %s", tableName))
+			writeError(w, http.StatusNotFound, "NoSuchTableException", "Table does not exist: "+tableName)
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: DropTable error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -845,6 +904,7 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 
 	if len(namespace) == 0 || tableName == "" {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Namespace and table name are required")
+
 		return
 	}
 
@@ -857,6 +917,7 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 	var req CommitTableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Invalid request body: "+err.Error())
+
 		return
 	}
 
@@ -872,16 +933,19 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 
 	err := s.filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return s.tablesManager.Execute(r.Context(), mgrClient, "GetTable", getReq, &getResp, "")
 	})
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			writeError(w, http.StatusNotFound, "NoSuchTableException", fmt.Sprintf("Table does not exist: %s", tableName))
+			writeError(w, http.StatusNotFound, "NoSuchTableException", "Table does not exist: "+tableName)
+
 			return
 		}
 		glog.V(1).Infof("Iceberg: CommitTable GetTable error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", err.Error())
+
 		return
 	}
 
@@ -904,6 +968,7 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			glog.Errorf("Iceberg: Failed to parse current metadata for %s: %v", tableName, err)
 			writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to parse current metadata")
+
 			return
 		}
 	} else {
@@ -913,6 +978,7 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 
 	if currentMetadata == nil {
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to build current metadata")
+
 		return
 	}
 
@@ -920,6 +986,7 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 	for _, requirement := range req.Requirements {
 		if err := requirement.Validate(currentMetadata); err != nil {
 			writeError(w, http.StatusConflict, "CommitFailedException", "Requirement failed: "+err.Error())
+
 			return
 		}
 	}
@@ -928,12 +995,14 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 	builder, err := table.MetadataBuilderFromBase(currentMetadata, getResp.MetadataLocation)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to create metadata builder: "+err.Error())
+
 		return
 	}
 
 	for _, update := range req.Updates {
 		if err := update.Apply(builder); err != nil {
 			writeError(w, http.StatusBadRequest, "BadRequestException", "Failed to apply update: "+err.Error())
+
 			return
 		}
 	}
@@ -942,6 +1011,7 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 	newMetadata, err := builder.Build()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BadRequestException", "Failed to build new metadata: "+err.Error())
+
 		return
 	}
 
@@ -955,12 +1025,14 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 	metadataBytes, err := json.Marshal(newMetadata)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to serialize metadata: "+err.Error())
+
 		return
 	}
 
 	// 1. Save metadata file to filer
 	if err := s.saveMetadataFile(r.Context(), bucketName, encodeNamespace(namespace), tableName, metadataFileName, metadataBytes); err != nil {
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to save metadata file: "+err.Error())
+
 		return
 	}
 
@@ -991,6 +1063,7 @@ func (s *Server) handleUpdateTable(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		glog.Errorf("Iceberg: CommitTable UpdateTable error: %v", err)
 		writeError(w, http.StatusInternalServerError, "InternalServerError", "Failed to commit table update: "+err.Error())
+
 		return
 	}
 
@@ -1054,6 +1127,7 @@ func newTableMetadata(
 	metadata, err := table.NewMetadataWithUUID(s, pSpec, so, location, props, tableUUID)
 	if err != nil {
 		glog.Errorf("Failed to create metadata: %v", err)
+
 		return nil
 	}
 

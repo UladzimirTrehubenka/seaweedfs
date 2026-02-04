@@ -7,10 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3tables"
-	"google.golang.org/grpc"
 )
 
 const s3TablesDefaultRegion = ""
@@ -19,16 +20,19 @@ const timeFormat = "2006-01-02T15:04:05Z07:00"
 func withFilerClient(commandEnv *CommandEnv, fn func(client filer_pb.SeaweedFilerClient) error) error {
 	return pb.WithGrpcClient(false, 0, func(conn *grpc.ClientConn) error {
 		client := filer_pb.NewSeaweedFilerClient(conn)
+
 		return fn(client)
 	}, commandEnv.option.FilerAddress.ToGrpcAddress(), false, commandEnv.option.GrpcDialOption)
 }
 
-func executeS3Tables(commandEnv *CommandEnv, operation string, req interface{}, resp interface{}, accountID string) error {
+func executeS3Tables(commandEnv *CommandEnv, operation string, req any, resp any, accountID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	return withFilerClient(commandEnv, func(client filer_pb.SeaweedFilerClient) error {
 		manager := s3tables.NewManager()
 		mgrClient := s3tables.NewManagerClient(client)
+
 		return manager.Execute(ctx, mgrClient, operation, req, resp, accountID)
 	})
 }
@@ -42,14 +46,16 @@ func parseS3TablesError(err error) error {
 		if s3Err.Message != "" {
 			return fmt.Errorf("%s: %s", s3Err.Type, s3Err.Message)
 		}
+
 		return fmt.Errorf("%s", s3Err.Type)
 	}
+
 	return err
 }
 
 func parseS3TablesTags(value string) (map[string]string, error) {
 	parsed := make(map[string]string)
-	for _, kv := range strings.Split(value, ",") {
+	for kv := range strings.SplitSeq(value, ",") {
 		if kv == "" {
 			continue
 		}
@@ -62,12 +68,13 @@ func parseS3TablesTags(value string) (map[string]string, error) {
 	if err := s3tables.ValidateTags(parsed); err != nil {
 		return nil, err
 	}
+
 	return parsed, nil
 }
 
 func parseS3TablesTagKeys(value string) ([]string, error) {
 	var keys []string
-	for _, key := range strings.Split(value, ",") {
+	for key := range strings.SplitSeq(value, ",") {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
@@ -75,8 +82,9 @@ func parseS3TablesTagKeys(value string) ([]string, error) {
 		keys = append(keys, key)
 	}
 	if len(keys) == 0 {
-		return nil, fmt.Errorf("tagKeys are required")
+		return nil, errors.New("tagKeys are required")
 	}
+
 	return keys, nil
 }
 

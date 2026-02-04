@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -45,7 +46,7 @@ func (f *Filer) NotifyUpdateEvent(ctx context.Context, oldEntry, newEntry *Entry
 
 	newParentPath := ""
 	if newEntry != nil {
-		newParentPath, _ = newEntry.FullPath.DirAndName()
+		newParentPath, _ = newEntry.DirAndName()
 	}
 	eventNotification := &filer_pb.EventNotification{
 		OldEntry:           oldEntry.ToProtoEntry(),
@@ -69,11 +70,9 @@ func (f *Filer) NotifyUpdateEvent(ctx context.Context, oldEntry, newEntry *Entry
 	// Trigger empty folder cleanup for local events
 	// Remote events are handled via MetaAggregator.onMetadataChangeEvent
 	f.triggerLocalEmptyFolderCleanup(oldEntry, newEntry)
-
 }
 
 func (f *Filer) logMetaEvent(ctx context.Context, fullpath string, eventNotification *filer_pb.EventNotification) {
-
 	dir, _ := util.FullPath(fullpath).DirAndName()
 
 	event := &filer_pb.SubscribeMetadataResponse{
@@ -84,13 +83,13 @@ func (f *Filer) logMetaEvent(ctx context.Context, fullpath string, eventNotifica
 	data, err := proto.Marshal(event)
 	if err != nil {
 		glog.Errorf("failed to marshal filer_pb.SubscribeMetadataResponse %+v: %v", event, err)
+
 		return
 	}
 
-	if err := f.LocalMetaLogBuffer.AddDataToBuffer([]byte(dir), data, event.TsNs); err != nil {
+	if err := f.LocalMetaLogBuffer.AddDataToBuffer([]byte(dir), data, event.GetTsNs()); err != nil {
 		glog.Errorf("failed to add data to log buffer for %s: %v", dir, err)
 	}
-
 }
 
 // triggerLocalEmptyFolderCleanup triggers empty folder cleanup for local events
@@ -104,20 +103,20 @@ func (f *Filer) triggerLocalEmptyFolderCleanup(oldEntry, newEntry *Entry) {
 
 	// Handle delete events (oldEntry exists, newEntry is nil)
 	if oldEntry != nil && newEntry == nil {
-		dir, name := oldEntry.FullPath.DirAndName()
+		dir, name := oldEntry.DirAndName()
 		f.EmptyFolderCleaner.OnDeleteEvent(dir, name, oldEntry.IsDirectory(), eventTime)
 	}
 
 	// Handle create events (oldEntry is nil, newEntry exists)
 	if oldEntry == nil && newEntry != nil {
-		dir, name := newEntry.FullPath.DirAndName()
+		dir, name := newEntry.DirAndName()
 		f.EmptyFolderCleaner.OnCreateEvent(dir, name, newEntry.IsDirectory())
 	}
 
 	// Handle rename/move events (both exist but paths differ)
 	if oldEntry != nil && newEntry != nil {
-		oldDir, oldName := oldEntry.FullPath.DirAndName()
-		newDir, newName := newEntry.FullPath.DirAndName()
+		oldDir, oldName := oldEntry.DirAndName()
+		newDir, newName := newEntry.DirAndName()
 
 		if oldDir != newDir || oldName != newName {
 			// Treat old location as delete
@@ -129,7 +128,6 @@ func (f *Filer) triggerLocalEmptyFolderCleanup(oldEntry, newEntry *Entry) {
 }
 
 func (f *Filer) logFlushFunc(logBuffer *log_buffer.LogBuffer, startTime, stopTime time.Time, buf []byte, minOffset, maxOffset int64) {
-
 	if len(buf) == 0 {
 		return
 	}
@@ -164,39 +162,42 @@ func isChunkNotFoundError(err error) bool {
 		return false
 	}
 	errMsg := err.Error()
+
 	return volumeNotFoundPattern.MatchString(errMsg) || chunkNotFoundPattern.MatchString(errMsg)
 }
 
 func (f *Filer) ReadPersistedLogBuffer(startPosition log_buffer.MessagePosition, stopTsNs int64, eachLogEntryFn log_buffer.EachLogEntryFuncType) (lastTsNs int64, isDone bool, err error) {
-
 	visitor, visitErr := f.collectPersistedLogBuffer(startPosition, stopTsNs)
 	if visitErr != nil {
-		if visitErr == io.EOF {
-			return
+		if errors.Is(visitErr, io.EOF) {
+			return lastTsNs, isDone, err
 		}
 		err = fmt.Errorf("reading from persisted logs: %w", visitErr)
-		return
+
+		return lastTsNs, isDone, err
 	}
 	var logEntry *filer_pb.LogEntry
 	for {
 		logEntry, visitErr = visitor.GetNext()
 		if visitErr != nil {
-			if visitErr == io.EOF {
+			if errors.Is(visitErr, io.EOF) {
 				break
 			}
 			err = fmt.Errorf("read next from persisted logs: %w", visitErr)
-			return
+
+			return lastTsNs, isDone, err
 		}
 		isDone, visitErr = eachLogEntryFn(logEntry)
 		if visitErr != nil {
 			err = fmt.Errorf("process persisted log entry: %w", visitErr)
-			return
+
+			return lastTsNs, isDone, err
 		}
-		lastTsNs = logEntry.TsNs
+		lastTsNs = logEntry.GetTsNs()
 		if isDone {
-			return
+			return lastTsNs, isDone, err
 		}
 	}
 
-	return
+	return lastTsNs, isDone, err
 }

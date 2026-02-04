@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 )
 
 func BenchmarkWithConcurrency(b *testing.B) {
@@ -21,13 +22,12 @@ func BenchmarkWithConcurrency(b *testing.B) {
 		b.Run(
 			fmt.Sprintf("Concurrency-%d", concurrency),
 			func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
+				for range b.N {
 					done := make(chan struct{})
 					startTime := time.Now()
 
-					for j := 0; j < concurrency; j++ {
+					for range concurrency {
 						go func() {
-
 							ap.Assign(&VolumeAssignRequest{
 								Count: 1,
 							})
@@ -36,7 +36,7 @@ func BenchmarkWithConcurrency(b *testing.B) {
 						}()
 					}
 
-					for j := 0; j < concurrency; j++ {
+					for range concurrency {
 						<-done
 					}
 
@@ -52,7 +52,7 @@ func BenchmarkStreamAssign(b *testing.B) {
 	ap, _ := NewAssignProxy(func(_ context.Context) pb.ServerAddress {
 		return pb.ServerAddress("localhost:9333")
 	}, grpc.WithInsecure(), 16)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ap.Assign(&VolumeAssignRequest{
 			Count: 1,
 		})
@@ -60,7 +60,7 @@ func BenchmarkStreamAssign(b *testing.B) {
 }
 
 func BenchmarkUnaryAssign(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		Assign(context.Background(), func(_ context.Context) pb.ServerAddress {
 			return pb.ServerAddress("localhost:9333")
 		}, grpc.WithInsecure(), &VolumeAssignRequest{

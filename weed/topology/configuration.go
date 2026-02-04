@@ -28,6 +28,7 @@ func (c *Configuration) String() string {
 	if b, e := xml.MarshalIndent(c, "  ", "  "); e == nil {
 		return string(b)
 	}
+
 	return ""
 }
 

@@ -3,8 +3,9 @@ package engine
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestCompleteSQLFixes is a comprehensive test verifying all SQL fixes work together
@@ -179,7 +180,7 @@ func TestCompleteSQLFixes(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Run multiple times - should be stable
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			result := predicate(testRecord)
 			assert.True(t, result, "Should be stable across multiple executions (iteration %d)", i)
 		}

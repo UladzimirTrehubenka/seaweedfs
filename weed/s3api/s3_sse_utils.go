@@ -10,6 +10,7 @@ import "github.com/seaweedfs/seaweedfs/weed/glog"
 func calculateIVWithOffset(baseIV []byte, offset int64) ([]byte, int) {
 	if len(baseIV) != 16 {
 		glog.Errorf("Invalid base IV length: expected 16, got %d", len(baseIV))
+
 		return baseIV, 0 // Return original IV as fallback
 	}
 
@@ -41,5 +42,6 @@ func calculateIVWithOffset(baseIV []byte, offset int64) ([]byte, int) {
 	// Single consolidated debug log to avoid performance impact in high-throughput scenarios
 	glog.V(4).Infof("calculateIVWithOffset: baseIV=%x, offset=%d, blockOffset=%d, skip=%d, derivedIV=%x",
 		baseIV, offset, originalBlockOffset, skip, iv)
+
 	return iv, skip
 }

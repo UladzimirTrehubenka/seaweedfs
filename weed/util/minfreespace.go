@@ -33,10 +33,12 @@ func (s MinFreeSpace) IsLow(freeBytes uint64, freePercent float32) (yes bool, de
 	case AsPercent:
 		yes = freePercent < s.Percent
 		op := IfElse(yes, "<", ">=")
+
 		return yes, fmt.Sprintf("disk free %.2f%% %s required %.2f%%", freePercent, op, s.Percent)
 	case AsBytes:
 		yes = freeBytes < s.Bytes
 		op := IfElse(yes, "<", ">=")
+
 		return yes, fmt.Sprintf("disk free %s %s required %s",
 			BytesToHumanReadable(freeBytes), op, BytesToHumanReadable(s.Bytes))
 	}
@@ -57,8 +59,8 @@ func (s MinFreeSpace) String() string {
 // MustParseMinFreeSpace parses comma-separated argument for min free space setting.
 // minFreeSpace has the high priority than minFreeSpacePercent if it is set.
 func MustParseMinFreeSpace(minFreeSpace string, minFreeSpacePercent string) (spaces []MinFreeSpace) {
-	ss := strings.Split(EmptyTo(minFreeSpace, minFreeSpacePercent), ",")
-	for _, freeString := range ss {
+	ss := strings.SplitSeq(EmptyTo(minFreeSpace, minFreeSpacePercent), ",")
+	for freeString := range ss {
 		if vv, e := ParseMinFreeSpace(freeString); e == nil {
 			spaces = append(spaces, *vv)
 		} else {
@@ -77,6 +79,7 @@ func ParseMinFreeSpace(s string) (*MinFreeSpace, error) {
 		if percent < 0 || percent > 100 {
 			return nil, ErrMinFreeSpaceBadValue
 		}
+
 		return &MinFreeSpace{Type: AsPercent, Percent: float32(percent), Raw: s}, nil
 	}
 
@@ -84,6 +87,7 @@ func ParseMinFreeSpace(s string) (*MinFreeSpace, error) {
 		if directSize <= 100 {
 			return nil, ErrMinFreeSpaceBadValue
 		}
+
 		return &MinFreeSpace{Type: AsBytes, Bytes: directSize, Raw: s}, nil
 	}
 

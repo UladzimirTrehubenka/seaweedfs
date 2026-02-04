@@ -9,7 +9,6 @@ type LimitedConcurrentExecutor struct {
 }
 
 func NewLimitedConcurrentExecutor(limit int) *LimitedConcurrentExecutor {
-
 	// allocate a limiter instance
 	c := &LimitedConcurrentExecutor{
 		limit:     limit,
@@ -17,7 +16,7 @@ func NewLimitedConcurrentExecutor(limit int) *LimitedConcurrentExecutor {
 	}
 
 	// allocate the tokenChan:
-	for i := 0; i < c.limit; i++ {
+	for i := range c.limit {
 		c.tokenChan <- i
 	}
 

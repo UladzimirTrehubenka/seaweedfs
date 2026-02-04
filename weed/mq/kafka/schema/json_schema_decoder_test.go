@@ -65,6 +65,7 @@ func TestNewJSONSchemaDecoder(t *testing.T) {
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("NewJSONSchemaDecoder() error = %v, expectErr %v", err, tt.expectErr)
+
 				return
 			}
 
@@ -159,6 +160,7 @@ func TestJSONSchemaDecoder_Decode(t *testing.T) {
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("Decode() error = %v, expectErr %v", err, tt.expectErr)
+
 				return
 			}
 
@@ -221,7 +223,7 @@ func TestJSONSchemaDecoder_DecodeToRecordValue(t *testing.T) {
 	}
 
 	// Check id field
-	idValue := recordValue.Fields["id"]
+	idValue := recordValue.GetFields()["id"]
 	if idValue == nil {
 		t.Fatal("Expected id field")
 	}
@@ -239,7 +241,7 @@ func TestJSONSchemaDecoder_DecodeToRecordValue(t *testing.T) {
 	}
 
 	// Check name field
-	nameValue := recordValue.Fields["name"]
+	nameValue := recordValue.GetFields()["name"]
 	if nameValue == nil {
 		t.Fatal("Expected name field")
 	}
@@ -248,12 +250,12 @@ func TestJSONSchemaDecoder_DecodeToRecordValue(t *testing.T) {
 	}
 
 	// Check tags array
-	tagsValue := recordValue.Fields["tags"]
+	tagsValue := recordValue.GetFields()["tags"]
 	if tagsValue == nil {
 		t.Fatal("Expected tags field")
 	}
 	tagsList := tagsValue.GetListValue()
-	if tagsList == nil || len(tagsList.Values) != 3 {
+	if tagsList == nil || len(tagsList.GetValues()) != 3 {
 		t.Errorf("Expected tags array with 3 elements, got %v", tagsList)
 	}
 }
@@ -293,61 +295,61 @@ func TestJSONSchemaDecoder_InferRecordType(t *testing.T) {
 		t.Fatalf("Failed to infer RecordType: %v", err)
 	}
 
-	if len(recordType.Fields) != 8 {
-		t.Errorf("Expected 8 fields, got %d", len(recordType.Fields))
+	if len(recordType.GetFields()) != 8 {
+		t.Errorf("Expected 8 fields, got %d", len(recordType.GetFields()))
 	}
 
 	// Create a map for easier field lookup
 	fieldMap := make(map[string]*schema_pb.Field)
-	for _, field := range recordType.Fields {
-		fieldMap[field.Name] = field
+	for _, field := range recordType.GetFields() {
+		fieldMap[field.GetName()] = field
 	}
 
 	// Test specific field types
-	if fieldMap["id"].Type.GetScalarType() != schema_pb.ScalarType_INT32 {
+	if fieldMap["id"].GetType().GetScalarType() != schema_pb.ScalarType_INT32 {
 		t.Error("Expected id field to be INT32")
 	}
 
-	if fieldMap["name"].Type.GetScalarType() != schema_pb.ScalarType_STRING {
+	if fieldMap["name"].GetType().GetScalarType() != schema_pb.ScalarType_STRING {
 		t.Error("Expected name field to be STRING")
 	}
 
-	if fieldMap["score"].Type.GetScalarType() != schema_pb.ScalarType_FLOAT {
+	if fieldMap["score"].GetType().GetScalarType() != schema_pb.ScalarType_FLOAT {
 		t.Error("Expected score field to be FLOAT")
 	}
 
-	if fieldMap["timestamp"].Type.GetScalarType() != schema_pb.ScalarType_TIMESTAMP {
+	if fieldMap["timestamp"].GetType().GetScalarType() != schema_pb.ScalarType_TIMESTAMP {
 		t.Error("Expected timestamp field to be TIMESTAMP")
 	}
 
-	if fieldMap["data"].Type.GetScalarType() != schema_pb.ScalarType_BYTES {
+	if fieldMap["data"].GetType().GetScalarType() != schema_pb.ScalarType_BYTES {
 		t.Error("Expected data field to be BYTES")
 	}
 
-	if fieldMap["active"].Type.GetScalarType() != schema_pb.ScalarType_BOOL {
+	if fieldMap["active"].GetType().GetScalarType() != schema_pb.ScalarType_BOOL {
 		t.Error("Expected active field to be BOOL")
 	}
 
 	// Test array field
-	if fieldMap["tags"].Type.GetListType() == nil {
+	if fieldMap["tags"].GetType().GetListType() == nil {
 		t.Error("Expected tags field to be LIST")
 	}
 
 	// Test nested object field
-	if fieldMap["metadata"].Type.GetRecordType() == nil {
+	if fieldMap["metadata"].GetType().GetRecordType() == nil {
 		t.Error("Expected metadata field to be RECORD")
 	}
 
 	// Test required fields
-	if !fieldMap["id"].IsRequired {
+	if !fieldMap["id"].GetIsRequired() {
 		t.Error("Expected id field to be required")
 	}
 
-	if !fieldMap["name"].IsRequired {
+	if !fieldMap["name"].GetIsRequired() {
 		t.Error("Expected name field to be required")
 	}
 
-	if fieldMap["active"].IsRequired {
+	if fieldMap["active"].GetIsRequired() {
 		t.Error("Expected active field to be optional")
 	}
 }
@@ -370,7 +372,7 @@ func TestJSONSchemaDecoder_EncodeFromRecordValue(t *testing.T) {
 	}
 
 	// Create test RecordValue
-	testMap := map[string]interface{}{
+	testMap := map[string]any{
 		"id":     int64(123),
 		"name":   "Test User",
 		"active": true,
@@ -384,7 +386,7 @@ func TestJSONSchemaDecoder_EncodeFromRecordValue(t *testing.T) {
 	}
 
 	// Verify the JSON is valid and contains expected data
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(jsonData, &result); err != nil {
 		t.Fatalf("Failed to parse generated JSON: %v", err)
 	}
@@ -459,6 +461,7 @@ func TestJSONSchemaDecoder_ArrayAndPrimitiveSchemas(t *testing.T) {
 
 			if (err == nil) != tt.expectOK {
 				t.Errorf("Decode() error = %v, expectOK %v", err, tt.expectOK)
+
 				return
 			}
 
@@ -518,8 +521,7 @@ func BenchmarkJSONSchemaDecoder_Decode(b *testing.B) {
 	decoder, _ := NewJSONSchemaDecoder(schema)
 	jsonData := []byte(`{"id": 123, "name": "John Doe"}`)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = decoder.Decode(jsonData)
 	}
 }
@@ -537,8 +539,7 @@ func BenchmarkJSONSchemaDecoder_DecodeToRecordValue(b *testing.B) {
 	decoder, _ := NewJSONSchemaDecoder(schema)
 	jsonData := []byte(`{"id": 123, "name": "John Doe"}`)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = decoder.DecodeToRecordValue(jsonData)
 	}
 }

@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,15 +14,16 @@ func CountTopologyResources(topologyInfo *master_pb.TopologyInfo) (dcCount, node
 	if topologyInfo == nil {
 		return 0, 0, 0
 	}
-	dcCount = len(topologyInfo.DataCenterInfos)
-	for _, dc := range topologyInfo.DataCenterInfos {
-		for _, rack := range dc.RackInfos {
-			nodeCount += len(rack.DataNodeInfos)
-			for _, node := range rack.DataNodeInfos {
-				diskCount += len(node.DiskInfos)
+	dcCount = len(topologyInfo.GetDataCenterInfos())
+	for _, dc := range topologyInfo.GetDataCenterInfos() {
+		for _, rack := range dc.GetRackInfos() {
+			nodeCount += len(rack.GetDataNodeInfos())
+			for _, node := range rack.GetDataNodeInfos() {
+				diskCount += len(node.GetDiskInfos())
 			}
 		}
 	}
+
 	return
 }
 
@@ -33,12 +35,14 @@ func (at *ActiveTopology) UpdateTopology(topologyInfo *master_pb.TopologyInfo) e
 	// Validate topology updates to prevent clearing disk maps with invalid data
 	if topologyInfo == nil {
 		glog.Warningf("UpdateTopology received nil topologyInfo, preserving last-known-good topology")
-		return fmt.Errorf("rejected invalid topology update: nil topologyInfo")
+
+		return errors.New("rejected invalid topology update: nil topologyInfo")
 	}
 
-	if len(topologyInfo.DataCenterInfos) == 0 {
+	if len(topologyInfo.GetDataCenterInfos()) == 0 {
 		glog.Warningf("UpdateTopology received empty DataCenterInfos, preserving last-known-good topology (had %d nodes, %d disks)",
 			len(at.nodes), len(at.disks))
+
 		return fmt.Errorf("rejected invalid topology update: empty DataCenterInfos (had %d nodes, %d disks)", len(at.nodes), len(at.disks))
 	}
 
@@ -49,6 +53,7 @@ func (at *ActiveTopology) UpdateTopology(topologyInfo *master_pb.TopologyInfo) e
 	if incomingNodes == 0 && len(at.nodes) > 0 {
 		glog.Warningf("UpdateTopology received topology with 0 nodes, preserving last-known-good topology (had %d nodes, %d disks)",
 			len(at.nodes), len(at.disks))
+
 		return fmt.Errorf("rejected invalid topology update: 0 nodes (had %d nodes, %d disks)", len(at.nodes), len(at.disks))
 	}
 
@@ -62,36 +67,36 @@ func (at *ActiveTopology) UpdateTopology(topologyInfo *master_pb.TopologyInfo) e
 	at.nodes = make(map[string]*activeNode)
 	at.disks = make(map[string]*activeDisk)
 
-	for _, dc := range topologyInfo.DataCenterInfos {
-		for _, rack := range dc.RackInfos {
-			for _, nodeInfo := range rack.DataNodeInfos {
+	for _, dc := range topologyInfo.GetDataCenterInfos() {
+		for _, rack := range dc.GetRackInfos() {
+			for _, nodeInfo := range rack.GetDataNodeInfos() {
 				node := &activeNode{
-					nodeID:     nodeInfo.Id,
-					dataCenter: dc.Id,
-					rack:       rack.Id,
+					nodeID:     nodeInfo.GetId(),
+					dataCenter: dc.GetId(),
+					rack:       rack.GetId(),
 					nodeInfo:   nodeInfo,
 					disks:      make(map[uint32]*activeDisk),
 				}
 
 				// Add disks for this node
-				for diskType, diskInfo := range nodeInfo.DiskInfos {
+				for diskType, diskInfo := range nodeInfo.GetDiskInfos() {
 					disk := &activeDisk{
 						DiskInfo: &DiskInfo{
-							NodeID:     nodeInfo.Id,
-							DiskID:     diskInfo.DiskId,
+							NodeID:     nodeInfo.GetId(),
+							DiskID:     diskInfo.GetDiskId(),
 							DiskType:   diskType,
-							DataCenter: dc.Id,
-							Rack:       rack.Id,
+							DataCenter: dc.GetId(),
+							Rack:       rack.GetId(),
 							DiskInfo:   diskInfo,
 						},
 					}
 
-					diskKey := fmt.Sprintf("%s:%d", nodeInfo.Id, diskInfo.DiskId)
-					node.disks[diskInfo.DiskId] = disk
+					diskKey := fmt.Sprintf("%s:%d", nodeInfo.GetId(), diskInfo.GetDiskId())
+					node.disks[diskInfo.GetDiskId()] = disk
 					at.disks[diskKey] = disk
 				}
 
-				at.nodes[nodeInfo.Id] = node
+				at.nodes[nodeInfo.GetId()] = node
 			}
 		}
 	}
@@ -104,6 +109,7 @@ func (at *ActiveTopology) UpdateTopology(topologyInfo *master_pb.TopologyInfo) e
 
 	glog.V(1).Infof("ActiveTopology updated: %d nodes, %d disks, %d volume entries, %d EC shard entries",
 		len(at.nodes), len(at.disks), len(at.volumeIndex), len(at.ecShardIndex))
+
 	return nil
 }
 
@@ -154,6 +160,7 @@ func (at *ActiveTopology) GetAllNodes() map[string]*master_pb.DataNodeInfo {
 	for nodeID, node := range at.nodes {
 		result[nodeID] = node.nodeInfo
 	}
+
 	return result
 }
 
@@ -161,6 +168,7 @@ func (at *ActiveTopology) GetAllNodes() map[string]*master_pb.DataNodeInfo {
 func (at *ActiveTopology) GetTopologyInfo() *master_pb.TopologyInfo {
 	at.mutex.RLock()
 	defer at.mutex.RUnlock()
+
 	return at.topologyInfo
 }
 
@@ -188,6 +196,7 @@ func (at *ActiveTopology) GetNodeDisks(nodeID string) []*DiskInfo {
 func (at *ActiveTopology) GetDiskCount() int {
 	at.mutex.RLock()
 	defer at.mutex.RUnlock()
+
 	return len(at.disks)
 }
 
@@ -196,6 +205,7 @@ func (at *ActiveTopology) rebuildIndexes() {
 	// Nil-safety guard: return early if topology is not valid
 	if at.topologyInfo == nil || at.topologyInfo.DataCenterInfos == nil {
 		glog.V(1).Infof("rebuildIndexes: skipping rebuild due to nil topology or DataCenterInfos")
+
 		return
 	}
 
@@ -204,21 +214,21 @@ func (at *ActiveTopology) rebuildIndexes() {
 	at.ecShardIndex = make(map[uint32][]string)
 
 	// Rebuild indexes from current topology
-	for _, dc := range at.topologyInfo.DataCenterInfos {
-		for _, rack := range dc.RackInfos {
-			for _, nodeInfo := range rack.DataNodeInfos {
-				for _, diskInfo := range nodeInfo.DiskInfos {
-					diskKey := fmt.Sprintf("%s:%d", nodeInfo.Id, diskInfo.DiskId)
+	for _, dc := range at.topologyInfo.GetDataCenterInfos() {
+		for _, rack := range dc.GetRackInfos() {
+			for _, nodeInfo := range rack.GetDataNodeInfos() {
+				for _, diskInfo := range nodeInfo.GetDiskInfos() {
+					diskKey := fmt.Sprintf("%s:%d", nodeInfo.GetId(), diskInfo.GetDiskId())
 
 					// Index volumes
-					for _, volumeInfo := range diskInfo.VolumeInfos {
-						volumeID := volumeInfo.Id
+					for _, volumeInfo := range diskInfo.GetVolumeInfos() {
+						volumeID := volumeInfo.GetId()
 						at.volumeIndex[volumeID] = append(at.volumeIndex[volumeID], diskKey)
 					}
 
 					// Index EC shards
-					for _, ecShardInfo := range diskInfo.EcShardInfos {
-						volumeID := ecShardInfo.Id
+					for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+						volumeID := ecShardInfo.GetId()
 						at.ecShardIndex[volumeID] = append(at.ecShardIndex[volumeID], diskKey)
 					}
 				}
@@ -289,11 +299,12 @@ func (at *ActiveTopology) volumeMatchesCollection(disk *activeDisk, volumeID uin
 		return false
 	}
 
-	for _, volumeInfo := range disk.DiskInfo.DiskInfo.VolumeInfos {
-		if volumeInfo.Id == volumeID && volumeInfo.Collection == collection {
+	for _, volumeInfo := range disk.DiskInfo.DiskInfo.GetVolumeInfos() {
+		if volumeInfo.GetId() == volumeID && volumeInfo.GetCollection() == collection {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -303,10 +314,11 @@ func (at *ActiveTopology) ecShardMatchesCollection(disk *activeDisk, volumeID ui
 		return false
 	}
 
-	for _, ecShardInfo := range disk.DiskInfo.DiskInfo.EcShardInfos {
-		if ecShardInfo.Id == volumeID && ecShardInfo.Collection == collection {
+	for _, ecShardInfo := range disk.DiskInfo.DiskInfo.GetEcShardInfos() {
+		if ecShardInfo.GetId() == volumeID && ecShardInfo.GetCollection() == collection {
 			return true
 		}
 	}
+
 	return false
 }

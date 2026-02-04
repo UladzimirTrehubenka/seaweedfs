@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/replication/source"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 type RemoteSyncOptions struct {
@@ -32,7 +33,7 @@ func (option *RemoteSyncOptions) WithFilerClient(streamingMode bool, fn func(fil
 	})
 }
 func (option *RemoteSyncOptions) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 func (option *RemoteSyncOptions) GetDataCenter() string {
@@ -73,7 +74,6 @@ var cmdFilerRemoteSynchronize = &Command{
 }
 
 func runFilerRemoteSynchronize(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	remoteSyncOptions.grpcDialOption = grpcDialOption
@@ -97,11 +97,12 @@ func runFilerRemoteSynchronize(cmd *Command, args []string) bool {
 			if err != nil {
 				glog.Errorf("synchronize %s: %v", dir, err)
 			}
+
 			return true
 		})
+
 		return true
 	}
 
 	return true
-
 }

@@ -1,12 +1,13 @@
 package security
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
@@ -45,8 +46,10 @@ func GenJwtForVolumeServer(signingKey SigningKey, expiresAfterSec int, fileId st
 	encoded, e := t.SignedString([]byte(signingKey))
 	if e != nil {
 		glog.V(0).Infof("Failed to sign claims %+v: %v", t.Claims, e)
+
 		return ""
 	}
+
 	return EncodedJwt(encoded)
 }
 
@@ -67,13 +70,14 @@ func GenJwtForFilerServer(signingKey SigningKey, expiresAfterSec int) EncodedJwt
 	encoded, e := t.SignedString([]byte(signingKey))
 	if e != nil {
 		glog.V(0).Infof("Failed to sign claims %+v: %v", t.Claims, e)
+
 		return ""
 	}
+
 	return EncodedJwt(encoded)
 }
 
 func GetJwt(r *http.Request) EncodedJwt {
-
 	// Get token from query params
 	tokenStr := r.URL.Query().Get("jwt")
 
@@ -98,10 +102,11 @@ func GetJwt(r *http.Request) EncodedJwt {
 
 func DecodeJwt(signingKey SigningKey, tokenString EncodedJwt, claims jwt.Claims) (token *jwt.Token, err error) {
 	// check exp, nbf
-	return jwt.ParseWithClaims(string(tokenString), claims, func(token *jwt.Token) (interface{}, error) {
+	return jwt.ParseWithClaims(string(tokenString), claims, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unknown token method")
+			return nil, errors.New("unknown token method")
 		}
+
 		return []byte(signingKey), nil
 	})
 }

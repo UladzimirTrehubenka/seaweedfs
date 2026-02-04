@@ -1,5 +1,5 @@
 package master_pb
 
 func (v *VolumeLocation) IsEmptyUrl() bool {
-	return v.Url == "" || v.Url == ":0"
+	return v.GetUrl() == "" || v.GetUrl() == ":0"
 }

@@ -85,6 +85,7 @@ func (h *S3TablesHandler) HandleRequest(w http.ResponseWriter, r *http.Request, 
 	if operation == "" {
 		glog.V(1).Infof("S3Tables: missing X-Amz-Target header")
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "Missing X-Amz-Target header")
+
 		return
 	}
 
@@ -149,7 +150,8 @@ func (h *S3TablesHandler) HandleRequest(w http.ResponseWriter, r *http.Request, 
 		err = h.handleUntagResource(w, r, filerClient)
 
 	default:
-		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, fmt.Sprintf("Unknown operation: %s", operation))
+		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "Unknown operation: "+operation)
+
 		return
 	}
 
@@ -170,6 +172,7 @@ func (h *S3TablesHandler) getAccountID(r *http.Request) string {
 	if accountID := r.Header.Get(s3_constants.AmzAccountId); accountID != "" {
 		return accountID
 	}
+
 	return h.accountID
 }
 
@@ -208,12 +211,13 @@ func getIdentityActions(r *http.Request) []string {
 			actions[i] = fmt.Sprint(action.Interface())
 		}
 	}
+
 	return actions
 }
 
 // Request/Response helpers
 
-func (h *S3TablesHandler) readRequestBody(r *http.Request, v interface{}) error {
+func (h *S3TablesHandler) readRequestBody(r *http.Request, v any) error {
 	defer r.Body.Close()
 
 	// Limit request body size to prevent unbounded reads
@@ -241,7 +245,7 @@ func (h *S3TablesHandler) readRequestBody(r *http.Request, v interface{}) error 
 
 // Response writing helpers
 
-func (h *S3TablesHandler) writeJSON(w http.ResponseWriter, status int, data interface{}) {
+func (h *S3TablesHandler) writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
 	w.WriteHeader(status)
 	if data != nil {
@@ -254,7 +258,7 @@ func (h *S3TablesHandler) writeJSON(w http.ResponseWriter, status int, data inte
 func (h *S3TablesHandler) writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
 	w.WriteHeader(status)
-	errorResponse := map[string]interface{}{
+	errorResponse := map[string]any{
 		"__type":  code,
 		"message": message,
 	}
@@ -275,6 +279,7 @@ func (h *S3TablesHandler) generateTableARN(ownerAccountID, bucketName, tableID s
 
 func isAuthError(err error) bool {
 	var authErr *AuthError
+
 	return errors.As(err, &authErr) || errors.Is(err, ErrAccessDenied)
 }
 
@@ -284,12 +289,14 @@ func (h *S3TablesHandler) readTags(ctx context.Context, client filer_pb.SeaweedF
 		if errors.Is(err, ErrAttributeNotFound) {
 			return nil, nil
 		}
+
 		return nil, err
 	}
 	tags := make(map[string]string)
 	if err := json.Unmarshal(data, &tags); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal tags: %w", err)
 	}
+
 	return tags, nil
 }
 
@@ -301,5 +308,6 @@ func mapKeys(tags map[string]string) []string {
 	for key := range tags {
 		keys = append(keys, key)
 	}
+
 	return keys
 }

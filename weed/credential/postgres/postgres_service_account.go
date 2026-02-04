@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
@@ -12,13 +13,13 @@ import (
 
 func (store *PostgresStore) CreateServiceAccount(ctx context.Context, sa *iam_pb.ServiceAccount) error {
 	if sa == nil {
-		return fmt.Errorf("service account is nil")
+		return errors.New("service account is nil")
 	}
-	if sa.Id == "" {
-		return fmt.Errorf("service account ID is required")
+	if sa.GetId() == "" {
+		return errors.New("service account ID is required")
 	}
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	data, err := json.Marshal(sa)
@@ -27,28 +28,29 @@ func (store *PostgresStore) CreateServiceAccount(ctx context.Context, sa *iam_pb
 	}
 
 	accessKey := ""
-	if sa.Credential != nil {
-		accessKey = sa.Credential.AccessKey
+	if sa.GetCredential() != nil {
+		accessKey = sa.GetCredential().GetAccessKey()
 	}
 
 	_, err = store.db.ExecContext(ctx,
 		"INSERT INTO service_accounts (id, access_key, content) VALUES ($1, $2, $3)",
-		sa.Id, accessKey, data)
+		sa.GetId(), accessKey, data)
 	if err != nil {
 		return fmt.Errorf("failed to insert service account: %w", err)
 	}
+
 	return nil
 }
 
 func (store *PostgresStore) UpdateServiceAccount(ctx context.Context, id string, sa *iam_pb.ServiceAccount) error {
 	if sa == nil {
-		return fmt.Errorf("service account is nil")
+		return errors.New("service account is nil")
 	}
 	if id == "" {
-		return fmt.Errorf("service account ID is required")
+		return errors.New("service account ID is required")
 	}
-	if sa.Id != id {
-		return fmt.Errorf("service account ID mismatch")
+	if sa.GetId() != id {
+		return errors.New("service account ID mismatch")
 	}
 
 	data, err := json.Marshal(sa)
@@ -57,8 +59,8 @@ func (store *PostgresStore) UpdateServiceAccount(ctx context.Context, id string,
 	}
 
 	accessKey := ""
-	if sa.Credential != nil {
-		accessKey = sa.Credential.AccessKey
+	if sa.GetCredential() != nil {
+		accessKey = sa.GetCredential().GetAccessKey()
 	}
 
 	result, err := store.db.ExecContext(ctx,
@@ -75,12 +77,13 @@ func (store *PostgresStore) UpdateServiceAccount(ctx context.Context, id string,
 	if rows == 0 {
 		return credential.ErrServiceAccountNotFound
 	}
+
 	return nil
 }
 
 func (store *PostgresStore) DeleteServiceAccount(ctx context.Context, id string) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	result, err := store.db.ExecContext(ctx, "DELETE FROM service_accounts WHERE id = $1", id)
@@ -95,20 +98,22 @@ func (store *PostgresStore) DeleteServiceAccount(ctx context.Context, id string)
 	if rows == 0 {
 		return credential.ErrServiceAccountNotFound
 	}
+
 	return nil
 }
 
 func (store *PostgresStore) GetServiceAccount(ctx context.Context, id string) (*iam_pb.ServiceAccount, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	var content []byte
 	err := store.db.QueryRowContext(ctx, "SELECT content FROM service_accounts WHERE id = $1", id).Scan(&content)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, credential.ErrServiceAccountNotFound
 		}
+
 		return nil, fmt.Errorf("failed to get service account: %w", err)
 	}
 
@@ -116,12 +121,13 @@ func (store *PostgresStore) GetServiceAccount(ctx context.Context, id string) (*
 	if err := json.Unmarshal(content, sa); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal service account: %w", err)
 	}
+
 	return sa, nil
 }
 
 func (store *PostgresStore) ListServiceAccounts(ctx context.Context) ([]*iam_pb.ServiceAccount, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	rows, err := store.db.QueryContext(ctx, "SELECT content FROM service_accounts")
@@ -152,15 +158,16 @@ func (store *PostgresStore) ListServiceAccounts(ctx context.Context) ([]*iam_pb.
 
 func (store *PostgresStore) GetServiceAccountByAccessKey(ctx context.Context, accessKey string) (*iam_pb.ServiceAccount, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	var content []byte
 	err := store.db.QueryRowContext(ctx, "SELECT content FROM service_accounts WHERE access_key = $1", accessKey).Scan(&content)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, credential.ErrAccessKeyNotFound
 		}
+
 		return nil, fmt.Errorf("failed to query service account by access key: %w", err)
 	}
 

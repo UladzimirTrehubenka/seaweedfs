@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/security"
@@ -21,12 +23,10 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/buffer_pool"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
-	"google.golang.org/grpc"
 )
 
 func ReplicatedWrite(ctx context.Context, masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption, s *storage.Store, volumeId needle.VolumeId, n *needle.Needle, r *http.Request, contentMd5 string) (isUnchanged bool, err error) {
-
-	//check JWT
+	// check JWT
 	jwt := security.GetJwt(r)
 
 	// check whether this is a replicated write request
@@ -36,15 +36,13 @@ func ReplicatedWrite(ctx context.Context, masterFn operation.GetMasterFn, grpcDi
 		remoteLocations, err = GetWritableRemoteReplications(s, grpcDialOption, volumeId, masterFn)
 		if err != nil {
 			glog.V(0).Infoln(err)
-			return
+
+			return isUnchanged, err
 		}
 	}
 
 	// read fsync value
-	fsync := false
-	if r.FormValue("fsync") == "true" {
-		fsync = true
-	}
+	fsync := r.FormValue("fsync") == "true"
 
 	if s.GetVolume(volumeId) != nil {
 		start := time.Now()
@@ -59,11 +57,12 @@ func ReplicatedWrite(ctx context.Context, masterFn operation.GetMasterFn, grpcDi
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorWriteToLocalDisk).Inc()
 			err = fmt.Errorf("failed to write to local disk: %w", err)
 			glog.V(0).Infoln(err)
-			return
+
+			return isUnchanged, err
 		}
 	}
 
-	if len(remoteLocations) > 0 { //send to other replica locations
+	if len(remoteLocations) > 0 { // send to other replica locations
 		start := time.Now()
 
 		inFlightGauge := stats.VolumeServerInFlightRequestsGauge.WithLabelValues(stats.WriteToReplicas)
@@ -120,28 +119,31 @@ func ReplicatedWrite(ctx context.Context, masterFn operation.GetMasterFn, grpcDi
 			uploader, err := operation.NewUploader()
 			if err != nil {
 				glog.Errorf("replication-UploadData, err:%v, url:%s", err, u.String())
+
 				return err
 			}
 			_, err = uploader.UploadData(ctx, n.Data, uploadOption)
 			if err != nil {
 				glog.Errorf("replication-UploadData, err:%v, url:%s", err, u.String())
 			}
+
 			return err
 		})
 		stats.VolumeServerRequestHistogram.WithLabelValues(stats.WriteToReplicas).Observe(time.Since(start).Seconds())
 		if err != nil {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorWriteToReplicas).Inc()
-			err = fmt.Errorf("failed to write to replicas for volume %d: %v", volumeId, err)
+			err = fmt.Errorf("failed to write to replicas for volume %d: %w", volumeId, err)
 			glog.V(0).Infoln(err)
+
 			return false, err
 		}
 	}
-	return
+
+	return isUnchanged, err
 }
 
 func ReplicatedDelete(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption, store *storage.Store, volumeId needle.VolumeId, n *needle.Needle, r *http.Request) (size types.Size, err error) {
-
-	//check JWT
+	// check JWT
 	jwt := security.GetJwt(r)
 
 	var remoteLocations []operation.Location
@@ -149,6 +151,7 @@ func ReplicatedDelete(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOp
 		remoteLocations, err = GetWritableRemoteReplications(store, grpcDialOption, volumeId, masterFn)
 		if err != nil {
 			glog.V(0).Infoln(err)
+
 			return
 		}
 	}
@@ -156,16 +159,18 @@ func ReplicatedDelete(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOp
 	size, err = store.DeleteVolumeNeedle(volumeId, n)
 	if err != nil {
 		glog.V(0).Infoln("delete error:", err)
+
 		return
 	}
 
-	if len(remoteLocations) > 0 { //send to other replica locations
+	if len(remoteLocations) > 0 { // send to other replica locations
 		if err = DistributedOperation(remoteLocations, func(location operation.Location) error {
 			return util_http.Delete("http://"+location.Url+r.URL.Path+"?type=replicate", string(jwt))
 		}); err != nil {
 			size = 0
 		}
 	}
+
 	return
 }
 
@@ -181,6 +186,7 @@ func (dr DistributedOperationResult) Error() error {
 	if len(errs) == 0 {
 		return nil
 	}
+
 	return errors.New(strings.Join(errs, "\n"))
 }
 
@@ -198,7 +204,7 @@ func DistributedOperation(locations []operation.Location, op func(location opera
 		}(location, results)
 	}
 	ret := DistributedOperationResult(make(map[string]error))
-	for i := 0; i < length; i++ {
+	for range length {
 		result := <-results
 		ret[result.Host] = result.Error
 	}
@@ -207,10 +213,9 @@ func DistributedOperation(locations []operation.Location, op func(location opera
 }
 
 func GetWritableRemoteReplications(s *storage.Store, grpcDialOption grpc.DialOption, volumeId needle.VolumeId, masterFn operation.GetMasterFn) (remoteLocations []operation.Location, err error) {
-
 	v := s.GetVolume(volumeId)
 	if v != nil && v.ReplicaPlacement.GetCopyCount() == 1 {
-		return
+		return remoteLocations, err
 	}
 
 	// not on local store, or has replications
@@ -223,8 +228,9 @@ func GetWritableRemoteReplications(s *storage.Store, grpcDialOption grpc.DialOpt
 			}
 		}
 	} else {
-		err = fmt.Errorf("replicating lookup failed for %d: %v", volumeId, lookupErr)
-		return
+		err = fmt.Errorf("replicating lookup failed for %d: %w", volumeId, lookupErr)
+
+		return remoteLocations, err
 	}
 
 	if v != nil {
@@ -236,5 +242,5 @@ func GetWritableRemoteReplications(s *storage.Store, grpcDialOption grpc.DialOpt
 		}
 	}
 
-	return
+	return remoteLocations, err
 }

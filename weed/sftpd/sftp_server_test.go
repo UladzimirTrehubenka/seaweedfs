@@ -3,8 +3,9 @@ package sftpd
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 )
 
 func stringPtr(s string) *string {

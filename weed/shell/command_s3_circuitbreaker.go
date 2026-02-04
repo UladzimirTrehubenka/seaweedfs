@@ -2,6 +2,7 @@ package shell
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -75,7 +76,6 @@ func (c *commandS3CircuitBreaker) Do(args []string, commandEnv *CommandEnv, writ
 
 	if err = s3CircuitBreakerCommand.Parse(args); err != nil {
 		return nil
-
 	}
 
 	var buf bytes.Buffer
@@ -104,7 +104,7 @@ func (c *commandS3CircuitBreaker) Do(args []string, commandEnv *CommandEnv, writ
 				deleteGlobalActions(cbCfg, cmdActions, limitType)
 				if cbCfg.Buckets != nil {
 					var allBuckets []string
-					for bucket := range cbCfg.Buckets {
+					for bucket := range cbCfg.GetBuckets() {
 						allBuckets = append(allBuckets, bucket)
 					}
 					deleteBucketsActions(allBuckets, cbCfg, cmdActions, limitType)
@@ -128,14 +128,14 @@ func (c *commandS3CircuitBreaker) Do(args []string, commandEnv *CommandEnv, writ
 		}
 
 		if len(cmdActions) > 0 && len(*buckets) <= 0 && !*global {
-			return fmt.Errorf("one of -global and -buckets must be specified")
+			return errors.New("one of -global and -buckets must be specified")
 		}
 
 		if len(*buckets) > 0 {
 			for _, bucket := range cmdBuckets {
 				var cbOptions *s3_pb.S3CircuitBreakerOptions
 				var exists bool
-				if cbOptions, exists = cbCfg.Buckets[bucket]; !exists {
+				if cbOptions, exists = cbCfg.GetBuckets()[bucket]; !exists {
 					cbOptions = &s3_pb.S3CircuitBreakerOptions{}
 					cbCfg.Buckets[bucket] = cbOptions
 				}
@@ -148,14 +148,14 @@ func (c *commandS3CircuitBreaker) Do(args []string, commandEnv *CommandEnv, writ
 					}
 				}
 
-				if len(cbOptions.Actions) <= 0 && !cbOptions.Enabled {
-					delete(cbCfg.Buckets, bucket)
+				if len(cbOptions.GetActions()) <= 0 && !cbOptions.GetEnabled() {
+					delete(cbCfg.GetBuckets(), bucket)
 				}
 			}
 		}
 
 		if *global {
-			globalOptions := cbCfg.Global
+			globalOptions := cbCfg.GetGlobal()
 			if globalOptions == nil {
 				globalOptions = &s3_pb.S3CircuitBreakerOptions{Actions: make(map[string]int64, len(cmdActions))}
 				cbCfg.Global = globalOptions
@@ -169,7 +169,7 @@ func (c *commandS3CircuitBreaker) Do(args []string, commandEnv *CommandEnv, writ
 				}
 			}
 
-			if len(globalOptions.Actions) <= 0 && !globalOptions.Enabled {
+			if len(globalOptions.GetActions()) <= 0 && !globalOptions.GetEnabled() {
 				cbCfg.Global = nil
 			}
 		}
@@ -198,15 +198,16 @@ func (c *commandS3CircuitBreaker) Do(args []string, commandEnv *CommandEnv, writ
 func loadConfig(commandEnv *CommandEnv, dir string, file string, buf *bytes.Buffer) error {
 	if err := commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		return filer.ReadEntry(commandEnv.MasterClient, client, dir, file, buf)
-	}); err != nil && err != filer_pb.ErrNotFound {
+	}); err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 		return err
 	}
+
 	return nil
 }
 
 func insertOrUpdateValues(cbOptions *s3_pb.S3CircuitBreakerOptions, cmdActions []string, cmdValues []int64, limitType *string) error {
 	if len(*limitType) == 0 {
-		return fmt.Errorf("type not valid, only 'count' and 'bytes' are allowed")
+		return errors.New("type not valid, only 'count' and 'bytes' are allowed")
 	}
 
 	if cbOptions.Actions == nil {
@@ -218,6 +219,7 @@ func insertOrUpdateValues(cbOptions *s3_pb.S3CircuitBreakerOptions, cmdActions [
 			cbOptions.Actions[s3_constants.Concat(action, *limitType)] = cmdValues[i]
 		}
 	}
+
 	return nil
 }
 
@@ -228,45 +230,46 @@ func deleteBucketsActions(cmdBuckets []string, cbCfg *s3_pb.S3CircuitBreakerConf
 
 	if len(cmdActions) == 0 {
 		for _, bucket := range cmdBuckets {
-			delete(cbCfg.Buckets, bucket)
+			delete(cbCfg.GetBuckets(), bucket)
 		}
 	} else {
 		for _, bucket := range cmdBuckets {
-			if cbOption, ok := cbCfg.Buckets[bucket]; ok {
+			if cbOption, ok := cbCfg.GetBuckets()[bucket]; ok {
 				if len(cmdActions) > 0 && cbOption.Actions != nil {
 					for _, action := range cmdActions {
-						delete(cbOption.Actions, s3_constants.Concat(action, *limitType))
+						delete(cbOption.GetActions(), s3_constants.Concat(action, *limitType))
 					}
 				}
 
-				if len(cbOption.Actions) == 0 && !cbOption.Enabled {
-					delete(cbCfg.Buckets, bucket)
+				if len(cbOption.GetActions()) == 0 && !cbOption.GetEnabled() {
+					delete(cbCfg.GetBuckets(), bucket)
 				}
 			}
 		}
 	}
 
-	if len(cbCfg.Buckets) == 0 {
+	if len(cbCfg.GetBuckets()) == 0 {
 		cbCfg.Buckets = nil
 	}
 }
 
 func deleteGlobalActions(cbCfg *s3_pb.S3CircuitBreakerConfig, cmdActions []string, limitType *string) {
-	globalOptions := cbCfg.Global
+	globalOptions := cbCfg.GetGlobal()
 	if globalOptions == nil {
 		return
 	}
 
 	if len(cmdActions) == 0 && globalOptions.Actions != nil {
 		globalOptions.Actions = nil
+
 		return
 	} else {
 		for _, action := range cmdActions {
-			delete(globalOptions.Actions, s3_constants.Concat(action, *limitType))
+			delete(globalOptions.GetActions(), s3_constants.Concat(action, *limitType))
 		}
 	}
 
-	if len(globalOptions.Actions) == 0 && !globalOptions.Enabled {
+	if len(globalOptions.GetActions()) == 0 && !globalOptions.GetEnabled() {
 		cbCfg.Global = nil
 	}
 }
@@ -279,7 +282,7 @@ func (c *commandS3CircuitBreaker) initActionsAndValues(buckets, actions, limitTy
 	if len(*actions) > 0 {
 		cmdActions = strings.Split(*actions, ",")
 
-		//check action valid
+		// check action valid
 		for _, action := range cmdActions {
 			var found bool
 			for _, allowedAction := range s3_constants.AllowedActions {
@@ -295,9 +298,7 @@ func (c *commandS3CircuitBreaker) initActionsAndValues(buckets, actions, limitTy
 
 	if !parseValues {
 		if len(cmdActions) < 0 {
-			for _, action := range s3_constants.AllowedActions {
-				cmdActions = append(cmdActions, action)
-			}
+			cmdActions = append(cmdActions, s3_constants.AllowedActions...)
 		}
 
 		if len(*limitType) > 0 {
@@ -306,11 +307,11 @@ func (c *commandS3CircuitBreaker) initActionsAndValues(buckets, actions, limitTy
 				elements := strings.Split(*values, ",")
 				if len(cmdActions) != len(elements) {
 					if len(elements) != 1 || len(elements) == 0 {
-						return nil, nil, nil, fmt.Errorf("count of flag[-actions] and flag[-counts] not equal")
+						return nil, nil, nil, errors.New("count of flag[-actions] and flag[-counts] not equal")
 					}
 					v, err := strconv.Atoi(elements[0])
 					if err != nil {
-						return nil, nil, nil, fmt.Errorf("value of -values must be a legal number(s)")
+						return nil, nil, nil, errors.New("value of -values must be a legal number(s)")
 					}
 					for range cmdActions {
 						cmdValues = append(cmdValues, int64(v))
@@ -319,7 +320,7 @@ func (c *commandS3CircuitBreaker) initActionsAndValues(buckets, actions, limitTy
 					for _, value := range elements {
 						v, err := strconv.Atoi(value)
 						if err != nil {
-							return nil, nil, nil, fmt.Errorf("value of -values must be a legal number(s)")
+							return nil, nil, nil, errors.New("value of -values must be a legal number(s)")
 						}
 						cmdValues = append(cmdValues, int64(v))
 					}
@@ -328,11 +329,11 @@ func (c *commandS3CircuitBreaker) initActionsAndValues(buckets, actions, limitTy
 				elements := strings.Split(*values, ",")
 				if len(cmdActions) != len(elements) {
 					if len(elements) != 1 || len(elements) == 0 {
-						return nil, nil, nil, fmt.Errorf("values count of -actions and -values not equal")
+						return nil, nil, nil, errors.New("values count of -actions and -values not equal")
 					}
 					v, err := parseMBToBytes(elements[0])
 					if err != nil {
-						return nil, nil, nil, fmt.Errorf("value of -max must be a legal number(s)")
+						return nil, nil, nil, errors.New("value of -max must be a legal number(s)")
 					}
 					for range cmdActions {
 						cmdValues = append(cmdValues, v)
@@ -341,23 +342,25 @@ func (c *commandS3CircuitBreaker) initActionsAndValues(buckets, actions, limitTy
 					for _, value := range elements {
 						v, err := parseMBToBytes(value)
 						if err != nil {
-							return nil, nil, nil, fmt.Errorf("value of -max must be a legal number(s)")
+							return nil, nil, nil, errors.New("value of -max must be a legal number(s)")
 						}
 						cmdValues = append(cmdValues, v)
 					}
 				}
 			default:
-				return nil, nil, nil, fmt.Errorf("type not valid, only 'count' and 'bytes' are allowed")
+				return nil, nil, nil, errors.New("type not valid, only 'count' and 'bytes' are allowed")
 			}
 		} else {
 			*limitType = ""
 		}
 	}
+
 	return cmdBuckets, cmdActions, cmdValues, nil
 }
 
 func parseMBToBytes(valStr string) (int64, error) {
 	v, err := strconv.Atoi(valStr)
 	v *= 1024 * 1024
+
 	return int64(v), err
 }

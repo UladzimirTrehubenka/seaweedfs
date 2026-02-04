@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/schollz/progressbar/v3"
+
 	"github.com/seaweedfs/seaweedfs/weed/util"
 
 	"google.golang.org/grpc"
@@ -20,7 +21,7 @@ import (
 
 func (fs *FilerSink) replicateChunks(sourceChunks []*filer_pb.FileChunk, path string) (replicatedChunks []*filer_pb.FileChunk, err error) {
 	if len(sourceChunks) == 0 {
-		return
+		return replicatedChunks, err
 	}
 
 	// a simple progress bar. Not ideal. Fix me.
@@ -49,6 +50,7 @@ func (fs *FilerSink) replicateChunks(sourceChunks []*filer_pb.FileChunk, path st
 				replicatedChunk, e := fs.replicateOneChunk(source, path)
 				if e != nil {
 					err = e
+
 					return e
 				}
 				replicatedChunks[index] = replicatedChunk
@@ -56,45 +58,45 @@ func (fs *FilerSink) replicateChunks(sourceChunks []*filer_pb.FileChunk, path st
 					bar.Add(1)
 				}
 				err = nil
+
 				return nil
 			})
 		})
 	}
 	wg.Wait()
 
-	return
+	return replicatedChunks, err
 }
 
 func (fs *FilerSink) replicateOneChunk(sourceChunk *filer_pb.FileChunk, path string) (*filer_pb.FileChunk, error) {
-
 	fileId, err := fs.fetchAndWrite(sourceChunk, path)
 	if err != nil {
-		return nil, fmt.Errorf("copy %s: %v", sourceChunk.GetFileIdString(), err)
+		return nil, fmt.Errorf("copy %s: %w", sourceChunk.GetFileIdString(), err)
 	}
 
 	return &filer_pb.FileChunk{
 		FileId:       fileId,
-		Offset:       sourceChunk.Offset,
-		Size:         sourceChunk.Size,
-		ModifiedTsNs: sourceChunk.ModifiedTsNs,
-		ETag:         sourceChunk.ETag,
+		Offset:       sourceChunk.GetOffset(),
+		Size:         sourceChunk.GetSize(),
+		ModifiedTsNs: sourceChunk.GetModifiedTsNs(),
+		ETag:         sourceChunk.GetETag(),
 		SourceFileId: sourceChunk.GetFileIdString(),
-		CipherKey:    sourceChunk.CipherKey,
-		IsCompressed: sourceChunk.IsCompressed,
+		CipherKey:    sourceChunk.GetCipherKey(),
+		IsCompressed: sourceChunk.GetIsCompressed(),
 	}, nil
 }
 
 func (fs *FilerSink) fetchAndWrite(sourceChunk *filer_pb.FileChunk, path string) (fileId string, err error) {
-
 	filename, header, resp, err := fs.filerSource.ReadPart(sourceChunk.GetFileIdString())
 	if err != nil {
-		return "", fmt.Errorf("read part %s: %v", sourceChunk.GetFileIdString(), err)
+		return "", fmt.Errorf("read part %s: %w", sourceChunk.GetFileIdString(), err)
 	}
 	defer util_http.CloseResponse(resp)
 
 	uploader, err := operation.NewUploader()
 	if err != nil {
 		glog.V(0).Infof("upload source data %v: %v", sourceChunk.GetFileIdString(), err)
+
 		return "", fmt.Errorf("upload data: %w", err)
 	}
 
@@ -112,7 +114,7 @@ func (fs *FilerSink) fetchAndWrite(sourceChunk *filer_pb.FileChunk, path string)
 		&operation.UploadOption{
 			Filename:          filename,
 			Cipher:            false,
-			IsInputCompressed: "gzip" == header.Get("Content-Encoding"),
+			IsInputCompressed: header.Get("Content-Encoding") == "gzip",
 			MimeType:          header.Get("Content-Type"),
 			PairMap:           nil,
 			RetryForever:      true,
@@ -123,6 +125,7 @@ func (fs *FilerSink) fetchAndWrite(sourceChunk *filer_pb.FileChunk, path string)
 				fileUrl = fmt.Sprintf("http://%s/?proxyChunkId=%s", fs.address, fileId)
 			}
 			glog.V(4).Infof("replicating %s to %s header:%+v", filename, fileUrl, header)
+
 			return fileUrl
 		},
 		resp.Body,
@@ -130,29 +133,30 @@ func (fs *FilerSink) fetchAndWrite(sourceChunk *filer_pb.FileChunk, path string)
 
 	if err != nil {
 		glog.V(0).Infof("upload source data %v: %v", sourceChunk.GetFileIdString(), err)
+
 		return "", fmt.Errorf("upload data: %w", err)
 	}
 	if uploadResult.Error != "" {
 		glog.V(0).Infof("upload failure %v: %v", filename, err)
+
 		return "", fmt.Errorf("upload result: %v", uploadResult.Error)
 	}
 
-	return
+	return fileId, err
 }
 
 var _ = filer_pb.FilerClient(&FilerSink{})
 
 func (fs *FilerSink) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
-
 	return pb.WithGrpcClient(streamingMode, fs.signature, func(grpcConnection *grpc.ClientConn) error {
 		client := filer_pb.NewSeaweedFilerClient(grpcConnection)
+
 		return fn(client)
 	}, fs.grpcAddress, false, fs.grpcDialOption)
-
 }
 
 func (fs *FilerSink) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 func (fs *FilerSink) GetDataCenter() string {

@@ -10,6 +10,7 @@ import (
 
 type FileHandleToInode struct {
 	sync.RWMutex
+
 	inode2fh map[uint64]*FileHandle
 	fh2inode map[FileHandleId]uint64
 }
@@ -28,6 +29,7 @@ func (i *FileHandleToInode) GetFileHandle(fh FileHandleId) *FileHandle {
 	if found {
 		return i.inode2fh[inode]
 	}
+
 	return nil
 }
 
@@ -35,6 +37,7 @@ func (i *FileHandleToInode) FindFileHandle(inode uint64) (fh *FileHandle, found 
 	i.RLock()
 	defer i.RUnlock()
 	fh, found = i.inode2fh[inode]
+
 	return
 }
 
@@ -52,6 +55,7 @@ func (i *FileHandleToInode) AcquireFileHandle(wfs *WFS, inode uint64, entry *fil
 	if fh.GetEntry().GetEntry() != entry {
 		fh.SetEntry(entry)
 	}
+
 	return fh
 }
 
@@ -81,6 +85,7 @@ func (i *FileHandleToInode) ReleaseByHandle(fh FileHandleId) {
 	fhHandle, fhFound := i.inode2fh[inode]
 	if !fhFound {
 		delete(i.fh2inode, fh)
+
 		return
 	}
 

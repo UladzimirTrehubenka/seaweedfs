@@ -82,5 +82,6 @@ func writeNeedleCommon(n *Needle, offset uint64, bytesBuffer *bytes.Buffer, vers
 	writeFooter(n, header, bytesBuffer, int(padding))
 	size = Size(n.DataSize)
 	actualSize = GetActualSize(n.Size, version)
+
 	return size, actualSize, nil
 }

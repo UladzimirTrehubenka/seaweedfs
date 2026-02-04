@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -42,12 +43,12 @@ func TestMemoryStore(t *testing.T) {
 		t.Fatalf("Failed to get user: %v", err)
 	}
 
-	if retrievedUser.Name != "testuser" {
-		t.Errorf("Expected username 'testuser', got '%s'", retrievedUser.Name)
+	if retrievedUser.GetName() != "testuser" {
+		t.Errorf("Expected username 'testuser', got '%s'", retrievedUser.GetName())
 	}
 
-	if len(retrievedUser.Credentials) != 1 {
-		t.Errorf("Expected 1 credential, got %d", len(retrievedUser.Credentials))
+	if len(retrievedUser.GetCredentials()) != 1 {
+		t.Errorf("Expected 1 credential, got %d", len(retrievedUser.GetCredentials()))
 	}
 
 	// Test getting user by access key
@@ -56,8 +57,8 @@ func TestMemoryStore(t *testing.T) {
 		t.Fatalf("Failed to get user by access key: %v", err)
 	}
 
-	if userByAccessKey.Name != "testuser" {
-		t.Errorf("Expected username 'testuser', got '%s'", userByAccessKey.Name)
+	if userByAccessKey.GetName() != "testuser" {
+		t.Errorf("Expected username 'testuser', got '%s'", userByAccessKey.GetName())
 	}
 
 	// Test listing users
@@ -86,8 +87,8 @@ func TestMemoryStore(t *testing.T) {
 		t.Fatalf("Failed to get updated user: %v", err)
 	}
 
-	if len(updatedUser.Credentials) != 2 {
-		t.Errorf("Expected 2 credentials, got %d", len(updatedUser.Credentials))
+	if len(updatedUser.GetCredentials()) != 2 {
+		t.Errorf("Expected 2 credentials, got %d", len(updatedUser.GetCredentials()))
 	}
 
 	// Test deleting access key
@@ -101,8 +102,8 @@ func TestMemoryStore(t *testing.T) {
 		t.Fatalf("Failed to get final user: %v", err)
 	}
 
-	if len(finalUser.Credentials) != 1 {
-		t.Errorf("Expected 1 credential, got %d", len(finalUser.Credentials))
+	if len(finalUser.GetCredentials()) != 1 {
+		t.Errorf("Expected 1 credential, got %d", len(finalUser.GetCredentials()))
 	}
 
 	// Test deleting user
@@ -112,7 +113,7 @@ func TestMemoryStore(t *testing.T) {
 
 	// Verify user is gone
 	_, err = store.GetUser(ctx, "testuser")
-	if err != credential.ErrUserNotFound {
+	if !errors.Is(err, credential.ErrUserNotFound) {
 		t.Errorf("Expected ErrUserNotFound, got %v", err)
 	}
 
@@ -122,19 +123,19 @@ func TestMemoryStore(t *testing.T) {
 	}
 
 	// Try to create duplicate user
-	if err := store.CreateUser(ctx, identity); err != credential.ErrUserAlreadyExists {
+	if err := store.CreateUser(ctx, identity); !errors.Is(err, credential.ErrUserAlreadyExists) {
 		t.Errorf("Expected ErrUserAlreadyExists, got %v", err)
 	}
 
 	// Try to get non-existent user
 	_, err = store.GetUser(ctx, "nonexistent")
-	if err != credential.ErrUserNotFound {
+	if !errors.Is(err, credential.ErrUserNotFound) {
 		t.Errorf("Expected ErrUserNotFound, got %v", err)
 	}
 
 	// Try to get user by non-existent access key
 	_, err = store.GetUserByAccessKey(ctx, "nonexistent")
-	if err != credential.ErrAccessKeyNotFound {
+	if !errors.Is(err, credential.ErrAccessKeyNotFound) {
 		t.Errorf("Expected ErrAccessKeyNotFound, got %v", err)
 	}
 }
@@ -150,7 +151,7 @@ func TestMemoryStoreConcurrency(t *testing.T) {
 
 	// Test concurrent access
 	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		go func(i int) {
 			defer func() { done <- true }()
 
@@ -167,18 +168,20 @@ func TestMemoryStoreConcurrency(t *testing.T) {
 
 			if err := store.CreateUser(ctx, identity); err != nil {
 				t.Errorf("Failed to create user %s: %v", username, err)
+
 				return
 			}
 
 			if _, err := store.GetUser(ctx, username); err != nil {
 				t.Errorf("Failed to get user %s: %v", username, err)
+
 				return
 			}
 		}(i)
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 
@@ -240,7 +243,7 @@ func TestMemoryStoreReset(t *testing.T) {
 
 	// Verify user is gone
 	_, err := store.GetUser(ctx, "testuser")
-	if err != credential.ErrUserNotFound {
+	if !errors.Is(err, credential.ErrUserNotFound) {
 		t.Errorf("Expected ErrUserNotFound after reset, got %v", err)
 	}
 }
@@ -290,8 +293,8 @@ func TestMemoryStoreConfigurationSaveLoad(t *testing.T) {
 	}
 
 	// Verify configuration matches
-	if len(loadedConfig.Identities) != 2 {
-		t.Errorf("Expected 2 identities, got %d", len(loadedConfig.Identities))
+	if len(loadedConfig.GetIdentities()) != 2 {
+		t.Errorf("Expected 2 identities, got %d", len(loadedConfig.GetIdentities()))
 	}
 
 	// Check users exist
@@ -300,8 +303,8 @@ func TestMemoryStoreConfigurationSaveLoad(t *testing.T) {
 		t.Fatalf("Failed to get user1: %v", err)
 	}
 
-	if len(user1.Credentials) != 1 || user1.Credentials[0].AccessKey != "access1" {
-		t.Errorf("User1 credentials not correct: %+v", user1.Credentials)
+	if len(user1.GetCredentials()) != 1 || user1.GetCredentials()[0].GetAccessKey() != "access1" {
+		t.Errorf("User1 credentials not correct: %+v", user1.GetCredentials())
 	}
 
 	user2, err := store.GetUser(ctx, "user2")
@@ -309,8 +312,8 @@ func TestMemoryStoreConfigurationSaveLoad(t *testing.T) {
 		t.Fatalf("Failed to get user2: %v", err)
 	}
 
-	if len(user2.Credentials) != 1 || user2.Credentials[0].AccessKey != "access2" {
-		t.Errorf("User2 credentials not correct: %+v", user2.Credentials)
+	if len(user2.GetCredentials()) != 1 || user2.GetCredentials()[0].GetAccessKey() != "access2" {
+		t.Errorf("User2 credentials not correct: %+v", user2.GetCredentials())
 	}
 }
 
@@ -342,19 +345,19 @@ func TestMemoryStoreServiceAccountByAccessKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to lookup by access key: %v", err)
 	}
-	if found.Id != "sa-test-1" {
-		t.Errorf("Expected sa-test-1, got %s", found.Id)
+	if found.GetId() != "sa-test-1" {
+		t.Errorf("Expected sa-test-1, got %s", found.GetId())
 	}
 
 	// 3. Update with new access key
 	sa.Credential.AccessKey = "ACCESS-KEY-2"
-	if err := store.UpdateServiceAccount(ctx, sa.Id, sa); err != nil {
+	if err := store.UpdateServiceAccount(ctx, sa.GetId(), sa); err != nil {
 		t.Fatalf("Failed to update service account: %v", err)
 	}
 
 	// Verify old key is gone
 	_, err = store.GetServiceAccountByAccessKey(ctx, "ACCESS-KEY-1")
-	if err != credential.ErrAccessKeyNotFound {
+	if !errors.Is(err, credential.ErrAccessKeyNotFound) {
 		t.Errorf("Expected ErrAccessKeyNotFound for old key, got %v", err)
 	}
 
@@ -363,18 +366,18 @@ func TestMemoryStoreServiceAccountByAccessKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to lookup by new access key: %v", err)
 	}
-	if found.Id != "sa-test-1" {
-		t.Errorf("Expected sa-test-1, got %s", found.Id)
+	if found.GetId() != "sa-test-1" {
+		t.Errorf("Expected sa-test-1, got %s", found.GetId())
 	}
 
 	// 4. Delete service account
-	if err := store.DeleteServiceAccount(ctx, sa.Id); err != nil {
+	if err := store.DeleteServiceAccount(ctx, sa.GetId()); err != nil {
 		t.Fatalf("Failed to delete service account: %v", err)
 	}
 
 	// Verify key is gone
 	_, err = store.GetServiceAccountByAccessKey(ctx, "ACCESS-KEY-2")
-	if err != credential.ErrAccessKeyNotFound {
+	if !errors.Is(err, credential.ErrAccessKeyNotFound) {
 		t.Errorf("Expected ErrAccessKeyNotFound after delete, got %v", err)
 	}
 }

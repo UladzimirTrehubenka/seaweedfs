@@ -1,14 +1,16 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sync/atomic"
 
+	boom "github.com/tylertreat/BoomFilters"
+
 	"github.com/seaweedfs/seaweedfs/weed/storage/idx"
 	. "github.com/seaweedfs/seaweedfs/weed/storage/types"
-	boom "github.com/tylertreat/BoomFilters"
 )
 
 type mapMetric struct {
@@ -56,24 +58,28 @@ func (mm *mapMetric) ContentSize() uint64 {
 	if mm == nil {
 		return 0
 	}
+
 	return atomic.LoadUint64(&mm.FileByteCounter)
 }
 func (mm *mapMetric) DeletedSize() uint64 {
 	if mm == nil {
 		return 0
 	}
+
 	return atomic.LoadUint64(&mm.DeletionByteCounter)
 }
 func (mm *mapMetric) FileCount() int {
 	if mm == nil {
 		return 0
 	}
+
 	return int(atomic.LoadUint32(&mm.FileCounter))
 }
 func (mm *mapMetric) DeletedCount() int {
 	if mm == nil {
 		return 0
 	}
+
 	return int(atomic.LoadUint32(&mm.DeletionCounter))
 }
 func (mm *mapMetric) MaxFileKey() NeedleId {
@@ -81,6 +87,7 @@ func (mm *mapMetric) MaxFileKey() NeedleId {
 		return 0
 	}
 	t := uint64(mm.MaximumFileKey)
+
 	return Uint64ToNeedleId(t)
 }
 func (mm *mapMetric) MaybeSetMaxFileKey(key NeedleId) {
@@ -98,7 +105,6 @@ func needleMapMetricFromIndexFile(r *os.File, mm *mapMetric) error {
 	err := reverseWalkIndexFile(r, func(entryCount int64) {
 		bf = boom.NewBloomFilter(uint(entryCount), 0.001)
 	}, func(key NeedleId, offset Offset, size Size) error {
-
 		mm.MaybeSetMaxFileKey(key)
 		NeedleIdToBytes(buf, key)
 		if size.IsValid() {
@@ -119,21 +125,24 @@ func needleMapMetricFromIndexFile(r *os.File, mm *mapMetric) error {
 				mm.DeletionByteCounter += uint64(size)
 			}
 		}
+
 		return nil
 	})
+
 	return err
 }
 
 func newNeedleMapMetricFromIndexFile(r *os.File) (mm *mapMetric, err error) {
 	mm = &mapMetric{}
 	err = needleMapMetricFromIndexFile(r, mm)
+
 	return
 }
 
 func reverseWalkIndexFile(r *os.File, initFn func(entryCount int64), fn func(key NeedleId, offset Offset, size Size) error) error {
 	fi, err := r.Stat()
 	if err != nil {
-		return fmt.Errorf("file %s stat error: %v", r.Name(), err)
+		return fmt.Errorf("file %s stat error: %w", r.Name(), err)
 	}
 	fileSize := fi.Size()
 	if fileSize%NeedleMapEntrySize != 0 {
@@ -155,7 +164,7 @@ func reverseWalkIndexFile(r *os.File, initFn func(entryCount int64), fn func(key
 	for remainingCount >= 0 {
 		n, e := r.ReadAt(bytes[:NeedleMapEntrySize*nextBatchSize], NeedleMapEntrySize*remainingCount)
 		// glog.V(0).Infoln("file", r.Name(), "readerOffset", NeedleMapEntrySize*remainingCount, "count", count, "e", e)
-		if e == io.EOF && n == int(NeedleMapEntrySize*nextBatchSize) {
+		if errors.Is(e, io.EOF) && n == int(NeedleMapEntrySize*nextBatchSize) {
 			e = nil
 		}
 		if e != nil {
@@ -170,5 +179,6 @@ func reverseWalkIndexFile(r *os.File, initFn func(entryCount int64), fn func(key
 		nextBatchSize = batchSize
 		remainingCount -= nextBatchSize
 	}
+
 	return nil
 }

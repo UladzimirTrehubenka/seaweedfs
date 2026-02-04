@@ -2,7 +2,7 @@ package iam
 
 import (
 	"encoding/xml"
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/iam"
@@ -17,12 +17,13 @@ type CommonResponse struct {
 
 // SetRequestId sets a unique request ID based on current timestamp.
 func (r *CommonResponse) SetRequestId() {
-	r.ResponseMetadata.RequestId = fmt.Sprintf("%d", time.Now().UnixNano())
+	r.ResponseMetadata.RequestId = strconv.FormatInt(time.Now().UnixNano(), 10)
 }
 
 // ListUsersResponse is the response for ListUsers action.
 type ListUsersResponse struct {
 	CommonResponse
+
 	XMLName         xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ListUsersResponse"`
 	ListUsersResult struct {
 		Users       []*iam.User `xml:"Users>member"`
@@ -33,6 +34,7 @@ type ListUsersResponse struct {
 // ListAccessKeysResponse is the response for ListAccessKeys action.
 type ListAccessKeysResponse struct {
 	CommonResponse
+
 	XMLName              xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ListAccessKeysResponse"`
 	ListAccessKeysResult struct {
 		AccessKeyMetadata []*iam.AccessKeyMetadata `xml:"AccessKeyMetadata>member"`
@@ -43,12 +45,14 @@ type ListAccessKeysResponse struct {
 // DeleteAccessKeyResponse is the response for DeleteAccessKey action.
 type DeleteAccessKeyResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ DeleteAccessKeyResponse"`
 }
 
 // CreatePolicyResponse is the response for CreatePolicy action.
 type CreatePolicyResponse struct {
 	CommonResponse
+
 	XMLName            xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ CreatePolicyResponse"`
 	CreatePolicyResult struct {
 		Policy iam.Policy `xml:"Policy"`
@@ -58,6 +62,7 @@ type CreatePolicyResponse struct {
 // CreateUserResponse is the response for CreateUser action.
 type CreateUserResponse struct {
 	CommonResponse
+
 	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ CreateUserResponse"`
 	CreateUserResult struct {
 		User iam.User `xml:"User"`
@@ -67,12 +72,14 @@ type CreateUserResponse struct {
 // DeleteUserResponse is the response for DeleteUser action.
 type DeleteUserResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ DeleteUserResponse"`
 }
 
 // GetUserResponse is the response for GetUser action.
 type GetUserResponse struct {
 	CommonResponse
+
 	XMLName       xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ GetUserResponse"`
 	GetUserResult struct {
 		User iam.User `xml:"User"`
@@ -82,12 +89,14 @@ type GetUserResponse struct {
 // UpdateUserResponse is the response for UpdateUser action.
 type UpdateUserResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ UpdateUserResponse"`
 }
 
 // CreateAccessKeyResponse is the response for CreateAccessKey action.
 type CreateAccessKeyResponse struct {
 	CommonResponse
+
 	XMLName               xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ CreateAccessKeyResponse"`
 	CreateAccessKeyResult struct {
 		AccessKey iam.AccessKey `xml:"AccessKey"`
@@ -97,18 +106,21 @@ type CreateAccessKeyResponse struct {
 // PutUserPolicyResponse is the response for PutUserPolicy action.
 type PutUserPolicyResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ PutUserPolicyResponse"`
 }
 
 // DeleteUserPolicyResponse is the response for DeleteUserPolicy action.
 type DeleteUserPolicyResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ DeleteUserPolicyResponse"`
 }
 
 // GetUserPolicyResponse is the response for GetUserPolicy action.
 type GetUserPolicyResponse struct {
 	CommonResponse
+
 	XMLName             xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ GetUserPolicyResponse"`
 	GetUserPolicyResult struct {
 		UserName       string `xml:"UserName"`
@@ -120,9 +132,11 @@ type GetUserPolicyResponse struct {
 // ErrorResponse is the IAM error response format.
 type ErrorResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ErrorResponse"`
 	Error   struct {
 		iam.ErrorDetails
+
 		Type string `xml:"Type"`
 	} `xml:"Error"`
 }
@@ -135,19 +149,21 @@ type Error struct {
 
 // Policies stores IAM policies (used for managed policy storage).
 type Policies struct {
-	Policies map[string]interface{} `json:"policies"`
+	Policies map[string]any `json:"policies"`
 }
 
 // SetUserStatusResponse is the response for SetUserStatus action.
 // This is a SeaweedFS extension to enable/disable users without deleting them.
 type SetUserStatusResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ SetUserStatusResponse"`
 }
 
 // UpdateAccessKeyResponse is the response for UpdateAccessKey action.
 type UpdateAccessKeyResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ UpdateAccessKeyResponse"`
 }
 
@@ -166,6 +182,7 @@ type ServiceAccountInfo struct {
 // CreateServiceAccountResponse is the response for CreateServiceAccount action.
 type CreateServiceAccountResponse struct {
 	CommonResponse
+
 	XMLName                    xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ CreateServiceAccountResponse"`
 	CreateServiceAccountResult struct {
 		ServiceAccount ServiceAccountInfo `xml:"ServiceAccount"`
@@ -175,12 +192,14 @@ type CreateServiceAccountResponse struct {
 // DeleteServiceAccountResponse is the response for DeleteServiceAccount action.
 type DeleteServiceAccountResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ DeleteServiceAccountResponse"`
 }
 
 // ListServiceAccountsResponse is the response for ListServiceAccounts action.
 type ListServiceAccountsResponse struct {
 	CommonResponse
+
 	XMLName                   xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ListServiceAccountsResponse"`
 	ListServiceAccountsResult struct {
 		ServiceAccounts []*ServiceAccountInfo `xml:"ServiceAccounts>member"`
@@ -191,6 +210,7 @@ type ListServiceAccountsResponse struct {
 // GetServiceAccountResponse is the response for GetServiceAccount action.
 type GetServiceAccountResponse struct {
 	CommonResponse
+
 	XMLName                 xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ GetServiceAccountResponse"`
 	GetServiceAccountResult struct {
 		ServiceAccount ServiceAccountInfo `xml:"ServiceAccount"`
@@ -200,5 +220,6 @@ type GetServiceAccountResponse struct {
 // UpdateServiceAccountResponse is the response for UpdateServiceAccount action.
 type UpdateServiceAccountResponse struct {
 	CommonResponse
+
 	XMLName xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ UpdateServiceAccountResponse"`
 }

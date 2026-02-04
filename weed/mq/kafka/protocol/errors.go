@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"net"
 	"time"
 )
@@ -239,6 +240,7 @@ func GetErrorInfo(code int16) ErrorInfo {
 	if info, exists := KafkaErrors[code]; exists {
 		return info
 	}
+
 	return ErrorInfo{
 		Code: code, Name: "UNKNOWN", Description: "Unknown error code", Retriable: false,
 	}
@@ -289,10 +291,12 @@ func ClassifyNetworkError(err error) int16 {
 	}
 
 	// Check for network errors
-	if netErr, ok := err.(net.Error); ok {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
 		if netErr.Timeout() {
 			return ErrorCodeRequestTimedOut
 		}
+
 		return ErrorCodeNetworkException
 	}
 
@@ -332,7 +336,7 @@ func HandleTimeoutError(err error, operation string) int16 {
 	}
 
 	// Handle context timeout errors
-	if err == context.DeadlineExceeded {
+	if errors.Is(err, context.DeadlineExceeded) {
 		switch operation {
 		case "read":
 			return ErrorCodeReadTimeout
@@ -345,7 +349,8 @@ func HandleTimeoutError(err error, operation string) int16 {
 		}
 	}
 
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
 		switch operation {
 		case "read":
 			return ErrorCodeReadTimeout

@@ -6,6 +6,7 @@ import (
 	"errors"
 	pathpkg "path"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -122,8 +123,8 @@ func validateDirectoryPath(normalizedPath string, isMetadata bool) error {
 	}
 
 	// For data, validate each partition or subdirectory segment
-	subdirs := strings.Split(normalizedPath, "/")
-	for _, subdir := range subdirs {
+	subdirs := strings.SplitSeq(normalizedPath, "/")
+	for subdir := range subdirs {
 		if subdir == "" {
 			return &IcebergLayoutError{
 				Code:    ErrCodeInvalidIcebergLayout,
@@ -138,6 +139,7 @@ func validateDirectoryPath(normalizedPath string, isMetadata bool) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -174,9 +176,10 @@ func validateFilePatterns(filename string, isMetadata bool) error {
 //  2. Otherwise, validate intermediate parts, then check the filename against patterns
 func (v *IcebergLayoutValidator) validateFile(path string, isMetadata bool) error {
 	// Detect if it's a directory (path ends with "/")
-	if strings.HasSuffix(path, "/") {
+	if before, ok := strings.CutSuffix(path, "/"); ok {
 		// Normalize by removing trailing slash
-		normalizedPath := strings.TrimSuffix(path, "/")
+		normalizedPath := before
+
 		return validateDirectoryPath(normalizedPath, isMetadata)
 	}
 
@@ -271,14 +274,13 @@ func (v *TableBucketFileValidator) ValidateTableBucketUpload(fullPath string) er
 	// Need at least bucket/namespace/table/file
 	if len(parts) < 4 {
 		// Creating bucket, namespace, or table directories - allow only if preceding parts are non-empty
-		for i := 0; i < len(parts); i++ {
-			if parts[i] == "" {
-				return &IcebergLayoutError{
-					Code:    ErrCodeInvalidIcebergLayout,
-					Message: "bucket, namespace, and table segments cannot be empty",
-				}
+		if slices.Contains(parts, "") {
+			return &IcebergLayoutError{
+				Code:    ErrCodeInvalidIcebergLayout,
+				Message: "bucket, namespace, and table segments cannot be empty",
 			}
 		}
+
 		return nil
 	}
 
@@ -373,6 +375,7 @@ func (v *TableBucketFileValidator) ValidateTableBucketUploadWithClient(
 				Message: "table does not exist",
 			}
 		}
+
 		return &IcebergLayoutError{
 			Code:    ErrCodeInvalidIcebergLayout,
 			Message: "failed to verify table existence: " + err.Error(),
@@ -380,14 +383,14 @@ func (v *TableBucketFileValidator) ValidateTableBucketUploadWithClient(
 	}
 
 	// Check if table has metadata indicating ICEBERG format
-	if resp.Entry == nil || resp.Entry.Extended == nil {
+	if resp.GetEntry() == nil || resp.Entry.Extended == nil {
 		return &IcebergLayoutError{
 			Code:    ErrCodeInvalidIcebergLayout,
 			Message: "table is not a valid ICEBERG table (missing metadata)",
 		}
 	}
 
-	metadataBytes, ok := resp.Entry.Extended[ExtendedKeyMetadata]
+	metadataBytes, ok := resp.GetEntry().GetExtended()[ExtendedKeyMetadata]
 	if !ok {
 		return &IcebergLayoutError{
 			Code:    ErrCodeInvalidIcebergLayout,

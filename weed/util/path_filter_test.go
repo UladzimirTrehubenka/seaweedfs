@@ -147,7 +147,7 @@ func TestPathPrefixFilter_MultipleOverlappingPrefixes(t *testing.T) {
 
 func TestPathPrefixFilter_InvalidPrefixes(t *testing.T) {
 	var warnings []string
-	warn := func(format string, args ...interface{}) {
+	warn := func(format string, args ...any) {
 		warnings = append(warnings, format)
 	}
 

@@ -15,6 +15,7 @@ func MapKafkaPartitionToSMQRange(kafkaPartition int32) (rangeStart, rangeStop in
 	rangeSize := int32(35)
 	rangeStart = kafkaPartition * rangeSize
 	rangeStop = rangeStart + rangeSize - 1
+
 	return rangeStart, rangeStop
 }
 
@@ -33,12 +34,14 @@ func CreateSMQPartition(kafkaPartition int32, unixTimeNs int64) *schema_pb.Parti
 // ExtractKafkaPartitionFromSMQRange extracts the Kafka partition from SeaweedMQ range
 func ExtractKafkaPartitionFromSMQRange(rangeStart int32) int32 {
 	rangeSize := int32(35)
+
 	return rangeStart / rangeSize
 }
 
 // ValidateKafkaPartition validates that a Kafka partition is within supported range
 func ValidateKafkaPartition(kafkaPartition int32) bool {
 	maxPartitions := int32(pub_balancer.MaxPartitionCount) / 35 // 72 partitions
+
 	return kafkaPartition >= 0 && kafkaPartition < maxPartitions
 }
 

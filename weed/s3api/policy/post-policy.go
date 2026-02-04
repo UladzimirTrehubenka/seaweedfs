@@ -69,6 +69,7 @@ func NewPostPolicy() *PostPolicy {
 	p := &PostPolicy{}
 	p.conditions = make([]policyCondition, 0)
 	p.formData = make(map[string]string)
+
 	return p
 }
 
@@ -78,6 +79,7 @@ func (p *PostPolicy) SetExpires(t time.Time) error {
 		return errInvalidArgument("No expiry time set.")
 	}
 	p.expiration = t
+
 	return nil
 }
 
@@ -95,6 +97,7 @@ func (p *PostPolicy) SetKey(key string) error {
 		return err
 	}
 	p.formData["key"] = key
+
 	return nil
 }
 
@@ -113,6 +116,7 @@ func (p *PostPolicy) SetKeyStartsWith(keyStartsWith string) error {
 		return err
 	}
 	p.formData["key"] = keyStartsWith
+
 	return nil
 }
 
@@ -130,6 +134,7 @@ func (p *PostPolicy) SetBucket(bucketName string) error {
 		return err
 	}
 	p.formData["bucket"] = bucketName
+
 	return nil
 }
 
@@ -149,8 +154,10 @@ func (p *PostPolicy) SetCondition(matchType, condition, value string) error {
 			return err
 		}
 		p.formData[condition] = value
+
 		return nil
 	}
+
 	return errInvalidArgument("Invalid condition in policy")
 }
 
@@ -169,6 +176,7 @@ func (p *PostPolicy) SetContentType(contentType string) error {
 		return err
 	}
 	p.formData["Content-Type"] = contentType
+
 	return nil
 }
 
@@ -186,6 +194,7 @@ func (p *PostPolicy) SetContentLengthRange(min, max int64) error {
 	}
 	p.contentLengthRange.min = min
 	p.contentLengthRange.max = max
+
 	return nil
 }
 
@@ -204,6 +213,7 @@ func (p *PostPolicy) SetSuccessActionRedirect(redirect string) error {
 		return err
 	}
 	p.formData["success_action_redirect"] = redirect
+
 	return nil
 }
 
@@ -222,6 +232,7 @@ func (p *PostPolicy) SetSuccessStatusAction(status string) error {
 		return err
 	}
 	p.formData["success_action_status"] = status
+
 	return nil
 }
 
@@ -234,16 +245,17 @@ func (p *PostPolicy) SetUserMetadata(key string, value string) error {
 	if strings.TrimSpace(value) == "" || value == "" {
 		return errInvalidArgument("Value is empty")
 	}
-	headerName := fmt.Sprintf("x-amz-meta-%s", key)
+	headerName := "x-amz-meta-" + key
 	policyCond := policyCondition{
 		matchType: "eq",
-		condition: fmt.Sprintf("$%s", headerName),
+		condition: "$" + headerName,
 		value:     value,
 	}
 	if err := p.addNewPolicy(policyCond); err != nil {
 		return err
 	}
 	p.formData[headerName] = value
+
 	return nil
 }
 
@@ -256,16 +268,17 @@ func (p *PostPolicy) SetUserData(key string, value string) error {
 	if value == "" {
 		return errInvalidArgument("Value is empty")
 	}
-	headerName := fmt.Sprintf("x-amz-%s", key)
+	headerName := "x-amz-" + key
 	policyCond := policyCondition{
 		matchType: "eq",
-		condition: fmt.Sprintf("$%s", headerName),
+		condition: "$" + headerName,
 		value:     value,
 	}
 	if err := p.addNewPolicy(policyCond); err != nil {
 		return err
 	}
 	p.formData[headerName] = value
+
 	return nil
 }
 
@@ -275,6 +288,7 @@ func (p *PostPolicy) addNewPolicy(policyCond policyCondition) error {
 		return errInvalidArgument("Policy fields are empty.")
 	}
 	p.conditions = append(p.conditions, policyCond)
+
 	return nil
 }
 
@@ -302,6 +316,7 @@ func (p PostPolicy) marshalJSON() []byte {
 	retStr = retStr + expirationStr + ","
 	retStr = retStr + conditionsStr
 	retStr = retStr + "}"
+
 	return []byte(retStr)
 }
 

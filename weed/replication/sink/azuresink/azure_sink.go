@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/appendblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -48,6 +49,7 @@ func (g *AzureSink) IsIncremental() bool {
 
 func (g *AzureSink) Initialize(configuration util.Configuration, prefix string) error {
 	g.isIncremental = configuration.GetBool(prefix + "is_incremental")
+
 	return g.initialize(
 		configuration.GetString(prefix+"account_name"),
 		configuration.GetString(prefix+"account_key"),
@@ -87,6 +89,7 @@ func (g *AzureSink) initialize(accountName, accountKey, container, dir string) e
 		if bloberror.HasCode(err, bloberror.ContainerNotFound) {
 			return fmt.Errorf("Azure container '%s' does not exist. Please create it first", container)
 		}
+
 		return fmt.Errorf("failed to validate Azure container '%s': %w", container, err)
 	}
 
@@ -94,7 +97,6 @@ func (g *AzureSink) initialize(accountName, accountKey, container, dir string) e
 }
 
 func (g *AzureSink) DeleteEntry(key string, isDirectory, deleteIncludeChunks bool, signatures []int32) error {
-
 	key = cleanKey(key)
 
 	if isDirectory {
@@ -112,6 +114,7 @@ func (g *AzureSink) DeleteEntry(key string, isDirectory, deleteIncludeChunks boo
 		if bloberror.HasCode(err, bloberror.BlobNotFound) {
 			return nil
 		}
+
 		return fmt.Errorf("azure delete %s/%s: %w", g.container, key, err)
 	}
 
@@ -119,10 +122,9 @@ func (g *AzureSink) DeleteEntry(key string, isDirectory, deleteIncludeChunks boo
 }
 
 func (g *AzureSink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int32) error {
-
 	key = cleanKey(key)
 
-	if entry.IsDirectory {
+	if entry.GetIsDirectory() {
 		return nil
 	}
 
@@ -160,11 +162,12 @@ func (g *AzureSink) CreateEntry(key string, entry *filer_pb.Entry, signatures []
 		ctxWrite, cancelWrite := context.WithTimeout(context.Background(), azure.DefaultAzureOpTimeout)
 		defer cancelWrite()
 		_, writeErr := appendBlobClient.AppendBlock(ctxWrite, streaming.NopCloser(bytes.NewReader(data)), &appendblob.AppendBlockOptions{})
+
 		return writeErr
 	}
 
-	if len(entry.Content) > 0 {
-		return writeFunc(entry.Content)
+	if len(entry.GetContent()) > 0 {
+		return writeFunc(entry.GetContent())
 	}
 
 	if err := repl_util.CopyFromChunkViews(chunkViews, g.filerSource, writeFunc); err != nil {
@@ -191,15 +194,16 @@ func (g *AzureSink) handleExistingBlob(appendBlobClient *appendblob.Client, key 
 	}
 
 	// Check if we can skip writing based on modification time and size.
-	if entry.Attributes != nil && entry.Attributes.Mtime > 0 && props.LastModified != nil && props.ContentLength != nil {
+	if entry.GetAttributes() != nil && entry.GetAttributes().GetMtime() > 0 && props.LastModified != nil && props.ContentLength != nil {
 		const clockSkewTolerance = int64(2) // seconds - allow small clock differences
 		remoteMtime := props.LastModified.Unix()
-		localMtime := entry.Attributes.Mtime
+		localMtime := entry.GetAttributes().GetMtime()
 		// Skip if remote is newer/same (within skew tolerance) and has the SAME size.
 		// This prevents skipping partial/corrupted files that may have a newer mtime.
 		if remoteMtime >= localMtime-clockSkewTolerance && *props.ContentLength == int64(totalSize) {
 			glog.V(2).Infof("skip overwriting %s/%s: remote is up-to-date (remote mtime: %d >= local mtime: %d, size: %d)",
 				g.container, key, remoteMtime, localMtime, *props.ContentLength)
+
 			return false, nil
 		}
 	}
@@ -252,6 +256,7 @@ func (g *AzureSink) handleExistingBlob(appendBlobClient *appendblob.Client, key 
 
 func (g *AzureSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParentPath string, newEntry *filer_pb.Entry, deleteIncludeChunks bool, signatures []int32) (foundExistingEntry bool, err error) {
 	key = cleanKey(key)
+
 	return true, g.CreateEntry(key, newEntry, signatures)
 }
 

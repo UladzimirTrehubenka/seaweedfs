@@ -18,7 +18,6 @@ func TestShardsInfoDeleteParityShards(t *testing.T) {
 	if got, want := si.String(), "0:123 B 1:123 B 2:123 B 3:123 B 4:123 B 5:123 B 6:123 B 7:123 B 8:123 B 9:123 B"; got != want {
 		t.Errorf("expected %q, got %q", want, got)
 	}
-
 }
 
 func TestShardsInfoAsSlice(t *testing.T) {

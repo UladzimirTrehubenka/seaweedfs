@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/schema"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_agent_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type PublishSession struct {
@@ -19,11 +20,10 @@ type PublishSession struct {
 }
 
 func NewPublishSession(agentAddress string, topicSchema *schema.Schema, partitionCount int, publisherName string) (*PublishSession, error) {
-
 	// call local agent grpc server to create a new session
 	clientConn, err := grpc.NewClient(agentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, fmt.Errorf("dial agent server %s: %v", agentAddress, err)
+		return nil, fmt.Errorf("dial agent server %s: %w", agentAddress, err)
 	}
 	agentClient := mq_agent_pb.NewSeaweedMessagingAgentClient(clientConn)
 
@@ -39,8 +39,8 @@ func NewPublishSession(agentAddress string, topicSchema *schema.Schema, partitio
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != "" {
-		return nil, fmt.Errorf("start publish session: %v", resp.Error)
+	if resp.GetError() != "" {
+		return nil, fmt.Errorf("start publish session: %v", resp.GetError())
 	}
 
 	stream, err := agentClient.PublishRecord(context.Background())
@@ -49,7 +49,7 @@ func NewPublishSession(agentAddress string, topicSchema *schema.Schema, partitio
 	}
 
 	if err = stream.Send(&mq_agent_pb.PublishRecordRequest{
-		SessionId: resp.SessionId,
+		SessionId: resp.GetSessionId(),
 	}); err != nil {
 		return nil, fmt.Errorf("send session id: %w", err)
 	}
@@ -71,6 +71,7 @@ func (a *PublishSession) CloseSession() error {
 		return fmt.Errorf("close send: %w", err)
 	}
 	a.schema = nil
+
 	return err
 }
 

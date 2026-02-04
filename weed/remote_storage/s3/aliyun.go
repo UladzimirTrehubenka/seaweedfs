@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
 	"github.com/seaweedfs/seaweedfs/weed/remote_storage"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -28,12 +29,12 @@ func (s AliyunRemoteStorageMaker) Make(conf *remote_pb.RemoteConf) (remote_stora
 		supportTagging: true,
 		conf:           conf,
 	}
-	accessKey := util.Nvl(conf.AliyunAccessKey, os.Getenv("ALICLOUD_ACCESS_KEY_ID"))
-	secretKey := util.Nvl(conf.AliyunSecretKey, os.Getenv("ALICLOUD_ACCESS_KEY_SECRET"))
+	accessKey := util.Nvl(conf.GetAliyunAccessKey(), os.Getenv("ALICLOUD_ACCESS_KEY_ID"))
+	secretKey := util.Nvl(conf.GetAliyunSecretKey(), os.Getenv("ALICLOUD_ACCESS_KEY_SECRET"))
 
 	config := &aws.Config{
-		Endpoint:                      aws.String(conf.AliyunEndpoint),
-		Region:                        aws.String(conf.AliyunRegion),
+		Endpoint:                      aws.String(conf.GetAliyunEndpoint()),
+		Region:                        aws.String(conf.GetAliyunRegion()),
 		S3ForcePathStyle:              aws.Bool(false),
 		S3DisableContentMD5Validation: aws.Bool(true),
 	}
@@ -47,5 +48,6 @@ func (s AliyunRemoteStorageMaker) Make(conf *remote_pb.RemoteConf) (remote_stora
 	}
 	sess.Handlers.Build.PushFront(skipSha256PayloadSigning)
 	client.conn = s3.New(sess)
+
 	return client, nil
 }

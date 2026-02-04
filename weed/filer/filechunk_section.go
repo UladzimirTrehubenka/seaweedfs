@@ -29,7 +29,7 @@ func (section *FileChunkSection) addChunk(chunk *filer_pb.FileChunk) error {
 	section.lock.Lock()
 	defer section.lock.Unlock()
 
-	start, stop := max(int64(section.sectionIndex)*SectionSize, chunk.Offset), min(((int64(section.sectionIndex)+1)*SectionSize), chunk.Offset+int64(chunk.Size))
+	start, stop := max(int64(section.sectionIndex)*SectionSize, chunk.GetOffset()), min(((int64(section.sectionIndex)+1)*SectionSize), chunk.GetOffset()+int64(chunk.GetSize()))
 
 	section.chunks = append(section.chunks, chunk)
 
@@ -52,7 +52,7 @@ func removeGarbageChunks(section *FileChunkSection, garbageFileIds map[string]st
 	for i := 0; i < len(section.chunks); {
 		t := section.chunks[i]
 		length := len(section.chunks)
-		if _, found := garbageFileIds[t.FileId]; found {
+		if _, found := garbageFileIds[t.GetFileId()]; found {
 			if i < length-1 {
 				section.chunks[i] = section.chunks[length-1]
 			}
@@ -69,6 +69,7 @@ func (section *FileChunkSection) setupForRead(ctx context.Context, group *ChunkG
 
 	if section.isPrepared {
 		section.reader.fileSize = fileSize
+
 		return
 	}
 
@@ -93,7 +94,6 @@ func (section *FileChunkSection) setupForRead(ctx context.Context, group *ChunkG
 }
 
 func (section *FileChunkSection) readDataAt(ctx context.Context, group *ChunkGroup, fileSize int64, buff []byte, offset int64) (n int, tsNs int64, err error) {
-
 	section.setupForRead(ctx, group, fileSize)
 	section.lock.RLock()
 	defer section.lock.RUnlock()
@@ -102,7 +102,6 @@ func (section *FileChunkSection) readDataAt(ctx context.Context, group *ChunkGro
 }
 
 func (section *FileChunkSection) DataStartOffset(ctx context.Context, group *ChunkGroup, offset int64, fileSize int64) int64 {
-
 	section.setupForRead(ctx, group, fileSize)
 	section.lock.RLock()
 	defer section.lock.RUnlock()
@@ -115,13 +114,14 @@ func (section *FileChunkSection) DataStartOffset(ctx context.Context, group *Chu
 		if offset < visible.start {
 			return offset
 		}
+
 		return offset
 	}
+
 	return -1
 }
 
 func (section *FileChunkSection) NextStopOffset(ctx context.Context, group *ChunkGroup, offset int64, fileSize int64) int64 {
-
 	section.setupForRead(ctx, group, fileSize)
 	section.lock.RLock()
 	defer section.lock.RUnlock()
@@ -143,5 +143,6 @@ func (section *FileChunkSection) NextStopOffset(ctx context.Context, group *Chun
 			offset = visible.stop
 		}
 	}
+
 	return offset
 }

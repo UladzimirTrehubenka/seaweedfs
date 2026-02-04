@@ -14,9 +14,10 @@ type Schema struct {
 
 func NewSchema(namespace string, name string, recordType *schema_pb.RecordType) *Schema {
 	fieldMap := make(map[string]*schema_pb.Field)
-	for _, field := range recordType.Fields {
-		fieldMap[field.Name] = field
+	for _, field := range recordType.GetFields() {
+		fieldMap[field.GetName()] = field
 	}
+
 	return &Schema{
 		Namespace:  namespace,
 		Name:       name,
@@ -27,11 +28,12 @@ func NewSchema(namespace string, name string, recordType *schema_pb.RecordType) 
 
 func (s *Schema) GetField(name string) (*schema_pb.Field, bool) {
 	field, ok := s.fieldMap[name]
+
 	return field, ok
 }
 
 func TypeToString(t *schema_pb.Type) string {
-	switch t.Kind.(type) {
+	switch t.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		switch t.GetScalarType() {
 		case schema_pb.ScalarType_BOOL:
@@ -54,5 +56,6 @@ func TypeToString(t *schema_pb.Type) string {
 	case *schema_pb.Type_RecordType:
 		return "record"
 	}
+
 	return "unknown"
 }

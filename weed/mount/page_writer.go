@@ -26,11 +26,11 @@ func newPageWriter(fh *FileHandle, chunkSize int64) *PageWriter {
 		writerPattern: NewWriterPattern(chunkSize),
 		randomWriter:  newMemoryChunkPages(fh, chunkSize),
 	}
+
 	return pw
 }
 
 func (pw *PageWriter) AddPage(offset int64, data []byte, isSequential bool, tsNs int64) error {
-
 	glog.V(4).Infof("%v AddPage [%d, %d)", pw.fh.fh, offset, offset+int64(len(data)))
 
 	chunkIndex := offset / pw.chunkSize
@@ -42,6 +42,7 @@ func (pw *PageWriter) AddPage(offset int64, data []byte, isSequential bool, tsNs
 		offset += writeSize
 		data = data[writeSize:]
 	}
+
 	return nil
 }
 
@@ -79,17 +80,4 @@ func (pw *PageWriter) UnlockForRead(startOffset, stopOffset int64) {
 
 func (pw *PageWriter) Destroy() {
 	pw.randomWriter.Destroy()
-}
-
-func max(x, y int64) int64 {
-	if x > y {
-		return x
-	}
-	return y
-}
-func min(x, y int64) int64 {
-	if x < y {
-		return x
-	}
-	return y
 }

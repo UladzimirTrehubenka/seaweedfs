@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -83,7 +84,6 @@ func (c *commandEcEncode) HasTag(CommandTag) bool {
 }
 
 func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	encodeCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	volumeId := encodeCommand.Int("volumeId", 0, "the volume id")
 	collection := encodeCommand.String("collection", "", "the collection name")
@@ -101,7 +101,7 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 		return nil
 	}
 	if err = commandEnv.confirmIsLocked(args); err != nil {
-		return
+		return err
 	}
 	rp, err := parseReplicaPlacementArg(commandEnv, *shardReplicaPlacement)
 	if err != nil {
@@ -131,6 +131,7 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 		})
 		if nodeCount < erasure_coding.ParityShardsCount {
 			glog.V(0).Infof("skip erasure coding with %d nodes, less than recommended %d nodes", nodeCount, erasure_coding.ParityShardsCount)
+
 			return nil
 		}
 	}
@@ -150,6 +151,7 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 	}
 	if len(volumeIds) == 0 {
 		fmt.Println("No volumes, nothing to do.")
+
 		return nil
 	}
 
@@ -181,6 +183,7 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 				"  ec.encode -collection=%s -diskType=hdd\n"+
 				"Or omit -diskType to use the default (hdd)", diskType, *collection)
 		}
+
 		return fmt.Errorf("no free ec shard slots. only %d left on disk type '%s'", totalFreeEcSlots, diskType)
 	}
 
@@ -223,7 +226,7 @@ func volumeLocations(commandEnv *CommandEnv, volumeIds []needle.VolumeId) (map[n
 
 func doEcEncode(commandEnv *CommandEnv, writer io.Writer, volumeIdToCollection map[needle.VolumeId]string, volumeIds []needle.VolumeId, maxParallelization int) error {
 	if !commandEnv.isLocked() {
-		return fmt.Errorf("lock is lost")
+		return errors.New("lock is lost")
 	}
 	locations, err := volumeLocations(commandEnv, volumeIds)
 	if err != nil {
@@ -236,8 +239,9 @@ func doEcEncode(commandEnv *CommandEnv, writer io.Writer, volumeIdToCollection m
 		for _, l := range locations[vid] {
 			ewg.Add(func() error {
 				if err := markVolumeReplicaWritable(commandEnv.option.GrpcDialOption, vid, l, false, false); err != nil {
-					return fmt.Errorf("mark volume %d as readonly on %s: %v", vid, l.Url, err)
+					return fmt.Errorf("mark volume %d as readonly on %s: %w", vid, l.Url, err)
 				}
+
 				return nil
 			})
 		}
@@ -256,7 +260,7 @@ func doEcEncode(commandEnv *CommandEnv, writer io.Writer, volumeIdToCollection m
 		// Sync missing entries between replicas, then select the best one
 		bestLoc, selectErr := syncAndSelectBestReplica(commandEnv.option.GrpcDialOption, vid, collection, locs, "", writer)
 		if selectErr != nil {
-			return fmt.Errorf("failed to sync and select replica for volume %d: %v", vid, selectErr)
+			return fmt.Errorf("failed to sync and select replica for volume %d: %w", vid, selectErr)
 		}
 		bestReplicas[vid] = bestLoc
 	}
@@ -268,8 +272,9 @@ func doEcEncode(commandEnv *CommandEnv, writer io.Writer, volumeIdToCollection m
 		collection := volumeIdToCollection[vid]
 		ewg.Add(func() error {
 			if err := generateEcShards(commandEnv.option.GrpcDialOption, vid, collection, target.ServerAddress()); err != nil {
-				return fmt.Errorf("generate ec shards for volume %d on %s: %v", vid, target.Url, err)
+				return fmt.Errorf("generate ec shards for volume %d on %s: %w", vid, target.Url, err)
 			}
+
 			return nil
 		})
 	}
@@ -286,8 +291,9 @@ func doEcEncode(commandEnv *CommandEnv, writer io.Writer, volumeIdToCollection m
 		collection := volumeIdToCollection[vid]
 		ewg.Add(func() error {
 			if err := mountEcShards(commandEnv.option.GrpcDialOption, collection, vid, target.ServerAddress(), shardIds); err != nil {
-				return fmt.Errorf("mount ec shards for volume %d on %s: %v", vid, target.Url, err)
+				return fmt.Errorf("mount ec shards for volume %d on %s: %w", vid, target.Url, err)
 			}
+
 			return nil
 		})
 	}
@@ -302,7 +308,7 @@ func doEcEncode(commandEnv *CommandEnv, writer io.Writer, volumeIdToCollection m
 // This avoids race conditions where master metadata is updated after EC encoding
 func doDeleteVolumesWithLocations(commandEnv *CommandEnv, volumeIds []needle.VolumeId, volumeLocationsMap map[needle.VolumeId][]wdclient.Location, maxParallelization int) error {
 	if !commandEnv.isLocked() {
-		return fmt.Errorf("lock is lost")
+		return errors.New("lock is lost")
 	}
 
 	ewg := NewErrorWaitGroup(maxParallelization)
@@ -310,15 +316,17 @@ func doDeleteVolumesWithLocations(commandEnv *CommandEnv, volumeIds []needle.Vol
 		locations, found := volumeLocationsMap[vid]
 		if !found {
 			fmt.Printf("warning: no locations found for volume %d, skipping deletion\n", vid)
+
 			continue
 		}
 
 		for _, l := range locations {
 			ewg.Add(func() error {
 				if err := deleteVolume(commandEnv.option.GrpcDialOption, vid, l.ServerAddress(), false); err != nil {
-					return fmt.Errorf("deleteVolume %s volume %d: %v", l.Url, vid, err)
+					return fmt.Errorf("deleteVolume %s volume %d: %w", l.Url, vid, err)
 				}
 				fmt.Printf("deleted volume %d from %s\n", vid, l.Url)
+
 				return nil
 			})
 		}
@@ -331,7 +339,6 @@ func doDeleteVolumesWithLocations(commandEnv *CommandEnv, volumeIds []needle.Vol
 }
 
 func generateEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress) error {
-
 	fmt.Printf("generateEcShards %d (collection %q) on %s ...\n", volumeId, collection, sourceVolumeServer)
 
 	err := operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
@@ -339,24 +346,24 @@ func generateEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, 
 			VolumeId:   uint32(volumeId),
 			Collection: collection,
 		})
+
 		return genErr
 	})
 
 	return err
-
 }
 
 func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, collectionPattern string, sourceDiskType *types.DiskType, fullPercentage float64, quietPeriod time.Duration, verbose bool) (vids []needle.VolumeId, matchedCollections []string, err error) {
 	// compile regex pattern for collection matching
 	collectionRegex, err := compileCollectionPattern(collectionPattern)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid collection pattern '%s': %v", collectionPattern, err)
+		return nil, nil, fmt.Errorf("invalid collection pattern '%s': %w", collectionPattern, err)
 	}
 
 	// collect topology information
 	topologyInfo, volumeSizeLimitMb, err := collectTopologyInfo(commandEnv, 0)
 	if err != nil {
-		return
+		return vids, matchedCollections, err
 	}
 
 	quietSeconds := int64(quietPeriod / time.Second)
@@ -378,95 +385,100 @@ func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, collectionPattern strin
 	vidMap := make(map[uint32]bool)
 	collectionSet := make(map[string]bool)
 	eachDataNode(topologyInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
-		for _, diskInfo := range dn.DiskInfos {
-			for _, v := range diskInfo.VolumeInfos {
+		for _, diskInfo := range dn.GetDiskInfos() {
+			for _, v := range diskInfo.GetVolumeInfos() {
 				totalVolumes++
 
 				// ignore remote volumes
-				if v.RemoteStorageName != "" && v.RemoteStorageKey != "" {
+				if v.GetRemoteStorageName() != "" && v.GetRemoteStorageKey() != "" {
 					remoteVolumes++
 					if verbose {
 						fmt.Printf("skip volume %d on %s: remote volume (storage: %s, key: %s)\n",
-							v.Id, dn.Id, v.RemoteStorageName, v.RemoteStorageKey)
+							v.GetId(), dn.GetId(), v.GetRemoteStorageName(), v.GetRemoteStorageKey())
 					}
+
 					continue
 				}
 
 				// check collection against regex pattern
-				if !collectionRegex.MatchString(v.Collection) {
+				if !collectionRegex.MatchString(v.GetCollection()) {
 					wrongCollection++
 					if verbose {
 						fmt.Printf("skip volume %d on %s: collection doesn't match pattern (pattern: %s, actual: %s)\n",
-							v.Id, dn.Id, collectionPattern, v.Collection)
+							v.GetId(), dn.GetId(), collectionPattern, v.GetCollection())
 					}
+
 					continue
 				}
 
 				// track matched collection
-				collectionSet[v.Collection] = true
+				collectionSet[v.GetCollection()] = true
 
 				// check disk type
-				if sourceDiskType != nil && types.ToDiskType(v.DiskType) != *sourceDiskType {
+				if sourceDiskType != nil && types.ToDiskType(v.GetDiskType()) != *sourceDiskType {
 					wrongDiskType++
 					if verbose {
 						fmt.Printf("skip volume %d on %s: wrong disk type (expected: %s, actual: %s)\n",
-							v.Id, dn.Id, sourceDiskType.ReadableString(), types.ToDiskType(v.DiskType).ReadableString())
+							v.GetId(), dn.GetId(), sourceDiskType.ReadableString(), types.ToDiskType(v.GetDiskType()).ReadableString())
 					}
+
 					continue
 				}
 
 				// check quiet period
-				if v.ModifiedAtSecond+quietSeconds >= nowUnixSeconds {
+				if v.GetModifiedAtSecond()+quietSeconds >= nowUnixSeconds {
 					tooRecent++
 					if verbose {
 						fmt.Printf("skip volume %d on %s: too recently modified (last modified: %d seconds ago, required: %d seconds)\n",
-							v.Id, dn.Id, nowUnixSeconds-v.ModifiedAtSecond, quietSeconds)
+							v.GetId(), dn.GetId(), nowUnixSeconds-v.GetModifiedAtSecond(), quietSeconds)
 					}
+
 					continue
 				}
 
 				// check size
 				sizeThreshold := fullPercentage / 100 * float64(volumeSizeLimitMb) * 1024 * 1024
-				if float64(v.Size) <= sizeThreshold {
+				if float64(v.GetSize()) <= sizeThreshold {
 					tooSmall++
 					if verbose {
 						fmt.Printf("skip volume %d on %s: too small (size: %.1f MB, threshold: %.1f MB, %.1f%% full)\n",
-							v.Id, dn.Id, float64(v.Size)/(1024*1024), sizeThreshold/(1024*1024),
-							float64(v.Size)*100/(float64(volumeSizeLimitMb)*1024*1024))
+							v.GetId(), dn.GetId(), float64(v.GetSize())/(1024*1024), sizeThreshold/(1024*1024),
+							float64(v.GetSize())*100/(float64(volumeSizeLimitMb)*1024*1024))
 					}
+
 					continue
 				}
 
 				// check free disk space
-				if good, found := vidMap[v.Id]; found {
+				if good, found := vidMap[v.GetId()]; found {
 					if good {
-						if diskInfo.FreeVolumeCount < 2 {
-							glog.V(0).Infof("skip %s %d on %s, no free disk", v.Collection, v.Id, dn.Id)
+						if diskInfo.GetFreeVolumeCount() < 2 {
+							glog.V(0).Infof("skip %s %d on %s, no free disk", v.GetCollection(), v.GetId(), dn.GetId())
 							if verbose {
 								fmt.Printf("skip volume %d on %s: insufficient free disk space (free volumes: %d, required: 2)\n",
-									v.Id, dn.Id, diskInfo.FreeVolumeCount)
+									v.GetId(), dn.GetId(), diskInfo.GetFreeVolumeCount())
 							}
-							vidMap[v.Id] = false
+							vidMap[v.GetId()] = false
 							noFreeDisk++
 						}
 					}
 				} else {
-					if diskInfo.FreeVolumeCount < 2 {
-						glog.V(0).Infof("skip %s %d on %s, no free disk", v.Collection, v.Id, dn.Id)
+					if diskInfo.GetFreeVolumeCount() < 2 {
+						glog.V(0).Infof("skip %s %d on %s, no free disk", v.GetCollection(), v.GetId(), dn.GetId())
 						if verbose {
 							fmt.Printf("skip volume %d on %s: insufficient free disk space (free volumes: %d, required: 2)\n",
-								v.Id, dn.Id, diskInfo.FreeVolumeCount)
+								v.GetId(), dn.GetId(), diskInfo.GetFreeVolumeCount())
 						}
-						vidMap[v.Id] = false
+						vidMap[v.GetId()] = false
 						noFreeDisk++
 					} else {
 						if verbose {
 							fmt.Printf("selected volume %d on %s: size %.1f MB (%.1f%% full), last modified %d seconds ago, free volumes: %d\n",
-								v.Id, dn.Id, float64(v.Size)/(1024*1024),
-								float64(v.Size)*100/(float64(volumeSizeLimitMb)*1024*1024),
-								nowUnixSeconds-v.ModifiedAtSecond, diskInfo.FreeVolumeCount)
+								v.GetId(), dn.GetId(), float64(v.GetSize())/(1024*1024),
+								float64(v.GetSize())*100/(float64(volumeSizeLimitMb)*1024*1024),
+								nowUnixSeconds-v.GetModifiedAtSecond(), diskInfo.GetFreeVolumeCount())
 						}
-						vidMap[v.Id] = true
+						vidMap[v.GetId()] = true
 					}
 				}
 			}
@@ -516,5 +528,5 @@ func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, collectionPattern strin
 		fmt.Println()
 	}
 
-	return
+	return vids, matchedCollections, err
 }

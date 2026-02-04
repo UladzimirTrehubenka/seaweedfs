@@ -17,7 +17,7 @@ func String(x int) string {
 func TestNameList(t *testing.T) {
 	list := newNameList(memStore, 7)
 
-	for i := 0; i < maxNameCount; i++ {
+	for i := range maxNameCount {
 		list.WriteName(String(i))
 	}
 
@@ -25,6 +25,7 @@ func TestNameList(t *testing.T) {
 	list.ListNames("", func(name string) bool {
 		counter++
 		print(name, " ")
+
 		return true
 	})
 	if counter != maxNameCount {
@@ -43,6 +44,7 @@ func TestNameList(t *testing.T) {
 	counter = 0
 	list.ListNames("", func(name string) bool {
 		counter++
+
 		return true
 	})
 	// list.skipList.println()
@@ -64,10 +66,10 @@ func TestNameList(t *testing.T) {
 	list.ListNames("", func(name string) bool {
 		counter++
 		print(name, " ")
+
 		return true
 	})
 	if counter != 0 {
 		t.Fail()
 	}
-
 }

@@ -65,11 +65,11 @@ func (iam *IdentityAccessManagement) isReqAuthenticatedV2(r *http.Request) (*Ide
 	if isRequestSignatureV2(r) {
 		return iam.doesSignV2Match(r)
 	}
+
 	return iam.doesPresignV2SignatureMatch(r)
 }
 
 func (iam *IdentityAccessManagement) doesPolicySignatureV2Match(formValues http.Header) s3err.ErrorCode {
-
 	accessKey := formValues.Get("AWSAccessKeyId")
 	if accessKey == "" {
 		return s3err.ErrMissingFields
@@ -92,6 +92,7 @@ func (iam *IdentityAccessManagement) doesPolicySignatureV2Match(formValues http.
 	if cred.isCredentialExpired() {
 		glog.V(2).Infof("Service account credential %s has expired (expiration: %d, now: %d)",
 			accessKey, cred.Expiration, time.Now().Unix())
+
 		return s3err.ErrAccessDenied
 	}
 
@@ -113,6 +114,7 @@ func (iam *IdentityAccessManagement) doesPolicySignatureV2Match(formValues http.
 	if !compareSignatureV2(signature, calculateSignatureV2(policy, cred.SecretKey)) {
 		return s3err.ErrSignatureDoesNotMatch
 	}
+
 	return s3err.ErrNone
 }
 
@@ -144,6 +146,7 @@ func (iam *IdentityAccessManagement) doesSignV2Match(r *http.Request) (*Identity
 	if cred.isCredentialExpired() {
 		glog.V(2).Infof("Service account credential %s has expired (expiration: %d, now: %d)",
 			accessKey, cred.Expiration, time.Now().Unix())
+
 		return nil, s3err.ErrAccessDenied
 	}
 
@@ -170,6 +173,7 @@ func (iam *IdentityAccessManagement) doesSignV2Match(r *http.Request) (*Identity
 	if !compareSignatureV2(v2Signature, expectedV2Signature) {
 		return nil, s3err.ErrSignatureDoesNotMatch
 	}
+
 	return identity, s3err.ErrNone
 }
 
@@ -196,6 +200,7 @@ func (iam *IdentityAccessManagement) doesPresignV2SignatureMatch(r *http.Request
 	accessKey := query.Get("AWSAccessKeyId")
 	if accessKey == "" {
 		glog.Warningf("InvalidAccessKeyId (V2 presigned): empty access key in request")
+
 		return nil, s3err.ErrInvalidAccessKeyID
 	}
 
@@ -221,6 +226,7 @@ func (iam *IdentityAccessManagement) doesPresignV2SignatureMatch(r *http.Request
 	if cred.isCredentialExpired() {
 		glog.V(2).Infof("Service account credential %s has expired (expiration: %d, now: %d)",
 			accessKey, cred.Expiration, time.Now().Unix())
+
 		return nil, s3err.ErrAccessDenied
 	}
 
@@ -228,6 +234,7 @@ func (iam *IdentityAccessManagement) doesPresignV2SignatureMatch(r *http.Request
 	if !compareSignatureV2(signature, expectedSignature) {
 		return nil, s3err.ErrSignatureDoesNotMatch
 	}
+
 	return identity, s3err.ErrNone
 }
 
@@ -267,6 +274,7 @@ func validateV2AuthHeader(v2Auth string) (accessKey string, errCode s3err.ErrorC
 func signatureV2(cred *Credential, method string, encodedResource string, encodedQuery string, headers http.Header) string {
 	stringToSign := getStringToSignV2(method, encodedResource, encodedQuery, headers, "")
 	signature := calculateSignatureV2(stringToSign, cred.SecretKey)
+
 	return signV2Algorithm + " " + cred.AccessKey + ":" + signature
 }
 
@@ -295,11 +303,12 @@ func getStringToSignV2(method string, encodedResource, encodedQuery string, head
 	} else {
 		stringToSign += headers.Get("Date") + "\n"
 		if v := headers.Get("x-amz-date"); v != "" {
-			stringToSign = strings.Replace(stringToSign, headers.Get("Date")+"\n", "\n", -1)
+			stringToSign = strings.ReplaceAll(stringToSign, headers.Get("Date")+"\n", "\n")
 		}
 	}
 	stringToSign += canonicalHeaders
 	stringToSign += canonicalizedResourceV2(encodedResource, encodedQuery)
+
 	return stringToSign
 }
 
@@ -323,6 +332,7 @@ func canonicalizedResourceV2(encodedResource, encodedQuery string) string {
 		if val, ok := keyval[resource]; ok {
 			if val == "" {
 				canonicalQueries = append(canonicalQueries, resource)
+
 				continue
 			}
 			canonicalQueries = append(canonicalQueries, resource+"="+val)
@@ -356,6 +366,7 @@ func canonicalizedAmzHeadersV2(headers http.Header) string {
 	for _, key := range keys {
 		canonicalHeaders = append(canonicalHeaders, key+":"+keyval[key])
 	}
+
 	return strings.Join(canonicalHeaders, "\n")
 }
 
@@ -363,6 +374,7 @@ func canonicalizedAmzHeadersV2(headers http.Header) string {
 func calculateSignatureV2(stringToSign string, secret string) string {
 	hm := hmac.New(sha1.New, []byte(secret))
 	hm.Write([]byte(stringToSign))
+
 	return base64.StdEncoding.EncodeToString(hm.Sum(nil))
 }
 
@@ -381,11 +393,13 @@ func compareSignatureV2(sig1, sig2 string) bool {
 	if err != nil {
 		return false
 	}
+
 	return subtle.ConstantTimeCompare(signature1, signature2) == 1
 }
 
 // Return signature-v2 for the presigned request.
 func preSignatureV2(cred *Credential, method string, encodedResource string, encodedQuery string, headers http.Header, expires string) string {
 	stringToSign := getStringToSignV2(method, encodedResource, encodedQuery, headers, expires)
+
 	return calculateSignatureV2(stringToSign, cred.SecretKey)
 }

@@ -27,6 +27,7 @@ func NewMemDb() *MemDb {
 	t := &MemDb{}
 	if t.db, err = leveldb.Open(storage.NewMemStorage(), opts); err != nil {
 		glog.V(0).Infof("MemDb fails to open: %v", err)
+
 		return nil
 	}
 
@@ -34,20 +35,20 @@ func NewMemDb() *MemDb {
 }
 
 func (cm *MemDb) Set(key NeedleId, offset Offset, size Size) error {
-
 	bytes := ToBytes(key, offset, size)
 
 	if err := cm.db.Put(bytes[0:NeedleIdSize], bytes[NeedleIdSize:NeedleIdSize+OffsetSize+SizeSize], nil); err != nil {
 		return fmt.Errorf("failed to write temp leveldb: %w", err)
 	}
+
 	return nil
 }
 
 func (cm *MemDb) Delete(key NeedleId) error {
 	bytes := make([]byte, NeedleIdSize)
 	NeedleIdToBytes(bytes, key)
-	return cm.db.Delete(bytes, nil)
 
+	return cm.db.Delete(bytes, nil)
 }
 func (cm *MemDb) Get(key NeedleId) (*NeedleValue, bool) {
 	bytes := make([]byte, NeedleIdSize)
@@ -58,6 +59,7 @@ func (cm *MemDb) Get(key NeedleId) (*NeedleValue, bool) {
 	}
 	offset := BytesToOffset(data[0:OffsetSize])
 	size := BytesToSize(data[OffsetSize : OffsetSize+SizeSize])
+
 	return &NeedleValue{Key: key, Offset: offset, Size: size}, true
 }
 
@@ -73,6 +75,7 @@ func doVisit(iter iterator.Iterator, visit func(NeedleValue) error) (ret error) 
 	if ret != nil {
 		return
 	}
+
 	return nil
 }
 
@@ -127,9 +130,9 @@ func (cm *MemDb) SaveToIdx(idxName string) (ret error) {
 			return nil
 		}
 		_, err := idxFile.Write(value.ToBytes())
+
 		return err
 	})
-
 }
 
 func (cm *MemDb) LoadFromIdx(idxName string) (ret error) {
@@ -140,11 +143,9 @@ func (cm *MemDb) LoadFromIdx(idxName string) (ret error) {
 	defer idxFile.Close()
 
 	return cm.LoadFromReaderAt(idxFile)
-
 }
 
 func (cm *MemDb) LoadFromReaderAt(readerAt io.ReaderAt) (ret error) {
-
 	return cm.LoadFilterFromReaderAt(readerAt, true, true)
 }
 
@@ -153,9 +154,9 @@ func (cm *MemDb) LoadFilterFromReaderAt(readerAt io.ReaderAt, isFilterOffsetZero
 		if (isFilterOffsetZero && offset.IsZero()) || (isFilterDeleted && size.IsDeleted()) {
 			return cm.Delete(key)
 		}
+
 		return cm.Set(key, offset, size)
 	})
-
 }
 
 func (cm *MemDb) Close() {

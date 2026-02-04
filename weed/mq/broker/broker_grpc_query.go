@@ -33,8 +33,8 @@ var ErrNoPartitionAssignment = errors.New("no broker assignment found for partit
 // Includes broker routing to redirect requests to the correct broker hosting the topic/partition
 func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessagesRequest, stream mq_pb.SeaweedMessaging_GetUnflushedMessagesServer) error {
 	// Convert protobuf types to internal types
-	t := topic.FromPbTopic(req.Topic)
-	partition := topic.FromPbPartition(req.Partition)
+	t := topic.FromPbTopic(req.GetTopic())
+	partition := topic.FromPbPartition(req.GetPartition())
 
 	// Get or generate the local partition for this topic/partition (similar to subscriber flow)
 	localPartition, getOrGenErr := b.GetOrGenerateLocalPartition(t, partition)
@@ -51,15 +51,17 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 		glog.V(1).Infof("Topic/partition %v %v not found locally, looking up broker", t, partition)
 
 		// Look up which broker hosts this topic/partition
-		brokerHost, err := b.findBrokerForTopicPartition(req.Topic, req.Partition)
+		brokerHost, err := b.findBrokerForTopicPartition(req.GetTopic(), req.GetPartition())
 		if err != nil {
 			if errors.Is(err, ErrNoPartitionAssignment) {
 				// Normal case: no broker assignment means no unflushed messages
 				glog.V(2).Infof("No broker assignment for %v %v - no unflushed messages", t, partition)
+
 				return stream.Send(&mq_pb.GetUnflushedMessagesResponse{
 					EndOfStream: true,
 				})
 			}
+
 			return stream.Send(&mq_pb.GetUnflushedMessagesResponse{
 				Error:       fmt.Sprintf("failed to find broker for %v %v: %v", t, partition, err),
 				EndOfStream: true,
@@ -69,6 +71,7 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 		if brokerHost == "" {
 			// This should not happen after ErrNoPartitionAssignment check, but keep for safety
 			glog.V(2).Infof("Empty broker host for %v %v - no unflushed messages", t, partition)
+
 			return stream.Send(&mq_pb.GetUnflushedMessagesResponse{
 				EndOfStream: true,
 			})
@@ -76,6 +79,7 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 
 		// Redirect to the correct broker
 		glog.V(1).Infof("Redirecting GetUnflushedMessages request for %v %v to broker %s", t, partition, brokerHost)
+
 		return b.redirectGetUnflushedMessages(brokerHost, req, stream)
 	}
 
@@ -90,7 +94,7 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 
 	// Use buffer_start offset for precise deduplication
 	lastFlushTsNs := localPartition.LogBuffer.GetLastFlushTsNs()
-	startBufferOffset := req.StartBufferOffset
+	startBufferOffset := req.GetStartBufferOffset()
 	startTimeNs := lastFlushTsNs // Still respect last flush time for safety
 
 	// Stream messages from LogBuffer with filtering
@@ -104,7 +108,6 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 		0,                            // stopTsNs = 0 means process all available data
 		func() bool { return false }, // waitForDataFn = false means don't wait for new data
 		func(logEntry *filer_pb.LogEntry, offset int64) (isDone bool, err error) {
-
 			// Apply buffer offset filtering if specified
 			if startBufferOffset > 0 && offset < startBufferOffset {
 				return false, nil
@@ -123,16 +126,18 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 
 			if err != nil {
 				glog.Errorf("Failed to stream message: %v", err)
+
 				return true, err // isDone = true to stop processing
 			}
 
 			messageCount++
+
 			return false, nil // Continue processing
 		},
 	)
 
 	// Handle collection errors
-	if err != nil && err != log_buffer.ResumeFromDiskError {
+	if err != nil && !errors.Is(err, log_buffer.ResumeFromDiskError) {
 		streamErr := stream.Send(&mq_pb.GetUnflushedMessagesResponse{
 			Error:       fmt.Sprintf("failed to stream unflushed messages: %v", err),
 			EndOfStream: true,
@@ -140,6 +145,7 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 		if streamErr != nil {
 			glog.Errorf("Failed to send error response: %v", streamErr)
 		}
+
 		return err
 	}
 
@@ -150,6 +156,7 @@ func (b *MessageQueueBroker) GetUnflushedMessages(req *mq_pb.GetUnflushedMessage
 
 	if err != nil {
 		glog.Errorf("Failed to send end-of-stream marker: %v", err)
+
 		return err
 	}
 
@@ -172,32 +179,34 @@ func (b *MessageQueueBroker) buildBufferStartDeduplicationMap(partitionDir strin
 			err := filer_pb.SeaweedList(context.Background(), client, partitionDir, "", func(entry *filer_pb.Entry, isLast bool) error {
 				currentBatchProcessed++
 				hasMore = !isLast // If this is the last entry of a full batch, there might be more
-				lastFileName = entry.Name
+				lastFileName = entry.GetName()
 
-				if entry.IsDirectory {
+				if entry.GetIsDirectory() {
 					return nil
 				}
 
 				// Skip Parquet files - they don't represent buffer ranges
-				if strings.HasSuffix(entry.Name, ".parquet") {
+				if strings.HasSuffix(entry.GetName(), ".parquet") {
 					return nil
 				}
 
 				// Skip offset files
-				if strings.HasSuffix(entry.Name, ".offset") {
+				if strings.HasSuffix(entry.GetName(), ".offset") {
 					return nil
 				}
 
 				// Get buffer start for this file
 				bufferStart, err := b.getLogBufferStartFromFile(entry)
 				if err != nil {
-					glog.V(2).Infof("Failed to get buffer start from file %s: %v", entry.Name, err)
+					glog.V(2).Infof("Failed to get buffer start from file %s: %v", entry.GetName(), err)
+
 					return nil // Continue with other files
 				}
 
 				if bufferStart == nil {
 					// File has no buffer metadata - skip deduplication for this file
-					glog.V(2).Infof("File %s has no buffer_start metadata", entry.Name)
+					glog.V(2).Infof("File %s has no buffer_start metadata", entry.GetName())
+
 					return nil
 				}
 
@@ -209,7 +218,7 @@ func (b *MessageQueueBroker) buildBufferStartDeduplicationMap(partitionDir strin
 						end:   bufferStart.StartIndex + chunkCount - 1,
 					}
 					flushedRanges = append(flushedRanges, fileRange)
-					glog.V(3).Infof("File %s covers buffer range [%d-%d]", entry.Name, fileRange.start, fileRange.end)
+					glog.V(3).Infof("File %s covers buffer range [%d-%d]", entry.GetName(), fileRange.start, fileRange.end)
 				}
 
 				return nil
@@ -229,7 +238,7 @@ func (b *MessageQueueBroker) buildBufferStartDeduplicationMap(partitionDir strin
 	})
 
 	if err != nil {
-		return flushedRanges, fmt.Errorf("failed to list partition directory %s: %v", partitionDir, err)
+		return flushedRanges, fmt.Errorf("failed to list partition directory %s: %w", partitionDir, err)
 	}
 
 	return flushedRanges, nil
@@ -242,7 +251,7 @@ func (b *MessageQueueBroker) getLogBufferStartFromFile(entry *filer_pb.Entry) (*
 	}
 
 	// Only support binary buffer_start format
-	if startData, exists := entry.Extended["buffer_start"]; exists {
+	if startData, exists := entry.GetExtended()["buffer_start"]; exists {
 		if len(startData) == 8 {
 			startIndex := int64(binary.BigEndian.Uint64(startData))
 			if startIndex > 0 {
@@ -263,6 +272,7 @@ func (b *MessageQueueBroker) isBufferOffsetFlushed(bufferOffset int64, flushedRa
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -283,6 +293,7 @@ func (b *MessageQueueBroker) findBrokerForTopicPartition(topic *schema_pb.Topic,
 		balancerAddress := pb.ServerAddress(b.lockAsBalancer.LockOwner())
 		err = b.withBrokerClient(false, balancerAddress, func(client mq_pb.SeaweedMessagingClient) error {
 			lookupResp, err = client.LookupTopicBrokers(ctx, lookupReq)
+
 			return err
 		})
 	} else {
@@ -291,14 +302,14 @@ func (b *MessageQueueBroker) findBrokerForTopicPartition(topic *schema_pb.Topic,
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("failed to lookup topic brokers: %v", err)
+		return "", fmt.Errorf("failed to lookup topic brokers: %w", err)
 	}
 
 	// Find the broker assignment that matches our partition
-	for _, assignment := range lookupResp.BrokerPartitionAssignments {
-		if b.partitionsMatch(partition, assignment.Partition) {
-			if assignment.LeaderBroker != "" {
-				return assignment.LeaderBroker, nil
+	for _, assignment := range lookupResp.GetBrokerPartitionAssignments() {
+		if b.partitionsMatch(partition, assignment.GetPartition()) {
+			if assignment.GetLeaderBroker() != "" {
+				return assignment.GetLeaderBroker(), nil
 			}
 		}
 	}
@@ -308,10 +319,10 @@ func (b *MessageQueueBroker) findBrokerForTopicPartition(topic *schema_pb.Topic,
 
 // partitionsMatch checks if two partitions represent the same partition
 func (b *MessageQueueBroker) partitionsMatch(p1, p2 *schema_pb.Partition) bool {
-	return p1.RingSize == p2.RingSize &&
-		p1.RangeStart == p2.RangeStart &&
-		p1.RangeStop == p2.RangeStop &&
-		p1.UnixTimeNs == p2.UnixTimeNs
+	return p1.GetRingSize() == p2.GetRingSize() &&
+		p1.GetRangeStart() == p2.GetRangeStart() &&
+		p1.GetRangeStop() == p2.GetRangeStop() &&
+		p1.GetUnixTimeNs() == p2.GetUnixTimeNs()
 }
 
 // redirectGetUnflushedMessages forwards the GetUnflushedMessages request to the correct broker
@@ -323,7 +334,7 @@ func (b *MessageQueueBroker) redirectGetUnflushedMessages(brokerHost string, req
 		// Create a new stream to the target broker
 		targetStream, err := client.GetUnflushedMessages(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to create stream to broker %s: %v", brokerHost, err)
+			return fmt.Errorf("failed to create stream to broker %s: %w", brokerHost, err)
 		}
 
 		// Forward all responses from the target broker to our client
@@ -334,16 +345,17 @@ func (b *MessageQueueBroker) redirectGetUnflushedMessages(brokerHost string, req
 					// Normal end of stream
 					return nil
 				}
-				return fmt.Errorf("error receiving from broker %s: %v", brokerHost, err)
+
+				return fmt.Errorf("error receiving from broker %s: %w", brokerHost, err)
 			}
 
 			// Forward the response to our client
 			if sendErr := stream.Send(response); sendErr != nil {
-				return fmt.Errorf("error forwarding response to client: %v", sendErr)
+				return fmt.Errorf("error forwarding response to client: %w", sendErr)
 			}
 
 			// Check if this is the end of stream
-			if response.EndOfStream {
+			if response.GetEndOfStream() {
 				return nil
 			}
 		}

@@ -13,8 +13,10 @@ func ParseInt(text string, defaultValue int) int {
 		if len(text) > 0 {
 			return 0
 		}
+
 		return defaultValue
 	}
+
 	return int(count)
 }
 func ParseUint64(text string, defaultValue uint64) uint64 {
@@ -23,8 +25,10 @@ func ParseUint64(text string, defaultValue uint64) uint64 {
 		if len(text) > 0 {
 			return 0
 		}
+
 		return defaultValue
 	}
+
 	return count
 }
 
@@ -33,6 +37,7 @@ func ParseBool(s string, defaultValue bool) bool {
 	if err != nil {
 		return defaultValue
 	}
+
 	return value
 }
 
@@ -56,6 +61,7 @@ func ParseFilerUrl(entryPath string) (filerServer string, filerPort int64, path 
 		filerPort, err = strconv.ParseInt(portString, 10, 32)
 	}
 	path = u.Path
+
 	return
 }
 
@@ -63,6 +69,7 @@ func ParseHostPort(hostPort string) (filerServer string, filerPort int64, err er
 	parts := strings.Split(hostPort, ":")
 	if len(parts) != 2 {
 		err = fmt.Errorf("failed to parse %s\n", hostPort)
+
 		return
 	}
 
@@ -76,5 +83,6 @@ func ParseHostPort(hostPort string) (filerServer string, filerPort int64, err er
 
 func CanonicalizeETag(etag string) string {
 	canonicalETag := strings.TrimPrefix(etag, "\"")
+
 	return strings.TrimSuffix(canonicalETag, "\"")
 }

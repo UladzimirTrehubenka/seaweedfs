@@ -89,10 +89,11 @@ func (s *AdminServer) GetFileBrowser(dir string, lastFileName string, pageSize i
 				if err.Error() == "EOF" {
 					break
 				}
+
 				return err
 			}
 
-			entry := resp.Entry
+			entry := resp.GetEntry()
 			if entry == nil {
 				continue
 			}
@@ -101,11 +102,11 @@ func (s *AdminServer) GetFileBrowser(dir string, lastFileName string, pageSize i
 
 			// Only add entries up to pageSize (the +1 is just to check for next page)
 			if fetchedCount <= pageSize {
-				fullPath := path.Join(dir, entry.Name)
+				fullPath := path.Join(dir, entry.GetName())
 
 				var modTime time.Time
-				if entry.Attributes != nil && entry.Attributes.Mtime > 0 {
-					modTime = time.Unix(entry.Attributes.Mtime, 0)
+				if entry.GetAttributes() != nil && entry.GetAttributes().GetMtime() > 0 {
+					modTime = time.Unix(entry.GetAttributes().GetMtime(), 0)
 				}
 
 				var mode string
@@ -114,30 +115,30 @@ func (s *AdminServer) GetFileBrowser(dir string, lastFileName string, pageSize i
 				var replication, collection string
 				var ttlSec int32
 
-				if entry.Attributes != nil {
-					mode = FormatFileMode(entry.Attributes.FileMode)
-					uid = entry.Attributes.Uid
-					gid = entry.Attributes.Gid
-					size = int64(entry.Attributes.FileSize)
-					ttlSec = entry.Attributes.TtlSec
+				if entry.GetAttributes() != nil {
+					mode = FormatFileMode(entry.GetAttributes().GetFileMode())
+					uid = entry.GetAttributes().GetUid()
+					gid = entry.GetAttributes().GetGid()
+					size = int64(entry.GetAttributes().GetFileSize())
+					ttlSec = entry.GetAttributes().GetTtlSec()
 				}
 
 				// Get replication and collection from entry extended attributes
 				if entry.Extended != nil {
-					if repl, ok := entry.Extended["replication"]; ok {
+					if repl, ok := entry.GetExtended()["replication"]; ok {
 						replication = string(repl)
 					}
-					if coll, ok := entry.Extended["collection"]; ok {
+					if coll, ok := entry.GetExtended()["collection"]; ok {
 						collection = string(coll)
 					}
 				}
 
 				// Determine MIME type based on file extension
 				mime := "application/octet-stream"
-				if entry.IsDirectory {
+				if entry.GetIsDirectory() {
 					mime = "inode/directory"
 				} else {
-					ext := strings.ToLower(path.Ext(entry.Name))
+					ext := strings.ToLower(path.Ext(entry.GetName()))
 					switch ext {
 					case ".txt", ".log":
 						mime = "text/plain"
@@ -175,9 +176,9 @@ func (s *AdminServer) GetFileBrowser(dir string, lastFileName string, pageSize i
 				}
 
 				fileEntry := FileEntry{
-					Name:        entry.Name,
+					Name:        entry.GetName(),
 					FullPath:    fullPath,
-					IsDirectory: entry.IsDirectory,
+					IsDirectory: entry.GetIsDirectory(),
 					Size:        size,
 					ModTime:     modTime,
 					Mode:        mode,
@@ -191,8 +192,7 @@ func (s *AdminServer) GetFileBrowser(dir string, lastFileName string, pageSize i
 
 				entries = append(entries, fileEntry)
 
-				lastEntryName = entry.Name
-
+				lastEntryName = entry.GetName()
 			}
 		}
 
@@ -275,13 +275,13 @@ func (s *AdminServer) generateBreadcrumbs(dir string) []BreadcrumbItem {
 
 	// Split path and build breadcrumbs
 	parts := strings.Split(strings.Trim(dir, "/"), "/")
-	currentPath := ""
+	var currentPath strings.Builder
 
 	for _, part := range parts {
 		if part == "" {
 			continue
 		}
-		currentPath += "/" + part
+		currentPath.WriteString("/" + part)
 
 		// Special handling for bucket paths
 		displayName := part
@@ -297,7 +297,7 @@ func (s *AdminServer) generateBreadcrumbs(dir string) []BreadcrumbItem {
 
 		breadcrumbs = append(breadcrumbs, BreadcrumbItem{
 			Name: displayName,
-			Path: currentPath,
+			Path: currentPath.String(),
 		})
 	}
 

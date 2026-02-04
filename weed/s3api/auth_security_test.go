@@ -12,10 +12,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 )
 
 func signRawHTTPRequest(ctx context.Context, req *http.Request, accessKey, secretKey, region string) error {
@@ -25,6 +26,7 @@ func signRawHTTPRequest(ctx context.Context, req *http.Request, accessKey, secre
 	}
 	signer := v4.NewSigner()
 	payloadHash := fmt.Sprintf("%x", sha256.Sum256([]byte{}))
+
 	return signer.SignHTTP(ctx, creds, req, payloadHash, "s3", region, time.Now())
 }
 
@@ -54,11 +56,11 @@ func TestReproIssue7912(t *testing.T) {
     }
   ]
 }`
-	tmpFile, err := os.CreateTemp("", "s3-config-*.json")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "s3-config-*.json")
 	assert.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 
-	_, err = tmpFile.Write([]byte(configContent))
+	_, err = tmpFile.WriteString(configContent)
 	assert.NoError(t, err)
 	tmpFile.Close()
 

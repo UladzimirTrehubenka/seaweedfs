@@ -54,7 +54,7 @@ func (e *SQLEngine) convertSQLTypeToMQ(sqlType TypeRef) (*schema_pb.Type, error)
 // convertMQTypeToSQL converts MQ schema field types back to SQL column types
 // This is the reverse of convertSQLTypeToMQ for display purposes
 func (e *SQLEngine) convertMQTypeToSQL(fieldType *schema_pb.Type) string {
-	switch t := fieldType.Kind.(type) {
+	switch t := fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		switch t.ScalarType {
 		case schema_pb.ScalarType_BOOL:

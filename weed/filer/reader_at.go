@@ -66,7 +66,6 @@ var _ = io.Closer(&ChunkReadAt{})
 // Maximum recommended cache entries: ~10,000 volumes per process.
 // Beyond this, consider migrating to wdclient.FilerClient.
 func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionType {
-
 	vidCache := make(map[string]*filer_pb.Locations)
 	var vidCacheLock sync.RWMutex
 	cacheSize := 0
@@ -88,9 +87,10 @@ func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionTyp
 						return err
 					}
 
-					locations = resp.LocationsMap[vid]
-					if locations == nil || len(locations.Locations) == 0 {
+					locations = resp.GetLocationsMap()[vid]
+					if locations == nil || len(locations.GetLocations()) == 0 {
 						glog.V(0).InfofCtx(ctx, "failed to locate %s", fileId)
+
 						return fmt.Errorf("failed to locate %s", fileId)
 					}
 					vidCacheLock.Lock()
@@ -107,6 +107,7 @@ func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionTyp
 
 					return nil
 				})
+
 				return err
 			})
 		}
@@ -117,10 +118,10 @@ func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionTyp
 
 		fcDataCenter := filerClient.GetDataCenter()
 		var sameDcTargetUrls, otherTargetUrls []string
-		for _, loc := range locations.Locations {
+		for _, loc := range locations.GetLocations() {
 			volumeServerAddress := filerClient.AdjustedUrl(loc)
 			targetUrl := fmt.Sprintf("http://%s/%s", volumeServerAddress, fileId)
-			if fcDataCenter == "" || fcDataCenter != loc.DataCenter {
+			if fcDataCenter == "" || fcDataCenter != loc.GetDataCenter() {
 				otherTargetUrls = append(otherTargetUrls, targetUrl)
 			} else {
 				sameDcTargetUrls = append(sameDcTargetUrls, targetUrl)
@@ -134,12 +135,12 @@ func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionTyp
 		})
 		// Prefer same data center
 		targetUrls = append(sameDcTargetUrls, otherTargetUrls...)
-		return
+
+		return targetUrls, err
 	}
 }
 
 func NewChunkReaderAtFromClient(ctx context.Context, readerCache *ReaderCache, chunkViews *IntervalList[*ChunkView], fileSize int64, prefetchCount int) *ChunkReadAt {
-
 	return &ChunkReadAt{
 		chunkViews:    chunkViews,
 		fileSize:      fileSize,
@@ -156,11 +157,11 @@ func (c *ChunkReadAt) Size() int64 {
 
 func (c *ChunkReadAt) Close() error {
 	c.readerCache.destroy()
+
 	return nil
 }
 
 func (c *ChunkReadAt) ReadAt(p []byte, offset int64) (n int, err error) {
-
 	c.readerPattern.MonitorReadAt(offset, len(p))
 
 	c.chunkViews.Lock.RLock()
@@ -168,11 +169,11 @@ func (c *ChunkReadAt) ReadAt(p []byte, offset int64) (n int, err error) {
 
 	// glog.V(4).Infof("ReadAt [%d,%d) of total file size %d bytes %d chunk views", offset, offset+int64(len(p)), c.fileSize, len(c.chunkViews))
 	n, _, err = c.doReadAt(c.ctx, p, offset)
+
 	return
 }
 
 func (c *ChunkReadAt) ReadAtWithTime(ctx context.Context, p []byte, offset int64) (n int, ts int64, err error) {
-
 	c.readerPattern.MonitorReadAt(offset, len(p))
 
 	c.chunkViews.Lock.RLock()
@@ -193,7 +194,6 @@ type chunkReadTask struct {
 }
 
 func (c *ChunkReadAt) doReadAt(ctx context.Context, p []byte, offset int64) (n int, ts int64, err error) {
-
 	// Collect all chunk read tasks
 	var tasks []*chunkReadTask
 	var gaps []struct{ start, length int64 } // gaps that need zero-filling
@@ -247,6 +247,7 @@ func (c *ChunkReadAt) doReadAt(ctx context.Context, p []byte, offset int64) (n i
 			ts = max(ts, task.chunk.ModifiedTsNs)
 			if readErr != nil {
 				glog.Errorf("fetching chunk %+v: %v\n", task.chunk, readErr)
+
 				return n + copied, ts, readErr
 			}
 			n += copied
@@ -257,13 +258,7 @@ func (c *ChunkReadAt) doReadAt(ctx context.Context, p []byte, offset int64) (n i
 		g, gCtx := errgroup.WithContext(ctx)
 
 		// Limit concurrency to avoid overwhelming the system
-		concurrency := c.prefetchCount
-		if concurrency < minReadConcurrency {
-			concurrency = minReadConcurrency
-		}
-		if concurrency > len(tasks) {
-			concurrency = len(tasks)
-		}
+		concurrency := min(max(c.prefetchCount, minReadConcurrency), len(tasks))
 		g.SetLimit(concurrency)
 
 		for _, task := range tasks {
@@ -272,6 +267,7 @@ func (c *ChunkReadAt) doReadAt(ctx context.Context, p []byte, offset int64) (n i
 				copied, readErr := c.readChunkSliceAtForParallel(gCtx, p[task.bufferStart:task.bufferEnd], task.chunk, task.chunkOffset)
 				task.bytesRead = copied
 				task.modifiedTsNs = task.chunk.ModifiedTsNs
+
 				return readErr
 			})
 		}
@@ -314,16 +310,16 @@ func (c *ChunkReadAt) doReadAt(ctx context.Context, p []byte, offset int64) (n i
 		err = io.EOF
 	}
 
-	return
+	return n, ts, err
 }
 
 func (c *ChunkReadAt) readChunkSliceAt(ctx context.Context, buffer []byte, chunkView *ChunkView, nextChunkViews *Interval[*ChunkView], offset uint64) (n int, err error) {
-
 	if c.readerPattern.IsRandomMode() {
 		n, err := c.readerCache.chunkCache.ReadChunkAt(buffer, chunkView.FileId, offset)
 		if n > 0 {
 			return n, err
 		}
+
 		return fetchChunkRange(ctx, buffer, c.readerCache.lookupFileIdFn, chunkView.FileId, chunkView.CipherKey, chunkView.IsGzipped, int64(offset))
 	}
 
@@ -342,6 +338,7 @@ func (c *ChunkReadAt) readChunkSliceAt(ctx context.Context, buffer []byte, chunk
 		}
 	}
 	c.lastChunkFid = chunkView.FileId
+
 	return
 }
 
@@ -349,6 +346,7 @@ func (c *ChunkReadAt) readChunkSliceAt(ctx context.Context, buffer []byte, chunk
 // It doesn't update lastChunkFid or trigger prefetch (handled by the caller)
 func (c *ChunkReadAt) readChunkSliceAtForParallel(ctx context.Context, buffer []byte, chunkView *ChunkView, offset uint64) (n int, err error) {
 	shouldCache := (uint64(chunkView.ViewOffset) + chunkView.ChunkSize) <= c.readerCache.chunkCache.GetMaxFilePartSizeInCache()
+
 	return c.readerCache.ReadChunkAt(ctx, buffer, chunkView.FileId, chunkView.CipherKey, chunkView.IsGzipped, int64(offset), int(chunkView.ChunkSize), shouldCache)
 }
 
@@ -363,5 +361,6 @@ func zero(buffer []byte, start, length int64) int {
 	for o := start; o < end; o++ {
 		buffer[o] = 0
 	}
+
 	return int(end - start)
 }

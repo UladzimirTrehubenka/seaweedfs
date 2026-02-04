@@ -26,6 +26,7 @@ func errorCheck(got error, want string) error {
 	if !strings.Contains(got.Error(), want) {
 		return fmt.Errorf("expected error %q, got %q", want, got.Error())
 	}
+
 	return nil
 }
 
@@ -87,6 +88,7 @@ func TestParseReplicaPlacementArg(t *testing.T) {
 
 		if err := errorCheck(gotErr, tc.wantErr); err != nil {
 			t.Errorf("argument %q: %s", tc.argument, err.Error())
+
 			continue
 		}
 
@@ -98,7 +100,6 @@ func TestParseReplicaPlacementArg(t *testing.T) {
 }
 
 func TestEcDistribution(t *testing.T) {
-
 	// find out all volume servers with one slot left.
 	ecNodes, totalFreeEcSlots := collectEcVolumeServersByDc(testTopology1, "", types.HardDriveType)
 
@@ -114,7 +115,7 @@ func TestEcDistribution(t *testing.T) {
 
 	for _, dn := range allocatedDataNodes {
 		// fmt.Printf("info %+v %+v\n", dn.info, dn)
-		fmt.Printf("=> %+v %+v\n", dn.info.Id, dn.freeEcSlot)
+		fmt.Printf("=> %+v %+v\n", dn.info.GetId(), dn.freeEcSlot)
 	}
 }
 
@@ -160,6 +161,7 @@ func TestPickRackToBalanceShardsInto(t *testing.T) {
 		got, gotErr := ecb.pickRackToBalanceShardsInto(racks, rackToShardCount)
 		if err := errorCheck(gotErr, tc.wantErr); err != nil {
 			t.Errorf("volume %q: %s", tc.vid, err.Error())
+
 			continue
 		}
 
@@ -170,6 +172,7 @@ func TestPickRackToBalanceShardsInto(t *testing.T) {
 		for _, want := range tc.wantOneOf {
 			if got := string(got); got == want {
 				found = true
+
 				break
 			}
 		}
@@ -232,8 +235,9 @@ func TestPickEcNodeToBalanceShardsInto(t *testing.T) {
 		// Resolve target node by name
 		var ecNode *EcNode
 		for _, n := range allEcNodes {
-			if n.info.Id == tc.nodeId {
+			if n.info.GetId() == tc.nodeId {
 				ecNode = n
+
 				break
 			}
 		}
@@ -241,6 +245,7 @@ func TestPickEcNodeToBalanceShardsInto(t *testing.T) {
 		got, gotErr := ecb.pickEcNodeToBalanceShardsInto(vid, ecNode, allEcNodes)
 		if err := errorCheck(gotErr, tc.wantErr); err != nil {
 			t.Errorf("node %q, volume %q: %s", tc.nodeId, tc.vid, err.Error())
+
 			continue
 		}
 
@@ -249,17 +254,19 @@ func TestPickEcNodeToBalanceShardsInto(t *testing.T) {
 				continue
 			}
 			t.Errorf("node %q, volume %q: got no node, want %q", tc.nodeId, tc.vid, tc.wantOneOf)
+
 			continue
 		}
 		found := false
 		for _, want := range tc.wantOneOf {
-			if got := got.info.Id; got == want {
+			if got := got.info.GetId(); got == want {
 				found = true
+
 				break
 			}
 		}
 		if !(found) {
-			t.Errorf("expected one of %v for volume %q, got %q", tc.wantOneOf, tc.vid, got.info.Id)
+			t.Errorf("expected one of %v for volume %q, got %q", tc.wantOneOf, tc.vid, got.info.GetId())
 		}
 	}
 }
@@ -343,7 +350,7 @@ func TestCountFreeShardSlots(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := map[string]int{}
 			eachDataNode(tc.topology, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
-				got[dn.Id] = countFreeShardSlots(dn, tc.diskType)
+				got[dn.GetId()] = countFreeShardSlots(dn, tc.diskType)
 			})
 
 			if !reflect.DeepEqual(got, tc.want) {

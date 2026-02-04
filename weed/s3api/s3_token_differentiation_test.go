@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
 	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestS3IAMIntegration_isSTSIssuer(t *testing.T) {

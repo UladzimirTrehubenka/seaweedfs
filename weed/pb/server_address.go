@@ -18,6 +18,7 @@ func NewServerAddress(host string, port int, grpcPort int) ServerAddress {
 	if grpcPort == 0 || grpcPort == port+10000 {
 		return ServerAddress(util.JoinHostPort(host, port))
 	}
+
 	return ServerAddress(util.JoinHostPort(host, port) + "." + strconv.Itoa(grpcPort))
 }
 
@@ -29,20 +30,22 @@ func NewServerAddressWithGrpcPort(address string, grpcPort int) ServerAddress {
 	if uint64(grpcPort) == port+10000 {
 		return ServerAddress(address)
 	}
+
 	return ServerAddress(address + "." + strconv.Itoa(grpcPort))
 }
 
 func NewServerAddressFromDataNode(dn *master_pb.DataNodeInfo) ServerAddress {
 	// Use Address field if available (new behavior), fall back to Id for backward compatibility
-	addr := dn.Address
+	addr := dn.GetAddress()
 	if addr == "" {
-		addr = dn.Id // backward compatibility: old nodes use ip:port as id
+		addr = dn.GetId() // backward compatibility: old nodes use ip:port as id
 	}
-	return NewServerAddressWithGrpcPort(addr, int(dn.GrpcPort))
+
+	return NewServerAddressWithGrpcPort(addr, int(dn.GetGrpcPort()))
 }
 
 func NewServerAddressFromLocation(dn *master_pb.Location) ServerAddress {
-	return NewServerAddressWithGrpcPort(dn.Url, int(dn.GrpcPort))
+	return NewServerAddressWithGrpcPort(dn.GetUrl(), int(dn.GetGrpcPort()))
 }
 
 func (sa ServerAddress) String() string {
@@ -61,8 +64,10 @@ func (sa ServerAddress) ToHttpAddress() string {
 	sepIndex := strings.LastIndex(string(ports), ".")
 	if sepIndex >= 0 {
 		host := string(sa[0:portsSepIndex])
+
 		return net.JoinHostPort(host, ports[0:sepIndex])
 	}
+
 	return string(sa)
 }
 
@@ -78,8 +83,10 @@ func (sa ServerAddress) ToGrpcAddress() string {
 	sepIndex := strings.LastIndex(ports, ".")
 	if sepIndex >= 0 {
 		host := string(sa[0:portsSepIndex])
+
 		return net.JoinHostPort(host, ports[sepIndex+1:])
 	}
+
 	return ServerToGrpcAddress(string(sa))
 }
 
@@ -88,12 +95,13 @@ func (sa ServerAddress) ToGrpcAddress() string {
 func (r ServerSrvAddress) LookUp() (addresses []ServerAddress, err error) {
 	_, records, lookupErr := net.LookupSRV("", "", string(r))
 	if lookupErr != nil {
-		err = fmt.Errorf("lookup SRV address %s: %v", r, lookupErr)
+		err = fmt.Errorf("lookup SRV address %s: %w", r, lookupErr)
 	}
 	for _, srv := range records {
 		address := fmt.Sprintf("%s:%d", srv.Target, srv.Port)
 		addresses = append(addresses, ServerAddress(address))
 	}
+
 	return
 }
 
@@ -109,23 +117,25 @@ func (r ServerSrvAddress) LookUp() (addresses []ServerAddress, err error) {
 func (sa ServerAddresses) ToServiceDiscovery() (sd *ServerDiscovery) {
 	sd = &ServerDiscovery{}
 	prefix := "dnssrv+"
-	if strings.HasPrefix(string(sa), prefix) {
-		trimmed := strings.TrimPrefix(string(sa), prefix)
+	if after, ok := strings.CutPrefix(string(sa), prefix); ok {
+		trimmed := after
 		srv := ServerSrvAddress(trimmed)
 		sd.srvRecord = &srv
 	} else {
 		sd.list = sa.ToAddresses()
 	}
+
 	return
 }
 
 func (sa ServerAddresses) ToAddresses() (addresses []ServerAddress) {
-	parts := strings.Split(string(sa), ",")
-	for _, address := range parts {
+	parts := strings.SplitSeq(string(sa), ",")
+	for address := range parts {
 		if address != "" {
 			addresses = append(addresses, ServerAddress(address))
 		}
 	}
+
 	return
 }
 
@@ -134,14 +144,14 @@ func (sa ServerAddresses) ToAddressMap() (addresses map[string]ServerAddress) {
 	for _, address := range sa.ToAddresses() {
 		addresses[string(address)] = address
 	}
+
 	return
 }
 
 func (sa ServerAddresses) ToAddressStrings() (addresses []string) {
 	parts := strings.Split(string(sa), ",")
-	for _, address := range parts {
-		addresses = append(addresses, address)
-	}
+	addresses = append(addresses, parts...)
+
 	return
 }
 
@@ -150,6 +160,7 @@ func ToAddressStrings(addresses []ServerAddress) []string {
 	for _, addr := range addresses {
 		strings = append(strings, string(addr))
 	}
+
 	return strings
 }
 func ToAddressStringsFromMap(addresses map[string]ServerAddress) []string {
@@ -157,6 +168,7 @@ func ToAddressStringsFromMap(addresses map[string]ServerAddress) []string {
 	for _, addr := range addresses {
 		strings = append(strings, string(addr))
 	}
+
 	return strings
 }
 func FromAddressStrings(strings []string) []ServerAddress {
@@ -164,6 +176,7 @@ func FromAddressStrings(strings []string) []ServerAddress {
 	for _, addr := range strings {
 		addresses = append(addresses, ServerAddress(addr))
 	}
+
 	return addresses
 }
 
@@ -181,8 +194,10 @@ func ParseUrl(input string) (address ServerAddress, path string, err error) {
 	commaSeparatorIndex := strings.Index(input, ":")
 	if commaSeparatorIndex < 0 {
 		err = fmt.Errorf("port should be specified in %s", input)
+
 		return
 	}
 	address = ServerAddress(hostAndPorts)
+
 	return
 }

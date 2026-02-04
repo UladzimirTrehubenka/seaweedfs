@@ -54,12 +54,14 @@ func (q *CleanupQueue) Add(folder string, eventTime time.Time) bool {
 			newElem := q.insertSorted(folder, eventTime)
 			q.itemsMap[folder] = newElem
 		}
+
 		return false
 	}
 
 	// Insert new folder in sorted position
 	elem := q.insertSorted(folder, eventTime)
 	q.itemsMap[folder] = elem
+
 	return true
 }
 
@@ -96,6 +98,7 @@ func (q *CleanupQueue) Remove(folder string) bool {
 
 	q.items.Remove(elem)
 	delete(q.itemsMap, folder)
+
 	return true
 }
 
@@ -163,6 +166,7 @@ func (q *CleanupQueue) Peek() (folder string, queueTime time.Time, ok bool) {
 	}
 
 	item := front.Value.(*queueItem)
+
 	return item.folder, item.queueTime, true
 }
 
@@ -170,6 +174,7 @@ func (q *CleanupQueue) Peek() (folder string, queueTime time.Time, ok bool) {
 func (q *CleanupQueue) Len() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
 	return q.items.Len()
 }
 
@@ -178,6 +183,7 @@ func (q *CleanupQueue) Contains(folder string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	_, exists := q.itemsMap[folder]
+
 	return exists
 }
 
@@ -201,5 +207,6 @@ func (q *CleanupQueue) OldestAge() time.Duration {
 	}
 
 	item := front.Value.(*queueItem)
+
 	return time.Since(item.queueTime)
 }

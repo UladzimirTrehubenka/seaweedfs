@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
@@ -153,7 +154,7 @@ func TestSetObjectOwnerFromRequest(t *testing.T) {
 			}
 
 			// Create mock request with uploader account ID
-			req, _ := http.NewRequest("PUT", "/test-bucket/test-object", nil)
+			req, _ := http.NewRequest(http.MethodPut, "/test-bucket/test-object", nil)
 			req.Header.Set(s3_constants.AmzAccountId, tt.uploaderAccountId)
 
 			// Create entry
@@ -167,18 +168,20 @@ func TestSetObjectOwnerFromRequest(t *testing.T) {
 			// Verify the owner ID
 			if tt.expectedOwnerId == "" {
 				if entry.Extended != nil {
-					if _, exists := entry.Extended[s3_constants.ExtAmzOwnerKey]; exists {
+					if _, exists := entry.GetExtended()[s3_constants.ExtAmzOwnerKey]; exists {
 						t.Errorf("%s: Expected no owner to be set, but owner was set", tt.description)
 					}
 				}
 			} else {
 				if entry.Extended == nil {
 					t.Errorf("%s: Expected owner to be set, but Extended is nil", tt.description)
+
 					return
 				}
-				ownerBytes, exists := entry.Extended[s3_constants.ExtAmzOwnerKey]
+				ownerBytes, exists := entry.GetExtended()[s3_constants.ExtAmzOwnerKey]
 				if !exists {
 					t.Errorf("%s: Expected owner to be set, but ExtAmzOwnerKey not found", tt.description)
+
 					return
 				}
 				actualOwnerId := string(ownerBytes)

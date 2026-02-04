@@ -53,7 +53,7 @@ const (
 )
 
 // toString - Safely convert interface to string without causing panic.
-func toString(val interface{}) string {
+func toString(val any) string {
 	switch v := val.(type) {
 	case string:
 		return v
@@ -63,12 +63,12 @@ func toString(val interface{}) string {
 }
 
 // toLowerString - safely convert interface to lower string
-func toLowerString(val interface{}) string {
+func toLowerString(val any) string {
 	return strings.ToLower(toString(val))
 }
 
 // toInteger _ Safely convert interface to integer without causing panic.
-func toInteger(val interface{}) (int64, error) {
+func toInteger(val any) (int64, error) {
 	switch v := val.(type) {
 	case float64:
 		return int64(v), nil
@@ -78,6 +78,7 @@ func toInteger(val interface{}) (int64, error) {
 		return int64(v), nil
 	case string:
 		i, err := strconv.Atoi(v)
+
 		return int64(i), err
 	default:
 		return 0, errors.New("Invalid number format")
@@ -85,8 +86,9 @@ func toInteger(val interface{}) (int64, error) {
 }
 
 // isString - Safely check if val is of type string without causing panic.
-func isString(val interface{}) bool {
+func isString(val any) bool {
 	_, ok := val.(string)
+
 	return ok
 }
 
@@ -115,8 +117,8 @@ func ParsePostPolicyForm(policy string) (ppf PostPolicyForm, e error) {
 	// Convert po into interfaces and
 	// perform strict type conversion using reflection.
 	var rawPolicy struct {
-		Expiration string        `json:"expiration"`
-		Conditions []interface{} `json:"conditions"`
+		Expiration string `json:"expiration"`
+		Conditions []any  `json:"conditions"`
 	}
 
 	err := json.Unmarshal([]byte(policy), &rawPolicy)
@@ -135,11 +137,11 @@ func ParsePostPolicyForm(policy string) (ppf PostPolicyForm, e error) {
 	// Parse conditions.
 	for _, val := range rawPolicy.Conditions {
 		switch condt := val.(type) {
-		case map[string]interface{}: // Handle key:value map types.
+		case map[string]any: // Handle key:value map types.
 			for k, v := range condt {
 				if !isString(v) { // Pre-check value type.
 					// All values must be of type string.
-					return parsedPolicy, fmt.Errorf("Unknown type %s of conditional field value %s found in POST policy form", reflect.TypeOf(condt).String(), condt)
+					return parsedPolicy, fmt.Errorf("Unknown type %s of conditional field value %s found in POST policy form", reflect.TypeFor[map[string]any]().String(), condt)
 				}
 				// {"acl": "public-read" } is an alternate way to indicate - [ "eq", "$acl", "public-read" ]
 				// In this case we will just collapse this into "eq" for all use cases.
@@ -151,16 +153,16 @@ func ParsePostPolicyForm(policy string) (ppf PostPolicyForm, e error) {
 					policyCondEqual, "$" + strings.ToLower(k), toString(v),
 				})
 			}
-		case []interface{}: // Handle array types.
+		case []any: // Handle array types.
 			if len(condt) != 3 { // Return error if we have insufficient elements.
-				return parsedPolicy, fmt.Errorf("Malformed conditional fields %s of type %s found in POST policy form", condt, reflect.TypeOf(condt).String())
+				return parsedPolicy, fmt.Errorf("Malformed conditional fields %s of type %s found in POST policy form", condt, reflect.TypeFor[[]any]().String())
 			}
 			switch toLowerString(condt[0]) {
 			case policyCondEqual, policyCondStartsWith:
 				for _, v := range condt { // Pre-check all values for type.
 					if !isString(v) {
 						// All values must be of type string.
-						return parsedPolicy, fmt.Errorf("Unknown type %s of conditional field value %s found in POST policy form", reflect.TypeOf(condt).String(), condt)
+						return parsedPolicy, fmt.Errorf("Unknown type %s of conditional field value %s found in POST policy form", reflect.TypeFor[[]any]().String(), condt)
 					}
 				}
 				operator, matchType, value := toLowerString(condt[0]), toLowerString(condt[1]), toString(condt[2])
@@ -193,13 +195,14 @@ func ParsePostPolicyForm(policy string) (ppf PostPolicyForm, e error) {
 			default:
 				// Condition should be valid.
 				return parsedPolicy, fmt.Errorf("Unknown type %s of conditional field value %s found in POST policy form",
-					reflect.TypeOf(condt).String(), condt)
+					reflect.TypeFor[[]any]().String(), condt)
 			}
 		default:
 			return parsedPolicy, fmt.Errorf("Unknown field %s of type %s found in POST policy form",
 				condt, reflect.TypeOf(condt).String())
 		}
 	}
+
 	return parsedPolicy, nil
 }
 
@@ -212,6 +215,7 @@ func checkPolicyCond(op string, input1, input2 string) bool {
 	case policyCondStartsWith:
 		return strings.HasPrefix(input1, input2)
 	}
+
 	return false
 }
 
@@ -220,7 +224,7 @@ func checkPolicyCond(op string, input1, input2 string) bool {
 func CheckPostPolicy(formValues http.Header, postPolicyForm PostPolicyForm) error {
 	// Check if policy document expiry date is still not reached
 	if !postPolicyForm.Expiration.After(time.Now().UTC()) {
-		return fmt.Errorf("Invalid according to Policy: Policy expired")
+		return errors.New("Invalid according to Policy: Policy expired")
 	}
 	// map to store the metadata
 	metaMap := make(map[string]string)
@@ -253,12 +257,12 @@ func CheckPostPolicy(formValues http.Header, postPolicyForm PostPolicyForm) erro
 		if startsWithSupported, condFound := startsWithConds[policy.Key]; condFound {
 			// Check if the current condition supports starts-with operator
 			if op == policyCondStartsWith && !startsWithSupported {
-				return fmt.Errorf("Invalid according to Policy: Policy Condition failed")
+				return errors.New("Invalid according to Policy: Policy Condition failed")
 			}
 			// Check if current policy condition is satisfied
 			condPassed = checkPolicyCond(op, formValues.Get(formCanonicalName), policy.Value)
 			if !condPassed {
-				return fmt.Errorf("Invalid according to Policy: Policy Condition failed")
+				return errors.New("Invalid according to Policy: Policy Condition failed")
 			}
 		} else {
 			// This covers all conditions X-Amz-Meta-* and X-Amz-*

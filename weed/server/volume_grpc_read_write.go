@@ -11,14 +11,14 @@ import (
 
 func (vs *VolumeServer) ReadNeedleBlob(ctx context.Context, req *volume_server_pb.ReadNeedleBlobRequest) (resp *volume_server_pb.ReadNeedleBlobResponse, err error) {
 	resp = &volume_server_pb.ReadNeedleBlobResponse{}
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return nil, fmt.Errorf("not found volume id %d", req.VolumeId)
+		return nil, fmt.Errorf("not found volume id %d", req.GetVolumeId())
 	}
 
-	resp.NeedleBlob, err = v.ReadNeedleBlob(req.Offset, types.Size(req.Size))
+	resp.NeedleBlob, err = v.ReadNeedleBlob(req.GetOffset(), types.Size(req.GetSize()))
 	if err != nil {
-		return nil, fmt.Errorf("read needle blob offset %d size %d: %v", req.Offset, req.Size, err)
+		return nil, fmt.Errorf("read needle blob offset %d size %d: %w", req.GetOffset(), req.GetSize(), err)
 	}
 
 	return resp, nil
@@ -26,18 +26,18 @@ func (vs *VolumeServer) ReadNeedleBlob(ctx context.Context, req *volume_server_p
 
 func (vs *VolumeServer) ReadNeedleMeta(ctx context.Context, req *volume_server_pb.ReadNeedleMetaRequest) (resp *volume_server_pb.ReadNeedleMetaResponse, err error) {
 	resp = &volume_server_pb.ReadNeedleMetaResponse{}
-	volumeId := needle.VolumeId(req.VolumeId)
+	volumeId := needle.VolumeId(req.GetVolumeId())
 
 	n := &needle.Needle{
-		Id:    types.NeedleId(req.NeedleId),
+		Id:    types.NeedleId(req.GetNeedleId()),
 		Flags: 0x08,
 	}
-	size := req.Size
-	offset := req.Offset
+	size := req.GetSize()
+	offset := req.GetOffset()
 
 	hasVolume := vs.store.HasVolume(volumeId)
 	if !hasVolume {
-		return nil, fmt.Errorf("not found volume id %d and read needle metadata at ec shards is not supported", req.VolumeId)
+		return nil, fmt.Errorf("not found volume id %d and read needle metadata at ec shards is not supported", req.GetVolumeId())
 	}
 	err = vs.store.ReadVolumeNeedleMetaAt(volumeId, n, offset, size)
 	if err != nil {
@@ -51,6 +51,7 @@ func (vs *VolumeServer) ReadNeedleMeta(ctx context.Context, req *volume_server_p
 		resp.Ttl = n.Ttl.String()
 	}
 	resp.AppendAtNs = n.AppendAtNs
+
 	return resp, nil
 }
 
@@ -61,13 +62,13 @@ func (vs *VolumeServer) WriteNeedleBlob(ctx context.Context, req *volume_server_
 
 	resp = &volume_server_pb.WriteNeedleBlobResponse{}
 
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return nil, fmt.Errorf("not found volume id %d", req.VolumeId)
+		return nil, fmt.Errorf("not found volume id %d", req.GetVolumeId())
 	}
 
-	if err = v.WriteNeedleBlob(types.NeedleId(req.NeedleId), req.NeedleBlob, types.Size(req.Size)); err != nil {
-		return nil, fmt.Errorf("write blob needle %d size %d: %v", req.NeedleId, req.Size, err)
+	if err = v.WriteNeedleBlob(types.NeedleId(req.GetNeedleId()), req.GetNeedleBlob(), types.Size(req.GetSize())); err != nil {
+		return nil, fmt.Errorf("write blob needle %d size %d: %w", req.GetNeedleId(), req.GetSize(), err)
 	}
 
 	return resp, nil

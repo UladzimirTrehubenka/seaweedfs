@@ -41,6 +41,7 @@ func NewIntervalList[T IntervalValue]() *IntervalList[T] {
 			StopOffset:  math.MaxInt64,
 		},
 	}
+
 	return list
 }
 
@@ -102,12 +103,14 @@ func (list *IntervalList[T]) insertInterval(interval *Interval[T]) {
 		if next == nil {
 			// add to the end
 			list.insertBetween(prev, interval, list.tail)
+
 			break
 		}
 
 		// interval is ahead of the next
 		if interval.StopOffset <= next.StartOffset {
 			list.insertBetween(prev, interval, next)
+
 			break
 		}
 
@@ -115,6 +118,7 @@ func (list *IntervalList[T]) insertInterval(interval *Interval[T]) {
 		if next.StopOffset <= interval.StartOffset {
 			prev = next
 			next = next.Next
+
 			continue
 		}
 
@@ -140,6 +144,7 @@ func (list *IntervalList[T]) insertInterval(interval *Interval[T]) {
 				next.StartOffset = interval.StopOffset
 				next.Value.SetStartStop(next.StartOffset, next.StopOffset)
 				list.insertBetween(prev, interval, next)
+
 				break
 			} else {
 				// next is covered
@@ -170,7 +175,6 @@ func (list *IntervalList[T]) insertInterval(interval *Interval[T]) {
 				break
 			}
 		}
-
 	}
 }
 
@@ -186,9 +190,8 @@ func (list *IntervalList[T]) insertBetween(a, interval, b *Interval[T]) {
 }
 
 func (list *IntervalList[T]) overlayInterval(interval *Interval[T]) {
-
-	//t := list.head
-	//for ; t.Next != nil; t = t.Next {
+	// t := list.head
+	// for ; t.Next != nil; t = t.Next {
 	//	if t.TsNs > interval.TsNs {
 	//		println("writes is out of order", t.TsNs-interval.TsNs, "ns")
 	//	}
@@ -244,7 +247,6 @@ func (list *IntervalList[T]) overlayInterval(interval *Interval[T]) {
 			interval.Next = q
 		}
 	}
-
 }
 
 func (list *IntervalList[T]) Len() int {
@@ -255,5 +257,6 @@ func (list *IntervalList[T]) Len() int {
 	for t := list.head; t != nil; t = t.Next {
 		count++
 	}
+
 	return count - 1
 }

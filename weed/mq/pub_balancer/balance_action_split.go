@@ -27,9 +27,8 @@ The following is the sequence of events:
 
 The dependency is as follows:
           2  => 3  => 4
-          |     |
-          v     v
-    1 => (5  |  6)
+          |
+          v     1 => (5  |  6)
 
 And also:
 2 => 5

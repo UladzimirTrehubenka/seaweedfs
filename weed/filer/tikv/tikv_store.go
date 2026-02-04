@@ -1,5 +1,4 @@
 //go:build tikv
-// +build tikv
 
 package tikv
 
@@ -12,12 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tikv/client-go/v2/config"
+	"github.com/tikv/client-go/v2/txnkv"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"github.com/tikv/client-go/v2/config"
-	"github.com/tikv/client-go/v2/txnkv"
 )
 
 const defaultBatchCommitSize = 10000

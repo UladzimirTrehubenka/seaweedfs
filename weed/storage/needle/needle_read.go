@@ -32,7 +32,6 @@ func (n *Needle) DiskSize(version Version) int64 {
 }
 
 func ReadNeedleBlob(r backend.BackendStorageFile, offset int64, size Size, version Version) (dataSlice []byte, err error) {
-
 	dataSize := GetActualSize(size, version)
 	dataSlice = make([]byte, int(dataSize))
 
@@ -45,8 +44,8 @@ func ReadNeedleBlob(r backend.BackendStorageFile, offset int64, size Size, versi
 		fileSize, _, _ := r.GetStat()
 		glog.Errorf("%s read %d dataSize %d offset %d fileSize %d: %v", r.Name(), n, dataSize, offset, fileSize, err)
 	}
-	return dataSlice, err
 
+	return dataSlice, err
 }
 
 // ReadBytes hydrates the needle from the bytes buffer, with only n.Id is set.
@@ -56,16 +55,18 @@ func (n *Needle) ReadBytes(bytes []byte, offset int64, size Size, version Versio
 		if OffsetSize == 4 && offset < int64(MaxPossibleVolumeSize) {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorSizeMismatchOffsetSize).Inc()
 			glog.Errorf("entry not found1: offset %d found id %x size %d, expected size %d", offset, n.Id, n.Size, size)
+
 			return ErrorSizeMismatch
 		}
 		stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorSizeMismatch).Inc()
+
 		return fmt.Errorf("entry not found: offset %d found id %x size %d, expected size %d", offset, n.Id, n.Size, size)
 	}
 	if version == Version1 {
 		n.Data = bytes[NeedleHeaderSize : NeedleHeaderSize+size]
 	} else {
 		err := n.readNeedleDataVersion2(bytes[NeedleHeaderSize : NeedleHeaderSize+int(size)])
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 	}
@@ -73,6 +74,7 @@ func (n *Needle) ReadBytes(bytes []byte, offset int64, size Size, version Versio
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -83,7 +85,7 @@ func (n *Needle) ReadData(r backend.BackendStorageFile, offset int64, size Size,
 		return err
 	}
 	err = n.ReadBytes(bytes, offset, size, version)
-	if err == ErrorSizeMismatch && OffsetSize == 4 {
+	if errors.Is(err, ErrorSizeMismatch) && OffsetSize == 4 {
 		offset = offset + int64(MaxPossibleVolumeSize)
 		bytes, err = ReadNeedleBlob(r, offset, size, version)
 		if err != nil {
@@ -91,6 +93,7 @@ func (n *Needle) ReadData(r backend.BackendStorageFile, offset int64, size Size,
 		}
 		err = n.ReadBytes(bytes, offset, size, version)
 	}
+
 	return err
 }
 
@@ -107,12 +110,14 @@ func (n *Needle) readNeedleDataVersion2(bytes []byte) (err error) {
 		index = index + 4
 		if int(n.DataSize)+index > lenBytes {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorIndexOutOfRange).Inc()
+
 			return fmt.Errorf("index out of range %d", 1)
 		}
 		n.Data = bytes[index : index+int(n.DataSize)]
 		index = index + int(n.DataSize)
 	}
 	_, err = n.readNeedleDataVersion2NonData(bytes[index:])
+
 	return
 }
 func (n *Needle) readNeedleDataVersion2NonData(bytes []byte) (index int, err error) {
@@ -126,6 +131,7 @@ func (n *Needle) readNeedleDataVersion2NonData(bytes []byte) (index int, err err
 		index = index + 1
 		if int(n.NameSize)+index > lenBytes {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorIndexOutOfRange).Inc()
+
 			return index, fmt.Errorf("index out of range %d", 2)
 		}
 		n.Name = bytes[index : index+int(n.NameSize)]
@@ -136,6 +142,7 @@ func (n *Needle) readNeedleDataVersion2NonData(bytes []byte) (index int, err err
 		index = index + 1
 		if int(n.MimeSize)+index > lenBytes {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorIndexOutOfRange).Inc()
+
 			return index, fmt.Errorf("index out of range %d", 3)
 		}
 		n.Mime = bytes[index : index+int(n.MimeSize)]
@@ -144,6 +151,7 @@ func (n *Needle) readNeedleDataVersion2NonData(bytes []byte) (index int, err err
 	if index < lenBytes && n.HasLastModifiedDate() {
 		if LastModifiedBytesLength+index > lenBytes {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorIndexOutOfRange).Inc()
+
 			return index, fmt.Errorf("index out of range %d", 4)
 		}
 		n.LastModified = util.BytesToUint64(bytes[index : index+LastModifiedBytesLength])
@@ -152,6 +160,7 @@ func (n *Needle) readNeedleDataVersion2NonData(bytes []byte) (index int, err err
 	if index < lenBytes && n.HasTtl() {
 		if TtlBytesLength+index > lenBytes {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorIndexOutOfRange).Inc()
+
 			return index, fmt.Errorf("index out of range %d", 5)
 		}
 		n.Ttl = LoadTTLFromBytes(bytes[index : index+TtlBytesLength])
@@ -160,18 +169,21 @@ func (n *Needle) readNeedleDataVersion2NonData(bytes []byte) (index int, err err
 	if index < lenBytes && n.HasPairs() {
 		if 2+index > lenBytes {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorIndexOutOfRange).Inc()
+
 			return index, fmt.Errorf("index out of range %d", 6)
 		}
 		n.PairsSize = util.BytesToUint16(bytes[index : index+2])
 		index += 2
 		if int(n.PairsSize)+index > lenBytes {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorIndexOutOfRange).Inc()
+
 			return index, fmt.Errorf("index out of range %d", 7)
 		}
 		end := index + int(n.PairsSize)
 		n.Pairs = bytes[index:end]
 		index = end
 	}
+
 	return index, nil
 }
 
@@ -182,7 +194,7 @@ func ReadNeedleHeader(r backend.BackendStorageFile, version Version, offset int6
 
 	var count int
 	count, err = r.ReadAt(bytes, offset)
-	if err == io.EOF && count == NeedleHeaderSize {
+	if errors.Is(err, io.EOF) && count == NeedleHeaderSize {
 		err = nil
 	}
 	if count <= 0 || err != nil {
@@ -198,17 +210,17 @@ func ReadNeedleHeader(r backend.BackendStorageFile, version Version, offset int6
 // n should be a needle already read the header
 // the input stream will read until next file entry
 func (n *Needle) ReadNeedleBody(r backend.BackendStorageFile, version Version, offset int64, bodyLength int64) (bytes []byte, err error) {
-
 	if bodyLength <= 0 {
 		return nil, nil
 	}
 	bytes = make([]byte, bodyLength)
 	readCount, err := r.ReadAt(bytes, offset)
-	if err == io.EOF && int64(readCount) == bodyLength {
+	if errors.Is(err, io.EOF) && int64(readCount) == bodyLength {
 		err = nil
 	}
 	if err != nil {
 		glog.Errorf("%s read %d bodyLength %d offset %d: %v", r.Name(), readCount, bodyLength, offset, err)
+
 		return
 	}
 
@@ -218,7 +230,6 @@ func (n *Needle) ReadNeedleBody(r backend.BackendStorageFile, version Version, o
 }
 
 func (n *Needle) ReadNeedleBodyBytes(needleBody []byte, version Version) (err error) {
-
 	if len(needleBody) <= 0 {
 		return nil
 	}
@@ -234,6 +245,7 @@ func (n *Needle) ReadNeedleBodyBytes(needleBody []byte, version Version) (err er
 	default:
 		err = fmt.Errorf("unsupported version %d!", version)
 	}
+
 	return
 }
 

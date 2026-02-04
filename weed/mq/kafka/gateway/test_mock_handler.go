@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -45,6 +46,7 @@ func (m *mockSeaweedMQHandler) TopicExists(topic string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	_, exists := m.topics[topic]
+
 	return exists
 }
 
@@ -55,6 +57,7 @@ func (m *mockSeaweedMQHandler) ListTopics() []string {
 	for topic := range m.topics {
 		topics = append(topics, topic)
 	}
+
 	return topics
 }
 
@@ -62,12 +65,13 @@ func (m *mockSeaweedMQHandler) CreateTopic(topic string, partitions int32) error
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, exists := m.topics[topic]; exists {
-		return fmt.Errorf("topic already exists")
+		return errors.New("topic already exists")
 	}
 	m.topics[topic] = &integration.KafkaTopicInfo{
 		Name:       topic,
 		Partitions: partitions,
 	}
+
 	return nil
 }
 
@@ -75,12 +79,13 @@ func (m *mockSeaweedMQHandler) CreateTopicWithSchemas(name string, partitions in
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, exists := m.topics[name]; exists {
-		return fmt.Errorf("topic already exists")
+		return errors.New("topic already exists")
 	}
 	m.topics[name] = &integration.KafkaTopicInfo{
 		Name:       name,
 		Partitions: partitions,
 	}
+
 	return nil
 }
 
@@ -88,6 +93,7 @@ func (m *mockSeaweedMQHandler) DeleteTopic(topic string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.topics, topic)
+
 	return nil
 }
 
@@ -95,6 +101,7 @@ func (m *mockSeaweedMQHandler) GetTopicInfo(topic string) (*integration.KafkaTop
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	info, exists := m.topics[topic]
+
 	return info, exists
 }
 
@@ -201,12 +208,12 @@ func (m *mockSeaweedMQHandler) GetLatestOffset(topic string, partition int32) (i
 }
 
 func (m *mockSeaweedMQHandler) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
-	return fmt.Errorf("mock handler: not implemented")
+	return errors.New("mock handler: not implemented")
 }
 
 func (m *mockSeaweedMQHandler) CreatePerConnectionBrokerClient() (*integration.BrokerClient, error) {
 	// Return a minimal broker client that won't actually connect
-	return nil, fmt.Errorf("mock handler: per-connection broker client not available in unit test mode")
+	return nil, errors.New("mock handler: per-connection broker client not available in unit test mode")
 }
 
 func (m *mockSeaweedMQHandler) GetFilerClientAccessor() *filer_client.FilerClientAccessor {

@@ -26,7 +26,7 @@ func NewPartitionSlotToBrokerList(ringSize int32) *PartitionSlotToBrokerList {
 
 func (ps *PartitionSlotToBrokerList) AddBroker(partition *schema_pb.Partition, broker string, follower string) {
 	for _, partitionSlot := range ps.PartitionSlots {
-		if partitionSlot.RangeStart == partition.RangeStart && partitionSlot.RangeStop == partition.RangeStop {
+		if partitionSlot.RangeStart == partition.GetRangeStart() && partitionSlot.RangeStop == partition.GetRangeStop() {
 			if partitionSlot.AssignedBroker != "" && partitionSlot.AssignedBroker != broker {
 				glog.V(0).Infof("partition %s broker change: %s => %s", partition, partitionSlot.AssignedBroker, broker)
 				partitionSlot.AssignedBroker = broker
@@ -40,9 +40,9 @@ func (ps *PartitionSlotToBrokerList) AddBroker(partition *schema_pb.Partition, b
 		}
 	}
 	ps.PartitionSlots = append(ps.PartitionSlots, &PartitionSlotToBroker{
-		RangeStart:     partition.RangeStart,
-		RangeStop:      partition.RangeStop,
-		UnixTimeNs:     partition.UnixTimeNs,
+		RangeStart:     partition.GetRangeStart(),
+		RangeStop:      partition.GetRangeStop(),
+		UnixTimeNs:     partition.GetUnixTimeNs(),
 		AssignedBroker: broker,
 		FollowerBroker: follower,
 	})

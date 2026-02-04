@@ -41,6 +41,7 @@ func (localsink *LocalSink) isMultiPartEntry(key string) bool {
 func (localsink *LocalSink) initialize(dir string, isIncremental bool) error {
 	localsink.Dir = dir
 	localsink.isIncremental = isIncremental
+
 	return nil
 }
 
@@ -48,6 +49,7 @@ func (localsink *LocalSink) Initialize(configuration util.Configuration, prefix 
 	dir := configuration.GetString(prefix + "directory")
 	isIncremental := configuration.GetBool(prefix + "is_incremental")
 	glog.V(4).Infof("sink.local.directory: %v", dir)
+
 	return localsink.initialize(dir, isIncremental)
 }
 
@@ -67,11 +69,12 @@ func (localsink *LocalSink) DeleteEntry(key string, isDirectory, deleteIncludeCh
 	if err := os.Remove(key); err != nil {
 		glog.V(0).Infof("remove entry key %s: %s", key, err)
 	}
+
 	return nil
 }
 
 func (localsink *LocalSink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int32) error {
-	if entry.IsDirectory || localsink.isMultiPartEntry(key) {
+	if entry.GetIsDirectory() || localsink.isMultiPartEntry(key) {
 		return nil
 	}
 	glog.V(4).Infof("Create Entry key: %s", key)
@@ -88,11 +91,11 @@ func (localsink *LocalSink) CreateEntry(key string, entry *filer_pb.Entry, signa
 		}
 	}
 
-	if entry.IsDirectory {
-		return os.Mkdir(key, os.FileMode(entry.Attributes.FileMode))
+	if entry.GetIsDirectory() {
+		return os.Mkdir(key, os.FileMode(entry.GetAttributes().GetFileMode()))
 	}
 
-	mode := os.FileMode(entry.Attributes.FileMode)
+	mode := os.FileMode(entry.GetAttributes().GetFileMode())
 	dstFile, err := os.OpenFile(util.ToShortFileName(key), os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return err
@@ -112,11 +115,12 @@ func (localsink *LocalSink) CreateEntry(key string, entry *filer_pb.Entry, signa
 
 	writeFunc := func(data []byte) error {
 		_, writeErr := dstFile.Write(data)
+
 		return writeErr
 	}
 
-	if len(entry.Content) > 0 {
-		return writeFunc(entry.Content)
+	if len(entry.GetContent()) > 0 {
+		return writeFunc(entry.GetContent())
 	}
 
 	if err := repl_util.CopyFromChunkViews(chunkViews, localsink.filerSource, writeFunc); err != nil {
@@ -134,5 +138,6 @@ func (localsink *LocalSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, ne
 	// do delete and create
 	foundExistingEntry = util.FileExists(key)
 	err = localsink.CreateEntry(key, newEntry, signatures)
+
 	return
 }

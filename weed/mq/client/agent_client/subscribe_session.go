@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_agent_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type SubscribeOption struct {
@@ -31,7 +32,7 @@ func NewSubscribeSession(agentAddress string, option *SubscribeOption) (*Subscri
 	// call local agent grpc server to create a new session
 	clientConn, err := grpc.NewClient(agentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, fmt.Errorf("dial agent server %s: %v", agentAddress, err)
+		return nil, fmt.Errorf("dial agent server %s: %w", agentAddress, err)
 	}
 	agentClient := mq_agent_pb.NewSeaweedMessagingAgentClient(clientConn)
 
@@ -68,6 +69,7 @@ func NewSubscribeSession(agentAddress string, option *SubscribeOption) (*Subscri
 
 func (s *SubscribeSession) CloseSession() error {
 	err := s.stream.CloseSend()
+
 	return err
 }
 
@@ -80,8 +82,9 @@ func (a *SubscribeSession) SubscribeMessageRecord(
 			if onCompletionFn != nil {
 				onCompletionFn()
 			}
+
 			return err
 		}
-		onEachMessageFn(resp.Key, resp.Value)
+		onEachMessageFn(resp.GetKey(), resp.GetValue())
 	}
 }

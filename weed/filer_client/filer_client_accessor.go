@@ -1,18 +1,20 @@
 package filer_client
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
-	"google.golang.org/grpc"
 )
 
 // filerHealth tracks the health status of a filer
@@ -35,10 +37,7 @@ func (fh *filerHealth) recordFailure() {
 
 	// Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, max 30s
 	// Calculate 2^(count-1) but cap the result at 30 seconds
-	backoffSeconds := 1 << (count - 1)
-	if backoffSeconds > 30 {
-		backoffSeconds = 30
-	}
+	backoffSeconds := min(1<<(count-1), 30)
 	fh.backoffUntil = time.Now().Add(time.Duration(backoffSeconds) * time.Second)
 
 	glog.V(1).Infof("Filer %v failed %d times, backing off for %ds", fh.address, count, backoffSeconds)
@@ -71,6 +70,7 @@ func (fca *FilerClientAccessor) getOrCreateFilerHealth(address pb.ServerAddress)
 	}
 
 	actual, _ := fca.filerHealthMap.LoadOrStore(address, newHealth)
+
 	return actual.(*filerHealth)
 }
 
@@ -84,6 +84,7 @@ func (fca *FilerClientAccessor) partitionFilers(filers []pb.ServerAddress) (heal
 			backoff = append(backoff, filer)
 		}
 	}
+
 	return healthy, backoff
 }
 
@@ -113,7 +114,7 @@ func (fca *FilerClientAccessor) WithFilerClient(streamingMode bool, fn func(file
 func (fca *FilerClientAccessor) withMultipleFilers(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
 	filers := fca.GetFilers()
 	if len(filers) == 0 {
-		return fmt.Errorf("no filer addresses available")
+		return errors.New("no filer addresses available")
 	}
 
 	// Partition filers into healthy and backoff groups
@@ -132,6 +133,7 @@ func (fca *FilerClientAccessor) withMultipleFilers(streamingMode bool, fn func(f
 			// Success - record it and return
 			health.recordSuccess()
 			glog.V(2).Infof("Filer %v succeeded", filerAddress)
+
 			return nil
 		}
 
@@ -153,6 +155,7 @@ func (fca *FilerClientAccessor) withMultipleFilers(streamingMode bool, fn func(f
 				// Success - record it and return
 				health.recordSuccess()
 				glog.V(1).Infof("Backoff filer %v recovered and succeeded", filerAddress)
+
 				return nil
 			}
 
@@ -163,11 +166,10 @@ func (fca *FilerClientAccessor) withMultipleFilers(streamingMode bool, fn func(f
 		}
 	}
 
-	return fmt.Errorf("all filer connections failed, last error: %v", lastErr)
+	return fmt.Errorf("all filer connections failed, last error: %w", lastErr)
 }
 
 func (fca *FilerClientAccessor) SaveTopicConfToFiler(t topic.Topic, conf *mq_pb.ConfigureTopicResponse) error {
-
 	glog.V(0).Infof("save conf for topic %v to filer", t)
 
 	// save the topic configuration on filer
@@ -177,11 +179,11 @@ func (fca *FilerClientAccessor) SaveTopicConfToFiler(t topic.Topic, conf *mq_pb.
 }
 
 func (fca *FilerClientAccessor) ReadTopicConfFromFiler(t topic.Topic) (conf *mq_pb.ConfigureTopicResponse, err error) {
-
 	glog.V(1).Infof("load conf for topic %v from filer", t)
 
 	if err = fca.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		conf, err = t.ReadConfFile(client)
+
 		return err
 	}); err != nil {
 		return nil, err
@@ -192,11 +194,11 @@ func (fca *FilerClientAccessor) ReadTopicConfFromFiler(t topic.Topic) (conf *mq_
 
 // ReadTopicConfFromFilerWithMetadata reads topic configuration along with file creation and modification times
 func (fca *FilerClientAccessor) ReadTopicConfFromFilerWithMetadata(t topic.Topic) (conf *mq_pb.ConfigureTopicResponse, createdAtNs, modifiedAtNs int64, err error) {
-
 	glog.V(1).Infof("load conf with metadata for topic %v from filer", t)
 
 	if err = fca.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		conf, createdAtNs, modifiedAtNs, err = t.ReadConfFileWithMetadata(client)
+
 		return err
 	}); err != nil {
 		return nil, 0, 0, err

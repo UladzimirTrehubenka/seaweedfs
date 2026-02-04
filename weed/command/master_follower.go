@@ -72,7 +72,6 @@ var cmdMasterFollower = &Command{
 }
 
 func runMasterFollower(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	util.LoadConfiguration("master", false)
 
@@ -91,21 +90,21 @@ func runMasterFollower(cmd *Command, args []string) bool {
 }
 
 func startMasterFollower(masterOptions MasterOptions) {
-
 	// collect settings from main masters
 	masters := pb.ServerAddresses(*mf.peers).ToAddressMap()
 
 	var err error
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.master")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		err = pb.WithOneOfGrpcMasterClients(false, masters, grpcDialOption, func(client master_pb.SeaweedClient) error {
 			resp, err := client.GetMasterConfiguration(context.Background(), &master_pb.GetMasterConfigurationRequest{})
 			if err != nil {
 				return fmt.Errorf("get master grpc address %v configuration: %w", masters, err)
 			}
 			masterOptions.defaultReplication = &resp.DefaultReplication
-			masterOptions.volumeSizeLimitMB = aws.Uint(uint(resp.VolumeSizeLimitMB))
+			masterOptions.volumeSizeLimitMB = aws.Uint(uint(resp.GetVolumeSizeLimitMB()))
 			masterOptions.volumePreallocate = &resp.VolumePreallocate
+
 			return nil
 		})
 		if err != nil {
@@ -116,6 +115,7 @@ func startMasterFollower(masterOptions MasterOptions) {
 	}
 	if err != nil {
 		glog.Errorf("failed to talk to filer %v: %v", masters, err)
+
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -210,7 +211,6 @@ func runS3(cmd *Command, args []string) bool {
 	go stats_collect.StartMetricsServer(*s3StandaloneOptions.metricsHttpIp, *s3StandaloneOptions.metricsHttpPort)
 
 	return s3StandaloneOptions.startS3Server()
-
 }
 
 // GetCertificateWithUpdate Auto refreshing TSL certificate
@@ -219,11 +219,11 @@ func (s3opt *S3Options) GetCertificateWithUpdate(*tls.ClientHelloInfo) (*tls.Cer
 	if certs == nil {
 		return nil, err
 	}
+
 	return &certs.Certs[0], err
 }
 
 func (s3opt *S3Options) startS3Server() bool {
-
 	filerAddresses := pb.ServerAddresses(*s3opt.filer).ToAddresses()
 
 	filerBucketsPath := "/buckets"
@@ -240,17 +240,18 @@ func (s3opt *S3Options) startS3Server() bool {
 		err := pb.WithOneOfGrpcFilerClients(false, filerAddresses, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 			if err != nil {
-				return fmt.Errorf("get filer configuration: %v", err)
+				return fmt.Errorf("get filer configuration: %w", err)
 			}
-			filerBucketsPath = resp.DirBuckets
-			filerGroup = resp.FilerGroup
+			filerBucketsPath = resp.GetDirBuckets()
+			filerGroup = resp.GetFilerGroup()
 			// Get master addresses for filer discovery
-			masterAddresses = pb.ServerAddresses(strings.Join(resp.Masters, ",")).ToAddresses()
-			metricsAddress, metricsIntervalSec = resp.MetricsAddress, int(resp.MetricsIntervalSec)
+			masterAddresses = pb.ServerAddresses(strings.Join(resp.GetMasters(), ",")).ToAddresses()
+			metricsAddress, metricsIntervalSec = resp.GetMetricsAddress(), int(resp.GetMetricsIntervalSec())
 			glog.V(0).Infof("S3 read filer buckets dir: %s", filerBucketsPath)
 			if len(masterAddresses) > 0 {
 				glog.V(0).Infof("S3 read master addresses for discovery: %v", masterAddresses)
 			}
+
 			return nil
 		})
 		if err != nil {
@@ -258,6 +259,7 @@ func (s3opt *S3Options) startS3Server() bool {
 			time.Sleep(time.Second)
 		} else {
 			glog.V(0).Infof("connected to filers %v", filerAddresses)
+
 			break
 		}
 	}
@@ -423,7 +425,7 @@ func (s3opt *S3Options) startS3Server() bool {
 					grpcS.Stop()
 				}()
 			}
-			if err = httpS.ServeTLS(s3ApiListener, "", ""); err != nil && err != http.ErrServerClosed {
+			if err = httpS.ServeTLS(s3ApiListener, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				glog.Fatalf("S3 API Server Fail to serve: %v", err)
 			}
 		} else {
@@ -464,13 +466,12 @@ func (s3opt *S3Options) startS3Server() bool {
 				grpcS.Stop()
 			}()
 		}
-		if err = httpS.Serve(s3ApiListener); err != nil && err != http.ErrServerClosed {
+		if err = httpS.Serve(s3ApiListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			glog.Fatalf("S3 API Server Fail to serve: %v", err)
 		}
 	}
 
 	return true
-
 }
 
 // startIcebergServer starts the Iceberg REST Catalog server on a separate port.
@@ -500,12 +501,12 @@ func (s3opt *S3Options) startIcebergServer(s3ApiServer *s3api.S3ApiServer) {
 	// Serve on localhost as well if we're bound to a different interface
 	if icebergLocalListener != nil {
 		go func() {
-			if err := httpS.Serve(icebergLocalListener); err != nil && err != http.ErrServerClosed {
+			if err := httpS.Serve(icebergLocalListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				glog.V(0).Infof("Iceberg localhost listener error: %v", err)
 			}
 		}()
 	}
-	if err = httpS.Serve(icebergListener); err != nil && err != http.ErrServerClosed {
+	if err = httpS.Serve(icebergListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		glog.Fatalf("Iceberg REST Catalog Server Fail to serve: %v", err)
 	}
 }

@@ -22,6 +22,7 @@ func CalculateECDistribution(totalShards, parityShards int, rp *super_block.Repl
 		ParityShards: parityShards,
 	}
 	rep := distribution.NewReplicationConfig(rp)
+
 	return distribution.CalculateDistribution(ec, rep)
 }
 
@@ -44,7 +45,7 @@ func NewTopologyDistributionAnalysis() *TopologyDistributionAnalysis {
 
 // AddNode adds a node and its shards to the analysis
 func (a *TopologyDistributionAnalysis) AddNode(node *EcNode, shardsInfo *erasure_coding.ShardsInfo) {
-	nodeId := node.info.Id
+	nodeId := node.info.GetId()
 
 	// Create distribution.TopologyNode from EcNode
 	topoNode := &distribution.TopologyNode{
@@ -91,6 +92,7 @@ func (a *TopologyDistributionAnalysis) GetShardsByDC() map[DataCenterId]int {
 	for dc, count := range a.inner.ShardsByDC {
 		result[DataCenterId(dc)] = count
 	}
+
 	return result
 }
 
@@ -100,6 +102,7 @@ func (a *TopologyDistributionAnalysis) GetShardsByRack() map[RackId]int {
 	for rack, count := range a.inner.ShardsByRack {
 		result[RackId(rack)] = count
 	}
+
 	return result
 }
 
@@ -109,6 +112,7 @@ func (a *TopologyDistributionAnalysis) GetShardsByNode() map[EcNodeId]int {
 	for nodeId, count := range a.inner.ShardsByNode {
 		result[EcNodeId(nodeId)] = count
 	}
+
 	return result
 }
 
@@ -124,6 +128,7 @@ func AnalyzeVolumeDistribution(volumeId needle.VolumeId, locations []*EcNode, di
 	}
 
 	analysis.Finalize()
+
 	return analysis
 }
 
@@ -139,7 +144,7 @@ type ECShardMove struct {
 // String returns a human-readable description
 func (m ECShardMove) String() string {
 	return fmt.Sprintf("volume %d shard %d: %s -> %s (%s)",
-		m.VolumeId, m.ShardId, m.SourceNode.info.Id, m.DestNode.info.Id, m.Reason)
+		m.VolumeId, m.ShardId, m.SourceNode.info.GetId(), m.DestNode.info.GetId(), m.Reason)
 }
 
 // ProportionalECRebalancer implements proportional shard distribution for shell commands
@@ -190,7 +195,7 @@ func (r *ProportionalECRebalancer) PlanMoves(
 
 	// Add all EC nodes to the analysis (even those without shards)
 	for _, node := range r.ecNodes {
-		nodeId := node.info.Id
+		nodeId := node.info.GetId()
 		topoNode := &distribution.TopologyNode{
 			NodeID:     nodeId,
 			DataCenter: string(node.dc),
@@ -203,7 +208,7 @@ func (r *ProportionalECRebalancer) PlanMoves(
 
 	// Add shard locations from nodes that have shards
 	for _, node := range locations {
-		nodeId := node.info.Id
+		nodeId := node.info.GetId()
 		si := findEcVolumeShardsInfo(node, volumeId, r.diskType)
 		for _, shardId := range si.Ids() {
 			analysis.AddShardLocation(distribution.ShardLocation{
@@ -255,6 +260,7 @@ func GetDistributionSummary(rp *super_block.ReplicaPlacement) string {
 	ec := distribution.DefaultECConfig()
 	rep := distribution.NewReplicationConfig(rp)
 	dist := distribution.CalculateDistribution(ec, rep)
+
 	return dist.Summary()
 }
 
@@ -262,6 +268,7 @@ func GetDistributionSummary(rp *super_block.ReplicaPlacement) string {
 func GetDistributionSummaryWithConfig(rp *super_block.ReplicaPlacement, ecConfig distribution.ECConfig) string {
 	rep := distribution.NewReplicationConfig(rp)
 	dist := distribution.CalculateDistribution(ecConfig, rep)
+
 	return dist.Summary()
 }
 
@@ -270,6 +277,7 @@ func GetFaultToleranceAnalysis(rp *super_block.ReplicaPlacement) string {
 	ec := distribution.DefaultECConfig()
 	rep := distribution.NewReplicationConfig(rp)
 	dist := distribution.CalculateDistribution(ec, rep)
+
 	return dist.FaultToleranceAnalysis()
 }
 
@@ -277,5 +285,6 @@ func GetFaultToleranceAnalysis(rp *super_block.ReplicaPlacement) string {
 func GetFaultToleranceAnalysisWithConfig(rp *super_block.ReplicaPlacement, ecConfig distribution.ECConfig) string {
 	rep := distribution.NewReplicationConfig(rp)
 	dist := distribution.CalculateDistribution(ecConfig, rep)
+
 	return dist.FaultToleranceAnalysis()
 }

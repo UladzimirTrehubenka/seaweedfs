@@ -183,6 +183,7 @@ func TestLoopProcessLogDataWithOffset_WithData(t *testing.T) {
 	waitForDataFn := func() bool {
 		mu.Lock()
 		defer mu.Unlock()
+
 		return receivedCount == 0 // Disconnect after first message
 	}
 
@@ -190,6 +191,7 @@ func TestLoopProcessLogDataWithOffset_WithData(t *testing.T) {
 		mu.Lock()
 		receivedCount++
 		mu.Unlock()
+
 		return true, nil // Continue processing
 	}
 
@@ -230,7 +232,7 @@ func TestLoopProcessLogDataWithOffset_ConcurrentDisconnect(t *testing.T) {
 	numClients := 10
 	var wg sync.WaitGroup
 
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		wg.Add(1)
 		go func(clientID int) {
 			defer wg.Done()
@@ -286,6 +288,7 @@ func TestLoopProcessLogDataWithOffset_StopTime(t *testing.T) {
 
 	eachLogEntryFn := func(logEntry *filer_pb.LogEntry, offset int64) (bool, error) {
 		t.Errorf("Should not process any entries when stopTsNs is in the past")
+
 		return false, nil
 	}
 
@@ -314,10 +317,11 @@ func BenchmarkLoopProcessLogDataWithOffset_EmptyBuffer(b *testing.B) {
 	logBuffer := NewLogBuffer("test", 1*time.Minute, flushFn, nil, nil)
 	defer logBuffer.ShutdownLogBuffer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		callCount := 0
 		waitForDataFn := func() bool {
 			callCount++
+
 			return callCount < 3 // Exit after 3 calls
 		}
 

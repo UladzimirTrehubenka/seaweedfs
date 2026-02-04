@@ -2,6 +2,7 @@ package kms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,8 +15,8 @@ type ViperConfig interface {
 	GetBool(key string) bool
 	GetInt(key string) int
 	GetStringSlice(key string) []string
-	SetDefault(key string, value interface{})
-	GetStringMap(key string) map[string]interface{}
+	SetDefault(key string, value any)
+	GetStringMap(key string) map[string]any
 	IsSet(key string) bool
 }
 
@@ -38,6 +39,7 @@ func (loader *ConfigLoader) LoadConfigurations() error {
 	// Check if KMS section exists
 	if !loader.viper.IsSet("kms") {
 		glog.V(1).Infof("No KMS configuration found in filer.toml")
+
 		return nil
 	}
 
@@ -51,7 +53,7 @@ func (loader *ConfigLoader) LoadConfigurations() error {
 
 	// Load KMS providers
 	if providersConfig, exists := kmsConfig["providers"]; exists {
-		if providers, ok := providersConfig.(map[string]interface{}); ok {
+		if providers, ok := providersConfig.(map[string]any); ok {
 			if err := loader.loadKMSProviders(providers); err != nil {
 				return fmt.Errorf("failed to load KMS providers: %w", err)
 			}
@@ -70,7 +72,7 @@ func (loader *ConfigLoader) LoadConfigurations() error {
 
 	// Load bucket-specific KMS configurations
 	if bucketsConfig, exists := kmsConfig["buckets"]; exists {
-		if buckets, ok := bucketsConfig.(map[string]interface{}); ok {
+		if buckets, ok := bucketsConfig.(map[string]any); ok {
 			if err := loader.loadBucketKMSConfigurations(buckets); err != nil {
 				return fmt.Errorf("failed to load bucket KMS configurations: %w", err)
 			}
@@ -78,11 +80,12 @@ func (loader *ConfigLoader) LoadConfigurations() error {
 	}
 
 	glog.V(1).Infof("KMS configuration loaded successfully")
+
 	return nil
 }
 
 // loadGlobalKMSSettings loads global KMS settings
-func (loader *ConfigLoader) loadGlobalKMSSettings(kmsConfig map[string]interface{}) error {
+func (loader *ConfigLoader) loadGlobalKMSSettings(kmsConfig map[string]any) error {
 	// Set default KMS provider if specified
 	if defaultProvider, exists := kmsConfig["default_provider"]; exists {
 		if providerName, ok := defaultProvider.(string); ok {
@@ -95,16 +98,18 @@ func (loader *ConfigLoader) loadGlobalKMSSettings(kmsConfig map[string]interface
 }
 
 // loadKMSProviders loads individual KMS provider configurations
-func (loader *ConfigLoader) loadKMSProviders(providers map[string]interface{}) error {
+func (loader *ConfigLoader) loadKMSProviders(providers map[string]any) error {
 	for providerName, providerConfigInterface := range providers {
-		providerConfig, ok := providerConfigInterface.(map[string]interface{})
+		providerConfig, ok := providerConfigInterface.(map[string]any)
 		if !ok {
 			glog.Warningf("Invalid configuration for KMS provider %s", providerName)
+
 			continue
 		}
 
 		if err := loader.loadSingleKMSProvider(providerName, providerConfig); err != nil {
 			glog.Errorf("Failed to load KMS provider %s: %v", providerName, err)
+
 			continue
 		}
 
@@ -115,7 +120,7 @@ func (loader *ConfigLoader) loadKMSProviders(providers map[string]interface{}) e
 }
 
 // loadSingleKMSProvider loads a single KMS provider configuration
-func (loader *ConfigLoader) loadSingleKMSProvider(providerName string, config map[string]interface{}) error {
+func (loader *ConfigLoader) loadSingleKMSProvider(providerName string, config map[string]any) error {
 	// Get provider type
 	providerType, exists := config["type"]
 	if !exists {
@@ -128,7 +133,7 @@ func (loader *ConfigLoader) loadSingleKMSProvider(providerName string, config ma
 	}
 
 	// Get provider-specific configuration
-	providerConfig := make(map[string]interface{})
+	providerConfig := make(map[string]any)
 	for key, value := range config {
 		if key != "type" {
 			providerConfig[key] = value
@@ -185,11 +190,12 @@ func (loader *ConfigLoader) loadSingleKMSProvider(providerName string, config ma
 }
 
 // loadBucketKMSConfigurations loads bucket-specific KMS configurations
-func (loader *ConfigLoader) loadBucketKMSConfigurations(buckets map[string]interface{}) error {
+func (loader *ConfigLoader) loadBucketKMSConfigurations(buckets map[string]any) error {
 	for bucketName, bucketConfigInterface := range buckets {
-		bucketConfig, ok := bucketConfigInterface.(map[string]interface{})
+		bucketConfig, ok := bucketConfigInterface.(map[string]any)
 		if !ok {
 			glog.Warningf("Invalid KMS configuration for bucket %s", bucketName)
+
 			continue
 		}
 
@@ -198,6 +204,7 @@ func (loader *ConfigLoader) loadBucketKMSConfigurations(buckets map[string]inter
 			if providerName, ok := provider.(string); ok {
 				if err := loader.manager.SetBucketKMSProvider(bucketName, providerName); err != nil {
 					glog.Errorf("Failed to set KMS provider for bucket %s: %v", bucketName, err)
+
 					continue
 				}
 				glog.V(2).Infof("Set KMS provider for bucket %s to %s", bucketName, providerName)
@@ -219,6 +226,7 @@ func (loader *ConfigLoader) setDefaultProvider() error {
 			glog.V(1).Infof("Set default KMS provider to: %s", providerName)
 		}
 	}
+
 	return nil
 }
 
@@ -243,6 +251,7 @@ func (loader *ConfigLoader) initializeGlobalKMSProvider() error {
 
 	if defaultProviderName == "" {
 		glog.V(2).Infof("No KMS providers configured, skipping global KMS initialization")
+
 		return nil
 	}
 
@@ -264,6 +273,7 @@ func (loader *ConfigLoader) ValidateConfiguration() error {
 	providers := loader.manager.ListKMSProviders()
 	if len(providers) == 0 {
 		glog.V(1).Infof("No KMS providers configured")
+
 		return nil
 	}
 
@@ -296,19 +306,20 @@ func LoadKMSFromFilerToml(v ViperConfig) error {
 	if err := loader.LoadConfigurations(); err != nil {
 		return err
 	}
+
 	return loader.ValidateConfiguration()
 }
 
 // LoadKMSFromConfig loads KMS configuration directly from parsed JSON data
-func LoadKMSFromConfig(kmsConfig interface{}) error {
-	kmsMap, ok := kmsConfig.(map[string]interface{})
+func LoadKMSFromConfig(kmsConfig any) error {
+	kmsMap, ok := kmsConfig.(map[string]any)
 	if !ok {
-		return fmt.Errorf("invalid KMS configuration format")
+		return errors.New("invalid KMS configuration format")
 	}
 
 	// Create a direct config adapter that doesn't use Viper
 	// Wrap the KMS config under a "kms" key as expected by LoadConfigurations
-	wrappedConfig := map[string]interface{}{
+	wrappedConfig := map[string]any{
 		"kms": kmsMap,
 	}
 	adapter := &directConfigAdapter{config: wrappedConfig}
@@ -323,16 +334,17 @@ func LoadKMSFromConfig(kmsConfig interface{}) error {
 
 // directConfigAdapter implements ViperConfig interface for direct map access
 type directConfigAdapter struct {
-	config map[string]interface{}
+	config map[string]any
 }
 
-func (d *directConfigAdapter) GetStringMap(key string) map[string]interface{} {
+func (d *directConfigAdapter) GetStringMap(key string) map[string]any {
 	if val, exists := d.config[key]; exists {
-		if mapVal, ok := val.(map[string]interface{}); ok {
+		if mapVal, ok := val.(map[string]any); ok {
 			return mapVal
 		}
 	}
-	return make(map[string]interface{})
+
+	return make(map[string]any)
 }
 
 func (d *directConfigAdapter) GetString(key string) string {
@@ -341,6 +353,7 @@ func (d *directConfigAdapter) GetString(key string) string {
 			return strVal
 		}
 	}
+
 	return ""
 }
 
@@ -350,6 +363,7 @@ func (d *directConfigAdapter) GetBool(key string) bool {
 			return boolVal
 		}
 	}
+
 	return false
 }
 
@@ -362,49 +376,54 @@ func (d *directConfigAdapter) GetInt(key string) int {
 			return int(v)
 		}
 	}
+
 	return 0
 }
 
 func (d *directConfigAdapter) GetStringSlice(key string) []string {
 	if val, exists := d.config[key]; exists {
-		if sliceVal, ok := val.([]interface{}); ok {
+		if sliceVal, ok := val.([]any); ok {
 			result := make([]string, len(sliceVal))
 			for i, item := range sliceVal {
 				if strItem, ok := item.(string); ok {
 					result[i] = strItem
 				}
 			}
+
 			return result
 		}
 		if strSlice, ok := val.([]string); ok {
 			return strSlice
 		}
 	}
+
 	return []string{}
 }
 
-func (d *directConfigAdapter) SetDefault(key string, value interface{}) {
+func (d *directConfigAdapter) SetDefault(key string, value any) {
 	// For direct config adapter, we don't need to set defaults
 	// as the configuration is already parsed
 }
 
 func (d *directConfigAdapter) IsSet(key string) bool {
 	_, exists := d.config[key]
+
 	return exists
 }
 
 // Helper functions
 
-func getBoolFromConfig(config map[string]interface{}, key string, defaultValue bool) bool {
+func getBoolFromConfig(config map[string]any, key string, defaultValue bool) bool {
 	if value, exists := config[key]; exists {
 		if boolValue, ok := value.(bool); ok {
 			return boolValue
 		}
 	}
+
 	return defaultValue
 }
 
-func getIntFromConfig(config map[string]interface{}, key string, defaultValue int) int {
+func getIntFromConfig(config map[string]any, key string, defaultValue int) int {
 	if value, exists := config[key]; exists {
 		if intValue, ok := value.(int); ok {
 			return intValue
@@ -413,14 +432,16 @@ func getIntFromConfig(config map[string]interface{}, key string, defaultValue in
 			return int(floatValue)
 		}
 	}
+
 	return defaultValue
 }
 
-func getStringFromConfig(config map[string]interface{}, key string, defaultValue string) string {
+func getStringFromConfig(config map[string]any, key string, defaultValue string) string {
 	if value, exists := config[key]; exists {
 		if stringValue, ok := value.(string); ok {
 			return stringValue
 		}
 	}
+
 	return defaultValue
 }

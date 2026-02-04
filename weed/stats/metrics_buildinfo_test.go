@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	_ "github.com/seaweedfs/seaweedfs/weed/util/version" // Import to trigger version init
 )

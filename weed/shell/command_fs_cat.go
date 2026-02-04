@@ -33,7 +33,6 @@ func (c *commandFsCat) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsCat) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -50,7 +49,6 @@ func (c *commandFsCat) Do(args []string, commandEnv *CommandEnv, writer io.Write
 	dir, name := util.FullPath(path).DirAndName()
 
 	return commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.LookupDirectoryEntryRequest{
 			Name:      name,
 			Directory: dir,
@@ -60,13 +58,12 @@ func (c *commandFsCat) Do(args []string, commandEnv *CommandEnv, writer io.Write
 			return err
 		}
 
-		if len(respLookupEntry.Entry.Content) > 0 {
-			_, err = writer.Write(respLookupEntry.Entry.Content)
+		if len(respLookupEntry.GetEntry().GetContent()) > 0 {
+			_, err = writer.Write(respLookupEntry.GetEntry().GetContent())
+
 			return err
 		}
 
-		return filer.StreamContent(commandEnv.MasterClient, writer, respLookupEntry.Entry.GetChunks(), 0, int64(filer.FileSize(respLookupEntry.Entry)))
-
+		return filer.StreamContent(commandEnv.MasterClient, writer, respLookupEntry.GetEntry().GetChunks(), 0, int64(filer.FileSize(respLookupEntry.GetEntry())))
 	})
-
 }

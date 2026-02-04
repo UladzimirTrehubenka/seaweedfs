@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,7 +34,6 @@ func (c *commandRaftServerAdd) HasTag(CommandTag) bool {
 }
 
 func (c *commandRaftServerAdd) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	raftServerAddCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	serverId := raftServerAddCommand.String("id", "", "server id")
 	serverAddress := raftServerAddCommand.String("address", "", "server grpc address")
@@ -43,7 +43,7 @@ func (c *commandRaftServerAdd) Do(args []string, commandEnv *CommandEnv, writer 
 	}
 
 	if *serverId == "" || *serverAddress == "" {
-		return fmt.Errorf("empty server id or address")
+		return errors.New("empty server id or address")
 	}
 
 	err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
@@ -56,9 +56,9 @@ func (c *commandRaftServerAdd) Do(args []string, commandEnv *CommandEnv, writer 
 			return fmt.Errorf("raft add server: %w", err)
 		}
 		println("added server", *serverId)
+
 		return nil
 	})
 
 	return err
-
 }

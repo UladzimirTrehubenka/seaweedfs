@@ -16,7 +16,7 @@ func TestGjson(t *testing.T) {
 					"options": [
 						"New York Bulls",
 						"Los Angeles Kings",
-						"Golden State Warriros",
+						"Golden State Warriors",
 						"Huston Rocket"
 					],
 					"answer": "Huston Rocket"
@@ -65,13 +65,12 @@ func TestGjson(t *testing.T) {
 			println(result.Index, result.Type, result.String())
 		}
 		println("-----------")
+
 		return true
 	})
-
 }
 
 func TestJsonQueryRow(t *testing.T) {
-
 	data := `
 	{
 		"fruit": "Bl\"ue",
@@ -98,11 +97,9 @@ func TestJsonQueryRow(t *testing.T) {
 
 	buf := ToJson(nil, selections, values)
 	println(string(buf))
-
 }
 
 func TestJsonQueryNumber(t *testing.T) {
-
 	data := `
 	{
 		"fruit": "Bl\"ue",
@@ -129,5 +126,4 @@ func TestJsonQueryNumber(t *testing.T) {
 
 	buf := ToJson(nil, selections, values)
 	println(string(buf))
-
 }

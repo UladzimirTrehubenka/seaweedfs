@@ -6,10 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -22,8 +26,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 type IamS3ApiConfig interface {
@@ -62,7 +64,7 @@ func NewIamApiServer(router *mux.Router, option *IamServerOption) (iamApiServer 
 
 func NewIamApiServerWithStore(router *mux.Router, option *IamServerOption, explicitStore string) (iamApiServer *IamApiServer, err error) {
 	if len(option.Filers) == 0 {
-		return nil, fmt.Errorf("at least one filer address is required")
+		return nil, errors.New("at least one filer address is required")
 	}
 
 	masterClient := wdclient.NewMasterClient(option.GrpcDialOption, "", "iam", "", "", "", *pb.NewServiceDiscoveryFromMap(option.Masters))
@@ -149,6 +151,7 @@ func (iama *IamS3ApiConfigure) GetS3ApiConfigurationFromCredentialManager(s3cfg 
 	}
 	// Use proto.Merge to avoid copying the sync.Mutex embedded in the message
 	proto.Merge(s3cfg, config)
+
 	return nil
 }
 
@@ -162,6 +165,7 @@ func (iama *IamS3ApiConfigure) GetS3ApiConfigurationFromFiler(s3cfg *iam_pb.S3Ap
 		if err = filer.ReadEntry(iama.masterClient, client, filer.IamConfigDirectory, filer.IamIdentityFile, &buf); err != nil {
 			return err
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -172,14 +176,16 @@ func (iama *IamS3ApiConfigure) GetS3ApiConfigurationFromFiler(s3cfg *iam_pb.S3Ap
 			return err
 		}
 	}
+
 	return nil
 }
 
 func (iama *IamS3ApiConfigure) PutS3ApiConfigurationToFiler(s3cfg *iam_pb.S3ApiConfiguration) (err error) {
 	buf := bytes.Buffer{}
 	if err := filer.ProtoToText(&buf, s3cfg); err != nil {
-		return fmt.Errorf("ProtoToText: %s", err)
+		return fmt.Errorf("ProtoToText: %w", err)
 	}
+
 	return pb.WithOneOfGrpcFilerClients(false, iama.option.Filers, iama.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		err = util.Retry("saveIamIdentity", func() error {
 			return filer.SaveInsideFiler(client, filer.IamConfigDirectory, filer.IamIdentityFile, buf.Bytes())
@@ -187,6 +193,7 @@ func (iama *IamS3ApiConfigure) PutS3ApiConfigurationToFiler(s3cfg *iam_pb.S3ApiC
 		if err != nil {
 			return err
 		}
+
 		return nil
 	})
 }
@@ -197,18 +204,21 @@ func (iama *IamS3ApiConfigure) GetPolicies(policies *Policies) (err error) {
 		if err = filer.ReadEntry(iama.masterClient, client, filer.IamConfigDirectory, filer.IamPoliciesFile, &buf); err != nil {
 			return err
 		}
+
 		return nil
 	})
-	if err != nil && err != filer_pb.ErrNotFound {
+	if err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 		return err
 	}
-	if err == filer_pb.ErrNotFound || buf.Len() == 0 {
+	if errors.Is(err, filer_pb.ErrNotFound) || buf.Len() == 0 {
 		policies.Policies = make(map[string]policy_engine.PolicyDocument)
+
 		return nil
 	}
 	if err := json.Unmarshal(buf.Bytes(), policies); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -217,10 +227,12 @@ func (iama *IamS3ApiConfigure) PutPolicies(policies *Policies) (err error) {
 	if b, err = json.Marshal(policies); err != nil {
 		return err
 	}
+
 	return pb.WithOneOfGrpcFilerClients(false, iama.option.Filers, iama.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		if err := filer.SaveInsideFiler(client, filer.IamConfigDirectory, filer.IamPoliciesFile, b); err != nil {
 			return err
 		}
+
 		return nil
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -92,7 +93,7 @@ func CreateSSEKMSEncryptedReaderWithBucketKey(r io.Reader, keyID string, encrypt
 	// The KMS data key encryption (separate layer) uses AES-GCM for authentication
 	iv := make([]byte, s3_constants.AESBlockSize)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate IV: %v", err)
+		return nil, nil, fmt.Errorf("failed to generate IV: %w", err)
 	}
 
 	// Create CTR mode cipher stream
@@ -221,6 +222,7 @@ func getBucketDataKey(bucketName, keyID string, encryptionContext map[string]str
 		if cacheEntry, found := bucketCache.Get(cacheKey); found {
 			if dataKey, ok := cacheEntry.DataKey.(*kms.GenerateDataKeyResponse); ok {
 				glog.V(3).Infof("Using cached bucket key for bucket %s, keyID %s", bucketName, keyID)
+
 				return dataKey, nil
 			}
 		}
@@ -229,7 +231,7 @@ func getBucketDataKey(bucketName, keyID string, encryptionContext map[string]str
 	// Cache miss - generate new data key
 	kmsProvider := kms.GetGlobalKMS()
 	if kmsProvider == nil {
-		return nil, fmt.Errorf("KMS is not configured")
+		return nil, errors.New("KMS is not configured")
 	}
 
 	dataKeyReq := &kms.GenerateDataKeyRequest{
@@ -241,7 +243,7 @@ func getBucketDataKey(bucketName, keyID string, encryptionContext map[string]str
 	ctx := context.Background()
 	dataKeyResp, err := kmsProvider.GenerateDataKey(ctx, dataKeyReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate bucket data key: %v", err)
+		return nil, fmt.Errorf("failed to generate bucket data key: %w", err)
 	}
 
 	// Cache the data key for future use if cache is available
@@ -281,7 +283,7 @@ func (s3a *S3ApiServer) CreateSSEKMSEncryptedReaderForBucket(r io.Reader, bucket
 		// Generate a per-object data encryption key using KMS
 		kmsProvider := kms.GetGlobalKMS()
 		if kmsProvider == nil {
-			return nil, nil, fmt.Errorf("KMS is not configured")
+			return nil, nil, errors.New("KMS is not configured")
 		}
 
 		dataKeyReq := &kms.GenerateDataKeyRequest{
@@ -293,7 +295,7 @@ func (s3a *S3ApiServer) CreateSSEKMSEncryptedReaderForBucket(r io.Reader, bucket
 		ctx := context.Background()
 		dataKeyResp, err = kmsProvider.GenerateDataKey(ctx, dataKeyReq)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to generate data key: %v", err)
+			return nil, nil, fmt.Errorf("failed to generate data key: %w", err)
 		}
 	}
 
@@ -303,13 +305,13 @@ func (s3a *S3ApiServer) CreateSSEKMSEncryptedReaderForBucket(r io.Reader, bucket
 	// Create AES cipher with the data key
 	block, err := aes.NewCipher(dataKeyResp.Plaintext)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create AES cipher: %v", err)
+		return nil, nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Generate a random IV for CTR mode
 	iv := make([]byte, 16) // AES block size
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate IV: %v", err)
+		return nil, nil, fmt.Errorf("failed to generate IV: %w", err)
 	}
 
 	// Create CTR mode cipher stream
@@ -335,6 +337,7 @@ func (s3a *S3ApiServer) getBucketKMSCache(bucketName string) (*BucketKMSCache, e
 		if errCode == s3err.ErrNoSuchBucket {
 			return nil, fmt.Errorf("bucket %s does not exist", bucketName)
 		}
+
 		return nil, fmt.Errorf("failed to get bucket config: %v", errCode)
 	}
 
@@ -352,6 +355,7 @@ func (s3a *S3ApiServer) CleanupBucketKMSCache(bucketName string) int {
 	bucketCache, err := s3a.getBucketKMSCache(bucketName)
 	if err != nil {
 		glog.V(3).Infof("Could not get KMS cache for bucket %s: %v", bucketName, err)
+
 		return 0
 	}
 
@@ -359,6 +363,7 @@ func (s3a *S3ApiServer) CleanupBucketKMSCache(bucketName string) int {
 	if cleaned > 0 {
 		glog.V(2).Infof("Cleaned up %d expired KMS keys for bucket %s", cleaned, bucketName)
 	}
+
 	return cleaned
 }
 
@@ -385,6 +390,7 @@ func (s3a *S3ApiServer) CleanupAllBucketKMSCaches() int {
 	if totalCleaned > 0 {
 		glog.V(2).Infof("Cleaned up %d expired KMS keys across %d bucket caches", totalCleaned, len(s3a.bucketConfigCache.cache))
 	}
+
 	return totalCleaned
 }
 
@@ -392,7 +398,7 @@ func (s3a *S3ApiServer) CleanupAllBucketKMSCaches() int {
 func CreateSSEKMSDecryptedReader(r io.Reader, sseKey *SSEKMSKey) (io.Reader, error) {
 	kmsProvider := kms.GetGlobalKMS()
 	if kmsProvider == nil {
-		return nil, fmt.Errorf("KMS is not configured")
+		return nil, errors.New("KMS is not configured")
 	}
 
 	// Decrypt the data encryption key using KMS
@@ -404,7 +410,7 @@ func CreateSSEKMSDecryptedReader(r io.Reader, sseKey *SSEKMSKey) (io.Reader, err
 	ctx := context.Background()
 	decryptResp, err := kmsProvider.Decrypt(ctx, decryptReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt data key: %v", err)
+		return nil, fmt.Errorf("failed to decrypt data key: %w", err)
 	}
 
 	// Ensure we clear the plaintext data key from memory when done
@@ -433,7 +439,7 @@ func CreateSSEKMSDecryptedReader(r io.Reader, sseKey *SSEKMSKey) (io.Reader, err
 	// Create AES cipher with the decrypted data key
 	block, err := aes.NewCipher(decryptResp.Plaintext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Create CTR mode cipher stream for decryption
@@ -475,11 +481,11 @@ func ParseSSEKMSHeaders(r *http.Request) (*SSEKMSKey, error) {
 		// Decode base64-encoded JSON encryption context
 		contextBytes, err := base64.StdEncoding.DecodeString(encryptionContextHeader)
 		if err != nil {
-			return nil, fmt.Errorf("invalid encryption context format: %v", err)
+			return nil, fmt.Errorf("invalid encryption context format: %w", err)
 		}
 
 		if err := json.Unmarshal(contextBytes, &encryptionContext); err != nil {
-			return nil, fmt.Errorf("invalid encryption context JSON: %v", err)
+			return nil, fmt.Errorf("invalid encryption context JSON: %w", err)
 		}
 	}
 
@@ -540,11 +546,11 @@ func parseEncryptionContext(contextHeader string) (map[string]string, error) {
 	// Validate context keys and values
 	for k, v := range context {
 		if k == "" || v == "" {
-			return nil, fmt.Errorf("encryption context keys and values cannot be empty")
+			return nil, errors.New("encryption context keys and values cannot be empty")
 		}
 		// AWS KMS has limits on context key/value length (256 chars each)
 		if len(k) > 256 || len(v) > 256 {
-			return nil, fmt.Errorf("encryption context key or value too long (max 256 characters)")
+			return nil, errors.New("encryption context key or value too long (max 256 characters)")
 		}
 	}
 
@@ -573,13 +579,14 @@ func SerializeSSEKMSMetadata(sseKey *SSEKMSKey) ([]byte, error) {
 	}
 
 	glog.V(4).Infof("Serialized SSE-KMS metadata: keyID=%s, bucketKey=%t", sseKey.KeyID, sseKey.BucketKeyEnabled)
+
 	return data, nil
 }
 
 // DeserializeSSEKMSMetadata deserializes SSE-KMS metadata from storage and reconstructs the SSE-KMS key
 func DeserializeSSEKMSMetadata(data []byte) (*SSEKMSKey, error) {
 	if len(data) == 0 {
-		return nil, fmt.Errorf("empty SSE-KMS metadata")
+		return nil, errors.New("empty SSE-KMS metadata")
 	}
 
 	var metadata SSEKMSMetadata
@@ -622,6 +629,7 @@ func DeserializeSSEKMSMetadata(data []byte) (*SSEKMSKey, error) {
 	}
 
 	glog.V(4).Infof("Deserialized SSE-KMS metadata: keyID=%s, bucketKey=%t", sseKey.KeyID, sseKey.BucketKeyEnabled)
+
 	return sseKey, nil
 }
 
@@ -652,13 +660,14 @@ func SerializeSSECMetadata(iv []byte, keyMD5 string, partOffset int64) ([]byte, 
 	}
 
 	glog.V(4).Infof("Serialized SSE-C metadata: keyMD5=%s, partOffset=%d", keyMD5, partOffset)
+
 	return data, nil
 }
 
 // DeserializeSSECMetadata deserializes SSE-C metadata from chunk storage
 func DeserializeSSECMetadata(data []byte) (*SSECMetadata, error) {
 	if len(data) == 0 {
-		return nil, fmt.Errorf("empty SSE-C metadata")
+		return nil, errors.New("empty SSE-C metadata")
 	}
 
 	var metadata SSECMetadata
@@ -673,7 +682,7 @@ func DeserializeSSECMetadata(data []byte) (*SSECMetadata, error) {
 
 	// Validate IV
 	if metadata.IV == "" {
-		return nil, fmt.Errorf("missing IV in SSE-C metadata")
+		return nil, errors.New("missing IV in SSE-C metadata")
 	}
 
 	if _, err := base64.StdEncoding.DecodeString(metadata.IV); err != nil {
@@ -681,6 +690,7 @@ func DeserializeSSECMetadata(data []byte) (*SSECMetadata, error) {
 	}
 
 	glog.V(4).Infof("Deserialized SSE-C metadata: keyMD5=%s, partOffset=%d", metadata.KeyMD5, metadata.PartOffset)
+
 	return &metadata, nil
 }
 
@@ -715,6 +725,7 @@ func IsSSEKMSRequest(r *http.Request) bool {
 	// According to AWS S3 specification, SSE-KMS is only valid when the encryption header
 	// is explicitly set to "aws:kms". The KMS key ID header alone is not sufficient.
 	sseAlgorithm := r.Header.Get(s3_constants.AmzServerSideEncryption)
+
 	return sseAlgorithm == s3_constants.SSEAlgorithmKMS
 }
 
@@ -761,7 +772,8 @@ func MapKMSErrorToS3Error(err error) s3err.ErrorCode {
 	}
 
 	// Check if it's a KMS error
-	kmsErr, ok := err.(*kms.KMSError)
+	kmsErr := &kms.KMSError{}
+	ok := errors.As(err, &kmsErr)
 	if !ok {
 		return s3err.ErrInternalError
 	}
@@ -779,6 +791,7 @@ func MapKMSErrorToS3Error(err error) s3err.ErrorCode {
 		return s3err.ErrKMSInvalidCiphertext
 	default:
 		glog.Errorf("Unmapped KMS error: %s - %s", kmsErr.Code, kmsErr.Message)
+
 		return s3err.ErrInternalError
 	}
 }
@@ -811,8 +824,10 @@ func GetSourceSSEKMSInfo(metadata map[string][]byte) (keyID string, isEncrypted 
 		if kmsKeyID, exists := metadata[s3_constants.AmzServerSideEncryptionAwsKmsKeyId]; exists {
 			return string(kmsKeyID), true
 		}
+
 		return "", true // SSE-KMS with default key
 	}
+
 	return "", false
 }
 
@@ -840,6 +855,7 @@ func DetermineSSEKMSCopyStrategy(srcMetadata map[string][]byte, destKeyID string
 	if CanDirectCopySSEKMS(srcMetadata, destKeyID) {
 		return SSEKMSCopyStrategyDirect, nil
 	}
+
 	return SSEKMSCopyStrategyDecryptEncrypt, nil
 }
 
@@ -862,11 +878,11 @@ func ParseSSEKMSCopyHeaders(r *http.Request) (destKeyID string, encryptionContex
 	if contextHeader := r.Header.Get(s3_constants.AmzServerSideEncryptionContext); contextHeader != "" {
 		contextBytes, decodeErr := base64.StdEncoding.DecodeString(contextHeader)
 		if decodeErr != nil {
-			return "", nil, false, fmt.Errorf("invalid encryption context encoding: %v", decodeErr)
+			return "", nil, false, fmt.Errorf("invalid encryption context encoding: %w", decodeErr)
 		}
 
 		if unmarshalErr := json.Unmarshal(contextBytes, &encryptionContext); unmarshalErr != nil {
-			return "", nil, false, fmt.Errorf("invalid encryption context JSON: %v", unmarshalErr)
+			return "", nil, false, fmt.Errorf("invalid encryption context JSON: %w", unmarshalErr)
 		}
 	}
 
@@ -1011,7 +1027,7 @@ func DetectEncryptionStateWithEntry(entry *filer_pb.Entry, r *http.Request, srcP
 	state := &EncryptionState{
 		SrcSSEC:    IsSSECEncryptedWithEntry(entry),
 		SrcSSEKMS:  IsSSEKMSEncryptedWithEntry(entry),
-		SrcSSES3:   IsSSES3EncryptedInternal(entry.Extended),
+		SrcSSES3:   IsSSES3EncryptedInternal(entry.GetExtended()),
 		DstSSEC:    IsSSECRequest(r),
 		DstSSEKMS:  IsSSEKMSRequest(r),
 		DstSSES3:   IsSSES3RequestInternal(r),
@@ -1028,7 +1044,7 @@ func IsSSEKMSEncryptedWithEntry(entry *filer_pb.Entry) bool {
 	}
 
 	// Check object-level metadata first
-	if IsSSEKMSEncrypted(entry.Extended) {
+	if IsSSEKMSEncrypted(entry.GetExtended()) {
 		return true
 	}
 
@@ -1051,7 +1067,7 @@ func IsSSECEncryptedWithEntry(entry *filer_pb.Entry) bool {
 	}
 
 	// Check object-level metadata first
-	if IsSSECEncrypted(entry.Extended) {
+	if IsSSECEncrypted(entry.GetExtended()) {
 		return true
 	}
 

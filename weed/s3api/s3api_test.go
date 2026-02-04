@@ -8,7 +8,6 @@ import (
 )
 
 func TestCopyObjectResponse(t *testing.T) {
-
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
 
 	response := CopyObjectResult{
@@ -17,11 +16,9 @@ func TestCopyObjectResponse(t *testing.T) {
 	}
 
 	println(string(s3err.EncodeXMLResponse(response)))
-
 }
 
 func TestCopyPartResponse(t *testing.T) {
-
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
 
 	response := CopyPartResult{
@@ -30,5 +27,4 @@ func TestCopyPartResponse(t *testing.T) {
 	}
 
 	println(string(s3err.EncodeXMLResponse(response)))
-
 }

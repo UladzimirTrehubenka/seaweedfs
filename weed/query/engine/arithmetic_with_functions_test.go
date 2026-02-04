@@ -54,16 +54,19 @@ func TestArithmeticWithFunctions(t *testing.T) {
 
 			if err != nil {
 				t.Errorf("Query failed: %v", err)
+
 				return
 			}
 
 			if result.Error != nil {
 				t.Errorf("Query result error: %v", result.Error)
+
 				return
 			}
 
 			if len(result.Rows) == 0 {
 				t.Error("Expected at least one row")
+
 				return
 			}
 

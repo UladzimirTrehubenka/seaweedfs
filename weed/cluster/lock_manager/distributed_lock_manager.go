@@ -1,7 +1,7 @@
 package lock_manager
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -11,7 +11,7 @@ import (
 const RenewInterval = time.Second * 3
 const LiveLockTTL = time.Second * 7
 
-var NoLockServerError = fmt.Errorf("no lock server found")
+var NoLockServerError = errors.New("no lock server found")
 
 type DistributedLockManager struct {
 	lockManager *LockManager
@@ -36,6 +36,7 @@ func (dlm *DistributedLockManager) LockWithTimeout(key string, expiredAtNs int64
 		return
 	}
 	lockOwner, renewToken, err = dlm.lockManager.Lock(key, expiredAtNs, token, owner)
+
 	return
 }
 
@@ -43,10 +44,12 @@ func (dlm *DistributedLockManager) findLockOwningFiler(key string) (movedTo pb.S
 	servers := dlm.LockRing.GetSnapshot()
 	if servers == nil {
 		err = NoLockServerError
+
 		return
 	}
 
 	movedTo = hashKeyToServer(key, servers)
+
 	return
 }
 
@@ -58,9 +61,11 @@ func (dlm *DistributedLockManager) FindLockOwner(key string) (owner string, move
 	if movedTo != dlm.Host {
 		servers := dlm.LockRing.GetSnapshot()
 		glog.V(0).Infof("lock %s not on current %s but on %s from %v", key, dlm.Host, movedTo, servers)
+
 		return
 	}
 	owner, err = dlm.lockManager.GetLockOwner(key)
+
 	return
 }
 
@@ -68,15 +73,18 @@ func (dlm *DistributedLockManager) Unlock(key string, token string) (movedTo pb.
 	servers := dlm.LockRing.GetSnapshot()
 	if servers == nil {
 		err = NoLockServerError
+
 		return
 	}
 
 	server := hashKeyToServer(key, servers)
 	if server != dlm.Host {
 		movedTo = server
+
 		return
 	}
 	_, err = dlm.lockManager.Unlock(key, token)
+
 	return
 }
 
@@ -88,6 +96,7 @@ func (dlm *DistributedLockManager) InsertLock(key string, expiredAtNs int64, tok
 func (dlm *DistributedLockManager) SelectNotOwnedLocks(servers []pb.ServerAddress) (locks []*Lock) {
 	return dlm.lockManager.SelectLocks(func(key string) bool {
 		server := hashKeyToServer(key, servers)
+
 		return server != dlm.Host
 	})
 }
@@ -100,5 +109,6 @@ func (dlm *DistributedLockManager) IsLocal(key string) bool {
 	if len(servers) <= 1 {
 		return true
 	}
+
 	return hashKeyToServer(key, servers) == dlm.Host
 }

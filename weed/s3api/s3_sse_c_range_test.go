@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 )
 
@@ -41,7 +42,7 @@ func TestSSECRangeRequestsSupported(t *testing.T) {
 
 	// Create a mock HTTP response that simulates SSE-C encrypted object metadata
 	proxyResponse := &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewReader([]byte("mock encrypted data"))),
 	}

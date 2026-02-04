@@ -20,29 +20,32 @@ func (b *MessageQueueBroker) LookupTopicBrokers(ctx context.Context, request *mq
 	if !b.isLockOwner() {
 		proxyErr := b.withBrokerClient(false, pb.ServerAddress(b.lockAsBalancer.LockOwner()), func(client mq_pb.SeaweedMessagingClient) error {
 			resp, err = client.LookupTopicBrokers(ctx, request)
+
 			return nil
 		})
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
+
 		return resp, err
 	}
 
-	t := topic.FromPbTopic(request.Topic)
+	t := topic.FromPbTopic(request.GetTopic())
 	ret := &mq_pb.LookupTopicBrokersResponse{}
-	ret.Topic = request.Topic
+	ret.Topic = request.GetTopic()
 
 	// Use cached topic config to avoid expensive filer reads (26% CPU overhead!)
 	// getTopicConfFromCache also validates broker assignments on cache miss (saves 14% CPU)
 	conf, err := b.getTopicConfFromCache(t)
 	if err != nil {
-		glog.V(0).Infof("lookup topic %s conf: %v", request.Topic, err)
+		glog.V(0).Infof("lookup topic %s conf: %v", request.GetTopic(), err)
+
 		return ret, err
 	}
 
 	// Note: Assignment validation is now done inside getTopicConfFromCache on cache misses
 	// This avoids 14% CPU overhead from validating on EVERY lookup
-	ret.BrokerPartitionAssignments = conf.BrokerPartitionAssignments
+	ret.BrokerPartitionAssignments = conf.GetBrokerPartitionAssignments()
 
 	return ret, nil
 }
@@ -54,11 +57,13 @@ func (b *MessageQueueBroker) ListTopics(ctx context.Context, request *mq_pb.List
 		glog.V(4).Infof("📋 ListTopics proxying to lock owner: %s", b.lockAsBalancer.LockOwner())
 		proxyErr := b.withBrokerClient(false, pb.ServerAddress(b.lockAsBalancer.LockOwner()), func(client mq_pb.SeaweedMessagingClient) error {
 			resp, err = client.ListTopics(ctx, request)
+
 			return nil
 		})
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
+
 		return resp, err
 	}
 
@@ -93,6 +98,7 @@ func (b *MessageQueueBroker) ListTopics(ctx context.Context, request *mq_pb.List
 		})
 		if err != nil {
 			glog.V(0).Infof("list namespaces in %s: %v", filer.TopicsDir, err)
+
 			return err
 		}
 		glog.V(4).Infof("📋 ListTopics got ListEntries stream, processing namespaces...")
@@ -104,14 +110,15 @@ func (b *MessageQueueBroker) ListTopics(ctx context.Context, request *mq_pb.List
 				if err.Error() == "EOF" {
 					break
 				}
+
 				return err
 			}
 
-			if !resp.Entry.IsDirectory {
+			if !resp.GetEntry().GetIsDirectory() {
 				continue
 			}
 
-			namespaceName := resp.Entry.Name
+			namespaceName := resp.GetEntry().GetName()
 			namespacePath := fmt.Sprintf("%s/%s", filer.TopicsDir, namespaceName)
 
 			// List all topics in this namespace
@@ -121,6 +128,7 @@ func (b *MessageQueueBroker) ListTopics(ctx context.Context, request *mq_pb.List
 			})
 			if err != nil {
 				glog.V(0).Infof("list topics in namespace %s: %v", namespacePath, err)
+
 				continue
 			}
 
@@ -132,14 +140,15 @@ func (b *MessageQueueBroker) ListTopics(ctx context.Context, request *mq_pb.List
 						break
 					}
 					glog.V(0).Infof("error reading topic stream in namespace %s: %v", namespaceName, err)
+
 					break
 				}
 
-				if !topicResp.Entry.IsDirectory {
+				if !topicResp.GetEntry().GetIsDirectory() {
 					continue
 				}
 
-				topicName := topicResp.Entry.Name
+				topicName := topicResp.GetEntry().GetName()
 
 				// Check if topic.conf exists
 				topicPath := fmt.Sprintf("%s/%s", namespacePath, topicName)
@@ -149,10 +158,11 @@ func (b *MessageQueueBroker) ListTopics(ctx context.Context, request *mq_pb.List
 				})
 				if err != nil {
 					glog.V(0).Infof("lookup topic.conf in %s: %v", topicPath, err)
+
 					continue
 				}
 
-				if confResp.Entry != nil {
+				if confResp.GetEntry() != nil {
 					// This is a valid persisted topic - add to map if not already present
 					topicKey := fmt.Sprintf("%s.%s", namespaceName, topicName)
 					if _, exists := topicMap[topicKey]; !exists {
@@ -177,7 +187,7 @@ func (b *MessageQueueBroker) ListTopics(ctx context.Context, request *mq_pb.List
 		glog.V(0).Infof("ListTopics: filer scan failed: %v (returning %d in-memory topics)", err, len(inMemoryTopics))
 		// Still return in-memory topics even if filer fails
 	} else {
-		glog.V(4).Infof("📋 ListTopics completed successfully: %d total topics (in-memory + persisted)", len(ret.Topics))
+		glog.V(4).Infof("📋 ListTopics completed successfully: %d total topics (in-memory + persisted)", len(ret.GetTopics()))
 	}
 
 	return ret, nil
@@ -191,22 +201,24 @@ func (b *MessageQueueBroker) TopicExists(ctx context.Context, request *mq_pb.Top
 		var err error
 		proxyErr := b.withBrokerClient(false, pb.ServerAddress(b.lockAsBalancer.LockOwner()), func(client mq_pb.SeaweedMessagingClient) error {
 			resp, err = client.TopicExists(ctx, request)
+
 			return nil
 		})
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
+
 		return resp, err
 	}
 
-	if request.Topic == nil {
+	if request.GetTopic() == nil {
 		return &mq_pb.TopicExistsResponse{Exists: false}, nil
 	}
 
 	// Convert schema_pb.Topic to topic.Topic
 	topicObj := topic.Topic{
-		Namespace: request.Topic.Namespace,
-		Name:      request.Topic.Name,
+		Namespace: request.GetTopic().GetNamespace(),
+		Name:      request.GetTopic().GetName(),
 	}
 	topicKey := topicObj.String()
 
@@ -222,6 +234,7 @@ func (b *MessageQueueBroker) TopicExists(ctx context.Context, request *mq_pb.Top
 			exists := entry.conf != nil
 			b.topicCacheMu.RUnlock()
 			glog.V(4).Infof("Topic cache HIT for %s: exists=%v", topicKey, exists)
+
 			return &mq_pb.TopicExistsResponse{Exists: exists}, nil
 		}
 	}
@@ -231,14 +244,15 @@ func (b *MessageQueueBroker) TopicExists(ctx context.Context, request *mq_pb.Top
 	glog.V(4).Infof("Topic cache MISS for %s, querying filer for existence", topicKey)
 	exists := false
 	err := b.fca.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-		topicPath := fmt.Sprintf("%s/%s/%s", filer.TopicsDir, request.Topic.Namespace, request.Topic.Name)
+		topicPath := fmt.Sprintf("%s/%s/%s", filer.TopicsDir, request.GetTopic().GetNamespace(), request.GetTopic().GetName())
 		confResp, err := client.LookupDirectoryEntry(ctx, &filer_pb.LookupDirectoryEntryRequest{
 			Directory: topicPath,
 			Name:      filer.TopicConfFile,
 		})
-		if err == nil && confResp.Entry != nil {
+		if err == nil && confResp.GetEntry() != nil {
 			exists = true
 		}
+
 		return nil // Don't propagate error, just check existence
 	})
 
@@ -271,40 +285,44 @@ func (b *MessageQueueBroker) GetTopicConfiguration(ctx context.Context, request 
 	if !b.isLockOwner() {
 		proxyErr := b.withBrokerClient(false, pb.ServerAddress(b.lockAsBalancer.LockOwner()), func(client mq_pb.SeaweedMessagingClient) error {
 			resp, err = client.GetTopicConfiguration(ctx, request)
+
 			return nil
 		})
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
+
 		return resp, err
 	}
 
-	t := topic.FromPbTopic(request.Topic)
+	t := topic.FromPbTopic(request.GetTopic())
 	var conf *mq_pb.ConfigureTopicResponse
 	var createdAtNs, modifiedAtNs int64
 
 	if conf, createdAtNs, modifiedAtNs, err = b.fca.ReadTopicConfFromFilerWithMetadata(t); err != nil {
-		glog.V(0).Infof("get topic configuration %s: %v", request.Topic, err)
+		glog.V(0).Infof("get topic configuration %s: %v", request.GetTopic(), err)
+
 		return nil, fmt.Errorf("failed to read topic configuration: %w", err)
 	}
 
 	// Ensure topic assignments are active
 	err = b.ensureTopicActiveAssignments(t, conf)
 	if err != nil {
-		glog.V(0).Infof("ensure topic active assignments %s: %v", request.Topic, err)
+		glog.V(0).Infof("ensure topic active assignments %s: %v", request.GetTopic(), err)
+
 		return nil, fmt.Errorf("failed to ensure topic assignments: %w", err)
 	}
 
 	// Build the response with complete configuration including metadata
 	ret := &mq_pb.GetTopicConfigurationResponse{
-		Topic:                      request.Topic,
-		PartitionCount:             int32(len(conf.BrokerPartitionAssignments)),
-		MessageRecordType:          conf.MessageRecordType,
-		KeyColumns:                 conf.KeyColumns,
-		BrokerPartitionAssignments: conf.BrokerPartitionAssignments,
+		Topic:                      request.GetTopic(),
+		PartitionCount:             int32(len(conf.GetBrokerPartitionAssignments())),
+		MessageRecordType:          conf.GetMessageRecordType(),
+		KeyColumns:                 conf.GetKeyColumns(),
+		BrokerPartitionAssignments: conf.GetBrokerPartitionAssignments(),
 		CreatedAtNs:                createdAtNs,
 		LastUpdatedNs:              modifiedAtNs,
-		Retention:                  conf.Retention,
+		Retention:                  conf.GetRetention(),
 	}
 
 	return ret, nil
@@ -315,29 +333,32 @@ func (b *MessageQueueBroker) GetTopicPublishers(ctx context.Context, request *mq
 	if !b.isLockOwner() {
 		proxyErr := b.withBrokerClient(false, pb.ServerAddress(b.lockAsBalancer.LockOwner()), func(client mq_pb.SeaweedMessagingClient) error {
 			resp, err = client.GetTopicPublishers(ctx, request)
+
 			return nil
 		})
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
+
 		return resp, err
 	}
 
-	t := topic.FromPbTopic(request.Topic)
+	t := topic.FromPbTopic(request.GetTopic())
 	var publishers []*mq_pb.TopicPublisher
 
 	// Get topic configuration to find partition assignments
 	var conf *mq_pb.ConfigureTopicResponse
 	if conf, _, _, err = b.fca.ReadTopicConfFromFilerWithMetadata(t); err != nil {
-		glog.V(0).Infof("get topic configuration for publishers %s: %v", request.Topic, err)
+		glog.V(0).Infof("get topic configuration for publishers %s: %v", request.GetTopic(), err)
+
 		return nil, fmt.Errorf("failed to read topic configuration: %w", err)
 	}
 
 	// Collect publishers from each partition that is hosted on this broker
-	for _, assignment := range conf.BrokerPartitionAssignments {
+	for _, assignment := range conf.GetBrokerPartitionAssignments() {
 		// Only collect from partitions where this broker is the leader
-		if assignment.LeaderBroker == b.option.BrokerAddress().String() {
-			partition := topic.FromPbPartition(assignment.Partition)
+		if assignment.GetLeaderBroker() == b.option.BrokerAddress().String() {
+			partition := topic.FromPbPartition(assignment.GetPartition())
 			if localPartition := b.localTopicManager.GetLocalPartition(t, partition); localPartition != nil {
 				// Get publisher information from local partition
 				localPartition.Publishers.ForEachPublisher(func(clientName string, publisher *topic.LocalPublisher) {
@@ -346,10 +367,10 @@ func (b *MessageQueueBroker) GetTopicPublishers(ctx context.Context, request *mq
 					publishers = append(publishers, &mq_pb.TopicPublisher{
 						PublisherName:       clientName,
 						ClientId:            clientName, // For now, client name is used as client ID
-						Partition:           assignment.Partition,
+						Partition:           assignment.GetPartition(),
 						ConnectTimeNs:       connectTimeNs,
 						LastSeenTimeNs:      lastSeenTimeNs,
-						Broker:              assignment.LeaderBroker,
+						Broker:              assignment.GetLeaderBroker(),
 						IsActive:            true,
 						LastPublishedOffset: lastPublishedOffset,
 						LastAckedOffset:     lastAckedOffset,
@@ -369,39 +390,41 @@ func (b *MessageQueueBroker) GetTopicSubscribers(ctx context.Context, request *m
 	if !b.isLockOwner() {
 		proxyErr := b.withBrokerClient(false, pb.ServerAddress(b.lockAsBalancer.LockOwner()), func(client mq_pb.SeaweedMessagingClient) error {
 			resp, err = client.GetTopicSubscribers(ctx, request)
+
 			return nil
 		})
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
+
 		return resp, err
 	}
 
-	t := topic.FromPbTopic(request.Topic)
+	t := topic.FromPbTopic(request.GetTopic())
 	var subscribers []*mq_pb.TopicSubscriber
 
 	// Get topic configuration to find partition assignments
 	var conf *mq_pb.ConfigureTopicResponse
 	if conf, _, _, err = b.fca.ReadTopicConfFromFilerWithMetadata(t); err != nil {
-		glog.V(0).Infof("get topic configuration for subscribers %s: %v", request.Topic, err)
+		glog.V(0).Infof("get topic configuration for subscribers %s: %v", request.GetTopic(), err)
+
 		return nil, fmt.Errorf("failed to read topic configuration: %w", err)
 	}
 
 	// Collect subscribers from each partition that is hosted on this broker
-	for _, assignment := range conf.BrokerPartitionAssignments {
+	for _, assignment := range conf.GetBrokerPartitionAssignments() {
 		// Only collect from partitions where this broker is the leader
-		if assignment.LeaderBroker == b.option.BrokerAddress().String() {
-			partition := topic.FromPbPartition(assignment.Partition)
+		if assignment.GetLeaderBroker() == b.option.BrokerAddress().String() {
+			partition := topic.FromPbPartition(assignment.GetPartition())
 			if localPartition := b.localTopicManager.GetLocalPartition(t, partition); localPartition != nil {
 				// Get subscriber information from local partition
 				localPartition.Subscribers.ForEachSubscriber(func(clientName string, subscriber *topic.LocalSubscriber) {
 					// Parse client name to extract consumer group and consumer ID
 					// Format is typically: "consumerGroup/consumerID"
-					consumerGroup := "default"
-					consumerID := clientName
-					if idx := strings.Index(clientName, "/"); idx != -1 {
-						consumerGroup = clientName[:idx]
-						consumerID = clientName[idx+1:]
+					consumerGroup, consumerID, ok := strings.Cut(clientName, "/")
+					if !ok {
+						consumerGroup = "default"
+						consumerID = clientName
 					}
 
 					connectTimeNs, lastSeenTimeNs := subscriber.GetTimestamps()
@@ -411,10 +434,10 @@ func (b *MessageQueueBroker) GetTopicSubscribers(ctx context.Context, request *m
 						ConsumerGroup:      consumerGroup,
 						ConsumerId:         consumerID,
 						ClientId:           clientName, // Full client name as client ID
-						Partition:          assignment.Partition,
+						Partition:          assignment.GetPartition(),
 						ConnectTimeNs:      connectTimeNs,
 						LastSeenTimeNs:     lastSeenTimeNs,
-						Broker:             assignment.LeaderBroker,
+						Broker:             assignment.GetLeaderBroker(),
 						IsActive:           true,
 						CurrentOffset:      lastAckedOffset, // for compatibility
 						LastReceivedOffset: lastReceivedOffset,

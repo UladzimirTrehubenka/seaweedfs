@@ -1,5 +1,7 @@
 package types
 
+import "maps"
+
 // TaskRegistry manages task detectors and schedulers
 type TaskRegistry struct {
 	detectors  map[TaskType]TaskDetector
@@ -38,17 +40,15 @@ func (r *TaskRegistry) GetScheduler(taskType TaskType) TaskScheduler {
 // GetAllDetectors returns all registered detectors
 func (r *TaskRegistry) GetAllDetectors() map[TaskType]TaskDetector {
 	result := make(map[TaskType]TaskDetector)
-	for k, v := range r.detectors {
-		result[k] = v
-	}
+	maps.Copy(result, r.detectors)
+
 	return result
 }
 
 // GetAllSchedulers returns all registered schedulers
 func (r *TaskRegistry) GetAllSchedulers() map[TaskType]TaskScheduler {
 	result := make(map[TaskType]TaskScheduler)
-	for k, v := range r.schedulers {
-		result[k] = v
-	}
+	maps.Copy(result, r.schedulers)
+
 	return result
 }

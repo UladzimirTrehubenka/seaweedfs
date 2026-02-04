@@ -4,8 +4,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestTimestampIntegrationScenarios tests complete end-to-end scenarios
@@ -171,7 +172,7 @@ func TestRegressionPrevention(t *testing.T) {
 			},
 		}
 
-		result := engine.valuesEqual(record.Fields["_ts_ns"], smallTimestamp)
+		result := engine.valuesEqual(record.GetFields()["_ts_ns"], smallTimestamp)
 		assert.True(t, result, "Small timestamps should continue to work")
 	})
 
@@ -196,7 +197,7 @@ func TestRegressionPrevention(t *testing.T) {
 			},
 		}
 
-		result := engine.valuesEqual(record.Fields["name"], "test")
+		result := engine.valuesEqual(record.GetFields()["name"], "test")
 		assert.True(t, result, "String comparisons should continue to work")
 	})
 }

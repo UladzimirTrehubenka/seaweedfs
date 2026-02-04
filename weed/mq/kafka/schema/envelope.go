@@ -2,7 +2,10 @@ package schema
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
@@ -118,12 +121,14 @@ func ParseConfluentProtobufEnvelopeWithIndexCount(data []byte, expectedIndexCoun
 	}
 
 	envelope.Payload = data[offset:]
+
 	return envelope, true
 }
 
 // IsSchematized checks if the given bytes represent a Confluent-framed message
 func IsSchematized(data []byte) bool {
 	_, ok := ParseConfluentEnvelope(data)
+
 	return ok
 }
 
@@ -132,6 +137,7 @@ func ExtractSchemaID(data []byte) (uint32, bool) {
 	if len(data) < 5 || data[0] != 0x00 {
 		return 0, false
 	}
+
 	return binary.BigEndian.Uint32(data[1:5]), true
 }
 
@@ -145,6 +151,7 @@ func CreateConfluentEnvelope(format Format, schemaID uint32, indexes []int, payl
 	totalCapacity := 5 + len(payload) + indexSize
 	if len(payload) > maxSize || indexSize > maxSize || totalCapacity < 0 || totalCapacity > maxSize {
 		glog.Errorf("Envelope size too large: payload=%d, indexes=%d", len(payload), len(indexes))
+
 		return nil
 	}
 	result := make([]byte, 5, totalCapacity)
@@ -168,11 +175,11 @@ func CreateConfluentEnvelope(format Format, schemaID uint32, indexes []int, payl
 // ValidateEnvelope performs basic validation on a parsed envelope
 func (e *ConfluentEnvelope) Validate() error {
 	if e.SchemaID == 0 {
-		return fmt.Errorf("invalid schema ID: 0")
+		return errors.New("invalid schema ID: 0")
 	}
 
 	if len(e.Payload) == 0 {
-		return fmt.Errorf("empty payload")
+		return errors.New("empty payload")
 	}
 
 	// Format-specific validation
@@ -195,18 +202,20 @@ func (e *ConfluentEnvelope) Validate() error {
 func (e *ConfluentEnvelope) Metadata() map[string]string {
 	metadata := map[string]string{
 		"schema_format": e.Format.String(),
-		"schema_id":     fmt.Sprintf("%d", e.SchemaID),
+		"schema_id":     strconv.FormatUint(uint64(e.SchemaID), 10),
 	}
 
 	if len(e.Indexes) > 0 {
 		// Store indexes for Protobuf reconstruction
 		indexStr := ""
+		var indexStrSb204 strings.Builder
 		for i, idx := range e.Indexes {
 			if i > 0 {
-				indexStr += ","
+				indexStrSb204.WriteString(",")
 			}
-			indexStr += fmt.Sprintf("%d", idx)
+			indexStrSb204.WriteString(strconv.Itoa(idx))
 		}
+		indexStr += indexStrSb204.String()
 		metadata["protobuf_indexes"] = indexStr
 	}
 

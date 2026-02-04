@@ -29,6 +29,7 @@ func TestIdentityProviderInterface(t *testing.T) {
 			err := tt.provider.Initialize(nil)
 			if tt.wantErr {
 				assert.Error(t, err)
+
 				return
 			}
 			require.NoError(t, err)
@@ -114,7 +115,7 @@ func TestTokenClaimsValidation(t *testing.T) {
 				Audience:  "seaweedfs",
 				ExpiresAt: time.Now().Add(time.Hour),
 				IssuedAt:  time.Now().Add(-time.Minute),
-				Claims:    map[string]interface{}{"email": "user@example.com"},
+				Claims:    map[string]any{"email": "user@example.com"},
 			},
 			valid: true,
 		},
@@ -126,7 +127,7 @@ func TestTokenClaimsValidation(t *testing.T) {
 				Audience:  "seaweedfs",
 				ExpiresAt: time.Now().Add(-time.Hour), // Expired
 				IssuedAt:  time.Now().Add(-time.Hour * 2),
-				Claims:    map[string]interface{}{"email": "user@example.com"},
+				Claims:    map[string]any{"email": "user@example.com"},
 			},
 			valid: false,
 		},
@@ -138,7 +139,7 @@ func TestTokenClaimsValidation(t *testing.T) {
 				Audience:  "seaweedfs",
 				ExpiresAt: time.Now().Add(time.Hour),
 				IssuedAt:  time.Now().Add(time.Hour), // Future
-				Claims:    map[string]interface{}{"email": "user@example.com"},
+				Claims:    map[string]any{"email": "user@example.com"},
 			},
 			valid: false,
 		},
@@ -196,11 +197,12 @@ func (m *MockProvider) Name() string {
 	return m.name
 }
 
-func (m *MockProvider) Initialize(config interface{}) error {
+func (m *MockProvider) Initialize(config any) error {
 	if m.shouldError {
 		return assert.AnError
 	}
 	m.initialized = true
+
 	return nil
 }
 
@@ -211,6 +213,7 @@ func (m *MockProvider) Authenticate(ctx context.Context, token string) (*Externa
 	if token == "invalid-token" {
 		return nil, assert.AnError
 	}
+
 	return &ExternalIdentity{
 		UserID:      "test-user",
 		Email:       "test@example.com",
@@ -223,6 +226,7 @@ func (m *MockProvider) GetUserInfo(ctx context.Context, userID string) (*Externa
 	if !m.initialized || userID == "" {
 		return nil, assert.AnError
 	}
+
 	return &ExternalIdentity{
 		UserID:      userID,
 		Email:       userID + "@example.com",
@@ -235,12 +239,13 @@ func (m *MockProvider) ValidateToken(ctx context.Context, token string) (*TokenC
 	if !m.initialized || token == "invalid-token" {
 		return nil, assert.AnError
 	}
+
 	return &TokenClaims{
 		Subject:   "test-user",
 		Issuer:    "test-issuer",
 		Audience:  "seaweedfs",
 		ExpiresAt: time.Now().Add(time.Hour),
 		IssuedAt:  time.Now(),
-		Claims:    map[string]interface{}{"email": "test@example.com"},
+		Claims:    map[string]any{"email": "test@example.com"},
 	}, nil
 }

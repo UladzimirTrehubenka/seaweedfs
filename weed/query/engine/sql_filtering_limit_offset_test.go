@@ -265,22 +265,26 @@ func TestSQLFilteringLimitOffset(t *testing.T) {
 				if err == nil && (result == nil || result.Error == nil) {
 					t.Errorf("FAIL: Expected error for %s, but query succeeded", tc.desc)
 					errorTests = append(errorTests, "FAIL: "+tc.desc)
+
 					return
 				}
 				t.Logf("PASS: Expected error: %s", tc.desc)
 				errorTests = append(errorTests, "PASS: "+tc.desc)
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("FAIL: Unexpected error for %s: %v", tc.desc, err)
 				errorTests = append(errorTests, "FAIL: "+tc.desc+" (unexpected error)")
+
 				return
 			}
 
 			if result != nil && result.Error != nil {
 				t.Errorf("FAIL: Unexpected result error for %s: %v", tc.desc, result.Error)
 				errorTests = append(errorTests, "FAIL: "+tc.desc+" (unexpected result error)")
+
 				return
 			}
 

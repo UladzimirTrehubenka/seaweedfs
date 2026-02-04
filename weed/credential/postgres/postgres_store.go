@@ -65,6 +65,7 @@ func (store *PostgresStore) Initialize(configuration util.Configuration, prefix 
 	// Test connection
 	if err := db.Ping(); err != nil {
 		db.Close()
+
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
@@ -78,10 +79,12 @@ func (store *PostgresStore) Initialize(configuration util.Configuration, prefix 
 	// Create tables if they don't exist
 	if err := store.createTables(); err != nil {
 		db.Close()
+
 		return fmt.Errorf("failed to create tables: %w", err)
 	}
 
 	store.configured = true
+
 	return nil
 }
 

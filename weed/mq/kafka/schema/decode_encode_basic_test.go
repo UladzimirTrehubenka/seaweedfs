@@ -39,7 +39,7 @@ func TestBasicSchemaDecodeEncode(t *testing.T) {
 		registerBasicSchema(t, registry, schemaID, schemaJSON)
 
 		// Create test data
-		testData := map[string]interface{}{
+		testData := map[string]any{
 			"message": "Hello World",
 		}
 
@@ -60,7 +60,7 @@ func TestBasicSchemaDecodeEncode(t *testing.T) {
 		assert.NotNil(t, decoded.RecordValue)
 
 		// Verify the message field
-		messageField, exists := decoded.RecordValue.Fields["message"]
+		messageField, exists := decoded.RecordValue.GetFields()["message"]
 		require.True(t, exists)
 		assert.Equal(t, "Hello World", messageField.GetStringValue())
 
@@ -70,7 +70,7 @@ func TestBasicSchemaDecodeEncode(t *testing.T) {
 
 		// Verify envelope structure
 		assert.Equal(t, envelope[:5], reconstructed[:5]) // Magic byte + schema ID
-		assert.True(t, len(reconstructed) > 5)
+		assert.Greater(t, len(reconstructed), 5)
 	})
 
 	t.Run("JSON Schema with String Field", func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestBasicSchemaDecodeEncode(t *testing.T) {
 		registerBasicSchema(t, registry, schemaID, schemaJSON)
 
 		// Create test data
-		testData := map[string]interface{}{
+		testData := map[string]any{
 			"name": "Test User",
 		}
 
@@ -127,7 +127,7 @@ func TestBasicSchemaDecodeEncode(t *testing.T) {
 		registerBasicSchema(t, registry, schemaID, schemaJSON)
 
 		// Create test data
-		testData := map[string]interface{}{"value": "cached"}
+		testData := map[string]any{"value": "cached"}
 		codec, err := goavro.NewCodec(schemaJSON)
 		require.NoError(t, err)
 		avroBinary, err := codec.BinaryFromNative(nil, testData)
@@ -147,14 +147,14 @@ func TestBasicSchemaDecodeEncode(t *testing.T) {
 		assert.Equal(t, decoded1.SchemaFormat, decoded2.SchemaFormat)
 
 		// Verify field values match
-		field1 := decoded1.RecordValue.Fields["value"]
-		field2 := decoded2.RecordValue.Fields["value"]
+		field1 := decoded1.RecordValue.GetFields()["value"]
+		field2 := decoded2.RecordValue.GetFields()["value"]
 		assert.Equal(t, field1.GetStringValue(), field2.GetStringValue())
 
 		// Check that cache is populated
 		decoders, schemas, _ := manager.GetCacheStats()
-		assert.True(t, decoders > 0, "Should have cached decoders")
-		assert.True(t, schemas > 0, "Should have cached schemas")
+		assert.Positive(t, decoders, "Should have cached decoders")
+		assert.Positive(t, schemas, "Should have cached schemas")
 	})
 }
 
@@ -182,7 +182,7 @@ func TestSchemaValidation(t *testing.T) {
 		registerBasicSchema(t, registry, schemaID, schemaJSON)
 
 		// Create valid test data
-		testData := map[string]interface{}{
+		testData := map[string]any{
 			"id":        "msg-123",
 			"timestamp": int64(1640995200000),
 		}
@@ -199,8 +199,8 @@ func TestSchemaValidation(t *testing.T) {
 		assert.Equal(t, uint32(schemaID), decoded.SchemaID)
 
 		// Verify fields
-		idField := decoded.RecordValue.Fields["id"]
-		timestampField := decoded.RecordValue.Fields["timestamp"]
+		idField := decoded.RecordValue.GetFields()["id"]
+		timestampField := decoded.RecordValue.GetFields()["timestamp"]
 		assert.Equal(t, "msg-123", idField.GetStringValue())
 		assert.Equal(t, int64(1640995200000), timestampField.GetInt64Value())
 	})
@@ -246,7 +246,7 @@ func createBasicMockRegistry(t *testing.T) *httptest.Server {
 					w.WriteHeader(http.StatusNotFound)
 					w.Write([]byte(`{"error_code": 40403, "message": "Schema not found"}`))
 				}
-			} else if r.Method == "POST" && r.URL.Path == "/register-schema" {
+			} else if r.Method == http.MethodPost && r.URL.Path == "/register-schema" {
 				// Custom endpoint for test registration
 				var req struct {
 					SchemaID int32  `json:"schema_id"`
@@ -279,5 +279,6 @@ func createBasicEnvelope(schemaID int32, data []byte) []byte {
 	envelope[0] = 0x00 // Magic byte
 	binary.BigEndian.PutUint32(envelope[1:5], uint32(schemaID))
 	copy(envelope[5:], data)
+
 	return envelope
 }

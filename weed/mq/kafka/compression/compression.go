@@ -81,6 +81,7 @@ func Compress(codec CompressionCodec, data []byte) ([]byte, error) {
 		if compressed == nil {
 			compressed = []byte{}
 		}
+
 		return compressed, nil
 	case Lz4:
 		writer = lz4.NewWriter(&buf)
@@ -95,6 +96,7 @@ func Compress(codec CompressionCodec, data []byte) ([]byte, error) {
 
 	if _, err := writer.Write(data); err != nil {
 		writer.Close()
+
 		return nil, fmt.Errorf("failed to write compressed data: %w", err)
 	}
 
@@ -131,6 +133,7 @@ func Decompress(codec CompressionCodec, data []byte) ([]byte, error) {
 		if decompressed == nil {
 			decompressed = []byte{}
 		}
+
 		return decompressed, nil
 	case Lz4:
 		lz4Reader := lz4.NewReader(buf)
@@ -151,6 +154,7 @@ func Decompress(codec CompressionCodec, data []byte) ([]byte, error) {
 		if decompressed == nil {
 			decompressed = []byte{}
 		}
+
 		return decompressed, nil
 	default:
 		return nil, fmt.Errorf("unsupported compression codec: %s", codec)
@@ -167,6 +171,7 @@ func Decompress(codec CompressionCodec, data []byte) ([]byte, error) {
 	if decompressed == nil {
 		decompressed = []byte{}
 	}
+
 	return decompressed, nil
 }
 
@@ -183,6 +188,7 @@ func CompressRecordBatch(codec CompressionCodec, recordsData []byte) ([]byte, in
 	}
 
 	attributes := int16(codec)
+
 	return compressed, attributes, nil
 }
 

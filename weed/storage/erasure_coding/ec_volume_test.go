@@ -12,7 +12,6 @@ import (
 )
 
 func TestPositioning(t *testing.T) {
-
 	ecxFile, err := os.OpenFile("389.ecx", os.O_RDONLY, 0)
 	if err != nil {
 		t.Errorf("failed to open ecx file: %v", err)
@@ -34,13 +33,13 @@ func TestPositioning(t *testing.T) {
 	for _, test := range tests {
 		needleId, _ := types.ParseNeedleId(test.needleId)
 		offset, size, err := SearchNeedleFromSortedIndex(ecxFile, fileSize, needleId, nil)
-		assert.Equal(t, nil, err, "SearchNeedleFromSortedIndex")
+		assert.NoError(t, err, "SearchNeedleFromSortedIndex")
 		fmt.Printf("offset: %d size: %d\n", offset.ToActualOffset(), size)
 	}
 
 	needleId, _ := types.ParseNeedleId("0f087622")
 	offset, size, err := SearchNeedleFromSortedIndex(ecxFile, fileSize, needleId, nil)
-	assert.Equal(t, nil, err, "SearchNeedleFromSortedIndex")
+	assert.NoError(t, err, "SearchNeedleFromSortedIndex")
 	fmt.Printf("offset: %d size: %d\n", offset.ToActualOffset(), size)
 
 	var shardEcdFileSize int64 = 1118830592 // 1024*1024*1024*3
@@ -50,5 +49,4 @@ func TestPositioning(t *testing.T) {
 		shardId, shardOffset := interval.ToShardIdAndOffset(ErasureCodingLargeBlockSize, ErasureCodingSmallBlockSize)
 		fmt.Printf("interval: %+v, shardId: %d, shardOffset: %d\n", interval, shardId, shardOffset)
 	}
-
 }

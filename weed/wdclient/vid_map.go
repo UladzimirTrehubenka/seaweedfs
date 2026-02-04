@@ -38,6 +38,7 @@ func (l Location) ServerAddress() pb.ServerAddress {
 
 type vidMap struct {
 	sync.RWMutex
+
 	vid2Locations   map[uint32][]Location
 	ecVid2Locations map[uint32][]Location
 	DataCenter      string
@@ -61,6 +62,7 @@ func (vc *vidMap) getLocationIndex(length int) (int, error) {
 	if atomic.LoadInt32(&vc.cursor) == maxCursorIndex {
 		atomic.CompareAndSwapInt32(&vc.cursor, maxCursorIndex, -1)
 	}
+
 	return int(atomic.AddInt32(&vc.cursor, 1)) % length, nil
 }
 
@@ -68,6 +70,7 @@ func (vc *vidMap) isSameDataCenter(loc *Location) bool {
 	if vc.DataCenter == "" || loc.DataCenter == "" || vc.DataCenter != loc.DataCenter {
 		return false
 	}
+
 	return true
 }
 
@@ -75,6 +78,7 @@ func (vc *vidMap) LookupVolumeServerUrl(vid string) (serverUrls []string, err er
 	id, err := strconv.Atoi(vid)
 	if err != nil {
 		glog.V(1).Infof("Unknown volume id %s", vid)
+
 		return nil, err
 	}
 
@@ -98,6 +102,7 @@ func (vc *vidMap) LookupVolumeServerUrl(vid string) (serverUrls []string, err er
 	})
 	// Prefer same data center
 	serverUrls = append(sameDcServers, otherDcServers...)
+
 	return
 }
 
@@ -113,6 +118,7 @@ func (vc *vidMap) LookupFileId(ctx context.Context, fileId string) (fullUrls []s
 	for _, serverUrl := range serverUrls {
 		fullUrls = append(fullUrls, "http://"+serverUrl+"/"+fileId)
 	}
+
 	return
 }
 
@@ -120,12 +126,14 @@ func (vc *vidMap) GetVidLocations(vid string) (locations []Location, err error) 
 	id, err := strconv.Atoi(vid)
 	if err != nil {
 		glog.V(1).Infof("Unknown volume id %s", vid)
+
 		return nil, fmt.Errorf("Unknown volume id %s", vid)
 	}
 	foundLocations, found := vc.GetLocations(uint32(id))
 	if found {
 		return foundLocations, nil
 	}
+
 	return nil, fmt.Errorf("volume id %s not found", vid)
 }
 
@@ -150,6 +158,7 @@ func (vc *vidMap) GetLocationsClone(vid uint32) (locations []Location, found boo
 		// clone the locations in case the volume locations are changed below
 		existingLocations := make([]Location, len(locations))
 		copy(existingLocations, locations)
+
 		return existingLocations, found
 	}
 
@@ -165,6 +174,7 @@ func (vc *vidMap) getLocations(vid uint32) (locations []Location, found bool) {
 		return
 	}
 	locations, found = vc.ecVid2Locations[vid]
+
 	return
 }
 
@@ -177,6 +187,7 @@ func (vc *vidMap) addLocation(vid uint32, location Location) {
 	locations, found := vc.vid2Locations[vid]
 	if !found {
 		vc.vid2Locations[vid] = []Location{location}
+
 		return
 	}
 
@@ -187,7 +198,6 @@ func (vc *vidMap) addLocation(vid uint32, location Location) {
 	}
 
 	vc.vid2Locations[vid] = append(locations, location)
-
 }
 
 func (vc *vidMap) addEcLocation(vid uint32, location Location) {
@@ -199,6 +209,7 @@ func (vc *vidMap) addEcLocation(vid uint32, location Location) {
 	locations, found := vc.ecVid2Locations[vid]
 	if !found {
 		vc.ecVid2Locations[vid] = []Location{location}
+
 		return
 	}
 
@@ -209,7 +220,6 @@ func (vc *vidMap) addEcLocation(vid uint32, location Location) {
 	}
 
 	vc.ecVid2Locations[vid] = append(locations, location)
-
 }
 
 func (vc *vidMap) deleteLocation(vid uint32, location Location) {
@@ -230,6 +240,7 @@ func (vc *vidMap) deleteLocation(vid uint32, location Location) {
 	for i, loc := range locations {
 		if loc.Url == location.Url {
 			vc.vid2Locations[vid] = append(locations[0:i], locations[i+1:]...)
+
 			break
 		}
 	}
@@ -253,6 +264,7 @@ func (vc *vidMap) deleteEcLocation(vid uint32, location Location) {
 	for i, loc := range locations {
 		if loc.Url == location.Url {
 			vc.ecVid2Locations[vid] = append(locations[0:i], locations[i+1:]...)
+
 			break
 		}
 	}

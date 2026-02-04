@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -47,10 +48,10 @@ type Field struct {
 	Type     FieldType `json:"type"`
 
 	// Default value and validation
-	DefaultValue interface{} `json:"default_value"`
-	MinValue     interface{} `json:"min_value,omitempty"`
-	MaxValue     interface{} `json:"max_value,omitempty"`
-	Required     bool        `json:"required"`
+	DefaultValue any  `json:"default_value"`
+	MinValue     any  `json:"min_value,omitempty"`
+	MaxValue     any  `json:"max_value,omitempty"`
+	Required     bool `json:"required"`
 
 	// UI display
 	DisplayName string    `json:"display_name"`
@@ -65,7 +66,7 @@ type Field struct {
 }
 
 // GetDisplayValue returns the value formatted for display in the specified unit
-func (f *Field) GetDisplayValue(value interface{}) interface{} {
+func (f *Field) GetDisplayValue(value any) any {
 	if (f.Type == FieldTypeDuration || f.Type == FieldTypeInterval) && f.Unit != UnitSeconds {
 		if duration, ok := value.(time.Duration); ok {
 			switch f.Unit {
@@ -88,11 +89,12 @@ func (f *Field) GetDisplayValue(value interface{}) interface{} {
 			}
 		}
 	}
+
 	return value
 }
 
 // GetIntervalDisplayValue returns the value and unit for interval fields
-func (f *Field) GetIntervalDisplayValue(value interface{}) (int, string) {
+func (f *Field) GetIntervalDisplayValue(value any) (int, string) {
 	if f.Type != FieldTypeInterval {
 		return 0, "minutes"
 	}
@@ -149,7 +151,7 @@ func IntervalValueUnitToSeconds(value int, unit string) int {
 }
 
 // ParseDisplayValue converts a display value back to the storage format
-func (f *Field) ParseDisplayValue(displayValue interface{}) interface{} {
+func (f *Field) ParseDisplayValue(displayValue any) any {
 	if (f.Type == FieldTypeDuration || f.Type == FieldTypeInterval) && f.Unit != UnitSeconds {
 		if val, ok := displayValue.(int); ok {
 			switch f.Unit {
@@ -162,6 +164,7 @@ func (f *Field) ParseDisplayValue(displayValue interface{}) interface{} {
 			}
 		}
 	}
+
 	return displayValue
 }
 
@@ -184,7 +187,7 @@ func (f *Field) ParseIntervalFormData(valueStr, unitStr string) (int, error) {
 }
 
 // ValidateValue validates a value against the field constraints
-func (f *Field) ValidateValue(value interface{}) error {
+func (f *Field) ValidateValue(value any) error {
 	if f.Required && (value == nil || value == "" || value == 0) {
 		return fmt.Errorf("%s is required", f.DisplayName)
 	}
@@ -205,7 +208,7 @@ func (f *Field) ValidateValue(value interface{}) error {
 }
 
 // compareValues compares two values based on the operator
-func (f *Field) compareValues(a, b interface{}, op string) bool {
+func (f *Field) compareValues(a, b any, op string) bool {
 	switch f.Type {
 	case FieldTypeInt:
 		aVal, aOk := a.(int)
@@ -232,6 +235,7 @@ func (f *Field) compareValues(a, b interface{}, op string) bool {
 			return aVal <= bVal
 		}
 	}
+
 	return true
 }
 
@@ -247,6 +251,7 @@ func (s *Schema) GetFieldByName(jsonName string) *Field {
 			return field
 		}
 	}
+
 	return nil
 }
 
@@ -256,20 +261,20 @@ func (s *Schema) ApplyDefaultsToConfig(config ConfigWithDefaults) error {
 }
 
 // ApplyDefaultsToProtobuf applies defaults to protobuf types using reflection
-func (s *Schema) ApplyDefaultsToProtobuf(config interface{}) error {
+func (s *Schema) ApplyDefaultsToProtobuf(config any) error {
 	return s.applyDefaultsReflection(config)
 }
 
 // applyDefaultsReflection applies default values using reflection (internal use only)
 // Used for protobuf types and embedded struct handling
-func (s *Schema) applyDefaultsReflection(config interface{}) error {
+func (s *Schema) applyDefaultsReflection(config any) error {
 	configValue := reflect.ValueOf(config)
 	if configValue.Kind() == reflect.Ptr {
 		configValue = configValue.Elem()
 	}
 
 	if configValue.Kind() != reflect.Struct {
-		return fmt.Errorf("config must be a struct or pointer to struct")
+		return errors.New("config must be a struct or pointer to struct")
 	}
 
 	configType := configValue.Type()
@@ -285,8 +290,9 @@ func (s *Schema) applyDefaultsReflection(config interface{}) error {
 			}
 			err := s.applyDefaultsReflection(field.Addr().Interface())
 			if err != nil {
-				return fmt.Errorf("failed to apply defaults to embedded struct %s: %v", fieldType.Name, err)
+				return fmt.Errorf("failed to apply defaults to embedded struct %s: %w", fieldType.Name, err)
 			}
+
 			continue
 		}
 
@@ -320,8 +326,8 @@ func (s *Schema) applyDefaultsReflection(config interface{}) error {
 }
 
 // ValidateConfig validates a configuration against the schema
-func (s *Schema) ValidateConfig(config interface{}) []error {
-	var errors []error
+func (s *Schema) ValidateConfig(config any) []error {
+	var errs []error
 
 	configValue := reflect.ValueOf(config)
 	if configValue.Kind() == reflect.Ptr {
@@ -329,8 +335,9 @@ func (s *Schema) ValidateConfig(config interface{}) []error {
 	}
 
 	if configValue.Kind() != reflect.Struct {
-		errors = append(errors, fmt.Errorf("config must be a struct or pointer to struct"))
-		return errors
+		errs = append(errs, errors.New("config must be a struct or pointer to struct"))
+
+		return errs
 	}
 
 	configType := configValue.Type()
@@ -359,9 +366,9 @@ func (s *Schema) ValidateConfig(config interface{}) []error {
 		// Validate field value
 		fieldValue := field.Interface()
 		if err := schemaField.ValidateValue(fieldValue); err != nil {
-			errors = append(errors, err)
+			errs = append(errs, err)
 		}
 	}
 
-	return errors
+	return errs
 }

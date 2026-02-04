@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package stats
 
@@ -10,12 +9,12 @@ import (
 )
 
 func fillInMemStatus(mem *volume_server_pb.MemStatus) {
-	//system memory usage
+	// system memory usage
 	sysInfo := new(syscall.Sysinfo_t)
 	err := syscall.Sysinfo(sysInfo)
 	if err == nil {
-		mem.All = uint64(sysInfo.Totalram) //* uint64(syscall.Getpagesize())
-		mem.Free = uint64(sysInfo.Freeram) //* uint64(syscall.Getpagesize())
-		mem.Used = mem.All - mem.Free
+		mem.All = uint64(sysInfo.Totalram) // * uint64(syscall.Getpagesize())
+		mem.Free = uint64(sysInfo.Freeram) // * uint64(syscall.Getpagesize())
+		mem.Used = mem.GetAll() - mem.GetFree()
 	}
 }

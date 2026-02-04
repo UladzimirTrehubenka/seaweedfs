@@ -11,6 +11,7 @@ type UnboundedQueue struct {
 
 func NewUnboundedQueue() *UnboundedQueue {
 	q := &UnboundedQueue{}
+
 	return q
 }
 
@@ -19,7 +20,6 @@ func (q *UnboundedQueue) EnQueue(items ...string) {
 	defer q.inboundLock.Unlock()
 
 	q.inbound = append(q.inbound, items...)
-
 }
 
 func (q *UnboundedQueue) Consume(fn func([]string)) {
@@ -41,5 +41,4 @@ func (q *UnboundedQueue) Consume(fn func([]string)) {
 		fn(q.outbound)
 		q.outbound = q.outbound[:0]
 	}
-
 }

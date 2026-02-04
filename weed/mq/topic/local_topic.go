@@ -8,6 +8,7 @@ import (
 
 type LocalTopic struct {
 	Topic
+
 	Partitions    []*LocalPartition
 	partitionLock sync.RWMutex
 }
@@ -25,13 +26,15 @@ func (localTopic *LocalTopic) findPartition(partition Partition) *LocalPartition
 
 	glog.V(4).Infof("findPartition searching for %s in %d partitions", partition.String(), len(localTopic.Partitions))
 	for i, localPartition := range localTopic.Partitions {
-		glog.V(4).Infof("Comparing partition[%d]: %s with target %s", i, localPartition.Partition.String(), partition.String())
-		if localPartition.Partition.LogicalEquals(partition) {
+		glog.V(4).Infof("Comparing partition[%d]: %s with target %s", i, localPartition.String(), partition.String())
+		if localPartition.LogicalEquals(partition) {
 			glog.V(4).Infof("Found matching partition at index %d", i)
+
 			return localPartition
 		}
 	}
 	glog.V(4).Infof("No matching partition found for %s", partition.String())
+
 	return nil
 }
 func (localTopic *LocalTopic) removePartition(partition Partition) bool {
@@ -40,9 +43,10 @@ func (localTopic *LocalTopic) removePartition(partition Partition) bool {
 
 	foundPartitionIndex := -1
 	for i, localPartition := range localTopic.Partitions {
-		if localPartition.Partition.LogicalEquals(partition) {
+		if localPartition.LogicalEquals(partition) {
 			foundPartitionIndex = i
 			localPartition.Shutdown()
+
 			break
 		}
 	}
@@ -50,13 +54,14 @@ func (localTopic *LocalTopic) removePartition(partition Partition) bool {
 		return false
 	}
 	localTopic.Partitions = append(localTopic.Partitions[:foundPartitionIndex], localTopic.Partitions[foundPartitionIndex+1:]...)
+
 	return true
 }
 func (localTopic *LocalTopic) addPartition(localPartition *LocalPartition) {
 	localTopic.partitionLock.Lock()
 	defer localTopic.partitionLock.Unlock()
 	for _, partition := range localTopic.Partitions {
-		if localPartition.Partition.LogicalEquals(partition.Partition) {
+		if localPartition.LogicalEquals(partition.Partition) {
 			return
 		}
 	}
@@ -76,6 +81,7 @@ func (localTopic *LocalTopic) closePartitionPublishers(unixTsNs int64) bool {
 		}(localPartition)
 	}
 	wg.Wait()
+
 	return true
 }
 
@@ -92,6 +98,7 @@ func (localTopic *LocalTopic) closePartitionSubscribers(unixTsNs int64) bool {
 		}(localPartition)
 	}
 	wg.Wait()
+
 	return true
 }
 

@@ -1,6 +1,8 @@
 package erasure_coding
 
 import (
+	"slices"
+
 	"github.com/seaweedfs/seaweedfs/weed/worker/tasks/base"
 	"github.com/seaweedfs/seaweedfs/weed/worker/types"
 )
@@ -29,10 +31,8 @@ func Scheduling(task *types.TaskInput, runningTasks []*types.TaskInput, availabl
 
 	// Check if any worker can handle EC tasks
 	for _, worker := range availableWorkers {
-		for _, capability := range worker.Capabilities {
-			if capability == types.TaskTypeErasureCoding {
-				return true
-			}
+		if slices.Contains(worker.Capabilities, types.TaskTypeErasureCoding) {
+			return true
 		}
 	}
 

@@ -83,32 +83,32 @@ func TestCreateDestinationChunkPreservesEncryption(t *testing.T) {
 			dstChunk := s3a.createDestinationChunk(tc.sourceChunk, tc.expectedOffset, tc.expectedSize)
 
 			// Verify offset and size
-			if dstChunk.Offset != tc.expectedOffset {
-				t.Errorf("Expected offset %d, got %d", tc.expectedOffset, dstChunk.Offset)
+			if dstChunk.GetOffset() != tc.expectedOffset {
+				t.Errorf("Expected offset %d, got %d", tc.expectedOffset, dstChunk.GetOffset())
 			}
-			if dstChunk.Size != tc.expectedSize {
-				t.Errorf("Expected size %d, got %d", tc.expectedSize, dstChunk.Size)
+			if dstChunk.GetSize() != tc.expectedSize {
+				t.Errorf("Expected size %d, got %d", tc.expectedSize, dstChunk.GetSize())
 			}
 
 			// Verify CipherKey preservation
 			if tc.shouldPreserveCK {
-				if !bytes.Equal(dstChunk.CipherKey, tc.sourceChunk.CipherKey) {
-					t.Errorf("CipherKey not preserved: expected %v, got %v", tc.sourceChunk.CipherKey, dstChunk.CipherKey)
+				if !bytes.Equal(dstChunk.GetCipherKey(), tc.sourceChunk.GetCipherKey()) {
+					t.Errorf("CipherKey not preserved: expected %v, got %v", tc.sourceChunk.GetCipherKey(), dstChunk.GetCipherKey())
 				}
 			} else {
-				if len(dstChunk.CipherKey) > 0 {
-					t.Errorf("Expected no CipherKey, got %v", dstChunk.CipherKey)
+				if len(dstChunk.GetCipherKey()) > 0 {
+					t.Errorf("Expected no CipherKey, got %v", dstChunk.GetCipherKey())
 				}
 			}
 
 			// Verify IsCompressed preservation
-			if dstChunk.IsCompressed != tc.shouldPreserveIC {
-				t.Errorf("IsCompressed not preserved: expected %v, got %v", tc.shouldPreserveIC, dstChunk.IsCompressed)
+			if dstChunk.GetIsCompressed() != tc.shouldPreserveIC {
+				t.Errorf("IsCompressed not preserved: expected %v, got %v", tc.shouldPreserveIC, dstChunk.GetIsCompressed())
 			}
 
 			// Verify ETag preservation
-			if dstChunk.ETag != tc.sourceChunk.ETag {
-				t.Errorf("ETag not preserved: expected %s, got %s", tc.sourceChunk.ETag, dstChunk.ETag)
+			if dstChunk.GetETag() != tc.sourceChunk.GetETag() {
+				t.Errorf("ETag not preserved: expected %s, got %s", tc.sourceChunk.GetETag(), dstChunk.GetETag())
 			}
 		})
 	}
@@ -150,22 +150,22 @@ func TestEncryptedVolumeCopyScenario(t *testing.T) {
 
 		// Verify that createDestinationChunk preserves all necessary metadata
 		for i, srcChunk := range sourceChunks {
-			dstChunk := s3a.createDestinationChunk(srcChunk, srcChunk.Offset, srcChunk.Size)
+			dstChunk := s3a.createDestinationChunk(srcChunk, srcChunk.GetOffset(), srcChunk.GetSize())
 
 			// Critical checks for issue #7530
-			if !dstChunk.IsCompressed {
+			if !dstChunk.GetIsCompressed() {
 				t.Errorf("Chunk %d: IsCompressed flag MUST be preserved to prevent double-compression", i)
 			}
-			if !bytes.Equal(dstChunk.CipherKey, srcChunk.CipherKey) {
+			if !bytes.Equal(dstChunk.GetCipherKey(), srcChunk.GetCipherKey()) {
 				t.Errorf("Chunk %d: CipherKey MUST be preserved for encrypted volumes", i)
 			}
-			if dstChunk.Offset != srcChunk.Offset {
+			if dstChunk.GetOffset() != srcChunk.GetOffset() {
 				t.Errorf("Chunk %d: Offset must be preserved", i)
 			}
-			if dstChunk.Size != srcChunk.Size {
+			if dstChunk.GetSize() != srcChunk.GetSize() {
 				t.Errorf("Chunk %d: Size must be preserved", i)
 			}
-			if dstChunk.ETag != srcChunk.ETag {
+			if dstChunk.GetETag() != srcChunk.GetETag() {
 				t.Errorf("Chunk %d: ETag must be preserved", i)
 			}
 		}

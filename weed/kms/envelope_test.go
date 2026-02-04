@@ -10,7 +10,7 @@ func TestCiphertextEnvelope_CreateAndParse(t *testing.T) {
 	provider := "openbao"
 	keyID := "test-key-123"
 	ciphertext := "vault:v1:abcd1234encrypted"
-	providerSpecific := map[string]interface{}{
+	providerSpecific := map[string]any{
 		"transit_path": "transit",
 		"version":      1,
 	}
@@ -22,7 +22,7 @@ func TestCiphertextEnvelope_CreateAndParse(t *testing.T) {
 	}
 
 	// Verify it's valid JSON
-	var jsonCheck map[string]interface{}
+	var jsonCheck map[string]any
 	if err := json.Unmarshal(envelopeBlob, &jsonCheck); err != nil {
 		t.Fatalf("Envelope is not valid JSON: %v", err)
 	}

@@ -2,6 +2,7 @@ package log_buffer
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -22,7 +23,7 @@ const PreviousBufferCount = 4
 // Errors that can be returned by log buffer operations
 var (
 	// ErrBufferCorrupted indicates the log buffer contains corrupted data
-	ErrBufferCorrupted = fmt.Errorf("log buffer is corrupted")
+	ErrBufferCorrupted = errors.New("log buffer is corrupted")
 )
 
 type dataToFlush struct {
@@ -113,6 +114,7 @@ func NewLogBuffer(name string, flushInterval time.Duration, flushFn LogFlushFunc
 	lb.lastFlushedOffset.Store(-1) // Nothing flushed to disk yet
 	go lb.loopFlush()
 	go lb.loopInterval()
+
 	return lb
 }
 
@@ -130,6 +132,7 @@ func (logBuffer *LogBuffer) RegisterSubscriber(subscriberID string) chan struct{
 	// Create buffered channel (size 1) so notifications never block
 	notifyChan := make(chan struct{}, 1)
 	logBuffer.subscribers[subscriberID] = notifyChan
+
 	return notifyChan
 }
 
@@ -247,7 +250,7 @@ func (logBuffer *LogBuffer) InitializeOffsetFromExistingData(getHighestOffsetFn 
 }
 
 func (logBuffer *LogBuffer) AddToBuffer(message *mq_pb.DataMessage) error {
-	return logBuffer.AddDataToBuffer(message.Key, message.Value, message.TsNs)
+	return logBuffer.AddDataToBuffer(message.GetKey(), message.GetValue(), message.GetTsNs())
 }
 
 // AddLogEntryToBuffer directly adds a LogEntry to the buffer, preserving offset information
@@ -270,7 +273,7 @@ func (logBuffer *LogBuffer) AddLogEntryToBuffer(logEntry *filer_pb.LogEntry) err
 		}
 	}()
 
-	processingTsNs := logEntry.TsNs
+	processingTsNs := logEntry.GetTsNs()
 	ts := time.Unix(0, processingTsNs)
 
 	// Handle timestamp collision inside lock (rare case)
@@ -287,6 +290,7 @@ func (logBuffer *LogBuffer) AddLogEntryToBuffer(logEntry *filer_pb.LogEntry) err
 	if err != nil {
 		marshalErr = fmt.Errorf("failed to marshal LogEntry: %w", err)
 		glog.Errorf("%v", marshalErr)
+
 		return marshalErr
 	}
 	size := len(logEntryData)
@@ -299,17 +303,17 @@ func (logBuffer *LogBuffer) AddLogEntryToBuffer(logEntry *filer_pb.LogEntry) err
 
 	// Track offset ranges for Kafka integration
 	// Use >= 0 to include offset 0 (first message in a topic)
-	if logEntry.Offset >= 0 {
+	if logEntry.GetOffset() >= 0 {
 		if !logBuffer.hasOffsets {
-			logBuffer.minOffset = logEntry.Offset
-			logBuffer.maxOffset = logEntry.Offset
+			logBuffer.minOffset = logEntry.GetOffset()
+			logBuffer.maxOffset = logEntry.GetOffset()
 			logBuffer.hasOffsets = true
 		} else {
-			if logEntry.Offset < logBuffer.minOffset {
-				logBuffer.minOffset = logEntry.Offset
+			if logEntry.GetOffset() < logBuffer.minOffset {
+				logBuffer.minOffset = logEntry.GetOffset()
 			}
-			if logEntry.Offset > logBuffer.maxOffset {
-				logBuffer.maxOffset = logEntry.Offset
+			if logEntry.GetOffset() > logBuffer.maxOffset {
+				logBuffer.maxOffset = logEntry.GetOffset()
 			}
 		}
 	}
@@ -324,6 +328,7 @@ func (logBuffer *LogBuffer) AddLogEntryToBuffer(logEntry *filer_pb.LogEntry) err
 			if size < 0 || size > (math.MaxInt-4)/2 || size > (maxBufferSize-4)/2 {
 				marshalErr = fmt.Errorf("message size %d exceeds maximum allowed size", size)
 				glog.Errorf("%v", marshalErr)
+
 				return marshalErr
 			}
 			// Safe to compute now that we've validated size is in valid range
@@ -340,11 +345,11 @@ func (logBuffer *LogBuffer) AddLogEntryToBuffer(logEntry *filer_pb.LogEntry) err
 	logBuffer.pos += size + 4
 
 	logBuffer.offset++
+
 	return nil
 }
 
 func (logBuffer *LogBuffer) AddDataToBuffer(partitionKey, data []byte, processingTsNs int64) error {
-
 	// PERFORMANCE OPTIMIZATION: Pre-process expensive operations OUTSIDE the lock
 	var ts time.Time
 	if processingTsNs == 0 {
@@ -398,6 +403,7 @@ func (logBuffer *LogBuffer) AddDataToBuffer(partitionKey, data []byte, processin
 	if err != nil {
 		marshalErr = fmt.Errorf("failed to marshal LogEntry: %w", err)
 		glog.Errorf("%v", marshalErr)
+
 		return marshalErr
 	}
 
@@ -434,6 +440,7 @@ func (logBuffer *LogBuffer) AddDataToBuffer(partitionKey, data []byte, processin
 			if size < 0 || size > (math.MaxInt-4)/2 || size > (maxBufferSize-4)/2 {
 				marshalErr = fmt.Errorf("message size %d exceeds maximum allowed size", size)
 				glog.Errorf("%v", marshalErr)
+
 				return marshalErr
 			}
 			// Safe to compute now that we've validated size is in valid range
@@ -450,6 +457,7 @@ func (logBuffer *LogBuffer) AddDataToBuffer(partitionKey, data []byte, processin
 	logBuffer.pos += size + 4
 
 	logBuffer.offset++
+
 	return nil
 }
 
@@ -549,7 +557,6 @@ func (logBuffer *LogBuffer) copyToFlushWithCallback() *dataToFlush {
 }
 
 func (logBuffer *LogBuffer) copyToFlushInternal(withCallback bool) *dataToFlush {
-
 	if logBuffer.pos > 0 {
 		var d *dataToFlush
 		if logBuffer.flushFn != nil {
@@ -589,6 +596,7 @@ func (logBuffer *LogBuffer) copyToFlushInternal(withCallback bool) *dataToFlush 
 
 		return d
 	}
+
 	return nil
 }
 
@@ -667,6 +675,7 @@ func (logBuffer *LogBuffer) ReadFromBuffer(lastReadPosition MessagePosition) (bu
 				// Otherwise, wait for new data to arrive
 				return nil, logBuffer.offset, nil
 			}
+
 			return copiedBytes(logBuffer.buf[:logBuffer.pos]), logBuffer.offset, nil
 		}
 
@@ -679,6 +688,7 @@ func (logBuffer *LogBuffer) ReadFromBuffer(lastReadPosition MessagePosition) (bu
 					// Empty prevBuffer covering this offset means data was flushed
 					return nil, -2, ResumeFromDiskError
 				}
+
 				return copiedBytes(buf.buf[:buf.size]), buf.offset, nil
 			}
 		}
@@ -769,8 +779,10 @@ func (logBuffer *LogBuffer) ReadFromBuffer(lastReadPosition MessagePosition) (bu
 				if err != nil {
 					// Buffer corruption detected - return error wrapped with ErrBufferCorrupted
 					glog.Errorf("ReadFromBuffer: buffer corruption in prevBuffer: %v", err)
-					return nil, -1, fmt.Errorf("%w: %v", ErrBufferCorrupted, err)
+
+					return nil, -1, fmt.Errorf("%w: %w", ErrBufferCorrupted, err)
 				}
+
 				return copiedBytes(buf.buf[pos:buf.size]), buf.offset, nil
 			}
 		}
@@ -811,7 +823,8 @@ func (logBuffer *LogBuffer) ReadFromBuffer(lastReadPosition MessagePosition) (bu
 		if err != nil {
 			// Buffer corruption detected in binary search
 			glog.Errorf("ReadFromBuffer: buffer corruption at idx[%d] pos %d: %v", mid, pos, err)
-			return nil, -1, fmt.Errorf("%w: %v", ErrBufferCorrupted, err)
+
+			return nil, -1, fmt.Errorf("%w: %w", ErrBufferCorrupted, err)
 		}
 		if t <= searchTs {
 			l = mid + 1
@@ -822,7 +835,8 @@ func (logBuffer *LogBuffer) ReadFromBuffer(lastReadPosition MessagePosition) (bu
 				if err != nil {
 					// Buffer corruption detected in binary search (previous entry)
 					glog.Errorf("ReadFromBuffer: buffer corruption at idx[%d] pos %d: %v", mid-1, logBuffer.idx[mid-1], err)
-					return nil, -1, fmt.Errorf("%w: %v", ErrBufferCorrupted, err)
+
+					return nil, -1, fmt.Errorf("%w: %w", ErrBufferCorrupted, err)
 				}
 			}
 			if prevT <= searchTs {
@@ -835,7 +849,6 @@ func (logBuffer *LogBuffer) ReadFromBuffer(lastReadPosition MessagePosition) (bu
 	// Binary search didn't find the timestamp - data may have been flushed to disk already
 	// Returning -2 signals to caller that data is not available in memory
 	return nil, -2, nil
-
 }
 func (logBuffer *LogBuffer) ReleaseMemory(b *bytes.Buffer) {
 	bufferPool.Put(b)
@@ -845,6 +858,7 @@ func (logBuffer *LogBuffer) ReleaseMemory(b *bytes.Buffer) {
 func (logBuffer *LogBuffer) GetName() string {
 	logBuffer.RLock()
 	defer logBuffer.RUnlock()
+
 	return logBuffer.name
 }
 
@@ -852,18 +866,19 @@ func (logBuffer *LogBuffer) GetName() string {
 func (logBuffer *LogBuffer) GetOffset() int64 {
 	logBuffer.RLock()
 	defer logBuffer.RUnlock()
+
 	return logBuffer.offset
 }
 
 var bufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }
 
 // logEntryPool reduces allocations in readTs which is called frequently during binary search
 var logEntryPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &filer_pb.LogEntry{}
 	},
 }
@@ -877,6 +892,7 @@ func copiedBytes(buf []byte) (copied *bytes.Buffer) {
 	copied = bufferPool.Get().(*bytes.Buffer)
 	copied.Reset()
 	copied.Write(buf)
+
 	return
 }
 
@@ -909,5 +925,5 @@ func readTs(buf []byte, pos int) (size int, ts int64, err error) {
 		return 0, 0, fmt.Errorf("corrupted log buffer: failed to unmarshal LogEntry at pos %d, size %d: %w", pos, size, err)
 	}
 
-	return size, logEntry.TsNs, nil
+	return size, logEntry.GetTsNs(), nil
 }

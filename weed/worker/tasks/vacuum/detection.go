@@ -51,6 +51,7 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 			if clusterInfo != nil && clusterInfo.ActiveTopology != nil {
 				if clusterInfo.ActiveTopology.HasAnyTask(metric.VolumeID) {
 					glog.V(2).Infof("VACUUM: Skipping volume %d, task already exists in ActiveTopology", metric.VolumeID)
+
 					continue
 				}
 			}
@@ -116,11 +117,13 @@ func createVacuumTaskParams(task *types.TaskDetectionResult, metric *types.Volum
 	// Get server address from topology (required for vacuum tasks)
 	if clusterInfo == nil || clusterInfo.ActiveTopology == nil {
 		glog.Errorf("Topology not available for vacuum task on volume %d, skipping", task.VolumeID)
+
 		return nil
 	}
 	address, err := util.ResolveServerAddress(task.Server, clusterInfo.ActiveTopology)
 	if err != nil {
 		glog.Errorf("Failed to resolve address for server %s for vacuum task on volume %d, skipping task: %v", task.Server, task.VolumeID, err)
+
 		return nil
 	}
 

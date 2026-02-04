@@ -4,10 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
-	"github.com/stretchr/testify/assert"
 )
 
 // TestIsInRemoteOnly tests the IsInRemoteOnly method on filer_pb.Entry
@@ -165,7 +166,7 @@ func TestRemoteOnlyEntryDetection(t *testing.T) {
 				if tt.entry.IsInRemoteOnly() {
 					assert.True(t, tt.shouldBeRemote,
 						"Entry should be detected as remote-only")
-				} else if totalSize > 0 && len(tt.entry.Content) == 0 {
+				} else if totalSize > 0 && len(tt.entry.GetContent()) == 0 {
 					assert.True(t, tt.shouldBeDataError,
 						"Entry should be detected as data integrity error")
 				} else {
@@ -269,5 +270,6 @@ func removeDuplicateSlashesTest(s string) string {
 	for strings.Contains(s, "//") {
 		s = strings.ReplaceAll(s, "//", "/")
 	}
+
 	return s
 }

@@ -18,7 +18,6 @@ type ProcessorState struct {
 // If a partition is moved to another broker, the subscriber will automatically reconnect to the new broker.
 
 func (sub *TopicSubscriber) Subscribe() error {
-
 	go sub.startProcessors()
 
 	// loop forever
@@ -39,7 +38,7 @@ func (sub *TopicSubscriber) startProcessors() {
 			wg.Add(1)
 			semaphore <- struct{}{}
 
-			topicPartition := topic.FromPbPartition(assigned.PartitionAssignment.Partition)
+			topicPartition := topic.FromPbPartition(assigned.GetPartitionAssignment().GetPartition())
 
 			// wait until no covering partition is still in progress
 			sub.waitUntilNoOverlappingPartitionInFlight(topicPartition)
@@ -61,11 +60,11 @@ func (sub *TopicSubscriber) startProcessors() {
 					<-semaphore
 					wg.Done()
 				}()
-				glog.V(0).Infof("subscriber %s/%s assigned partition %+v at %v", sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup, assigned.Partition, assigned.LeaderBroker)
+				glog.V(0).Infof("subscriber %s/%s assigned partition %+v at %v", sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup, assigned.GetPartition(), assigned.GetLeaderBroker())
 				sub.brokerPartitionAssignmentAckChan <- &mq_pb.SubscriberToSubCoordinatorRequest{
 					Message: &mq_pb.SubscriberToSubCoordinatorRequest_AckAssignment{
 						AckAssignment: &mq_pb.SubscriberToSubCoordinatorRequest_AckAssignmentMessage{
-							Partition: assigned.Partition,
+							Partition: assigned.GetPartition(),
 						},
 					},
 				}
@@ -77,29 +76,29 @@ func (sub *TopicSubscriber) startProcessors() {
 							sub.OnDataMessageFunc(m)
 						}
 						sub.PartitionOffsetChan <- KeyedTimestamp{
-							Key:  m.Data.Key,
-							TsNs: m.Data.TsNs,
+							Key:  m.Data.GetKey(),
+							TsNs: m.Data.GetTsNs(),
 						}
 					})
 				}
 
 				err := sub.onEachPartition(assigned, stopChan, onDataMessageFn)
 				if err != nil {
-					glog.V(0).Infof("subscriber %s/%s partition %+v at %v: %v", sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup, assigned.Partition, assigned.LeaderBroker, err)
+					glog.V(0).Infof("subscriber %s/%s partition %+v at %v: %v", sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup, assigned.GetPartition(), assigned.GetLeaderBroker(), err)
 				} else {
-					glog.V(0).Infof("subscriber %s/%s partition %+v at %v completed", sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup, assigned.Partition, assigned.LeaderBroker)
+					glog.V(0).Infof("subscriber %s/%s partition %+v at %v completed", sub.ContentConfig.Topic, sub.SubscriberConfig.ConsumerGroup, assigned.GetPartition(), assigned.GetLeaderBroker())
 				}
 				sub.brokerPartitionAssignmentAckChan <- &mq_pb.SubscriberToSubCoordinatorRequest{
 					Message: &mq_pb.SubscriberToSubCoordinatorRequest_AckUnAssignment{
 						AckUnAssignment: &mq_pb.SubscriberToSubCoordinatorRequest_AckUnAssignmentMessage{
-							Partition: assigned.Partition,
+							Partition: assigned.GetPartition(),
 						},
 					},
 				}
-			}(assigned.PartitionAssignment, topicPartition)
+			}(assigned.GetPartitionAssignment(), topicPartition)
 		}
 		if unAssignment := message.GetUnAssignment(); unAssignment != nil {
-			topicPartition := topic.FromPbPartition(unAssignment.Partition)
+			topicPartition := topic.FromPbPartition(unAssignment.GetPartition())
 			sub.activeProcessorsLock.Lock()
 			if processor, found := sub.activeProcessors[topicPartition]; found {
 				close(processor.stopCh)
@@ -110,7 +109,6 @@ func (sub *TopicSubscriber) startProcessors() {
 	}
 
 	wg.Wait()
-
 }
 
 func (sub *TopicSubscriber) waitUntilNoOverlappingPartitionInFlight(topicPartition topic.Partition) {
@@ -119,13 +117,14 @@ func (sub *TopicSubscriber) waitUntilNoOverlappingPartitionInFlight(topicPartiti
 		sub.activeProcessorsLock.Lock()
 		foundOverlapping = false
 		var overlappedPartition topic.Partition
-		for partition, _ := range sub.activeProcessors {
+		for partition := range sub.activeProcessors {
 			if partition.Overlaps(topicPartition) {
 				if partition.Equals(topicPartition) {
 					continue
 				}
 				foundOverlapping = true
 				overlappedPartition = partition
+
 				break
 			}
 		}

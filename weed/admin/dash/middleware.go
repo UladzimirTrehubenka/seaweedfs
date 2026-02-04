@@ -9,7 +9,7 @@ import (
 )
 
 // setAuthContext sets username and role in context for use in handlers
-func setAuthContext(c *gin.Context, username, role interface{}) {
+func setAuthContext(c *gin.Context, username, role any) {
 	c.Set("username", username)
 	if role != nil {
 		c.Set("role", role)
@@ -30,6 +30,7 @@ func RequireAuth() gin.HandlerFunc {
 		if authenticated != true || username == nil {
 			c.Redirect(http.StatusTemporaryRedirect, "/login")
 			c.Abort()
+
 			return
 		}
 
@@ -54,6 +55,7 @@ func RequireAuthAPI() gin.HandlerFunc {
 				"message": "Please log in to access this endpoint",
 			})
 			c.Abort()
+
 			return
 		}
 
@@ -85,6 +87,7 @@ func RequireWriteAccess() gin.HandlerFunc {
 				c.Redirect(http.StatusSeeOther, "/admin?error=Insufficient permissions")
 			}
 			c.Abort()
+
 			return
 		}
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
@@ -15,17 +16,15 @@ const blockSize = 512
 
 type statsCache struct {
 	filer_pb.StatisticsResponse
+
 	lastChecked int64 // unix time in seconds
 }
 
 func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.StatfsOut) (code fuse.Status) {
-
 	// glog.V(4).Infof("reading fs stats")
 
 	if wfs.stats.lastChecked < time.Now().Unix()-20 {
-
 		err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 			request := &filer_pb.StatisticsRequest{
 				Collection:  wfs.option.Collection,
 				Replication: wfs.option.Replication,
@@ -37,19 +36,21 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 			resp, err := client.Statistics(context.Background(), request)
 			if err != nil {
 				glog.V(0).Infof("reading filer stats %v: %v", request, err)
+
 				return err
 			}
 			glog.V(4).Infof("read filer stats: %+v", resp)
 
-			wfs.stats.TotalSize = resp.TotalSize
-			wfs.stats.UsedSize = resp.UsedSize
-			wfs.stats.FileCount = resp.FileCount
+			wfs.stats.TotalSize = resp.GetTotalSize()
+			wfs.stats.UsedSize = resp.GetUsedSize()
+			wfs.stats.FileCount = resp.GetFileCount()
 			wfs.stats.lastChecked = time.Now().Unix()
 
 			return nil
 		})
 		if err != nil {
 			glog.V(0).Infof("filer Statistics: %v", err)
+
 			return fuse.OK
 		}
 	}
@@ -59,10 +60,7 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 	actualFileCount := wfs.stats.FileCount
 
 	if wfs.option.Quota > 0 && totalDiskSize > uint64(wfs.option.Quota) {
-		totalDiskSize = uint64(wfs.option.Quota)
-		if usedDiskSize > totalDiskSize {
-			totalDiskSize = usedDiskSize
-		}
+		totalDiskSize = max(usedDiskSize, uint64(wfs.option.Quota))
 	}
 
 	// 	http://man.he.net/man2/statfs
@@ -94,10 +92,7 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 	// Compute the number of used blocks
 	numBlocks := usedDiskSize / blockSize
 
-	remainingBlocks := int64(out.Blocks) - int64(numBlocks)
-	if remainingBlocks < 0 {
-		remainingBlocks = 0
-	}
+	remainingBlocks := max(int64(out.Blocks)-int64(numBlocks), 0)
 
 	// Report the number of free and available blocks for the block size
 	out.Bfree = uint64(remainingBlocks)

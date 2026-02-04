@@ -46,7 +46,6 @@ var (
 
 // used by master to load remote storage configurations
 func LoadConfiguration(config *util.ViperProxy) {
-
 	StorageBackendPrefix := "storage.backend"
 
 	for backendTypeName := range config.GetStringMap(StorageBackendPrefix) {
@@ -72,28 +71,27 @@ func LoadConfiguration(config *util.ViperProxy) {
 			}
 		}
 	}
-
 }
 
 // used by volume server to receive remote storage configurations from master
 func LoadFromPbStorageBackends(storageBackends []*master_pb.StorageBackend) {
-
 	for _, storageBackend := range storageBackends {
-		backendStorageFactory, found := BackendStorageFactories[StorageType(storageBackend.Type)]
+		backendStorageFactory, found := BackendStorageFactories[StorageType(storageBackend.GetType())]
 		if !found {
-			glog.Warningf("storage type %s not found", storageBackend.Type)
+			glog.Warningf("storage type %s not found", storageBackend.GetType())
+
 			continue
 		}
-		if _, found := BackendStorages[storageBackend.Type+"."+storageBackend.Id]; found {
+		if _, found := BackendStorages[storageBackend.GetType()+"."+storageBackend.GetId()]; found {
 			continue
 		}
-		backendStorage, buildErr := backendStorageFactory.BuildStorage(newProperties(storageBackend.Properties), "", storageBackend.Id)
+		backendStorage, buildErr := backendStorageFactory.BuildStorage(newProperties(storageBackend.GetProperties()), "", storageBackend.GetId())
 		if buildErr != nil {
-			glog.Fatalf("fail to create backend storage %s.%s", storageBackend.Type, storageBackend.Id)
+			glog.Fatalf("fail to create backend storage %s.%s", storageBackend.GetType(), storageBackend.GetId())
 		}
-		BackendStorages[storageBackend.Type+"."+storageBackend.Id] = backendStorage
-		if storageBackend.Id == "default" {
-			BackendStorages[storageBackend.Type] = backendStorage
+		BackendStorages[storageBackend.GetType()+"."+storageBackend.GetId()] = backendStorage
+		if storageBackend.GetId() == "default" {
+			BackendStorages[storageBackend.GetType()] = backendStorage
 		}
 	}
 }
@@ -110,6 +108,7 @@ func (p *Properties) GetString(key string) string {
 	if v, found := p.m[key]; found {
 		return v
 	}
+
 	return ""
 }
 
@@ -125,6 +124,7 @@ func ToPbStorageBackends() (backends []*master_pb.StorageBackend) {
 			Properties: s.ToProperties(),
 		})
 	}
+
 	return
 }
 
@@ -138,5 +138,6 @@ func BackendNameToTypeId(backendName string) (backendType, backendId string) {
 	}
 
 	backendType, backendId = parts[0], parts[1]
+
 	return
 }

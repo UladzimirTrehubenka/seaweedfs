@@ -2,6 +2,7 @@ package meta_cache
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type MetaCache struct {
 func NewMetaCache(dbFolder string, uidGidMapper *UidGidMapper, root util.FullPath,
 	markCachedFn func(path util.FullPath), isCachedFn func(path util.FullPath) bool, invalidateFunc func(util.FullPath, *filer_pb.Entry), onDirectoryUpdate func(dir util.FullPath)) *MetaCache {
 	leveldbStore, virtualStore := openMetaStore(dbFolder)
+
 	return &MetaCache{
 		root:              root,
 		localStore:        virtualStore,
@@ -49,7 +51,6 @@ func NewMetaCache(dbFolder string, uidGidMapper *UidGidMapper, root util.FullPat
 }
 
 func openMetaStore(dbFolder string) (*leveldb.LevelDBStore, filer.VirtualFilerStore) {
-
 	os.RemoveAll(dbFolder)
 	os.MkdirAll(dbFolder, 0755)
 
@@ -63,12 +64,12 @@ func openMetaStore(dbFolder string) (*leveldb.LevelDBStore, filer.VirtualFilerSt
 	}
 
 	return store, filer.NewFilerStoreWrapper(store)
-
 }
 
 func (mc *MetaCache) InsertEntry(ctx context.Context, entry *filer.Entry) error {
 	mc.Lock()
 	defer mc.Unlock()
+
 	return mc.doInsertEntry(ctx, entry)
 }
 
@@ -87,8 +88,9 @@ func (mc *MetaCache) AtomicUpdateEntryFromFiler(ctx context.Context, oldPath uti
 	defer mc.Unlock()
 
 	entry, err := mc.localStore.FindEntry(ctx, oldPath)
-	if err != nil && err != filer_pb.ErrNotFound {
+	if err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 		glog.Errorf("Metacache: find entry error: %v", err)
+
 		return err
 	}
 	if entry != nil {
@@ -117,12 +119,14 @@ func (mc *MetaCache) AtomicUpdateEntryFromFiler(ctx context.Context, oldPath uti
 			}
 		}
 	}
+
 	return nil
 }
 
 func (mc *MetaCache) UpdateEntry(ctx context.Context, entry *filer.Entry) error {
 	mc.Lock()
 	defer mc.Unlock()
+
 	return mc.localStore.UpdateEntry(ctx, entry)
 }
 
@@ -137,17 +141,20 @@ func (mc *MetaCache) FindEntry(ctx context.Context, fp util.FullPath) (entry *fi
 		return nil, filer_pb.ErrNotFound
 	}
 	mc.mapIdFromFilerToLocal(entry)
+
 	return
 }
 
 func (mc *MetaCache) DeleteEntry(ctx context.Context, fp util.FullPath) (err error) {
 	mc.Lock()
 	defer mc.Unlock()
+
 	return mc.localStore.DeleteEntry(ctx, fp)
 }
 func (mc *MetaCache) DeleteFolderChildren(ctx context.Context, fp util.FullPath) (err error) {
 	mc.Lock()
 	defer mc.Unlock()
+
 	return mc.localStore.DeleteFolderChildren(ctx, fp)
 }
 
@@ -165,11 +172,13 @@ func (mc *MetaCache) ListDirectoryEntries(ctx context.Context, dirPath util.Full
 			return true, nil
 		}
 		mc.mapIdFromFilerToLocal(entry)
+
 		return eachEntryFunc(entry)
 	})
 	if err != nil {
 		return err
 	}
+
 	return err
 }
 
@@ -180,7 +189,7 @@ func (mc *MetaCache) Shutdown() {
 }
 
 func (mc *MetaCache) mapIdFromFilerToLocal(entry *filer.Entry) {
-	entry.Attr.Uid, entry.Attr.Gid = mc.uidGidMapper.FilerToLocal(entry.Attr.Uid, entry.Attr.Gid)
+	entry.Uid, entry.Gid = mc.uidGidMapper.FilerToLocal(entry.Uid, entry.Gid)
 }
 
 func (mc *MetaCache) Debug() {

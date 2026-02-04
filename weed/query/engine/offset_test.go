@@ -70,11 +70,13 @@ func TestParseSQL_OFFSET_EdgeCases(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error, but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
@@ -196,7 +198,7 @@ func TestSQLEngine_OFFSET_Consistency(t *testing.T) {
 	}
 
 	// Test that OFFSET + remaining rows = total rows
-	for offset := 0; offset < totalRows; offset++ {
+	for offset := range totalRows {
 		t.Run("OFFSET_"+strconv.Itoa(offset), func(t *testing.T) {
 			sql := "SELECT * FROM user_events LIMIT 100 OFFSET " + strconv.Itoa(offset)
 			result, err := engine.ExecuteSQL(context.Background(), sql)
@@ -332,7 +334,7 @@ func TestSQLEngine_OFFSET_DataCollectionBuffer(t *testing.T) {
 		// Test that increasing OFFSET values work consistently
 		baseSQL := "SELECT id FROM user_events LIMIT 3 OFFSET "
 
-		for offset := 0; offset <= 5; offset++ {
+		for offset := range 6 {
 			sql := baseSQL + strconv.Itoa(offset)
 			result, err := engine.ExecuteSQL(context.Background(), sql)
 			if err != nil {

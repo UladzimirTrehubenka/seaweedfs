@@ -53,6 +53,7 @@ func FixJpgOrientation(data []byte) (oriented []byte) {
 		dstImage := flip(rotate(srcImage, angle), flipMode)
 		var buf bytes.Buffer
 		jpeg.Encode(&buf, dstImage, nil)
+
 		return buf.Bytes()
 	}
 
@@ -89,12 +90,12 @@ type DecodeOpts struct {
 	// If an int, Rotate is the number of degrees to rotate
 	// counter clockwise and must be one of 0, 90, -90, 180, or
 	// -180.
-	Rotate interface{}
+	Rotate any
 
 	// Flip specifies how to flip the image.
 	// If nil, the image is flipped automatically based on EXIF metadata.
 	// Otherwise, Flip is a FlipDirection bitfield indicating how to flip.
-	Flip interface{}
+	Flip any
 }
 
 func rotate(im image.Image, angle int) image.Image {
@@ -104,30 +105,31 @@ func rotate(im image.Image, angle int) image.Image {
 	case 90:
 		newH, newW := im.Bounds().Dx(), im.Bounds().Dy()
 		rotated = image.NewNRGBA(image.Rect(0, 0, newW, newH))
-		for y := 0; y < newH; y++ {
-			for x := 0; x < newW; x++ {
+		for y := range newH {
+			for x := range newW {
 				rotated.Set(x, y, im.At(newH-1-y, x))
 			}
 		}
 	case -90:
 		newH, newW := im.Bounds().Dx(), im.Bounds().Dy()
 		rotated = image.NewNRGBA(image.Rect(0, 0, newW, newH))
-		for y := 0; y < newH; y++ {
-			for x := 0; x < newW; x++ {
+		for y := range newH {
+			for x := range newW {
 				rotated.Set(x, y, im.At(y, newW-1-x))
 			}
 		}
 	case 180, -180:
 		newW, newH := im.Bounds().Dx(), im.Bounds().Dy()
 		rotated = image.NewNRGBA(image.Rect(0, 0, newW, newH))
-		for y := 0; y < newH; y++ {
-			for x := 0; x < newW; x++ {
+		for y := range newH {
+			for x := range newW {
 				rotated.Set(x, y, im.At(newW-1-x, newH-1-y))
 			}
 		}
 	default:
 		return im
 	}
+
 	return rotated
 }
 
@@ -146,6 +148,7 @@ func flip(im image.Image, dir FlipDirection) image.Image {
 	if !ok {
 		if _, ok := im.(*image.YCbCr); !ok {
 			log.Printf("failed to flip image: input does not satisfy draw.Image")
+
 			return im
 		}
 		// because YCbCr does not implement Set, we replace it with a new NRGBA
@@ -154,12 +157,13 @@ func flip(im image.Image, dir FlipDirection) image.Image {
 		di, ok = nrgba.(draw.Image)
 		if !ok {
 			log.Print("failed to flip image: could not cast an NRGBA to a draw.Image")
+
 			return im
 		}
 	}
 	if dir&FlipHorizontal != 0 {
-		for y := 0; y < dy; y++ {
-			for x := 0; x < dx/2; x++ {
+		for y := range dy {
+			for x := range dx / 2 {
 				old := im.At(x, y)
 				di.Set(x, y, im.At(dx-1-x, y))
 				di.Set(dx-1-x, y, old)
@@ -167,8 +171,8 @@ func flip(im image.Image, dir FlipDirection) image.Image {
 		}
 	}
 	if dir&FlipVertical != 0 {
-		for y := 0; y < dy/2; y++ {
-			for x := 0; x < dx; x++ {
+		for y := range dy / 2 {
+			for x := range dx {
 				old := im.At(x, y)
 				di.Set(x, y, im.At(x, dy-1-y))
 				di.Set(x, dy-1-y, old)
@@ -178,5 +182,6 @@ func flip(im image.Image, dir FlipDirection) image.Image {
 	if ycbcr {
 		return nrgba
 	}
+
 	return im
 }

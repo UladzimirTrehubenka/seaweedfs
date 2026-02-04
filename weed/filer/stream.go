@@ -48,12 +48,12 @@ func JwtForVolumeServer(fileId string) string {
 	if len(jwtSigningReadKey) == 0 {
 		return ""
 	}
+
 	return string(security.GenJwtForVolumeServer(jwtSigningReadKey, jwtSigningReadKeyExpires, fileId))
 }
 
 func HasData(entry *filer_pb.Entry) bool {
-
-	if len(entry.Content) > 0 {
+	if len(entry.GetContent()) > 0 {
 		return true
 	}
 
@@ -61,12 +61,11 @@ func HasData(entry *filer_pb.Entry) bool {
 }
 
 func IsSameData(a, b *filer_pb.Entry) bool {
-
-	if len(a.Content) > 0 || len(b.Content) > 0 {
-		return bytes.Equal(a.Content, b.Content)
+	if len(a.GetContent()) > 0 || len(b.GetContent()) > 0 {
+		return bytes.Equal(a.GetContent(), b.GetContent())
 	}
 
-	return isSameChunks(a.Chunks, b.Chunks)
+	return isSameChunks(a.GetChunks(), b.GetChunks())
 }
 
 func isSameChunks(a, b []*filer_pb.FileChunk) bool {
@@ -74,23 +73,25 @@ func isSameChunks(a, b []*filer_pb.FileChunk) bool {
 		return false
 	}
 	slices.SortFunc(a, func(i, j *filer_pb.FileChunk) int {
-		return strings.Compare(i.ETag, j.ETag)
+		return strings.Compare(i.GetETag(), j.GetETag())
 	})
 	slices.SortFunc(b, func(i, j *filer_pb.FileChunk) int {
-		return strings.Compare(i.ETag, j.ETag)
+		return strings.Compare(i.GetETag(), j.GetETag())
 	})
-	for i := 0; i < len(a); i++ {
-		if a[i].ETag != b[i].ETag {
+	for i := range a {
+		if a[i].GetETag() != b[i].GetETag() {
 			return false
 		}
 	}
+
 	return true
 }
 
 func NewFileReader(filerClient filer_pb.FilerClient, entry *filer_pb.Entry) io.Reader {
-	if len(entry.Content) > 0 {
-		return bytes.NewReader(entry.Content)
+	if len(entry.GetContent()) > 0 {
+		return bytes.NewReader(entry.GetContent())
 	}
+
 	return NewChunkStreamReader(filerClient, entry.GetChunks())
 }
 
@@ -127,6 +128,7 @@ func urlSlicesEqual(a, b []string) bool {
 		}
 		counts[url]--
 	}
+
 	return true
 }
 
@@ -150,10 +152,12 @@ func PrepareStreamContentWithThrottler(ctx context.Context, masterClient wdclien
 		}
 		if err != nil {
 			glog.V(1).InfofCtx(ctx, "operation LookupFileId %s failed, err: %v", chunkView.FileId, err)
+
 			return nil, err
 		} else if len(urlStrings) == 0 {
 			errUrlNotFound := fmt.Errorf("operation LookupFileId %s failed, err: urls not found", chunkView.FileId)
 			glog.ErrorCtx(ctx, errUrlNotFound)
+
 			return nil, errUrlNotFound
 		}
 		fileId2Url[chunkView.FileId] = urlStrings
@@ -214,6 +218,7 @@ func PrepareStreamContentWithThrottler(ctx context.Context, masterClient wdclien
 			stats.FilerRequestHistogram.WithLabelValues("chunkDownload").Observe(time.Since(start).Seconds())
 			if err != nil {
 				stats.FilerHandlerCounter.WithLabelValues("chunkDownloadError").Inc()
+
 				return fmt.Errorf("read chunk: %w", err)
 			}
 			stats.FilerHandlerCounter.WithLabelValues("chunkDownload").Inc()
@@ -236,6 +241,7 @@ func StreamContent(masterClient wdclient.HasLookupFileIdFunction, writer io.Writ
 	if err != nil {
 		return err
 	}
+
 	return streamFn(writer)
 }
 
@@ -255,11 +261,11 @@ func writeZero(w io.Writer, size int64) (err error) {
 			return
 		}
 	}
+
 	return
 }
 
 func ReadAll(ctx context.Context, buffer []byte, masterClient *wdclient.MasterClient, chunks []*filer_pb.FileChunk) error {
-
 	lookupFileIdFn := func(ctx context.Context, fileId string) (targetUrls []string, err error) {
 		return masterClient.LookupFileId(ctx, fileId)
 	}
@@ -273,6 +279,7 @@ func ReadAll(ctx context.Context, buffer []byte, masterClient *wdclient.MasterCl
 		urlStrings, err := lookupFileIdFn(ctx, chunkView.FileId)
 		if err != nil {
 			glog.V(1).InfofCtx(ctx, "operation LookupFileId %s failed, err: %v", chunkView.FileId, err)
+
 			return err
 		}
 
@@ -282,6 +289,7 @@ func ReadAll(ctx context.Context, buffer []byte, masterClient *wdclient.MasterCl
 		}
 		idx += n
 	}
+
 	return nil
 }
 
@@ -303,7 +311,6 @@ var _ = io.ReaderAt(&ChunkStreamReader{})
 var _ = io.Closer(&ChunkStreamReader{})
 
 func doNewChunkStreamReader(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, chunks []*filer_pb.FileChunk) *ChunkStreamReader {
-
 	chunkViews := ViewFromChunks(ctx, lookupFileIdFn, chunks, 0, math.MaxInt64)
 
 	var totalSize int64
@@ -321,7 +328,6 @@ func doNewChunkStreamReader(ctx context.Context, lookupFileIdFn wdclient.LookupF
 }
 
 func NewChunkStreamReaderFromFiler(ctx context.Context, masterClient *wdclient.MasterClient, chunks []*filer_pb.FileChunk) *ChunkStreamReader {
-
 	lookupFileIdFn := func(ctx context.Context, fileId string) (targetUrl []string, err error) {
 		return masterClient.LookupFileId(ctx, fileId)
 	}
@@ -330,7 +336,6 @@ func NewChunkStreamReaderFromFiler(ctx context.Context, masterClient *wdclient.M
 }
 
 func NewChunkStreamReader(filerClient filer_pb.FilerClient, chunks []*filer_pb.FileChunk) *ChunkStreamReader {
-
 	lookupFileIdFn := LookupFn(filerClient)
 
 	return doNewChunkStreamReader(context.Background(), lookupFileIdFn, chunks)
@@ -343,12 +348,14 @@ func (c *ChunkStreamReader) ReadAt(p []byte, off int64) (n int, err error) {
 		return
 	}
 	c.logicOffset = off
+
 	return c.doRead(p)
 }
 
 func (c *ChunkStreamReader) Read(p []byte) (n int, err error) {
 	c.bufferLock.Lock()
 	defer c.bufferLock.Unlock()
+
 	return c.doRead(p)
 }
 
@@ -363,6 +370,7 @@ func (c *ChunkStreamReader) doRead(p []byte) (n int, err error) {
 		n += t
 		c.logicOffset += int64(t)
 	}
+
 	return
 }
 
@@ -389,7 +397,6 @@ func (c *ChunkStreamReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	return offset, err
-
 }
 
 func insideChunk(offset int64, chunk *ChunkView) bool {
@@ -411,6 +418,7 @@ func (c *ChunkStreamReader) prepareBufferFor(offset int64) (err error) {
 		if insideChunk(offset, chunk) {
 			if c.isBufferEmpty() || c.bufferOffset != chunk.ViewOffset {
 				c.chunkView = p
+
 				return c.fetchChunkToBuffer(chunk)
 			}
 		}
@@ -428,6 +436,7 @@ func (c *ChunkStreamReader) fetchChunkToBuffer(chunkView *ChunkView) error {
 	urlStrings, err := c.lookupFileId(context.Background(), chunkView.FileId)
 	if err != nil {
 		glog.V(1).Infof("operation LookupFileId %s failed, err: %v", chunkView.FileId, err)
+
 		return err
 	}
 	var buffer bytes.Buffer
@@ -465,6 +474,7 @@ func (c *ChunkStreamReader) Close() error {
 	c.buffer = nil
 	c.head = nil
 	c.chunkView = nil
+
 	return nil
 }
 
@@ -473,5 +483,6 @@ func VolumeId(fileId string) string {
 	if lastCommaIndex > 0 {
 		return fileId[:lastCommaIndex]
 	}
+
 	return fileId
 }

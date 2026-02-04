@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
@@ -55,7 +56,7 @@ type ObjectStoreUsersData struct {
 
 // User management request structures
 type CreateUserRequest struct {
-	Username    string   `json:"username" binding:"required"`
+	Username    string   `binding:"required"  json:"username"`
 	Email       string   `json:"email"`
 	Actions     []string `json:"actions"`
 	GenerateKey bool     `json:"generate_key"`
@@ -69,7 +70,7 @@ type UpdateUserRequest struct {
 }
 
 type UpdateUserPoliciesRequest struct {
-	Actions []string `json:"actions" binding:"required"`
+	Actions []string `binding:"required" json:"actions"`
 }
 
 type AccessKeyInfo struct {
@@ -80,7 +81,7 @@ type AccessKeyInfo struct {
 }
 
 type UpdateAccessKeyStatusRequest struct {
-	Status string `json:"status" binding:"required"`
+	Status string `binding:"required" json:"status"`
 }
 
 type UserDetails struct {
@@ -115,6 +116,7 @@ func (s *AdminServer) GetAdminData(username string) (AdminData, error) {
 	topology, err := s.GetClusterTopology()
 	if err != nil {
 		glog.Errorf("Failed to get cluster topology: %v", err)
+
 		return AdminData{}, err
 	}
 
@@ -122,6 +124,7 @@ func (s *AdminServer) GetAdminData(username string) (AdminData, error) {
 	volumeServersData, err := s.GetClusterVolumeServers()
 	if err != nil {
 		glog.Errorf("Failed to get cluster volume servers: %v", err)
+
 		return AdminData{}, err
 	}
 
@@ -141,7 +144,8 @@ func (s *AdminServer) GetAdminData(username string) (AdminData, error) {
 		if err != nil {
 			return err
 		}
-		volumeSizeLimitMB = uint64(resp.VolumeSizeLimitMB)
+		volumeSizeLimitMB = uint64(resp.GetVolumeSizeLimitMB())
+
 		return nil
 	})
 	if err != nil {
@@ -189,6 +193,7 @@ func (s *AdminServer) ShowAdmin(c *gin.Context) {
 	adminData, err := s.GetAdminData(username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get admin data: " + err.Error()})
+
 		return
 	}
 
@@ -201,6 +206,7 @@ func (s *AdminServer) ShowOverview(c *gin.Context) {
 	topology, err := s.GetClusterTopology()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 
@@ -212,7 +218,7 @@ func (s *AdminServer) getMasterNodesStatus() []MasterNode {
 	var masterNodes []MasterNode
 
 	// Since we have a single master address, create one entry
-	var isLeader bool = true // Assume leader since it's the only master we know about
+	var isLeader = true // Assume leader since it's the only master we know about
 
 	// Try to get leader info from this master
 	err := s.WithMasterClient(func(client master_pb.SeaweedClient) error {
@@ -222,6 +228,7 @@ func (s *AdminServer) getMasterNodesStatus() []MasterNode {
 		}
 		// For now, assume this master is the leader since we can connect to it
 		isLeader = true
+
 		return nil
 	})
 
@@ -254,11 +261,11 @@ func (s *AdminServer) getFilerNodesStatus() []FilerNode {
 		}
 
 		// Process each filer node
-		for _, node := range resp.ClusterNodes {
+		for _, node := range resp.GetClusterNodes() {
 			filerNodes = append(filerNodes, FilerNode{
-				Address:     node.Address,
-				DataCenter:  node.DataCenter,
-				Rack:        node.Rack,
+				Address:     node.GetAddress(),
+				DataCenter:  node.GetDataCenter(),
+				Rack:        node.GetRack(),
 				LastUpdated: time.Now(),
 			})
 		}
@@ -295,11 +302,11 @@ func (s *AdminServer) getMessageBrokerNodesStatus() []MessageBrokerNode {
 		}
 
 		// Process each message broker node
-		for _, node := range resp.ClusterNodes {
+		for _, node := range resp.GetClusterNodes() {
 			messageBrokers = append(messageBrokers, MessageBrokerNode{
-				Address:     node.Address,
-				DataCenter:  node.DataCenter,
-				Rack:        node.Rack,
+				Address:     node.GetAddress(),
+				DataCenter:  node.GetDataCenter(),
+				Rack:        node.GetRack(),
 				LastUpdated: time.Now(),
 			})
 		}

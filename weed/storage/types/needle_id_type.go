@@ -42,7 +42,8 @@ func (k NeedleId) FileId(volumeId uint32) string {
 func ParseNeedleId(idString string) (NeedleId, error) {
 	key, err := strconv.ParseUint(idString, 16, 64)
 	if err != nil {
-		return 0, fmt.Errorf("needle id %s format error: %v", idString, err)
+		return 0, fmt.Errorf("needle id %s format error: %w", idString, err)
 	}
+
 	return NeedleId(key), nil
 }

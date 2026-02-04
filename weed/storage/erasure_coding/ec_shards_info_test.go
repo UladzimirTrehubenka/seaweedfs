@@ -233,7 +233,7 @@ func TestShardsInfo_DeleteParityShards(t *testing.T) {
 	si := NewShardsInfo()
 
 	// Add data shards (0-9)
-	for i := 0; i < DataShardsCount; i++ {
+	for i := range DataShardsCount {
 		si.Set(ShardInfo{Id: ShardId(i), Size: ShardSize((i + 1) * 1000)})
 	}
 
@@ -245,7 +245,7 @@ func TestShardsInfo_DeleteParityShards(t *testing.T) {
 	si.DeleteParityShards()
 
 	// Verify only data shards remain
-	for i := 0; i < DataShardsCount; i++ {
+	for i := range DataShardsCount {
 		if !si.Has(ShardId(i)) {
 			t.Errorf("Expected data shard %d to remain", i)
 		}
@@ -337,30 +337,30 @@ func TestShardsInfo_String(t *testing.T) {
 
 func BenchmarkShardsInfo_Set(b *testing.B) {
 	si := NewShardsInfo()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		si.Set(ShardInfo{Id: ShardId(i % TotalShardsCount), Size: ShardSize(i * 1000)})
 	}
 }
 
 func BenchmarkShardsInfo_Has(b *testing.B) {
 	si := NewShardsInfo()
-	for i := 0; i < TotalShardsCount; i++ {
+	for i := range TotalShardsCount {
 		si.Set(ShardInfo{Id: ShardId(i), Size: ShardSize(i * 1000)})
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		si.Has(ShardId(i % TotalShardsCount))
 	}
 }
 
 func BenchmarkShardsInfo_Size(b *testing.B) {
 	si := NewShardsInfo()
-	for i := 0; i < TotalShardsCount; i++ {
+	for i := range TotalShardsCount {
 		si.Set(ShardInfo{Id: ShardId(i), Size: ShardSize(i * 1000)})
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		si.Size(ShardId(i % TotalShardsCount))
 	}
 }

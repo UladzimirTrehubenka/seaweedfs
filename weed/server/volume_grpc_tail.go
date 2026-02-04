@@ -16,26 +16,28 @@ import (
 )
 
 func (vs *VolumeServer) VolumeTailSender(req *volume_server_pb.VolumeTailSenderRequest, stream volume_server_pb.VolumeServer_VolumeTailSenderServer) error {
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return fmt.Errorf("not found volume id %d", req.VolumeId)
+		return fmt.Errorf("not found volume id %d", req.GetVolumeId())
 	}
 
 	defer glog.V(1).Infof("tailing volume %d finished", v.Id)
 
-	lastTimestampNs := req.SinceNs
-	drainingSeconds := req.IdleTimeoutSeconds
+	lastTimestampNs := req.GetSinceNs()
+	drainingSeconds := req.GetIdleTimeoutSeconds()
 
 	for {
 		lastProcessedTimestampNs, err := sendNeedlesSince(stream, v, lastTimestampNs)
 		if err != nil {
 			glog.Infof("sendNeedlesSince: %v", err)
+
 			return fmt.Errorf("streamFollow: %w", err)
 		}
 		time.Sleep(2 * time.Second)
 
-		if req.IdleTimeoutSeconds == 0 {
+		if req.GetIdleTimeoutSeconds() == 0 {
 			lastTimestampNs = lastProcessedTimestampNs
+
 			continue
 		}
 		if lastProcessedTimestampNs == lastTimestampNs {
@@ -46,19 +48,16 @@ func (vs *VolumeServer) VolumeTailSender(req *volume_server_pb.VolumeTailSenderR
 			glog.V(1).Infof("tailing volume %d drains requests with %d seconds remaining", v.Id, drainingSeconds)
 		} else {
 			lastTimestampNs = lastProcessedTimestampNs
-			drainingSeconds = req.IdleTimeoutSeconds
+			drainingSeconds = req.GetIdleTimeoutSeconds()
 			glog.V(1).Infof("tailing volume %d resets draining wait time to %d seconds", v.Id, drainingSeconds)
 		}
-
 	}
-
 }
 
 func sendNeedlesSince(stream volume_server_pb.VolumeServer_VolumeTailSenderServer, v *storage.Volume, lastTimestampNs uint64) (lastProcessedTimestampNs uint64, err error) {
-
 	foundOffset, isLastOne, err := v.BinarySearchByAppendAtNs(lastTimestampNs)
 	if err != nil {
-		return 0, fmt.Errorf("fail to locate by appendAtNs %d: %s", lastTimestampNs, err)
+		return 0, fmt.Errorf("fail to locate by appendAtNs %d: %w", lastTimestampNs, err)
 	}
 
 	// log.Printf("reading ts %d offset %d isLast %v", lastTimestampNs, foundOffset, isLastOne)
@@ -66,6 +65,7 @@ func sendNeedlesSince(stream volume_server_pb.VolumeServer_VolumeTailSenderServe
 	if isLastOne {
 		// need to heart beat to the client to ensure the connection health
 		sendErr := stream.Send(&volume_server_pb.VolumeTailSenderResponse{IsLastChunk: true, Version: uint32(v.Version())})
+
 		return lastTimestampNs, sendErr
 	}
 
@@ -77,25 +77,23 @@ func sendNeedlesSince(stream volume_server_pb.VolumeServer_VolumeTailSenderServe
 	err = storage.ScanVolumeFileFrom(v.Version(), v.DataBackend, foundOffset.ToActualOffset(), scanner)
 
 	return scanner.lastProcessedTimestampNs, err
-
 }
 
 func (vs *VolumeServer) VolumeTailReceiver(ctx context.Context, req *volume_server_pb.VolumeTailReceiverRequest) (*volume_server_pb.VolumeTailReceiverResponse, error) {
-
 	resp := &volume_server_pb.VolumeTailReceiverResponse{}
 
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return resp, fmt.Errorf("receiver not found volume id %d", req.VolumeId)
+		return resp, fmt.Errorf("receiver not found volume id %d", req.GetVolumeId())
 	}
 
 	defer glog.V(1).Infof("receive tailing volume %d finished", v.Id)
 
-	return resp, operation.TailVolumeFromSource(pb.ServerAddress(req.SourceVolumeServer), vs.grpcDialOption, v.Id, req.SinceNs, int(req.IdleTimeoutSeconds), func(n *needle.Needle) error {
+	return resp, operation.TailVolumeFromSource(pb.ServerAddress(req.GetSourceVolumeServer()), vs.grpcDialOption, v.Id, req.GetSinceNs(), int(req.GetIdleTimeoutSeconds()), func(n *needle.Needle) error {
 		_, err := vs.store.WriteVolumeNeedle(v.Id, n, false, false)
+
 		return err
 	})
-
 }
 
 // generate the volume idx
@@ -107,7 +105,6 @@ type VolumeFileScanner4Tailing struct {
 
 func (scanner *VolumeFileScanner4Tailing) VisitSuperBlock(superBlock super_block.SuperBlock) error {
 	return nil
-
 }
 func (scanner *VolumeFileScanner4Tailing) ReadNeedleBody() bool {
 	return true
@@ -136,5 +133,6 @@ func (scanner *VolumeFileScanner4Tailing) VisitNeedle(n *needle.Needle, offset i
 	}
 
 	scanner.lastProcessedTimestampNs = n.AppendAtNs
+
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+
 	"github.com/seaweedfs/seaweedfs/weed/util/version"
 )
 
@@ -23,11 +24,11 @@ func getSession(region string) (s3iface.S3API, bool) {
 	defer sessionsLock.RUnlock()
 
 	sess, found := s3Sessions[region]
+
 	return sess, found
 }
 
 func createSession(awsAccessKeyId, awsSecretAccessKey, region, endpoint string, forcePathStyle bool) (s3iface.S3API, error) {
-
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
 
@@ -48,7 +49,7 @@ func createSession(awsAccessKeyId, awsSecretAccessKey, region, endpoint string, 
 
 	sess, err := session.NewSession(config)
 	if err != nil {
-		return nil, fmt.Errorf("create aws session in region %s: %v", region, err)
+		return nil, fmt.Errorf("create aws session in region %s: %w", region, err)
 	}
 	sess.Handlers.Build.PushBack(func(r *request.Request) {
 		r.HTTPRequest.Header.Set("User-Agent", "SeaweedFS/"+version.VERSION_NUMBER)
@@ -59,7 +60,6 @@ func createSession(awsAccessKeyId, awsSecretAccessKey, region, endpoint string, 
 	s3Sessions[region] = t
 
 	return t, nil
-
 }
 
 func deleteFromS3(sess s3iface.S3API, sourceBucket string, sourceKey string) (err error) {
@@ -67,5 +67,6 @@ func deleteFromS3(sess s3iface.S3API, sourceBucket string, sourceKey string) (er
 		Bucket: aws.String(sourceBucket),
 		Key:    aws.String(sourceKey),
 	})
+
 	return err
 }

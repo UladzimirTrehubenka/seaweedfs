@@ -1,11 +1,11 @@
 //go:build windows
-// +build windows
 
 package backend
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/storage/backend/memory_map"
 	"golang.org/x/sys/windows"
+
+	"github.com/seaweedfs/seaweedfs/weed/storage/backend/memory_map"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/storage/backend/memory_map/os_overloads"

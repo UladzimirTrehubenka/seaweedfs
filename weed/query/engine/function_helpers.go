@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -10,7 +11,7 @@ import (
 
 // Helper function to convert schema_pb.Value to float64
 func (e *SQLEngine) valueToFloat64(value *schema_pb.Value) (float64, error) {
-	switch v := value.Kind.(type) {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_Int32Value:
 		return float64(v.Int32Value), nil
 	case *schema_pb.Value_Int64Value:
@@ -24,20 +25,22 @@ func (e *SQLEngine) valueToFloat64(value *schema_pb.Value) (float64, error) {
 		if f, err := strconv.ParseFloat(v.StringValue, 64); err == nil {
 			return f, nil
 		}
+
 		return 0, fmt.Errorf("cannot convert string '%s' to number", v.StringValue)
 	case *schema_pb.Value_BoolValue:
 		if v.BoolValue {
 			return 1, nil
 		}
+
 		return 0, nil
 	default:
-		return 0, fmt.Errorf("cannot convert value type to number")
+		return 0, errors.New("cannot convert value type to number")
 	}
 }
 
 // Helper function to check if a value is an integer type
 func (e *SQLEngine) isIntegerValue(value *schema_pb.Value) bool {
-	switch value.Kind.(type) {
+	switch value.GetKind().(type) {
 	case *schema_pb.Value_Int32Value, *schema_pb.Value_Int64Value:
 		return true
 	default:
@@ -47,7 +50,7 @@ func (e *SQLEngine) isIntegerValue(value *schema_pb.Value) bool {
 
 // Helper function to convert schema_pb.Value to string
 func (e *SQLEngine) valueToString(value *schema_pb.Value) (string, error) {
-	switch v := value.Kind.(type) {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_StringValue:
 		return v.StringValue, nil
 	case *schema_pb.Value_Int32Value:
@@ -62,17 +65,18 @@ func (e *SQLEngine) valueToString(value *schema_pb.Value) (string, error) {
 		if v.BoolValue {
 			return "true", nil
 		}
+
 		return "false", nil
 	case *schema_pb.Value_BytesValue:
 		return string(v.BytesValue), nil
 	default:
-		return "", fmt.Errorf("cannot convert value type to string")
+		return "", errors.New("cannot convert value type to string")
 	}
 }
 
 // Helper function to convert schema_pb.Value to int64
 func (e *SQLEngine) valueToInt64(value *schema_pb.Value) (int64, error) {
-	switch v := value.Kind.(type) {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_Int32Value:
 		return int64(v.Int32Value), nil
 	case *schema_pb.Value_Int64Value:
@@ -85,20 +89,22 @@ func (e *SQLEngine) valueToInt64(value *schema_pb.Value) (int64, error) {
 		if i, err := strconv.ParseInt(v.StringValue, 10, 64); err == nil {
 			return i, nil
 		}
+
 		return 0, fmt.Errorf("cannot convert string '%s' to integer", v.StringValue)
 	default:
-		return 0, fmt.Errorf("cannot convert value type to integer")
+		return 0, errors.New("cannot convert value type to integer")
 	}
 }
 
 // Helper function to convert schema_pb.Value to time.Time
 func (e *SQLEngine) valueToTime(value *schema_pb.Value) (time.Time, error) {
-	switch v := value.Kind.(type) {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_TimestampValue:
 		if v.TimestampValue == nil {
-			return time.Time{}, fmt.Errorf("null timestamp value")
+			return time.Time{}, errors.New("null timestamp value")
 		}
-		return time.UnixMicro(v.TimestampValue.TimestampMicros), nil
+
+		return time.UnixMicro(v.TimestampValue.GetTimestampMicros()), nil
 	case *schema_pb.Value_StringValue:
 		// Try to parse various date/time string formats
 		dateFormats := []struct {
@@ -117,11 +123,12 @@ func (e *SQLEngine) valueToTime(value *schema_pb.Value) (time.Time, error) {
 				return t, nil
 			}
 		}
+
 		return time.Time{}, fmt.Errorf("unable to parse date/time string: %s", v.StringValue)
 	case *schema_pb.Value_Int64Value:
 		// Assume Unix timestamp (seconds)
 		return time.Unix(v.Int64Value, 0), nil
 	default:
-		return time.Time{}, fmt.Errorf("cannot convert value type to date/time")
+		return time.Time{}, errors.New("cannot convert value type to date/time")
 	}
 }

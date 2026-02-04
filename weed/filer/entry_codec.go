@@ -15,7 +15,7 @@ import (
 // pbEntryPool reduces allocations in EncodeAttributesAndChunks and DecodeAttributesAndChunks
 // which are called on every filer store operation
 var pbEntryPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &filer_pb.Entry{
 			Attributes: &filer_pb.FuseAttributes{}, // Pre-allocate attributes
 		}
@@ -26,7 +26,7 @@ var pbEntryPool = sync.Pool{
 func resetPbEntry(e *filer_pb.Entry) {
 	// Use struct assignment to clear all fields including protobuf internal fields
 	// (unknownFields, sizeCache) that field-by-field reset would miss
-	attrs := e.Attributes
+	attrs := e.GetAttributes()
 	*e = filer_pb.Entry{}
 	if attrs == nil {
 		attrs = &filer_pb.FuseAttributes{}
@@ -69,7 +69,7 @@ func (entry *Entry) DecodeAttributesAndChunks(blob []byte) error {
 	}()
 
 	if err := proto.Unmarshal(blob, message); err != nil {
-		return fmt.Errorf("decoding value blob for %s: %v", entry.FullPath, err)
+		return fmt.Errorf("decoding value blob for %s: %w", entry.FullPath, err)
 	}
 
 	FromPbEntryToExistingEntry(message, entry)
@@ -78,22 +78,21 @@ func (entry *Entry) DecodeAttributesAndChunks(blob []byte) error {
 }
 
 func EntryAttributeToPb(entry *Entry) *filer_pb.FuseAttributes {
-
 	return &filer_pb.FuseAttributes{
-		Crtime:        entry.Attr.Crtime.Unix(),
-		Mtime:         entry.Attr.Mtime.Unix(),
-		FileMode:      uint32(entry.Attr.Mode),
+		Crtime:        entry.Crtime.Unix(),
+		Mtime:         entry.Mtime.Unix(),
+		FileMode:      uint32(entry.Mode),
 		Uid:           entry.Uid,
 		Gid:           entry.Gid,
 		Mime:          entry.Mime,
-		TtlSec:        entry.Attr.TtlSec,
-		UserName:      entry.Attr.UserName,
-		GroupName:     entry.Attr.GroupNames,
-		SymlinkTarget: entry.Attr.SymlinkTarget,
-		Md5:           entry.Attr.Md5,
-		FileSize:      entry.Attr.FileSize,
-		Rdev:          entry.Attr.Rdev,
-		Inode:         entry.Attr.Inode,
+		TtlSec:        entry.TtlSec,
+		UserName:      entry.UserName,
+		GroupName:     entry.GroupNames,
+		SymlinkTarget: entry.SymlinkTarget,
+		Md5:           entry.Md5,
+		FileSize:      entry.FileSize,
+		Rdev:          entry.Rdev,
+		Inode:         entry.Inode,
 	}
 }
 
@@ -103,44 +102,43 @@ func EntryAttributeToExistingPb(entry *Entry, attr *filer_pb.FuseAttributes) {
 	if attr == nil {
 		return
 	}
-	attr.Crtime = entry.Attr.Crtime.Unix()
-	attr.Mtime = entry.Attr.Mtime.Unix()
-	attr.FileMode = uint32(entry.Attr.Mode)
+	attr.Crtime = entry.Crtime.Unix()
+	attr.Mtime = entry.Mtime.Unix()
+	attr.FileMode = uint32(entry.Mode)
 	attr.Uid = entry.Uid
 	attr.Gid = entry.Gid
 	attr.Mime = entry.Mime
-	attr.TtlSec = entry.Attr.TtlSec
-	attr.UserName = entry.Attr.UserName
-	attr.GroupName = entry.Attr.GroupNames
-	attr.SymlinkTarget = entry.Attr.SymlinkTarget
-	attr.Md5 = entry.Attr.Md5
-	attr.FileSize = entry.Attr.FileSize
-	attr.Rdev = entry.Attr.Rdev
-	attr.Inode = entry.Attr.Inode
+	attr.TtlSec = entry.TtlSec
+	attr.UserName = entry.UserName
+	attr.GroupName = entry.GroupNames
+	attr.SymlinkTarget = entry.SymlinkTarget
+	attr.Md5 = entry.Md5
+	attr.FileSize = entry.FileSize
+	attr.Rdev = entry.Rdev
+	attr.Inode = entry.Inode
 }
 
 func PbToEntryAttribute(attr *filer_pb.FuseAttributes) Attr {
-
 	t := Attr{}
 
 	if attr == nil {
 		return t
 	}
 
-	t.Crtime = time.Unix(attr.Crtime, 0)
-	t.Mtime = time.Unix(attr.Mtime, 0)
-	t.Mode = os.FileMode(attr.FileMode)
-	t.Uid = attr.Uid
-	t.Gid = attr.Gid
-	t.Mime = attr.Mime
-	t.TtlSec = attr.TtlSec
-	t.UserName = attr.UserName
-	t.GroupNames = attr.GroupName
-	t.SymlinkTarget = attr.SymlinkTarget
-	t.Md5 = attr.Md5
-	t.FileSize = attr.FileSize
-	t.Rdev = attr.Rdev
-	t.Inode = attr.Inode
+	t.Crtime = time.Unix(attr.GetCrtime(), 0)
+	t.Mtime = time.Unix(attr.GetMtime(), 0)
+	t.Mode = os.FileMode(attr.GetFileMode())
+	t.Uid = attr.GetUid()
+	t.Gid = attr.GetGid()
+	t.Mime = attr.GetMime()
+	t.TtlSec = attr.GetTtlSec()
+	t.UserName = attr.GetUserName()
+	t.GroupNames = attr.GetGroupName()
+	t.SymlinkTarget = attr.GetSymlinkTarget()
+	t.Md5 = attr.GetMd5()
+	t.FileSize = attr.GetFileSize()
+	t.Rdev = attr.GetRdev()
+	t.Inode = attr.GetInode()
 
 	return t
 }
@@ -167,7 +165,7 @@ func EqualEntry(a, b *Entry) bool {
 		return false
 	}
 
-	for i := 0; i < len(a.Chunks); i++ {
+	for i := range len(a.Chunks) {
 		if !proto.Equal(a.Chunks[i], b.Chunks[i]) {
 			return false
 		}
@@ -188,6 +186,7 @@ func EqualEntry(a, b *Entry) bool {
 	if a.Quota != b.Quota {
 		return false
 	}
+
 	return true
 }
 

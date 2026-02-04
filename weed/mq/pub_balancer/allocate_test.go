@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"github.com/stretchr/testify/assert"
 )
 
 func Test_allocateOneBroker(t *testing.T) {
@@ -56,12 +57,12 @@ func testThem(t *testing.T, tests []struct {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotAssignments := AllocateTopicPartitions(tt.args.brokers, tt.args.partitionCount)
-			assert.Equal(t, len(tt.wantAssignments), len(gotAssignments))
+			assert.Len(t, gotAssignments, len(tt.wantAssignments))
 			for i, gotAssignment := range gotAssignments {
-				assert.Equal(t, tt.wantAssignments[i].LeaderBroker, gotAssignment.LeaderBroker)
-				assert.Equal(t, tt.wantAssignments[i].Partition.RangeStart, gotAssignment.Partition.RangeStart)
-				assert.Equal(t, tt.wantAssignments[i].Partition.RangeStop, gotAssignment.Partition.RangeStop)
-				assert.Equal(t, tt.wantAssignments[i].Partition.RingSize, gotAssignment.Partition.RingSize)
+				assert.Equal(t, tt.wantAssignments[i].GetLeaderBroker(), gotAssignment.GetLeaderBroker())
+				assert.Equal(t, tt.wantAssignments[i].GetPartition().GetRangeStart(), gotAssignment.GetPartition().GetRangeStart())
+				assert.Equal(t, tt.wantAssignments[i].GetPartition().GetRangeStop(), gotAssignment.GetPartition().GetRangeStop())
+				assert.Equal(t, tt.wantAssignments[i].GetPartition().GetRingSize(), gotAssignment.GetPartition().GetRingSize())
 			}
 		})
 	}

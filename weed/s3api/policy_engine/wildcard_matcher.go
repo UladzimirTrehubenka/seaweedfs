@@ -30,6 +30,7 @@ func NewWildcardMatcherCache(maxSize int) *WildcardMatcherCache {
 	if maxSize <= 0 {
 		maxSize = 1000 // Default value
 	}
+
 	return &WildcardMatcherCache{
 		matchers: make(map[string]*WildcardMatcher),
 		maxSize:  maxSize,
@@ -46,6 +47,7 @@ func GetCachedWildcardMatcher(pattern string) (*WildcardMatcher, error) {
 	if matcher, exists := wildcardMatcherCache.matchers[pattern]; exists {
 		wildcardMatcherCache.mu.RUnlock()
 		wildcardMatcherCache.updateAccessOrder(pattern)
+
 		return matcher, nil
 	}
 	wildcardMatcherCache.mu.RUnlock()
@@ -57,6 +59,7 @@ func GetCachedWildcardMatcher(pattern string) (*WildcardMatcher, error) {
 	// Double-check after acquiring write lock
 	if matcher, exists := wildcardMatcherCache.matchers[pattern]; exists {
 		wildcardMatcherCache.updateAccessOrderLocked(pattern)
+
 		return matcher, nil
 	}
 
@@ -74,6 +77,7 @@ func GetCachedWildcardMatcher(pattern string) (*WildcardMatcher, error) {
 	// Cache it
 	wildcardMatcherCache.matchers[pattern] = matcher
 	wildcardMatcherCache.accessOrder = append(wildcardMatcherCache.accessOrder, pattern)
+
 	return matcher, nil
 }
 
@@ -90,6 +94,7 @@ func (c *WildcardMatcherCache) updateAccessOrderLocked(pattern string) {
 	for i, p := range c.accessOrder {
 		if p == pattern {
 			c.accessOrder = append(c.accessOrder[:i], c.accessOrder[i+1:]...)
+
 			break
 		}
 	}
@@ -121,6 +126,7 @@ func (c *WildcardMatcherCache) ClearCache() {
 func (c *WildcardMatcherCache) GetCacheStats() (size int, maxSize int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
 	return len(c.matchers), c.maxSize
 }
 
@@ -141,6 +147,7 @@ func (m *WildcardMatcher) Match(str string) bool {
 	if m.useRegex {
 		return m.regex.MatchString(str)
 	}
+
 	return matchWildcardString(m.pattern, str)
 }
 
@@ -233,6 +240,7 @@ func matchWildcardRegex(pattern, str string) bool {
 		// Fallback to matchWildcardString
 		return matchWildcardString(pattern, str)
 	}
+
 	return matcher.Match(str)
 }
 

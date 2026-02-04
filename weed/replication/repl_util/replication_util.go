@@ -10,7 +10,6 @@ import (
 )
 
 func CopyFromChunkViews(chunkViews *filer.IntervalList[*filer.ChunkView], filerSource *source.FilerSource, writeFunc func(data []byte) error) error {
-
 	for x := chunkViews.Front(); x != nil; x = x.Next {
 		chunk := x.Value
 
@@ -42,5 +41,6 @@ func CopyFromChunkViews(chunkViews *filer.IntervalList[*filer.ChunkView], filerS
 			return writeErr
 		}
 	}
+
 	return nil
 }

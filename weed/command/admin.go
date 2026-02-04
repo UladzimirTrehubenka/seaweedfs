@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -138,6 +139,7 @@ func runAdmin(cmd *Command, args []string) bool {
 	if *a.master == "" {
 		fmt.Println("Error: master parameter is required")
 		fmt.Println("Usage: weed admin -master=master1:9333,master2:9333")
+
 		return false
 	}
 
@@ -146,26 +148,31 @@ func runAdmin(cmd *Command, args []string) bool {
 	if len(masterAddresses) == 0 {
 		fmt.Println("Error: no valid master addresses found")
 		fmt.Println("Usage: weed admin -master=master1:9333,master2:9333")
+
 		return false
 	}
 
 	// Security validation: prevent empty username when password is set
 	if *a.adminPassword != "" && *a.adminUser == "" {
 		fmt.Println("Error: -adminUser cannot be empty when -adminPassword is set")
+
 		return false
 	}
 	if *a.readOnlyPassword != "" && *a.readOnlyUser == "" {
 		fmt.Println("Error: -readOnlyUser is required when -readOnlyPassword is set")
+
 		return false
 	}
 	// Security validation: prevent username conflicts between admin and read-only users
 	if *a.adminUser != "" && *a.readOnlyUser != "" && *a.adminUser == *a.readOnlyUser {
 		fmt.Println("Error: -adminUser and -readOnlyUser must be different when both are configured")
+
 		return false
 	}
 	// Security validation: admin password is required for read-only user
 	if *a.readOnlyPassword != "" && *a.adminPassword == "" {
 		fmt.Println("Error: -adminPassword must be set when -readOnlyPassword is configured")
+
 		return false
 	}
 
@@ -216,10 +223,12 @@ func runAdmin(cmd *Command, args []string) bool {
 	err := startAdminServer(ctx, a, true, *a.icebergPort)
 	if err != nil {
 		fmt.Printf("Admin server error: %v\n", err)
+
 		return false
 	}
 
 	fmt.Println("Admin server stopped")
+
 	return true
 }
 
@@ -238,7 +247,7 @@ func startAdminServer(ctx context.Context, options AdminOptions, enableUI bool, 
 		// Expand tilde (~) to home directory
 		expandedDir, err := expandHomeDir(*options.dataDir)
 		if err != nil {
-			return fmt.Errorf("failed to expand dataDir path %s: %v", *options.dataDir, err)
+			return fmt.Errorf("failed to expand dataDir path %s: %w", *options.dataDir, err)
 		}
 		dataDir = expandedDir
 
@@ -248,7 +257,7 @@ func startAdminServer(ctx context.Context, options AdminOptions, enableUI bool, 
 		}
 
 		if err := os.MkdirAll(dataDir, 0755); err != nil {
-			return fmt.Errorf("failed to create data directory %s: %v", dataDir, err)
+			return fmt.Errorf("failed to create data directory %s: %w", dataDir, err)
 		}
 		fmt.Printf("Data directory created/verified: %s\n", dataDir)
 	}
@@ -353,7 +362,7 @@ func startAdminServer(ctx context.Context, options AdminOptions, enableUI bool, 
 			err = server.ListenAndServe()
 		}
 
-		if err != nil && err != http.ErrServerClosed {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("Failed to start server: %v", err)
 		}
 	}()
@@ -388,6 +397,7 @@ func loadOrGenerateSessionKey(dataDir string) ([]byte, error) {
 		log.Println("No dataDir specified, generating ephemeral session key")
 		key := make([]byte, sessionKeyLength)
 		_, err := rand.Read(key)
+
 		return key, err
 	}
 
@@ -397,6 +407,7 @@ func loadOrGenerateSessionKey(dataDir string) ([]byte, error) {
 	if data, err := os.ReadFile(sessionKeyPath); err == nil {
 		if len(data) == sessionKeyLength {
 			log.Printf("Loaded persisted session key from %s", sessionKeyPath)
+
 			return data, nil
 		}
 		log.Printf("Warning: Invalid session key file (expected %d bytes, got %d), generating new key", sessionKeyLength, len(data))
@@ -452,12 +463,13 @@ func expandHomeDir(path string) (string, error) {
 
 		targetUser, err := user.Lookup(username)
 		if err != nil {
-			return "", fmt.Errorf("user %s not found: %v", username, err)
+			return "", fmt.Errorf("user %s not found: %w", username, err)
 		}
 
 		if len(parts) == 1 {
 			return targetUser.HomeDir, nil
 		}
+
 		return filepath.Join(targetUser.HomeDir, parts[1]), nil
 	}
 

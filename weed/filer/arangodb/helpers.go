@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/arangodb/go-driver"
+
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
@@ -17,6 +18,7 @@ func hashString(dir string) string {
 	h := md5.New()
 	io.WriteString(h, dir)
 	b := h.Sum(nil)
+
 	return hex.EncodeToString(b)
 }
 
@@ -31,6 +33,7 @@ func bytesToArray(bs []byte) []uint64 {
 	for i := 0; i < len(bs); i = i + 8 {
 		out = append(out, binary.BigEndian.Uint64(bs[i:]))
 	}
+
 	return out
 }
 
@@ -45,6 +48,7 @@ func arrayToBytes(xs []uint64) []byte {
 	for i := 1; i < len(xs); i = i + 1 {
 		binary.BigEndian.PutUint64(out[((i-1)*8):], xs[i])
 	}
+
 	return out[:first]
 }
 
@@ -58,6 +62,7 @@ func (store *ArangodbStore) extractBucketCollection(ctx context.Context, fullpat
 	if err != nil {
 		return nil, err
 	}
+
 	return c, err
 }
 
@@ -77,6 +82,7 @@ func extractBucket(fullpath util.FullPath) (string, string) {
 		bucket = bucketAndObjectKey[:t]
 		shortPath = string(util.FullPath(bucketAndObjectKey[t:]))
 	}
+
 	return bucket, shortPath
 }
 
@@ -95,6 +101,7 @@ func (store *ArangodbStore) ensureBucket(ctx context.Context, bucket string) (bc
 	if err != nil {
 		return nil, err
 	}
+
 	return store.buckets[bucket], nil
 }
 
@@ -110,6 +117,7 @@ func bucketToCollectionName(s string) string {
 	if (s[0] >= '0' && s[0] <= '9') || (s[0] == '.' || s[0] == '_' || s[0] == '-') {
 		s = "xN--" + s
 	}
+
 	return s
 }
 
@@ -120,7 +128,7 @@ func (store *ArangodbStore) ensureCollection(ctx context.Context, bucket_name st
 
 	ok, err := store.database.CollectionExists(ctx, name)
 	if err != nil {
-		return
+		return c, err
 	}
 	if ok {
 		c, err = store.database.Collection(ctx, name)
@@ -128,27 +136,28 @@ func (store *ArangodbStore) ensureCollection(ctx context.Context, bucket_name st
 		c, err = store.database.CreateCollection(ctx, name, &driver.CreateCollectionOptions{})
 	}
 	if err != nil {
-		return
+		return c, err
 	}
 	// ensure indices
 	if _, _, err = c.EnsurePersistentIndex(ctx, []string{"directory", "name"},
 		&driver.EnsurePersistentIndexOptions{
 			Name: "directory_name_multi", Unique: true,
 		}); err != nil {
-		return
+		return c, err
 	}
 	if _, _, err = c.EnsurePersistentIndex(ctx, []string{"directory"},
 		&driver.EnsurePersistentIndexOptions{Name: "IDX_directory"}); err != nil {
-		return
+		return c, err
 	}
 	if _, _, err = c.EnsureTTLIndex(ctx, "ttl", 1,
 		&driver.EnsureTTLIndexOptions{Name: "IDX_TTL"}); err != nil {
-		return
+		return c, err
 	}
 	if _, _, err = c.EnsurePersistentIndex(ctx, []string{"name"}, &driver.EnsurePersistentIndexOptions{
 		Name: "IDX_name",
 	}); err != nil {
-		return
+		return c, err
 	}
+
 	return c, nil
 }

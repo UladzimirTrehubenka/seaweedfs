@@ -1,5 +1,4 @@
 //go:build gocdk
-// +build gocdk
 
 // Package gocdk_pub_sub supports the Go CDK (Cloud Development Kit) PubSub API,
 // which in turn supports many providers, including Amazon SNS/SQS, Azure Service Bus,
@@ -27,13 +26,14 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/seaweedfs/seaweedfs/weed/glog"
-	"github.com/seaweedfs/seaweedfs/weed/notification"
-	"github.com/seaweedfs/seaweedfs/weed/util"
 	"gocloud.dev/pubsub"
 	_ "gocloud.dev/pubsub/awssnssqs"
 	"gocloud.dev/pubsub/rabbitpubsub"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/notification"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 
 	// _ "gocloud.dev/pubsub/azuresb"
 	_ "gocloud.dev/pubsub/gcppubsub"

@@ -1,6 +1,7 @@
 package page_writer
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -53,11 +54,11 @@ func NewUploadPipeline(writers *util.LimitedConcurrentExecutor, chunkSize int64,
 		swapFile:           NewSwapFile(swapFileDir, chunkSize),
 	}
 	t.readerCountCond = sync.NewCond(&t.chunksLock)
+
 	return t
 }
 
 func (up *UploadPipeline) SaveDataAt(p []byte, off int64, isSequential bool, tsNs int64) (n int, err error) {
-
 	up.chunksLock.Lock()
 	defer up.chunksLock.Unlock()
 
@@ -105,21 +106,21 @@ func (up *UploadPipeline) SaveDataAt(p []byte, off int64, isSequential bool, tsN
 			pageChunk = up.swapFile.NewSwapFileChunk(logicChunkIndex)
 			// fmt.Printf(" create file chunk %d\n", logicChunkIndex)
 			if pageChunk == nil {
-				return 0, fmt.Errorf("failed to create swap file chunk")
+				return 0, errors.New("failed to create swap file chunk")
 			}
 		}
 		up.writableChunks[logicChunkIndex] = pageChunk
 	}
-	//if _, foundSealed := up.sealedChunks[logicChunkIndex]; foundSealed {
+	// if _, foundSealed := up.sealedChunks[logicChunkIndex]; foundSealed {
 	//	println("found already sealed chunk", logicChunkIndex)
 	//}
-	//if _, foundReading := up.activeReadChunks[logicChunkIndex]; foundReading {
+	// if _, foundReading := up.activeReadChunks[logicChunkIndex]; foundReading {
 	//	println("found active read chunk", logicChunkIndex)
 	//}
 	n = pageChunk.WriteDataAt(p, off, tsNs)
 	up.maybeMoveToSealed(pageChunk, logicChunkIndex)
 
-	return
+	return n, err
 }
 
 func (up *UploadPipeline) MaybeReadDataAt(p []byte, off int64, tsNs int64) (maxStop int64) {
@@ -210,7 +211,6 @@ func (up *UploadPipeline) moveToSealed(memChunk PageChunk, logicChunkIndex Logic
 		// then remove from sealed chunks
 		delete(up.sealedChunks, logicChunkIndex)
 		sealedChunk.FreeReference(fmt.Sprintf("%s finished uploading chunk %d", up.filepath, logicChunkIndex))
-
 	})
 	up.chunksLock.Lock()
 }

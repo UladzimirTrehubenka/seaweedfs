@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -77,13 +78,13 @@ const (
 // Extract extracts a specific part from a date/time value
 func (e *SQLEngine) Extract(part DatePart, value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("EXTRACT function requires non-null value")
+		return nil, errors.New("EXTRACT function requires non-null value")
 	}
 
 	// Convert value to time
 	t, err := e.valueToTime(value)
 	if err != nil {
-		return nil, fmt.Errorf("EXTRACT function time conversion error: %v", err)
+		return nil, fmt.Errorf("EXTRACT function time conversion error: %w", err)
 	}
 
 	var result int64
@@ -129,13 +130,13 @@ func (e *SQLEngine) Extract(part DatePart, value *schema_pb.Value) (*schema_pb.V
 // DateTrunc truncates a date/time to the specified precision
 func (e *SQLEngine) DateTrunc(precision string, value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("DATE_TRUNC function requires non-null value")
+		return nil, errors.New("DATE_TRUNC function requires non-null value")
 	}
 
 	// Convert value to time
 	t, err := e.valueToTime(value)
 	if err != nil {
-		return nil, fmt.Errorf("DATE_TRUNC function time conversion error: %v", err)
+		return nil, fmt.Errorf("DATE_TRUNC function time conversion error: %w", err)
 	}
 
 	var truncated time.Time

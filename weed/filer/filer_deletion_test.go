@@ -43,15 +43,12 @@ func TestDeletionRetryQueue_ExponentialBackoff(t *testing.T) {
 	// Requeue multiple times to test backoff
 	delays := []time.Duration{}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		beforeTime := time.Now()
 		queue.RequeueForRetry(item, "error")
 
 		// Calculate expected delay for this retry count
-		expectedDelay := InitialRetryDelay * time.Duration(1<<uint(i))
-		if expectedDelay > MaxRetryDelay {
-			expectedDelay = MaxRetryDelay
-		}
+		expectedDelay := min(InitialRetryDelay*time.Duration(1<<uint(i)), MaxRetryDelay)
 
 		// Verify NextRetryAt is approximately correct
 		actualDelay := item.NextRetryAt.Sub(beforeTime)

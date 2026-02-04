@@ -18,7 +18,6 @@ import (
 
 // handling single chunk POST or PUT upload
 func (fs *FilerServer) encrypt(ctx context.Context, w http.ResponseWriter, r *http.Request, so *operation.StorageOption) (filerResult *FilerPostResult, err error) {
-
 	fileId, urlLocation, auth, err := fs.assignNewFileInfo(ctx, so)
 
 	if err != nil || fileId == "" || urlLocation == "" {
@@ -100,8 +99,9 @@ func (fs *FilerServer) encrypt(ctx context.Context, w http.ResponseWriter, r *ht
 		fs.filer.DeleteUncommittedChunks(ctx, entry.GetChunks())
 		err = dbErr
 		filerResult.Error = dbErr.Error()
-		return
+
+		return filerResult, err
 	}
 
-	return
+	return filerResult, err
 }

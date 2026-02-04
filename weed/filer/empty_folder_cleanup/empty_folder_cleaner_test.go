@@ -215,7 +215,7 @@ func TestEmptyFolderCleaner_OnDeleteEvent_deduplication(t *testing.T) {
 	now := time.Now()
 
 	// Simulate multiple delete events for same folder
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		cleaner.OnDeleteEvent(folder, "file"+string(rune('0'+i))+".txt", false, now.Add(time.Duration(i)*time.Second))
 	}
 
@@ -275,7 +275,7 @@ func TestEmptyFolderCleaner_OnDeleteEvent_notOwner(t *testing.T) {
 
 	// Try many folders, looking for one that filer1 doesn't own
 	foundNonOwned := false
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		folder := "/buckets/mybucket/folder" + string(rune('0'+i%10)) + string(rune('0'+i/10))
 		if !cleaner.ownsFolder(folder) {
 			// This folder is not owned by filer1
@@ -284,6 +284,7 @@ func TestEmptyFolderCleaner_OnDeleteEvent_notOwner(t *testing.T) {
 				t.Errorf("non-owner should not queue cleanup for folder %s", folder)
 			}
 			foundNonOwned = true
+
 			break
 		}
 	}

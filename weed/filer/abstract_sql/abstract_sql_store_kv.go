@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,7 +14,6 @@ import (
 )
 
 func (store *AbstractSqlStore) KvPut(ctx context.Context, key []byte, value []byte) (err error) {
-
 	db, _, _, err := store.getTxOrDB(ctx, "", false)
 	if err != nil {
 		return fmt.Errorf("findDB: %w", err)
@@ -23,7 +23,7 @@ func (store *AbstractSqlStore) KvPut(ctx context.Context, key []byte, value []by
 
 	res, err := db.ExecContext(ctx, store.GetSqlInsert(DEFAULT_TABLE), dirHash, name, dirStr, value)
 	if err == nil {
-		return
+		return err
 	}
 
 	if !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
@@ -36,19 +36,18 @@ func (store *AbstractSqlStore) KvPut(ctx context.Context, key []byte, value []by
 
 	res, err = db.ExecContext(ctx, store.GetSqlUpdate(DEFAULT_TABLE), value, dirHash, name, dirStr)
 	if err != nil {
-		return fmt.Errorf("kv upsert: %s", err)
+		return fmt.Errorf("kv upsert: %w", err)
 	}
 
 	_, err = res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("kv upsert no rows affected: %s", err)
+		return fmt.Errorf("kv upsert no rows affected: %w", err)
 	}
-	return nil
 
+	return nil
 }
 
 func (store *AbstractSqlStore) KvGet(ctx context.Context, key []byte) (value []byte, err error) {
-
 	db, _, _, err := store.getTxOrDB(ctx, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("findDB: %w", err)
@@ -59,7 +58,7 @@ func (store *AbstractSqlStore) KvGet(ctx context.Context, key []byte) (value []b
 
 	err = row.Scan(&value)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, filer.ErrKvNotFound
 	}
 
@@ -71,7 +70,6 @@ func (store *AbstractSqlStore) KvGet(ctx context.Context, key []byte) (value []b
 }
 
 func (store *AbstractSqlStore) KvDelete(ctx context.Context, key []byte) (err error) {
-
 	db, _, _, err := store.getTxOrDB(ctx, "", false)
 	if err != nil {
 		return fmt.Errorf("findDB: %w", err)
@@ -81,16 +79,15 @@ func (store *AbstractSqlStore) KvDelete(ctx context.Context, key []byte) (err er
 
 	res, err := db.ExecContext(ctx, store.GetSqlDelete(DEFAULT_TABLE), dirHash, name, dirStr)
 	if err != nil {
-		return fmt.Errorf("kv delete: %s", err)
+		return fmt.Errorf("kv delete: %w", err)
 	}
 
 	_, err = res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("kv delete no rows affected: %s", err)
+		return fmt.Errorf("kv delete no rows affected: %w", err)
 	}
 
 	return nil
-
 }
 
 func GenDirAndName(key []byte) (dirStr string, dirHash int64, name string) {

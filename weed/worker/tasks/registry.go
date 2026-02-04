@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"maps"
 	"sync"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -22,6 +23,7 @@ func GetGlobalTypesRegistry() *types.TaskRegistry {
 		globalTypesRegistry = types.NewTaskRegistry()
 		glog.V(1).Infof("Created global types registry")
 	})
+
 	return globalTypesRegistry
 }
 
@@ -31,6 +33,7 @@ func GetGlobalUIRegistry() *types.UIRegistry {
 		globalUIRegistry = types.NewUIRegistry()
 		glog.V(1).Infof("Created global UI registry")
 	})
+
 	return globalUIRegistry
 }
 
@@ -40,6 +43,7 @@ func GetGlobalTaskRegistry() *TaskRegistry {
 		globalTaskRegistry = NewTaskRegistry()
 		glog.V(1).Infof("Created global task registry")
 	})
+
 	return globalTaskRegistry
 }
 
@@ -99,6 +103,7 @@ func BuildMaintenancePolicyFromTasks() *types.MaintenancePolicy {
 	}
 
 	glog.V(2).Infof("Built maintenance policy with %d task configurations", len(policy.TaskConfigs))
+
 	return policy
 }
 
@@ -133,6 +138,7 @@ func (r *TaskRegistry) Register(taskType types.TaskType, factory types.TaskFacto
 func (r *TaskRegistry) Get(taskType types.TaskType) types.TaskFactory {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
 	return r.factories[taskType]
 }
 
@@ -141,8 +147,7 @@ func (r *TaskRegistry) GetAll() map[types.TaskType]types.TaskFactory {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	result := make(map[types.TaskType]types.TaskFactory)
-	for k, v := range r.factories {
-		result[k] = v
-	}
+	maps.Copy(result, r.factories)
+
 	return result
 }

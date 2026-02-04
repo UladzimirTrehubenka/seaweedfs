@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
-	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
+	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 )
 
 func TestMemoryRoleStore(t *testing.T) {
@@ -27,7 +28,7 @@ func TestMemoryRoleStore(t *testing.T) {
 				{
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-provider",
 					},
 				},
@@ -67,7 +68,7 @@ func TestRoleStoreConfiguration(t *testing.T) {
 	assert.NotNil(t, memoryStore)
 
 	// Test filer role store creation without filerAddress in config
-	filerStore2, err := NewFilerRoleStore(map[string]interface{}{
+	filerStore2, err := NewFilerRoleStore(map[string]any{
 		// filerAddress not required in config
 		"basePath": "/test/roles",
 	}, nil)
@@ -75,7 +76,7 @@ func TestRoleStoreConfiguration(t *testing.T) {
 	assert.NotNil(t, filerStore2)
 
 	// Test filer role store creation with valid config
-	filerStore, err := NewFilerRoleStore(map[string]interface{}{
+	filerStore, err := NewFilerRoleStore(map[string]any{
 		"filerAddress": "localhost:8888",
 		"basePath":     "/test/roles",
 	}, nil)

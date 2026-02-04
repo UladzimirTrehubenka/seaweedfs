@@ -18,5 +18,4 @@ func TestCropping(t *testing.T) {
 	buf.ReadFrom(cropped)
 
 	util.WriteFile("cropped1.jpg", buf.Bytes(), 0644)
-
 }

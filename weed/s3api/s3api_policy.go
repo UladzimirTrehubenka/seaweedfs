@@ -62,6 +62,7 @@ func (p Prefix) MarshalXML(e *xml.Encoder, startElement xml.StartElement) error 
 	if !p.set {
 		return nil
 	}
+
 	return e.EncodeElement(p.val, startElement)
 }
 
@@ -69,6 +70,7 @@ func (p *Prefix) UnmarshalXML(d *xml.Decoder, startElement xml.StartElement) err
 	prefix := ""
 	_ = d.DecodeElement(&prefix, &startElement)
 	*p = Prefix{set: true, val: prefix}
+
 	return nil
 }
 
@@ -83,6 +85,7 @@ func (f Filter) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	if err := e.EncodeElement(f.Prefix, xml.StartElement{Name: xml.Name{Local: "Prefix"}}); err != nil {
 		return err
 	}
+
 	return e.EncodeToken(xml.EndElement{Name: start.Name})
 }
 
@@ -109,6 +112,7 @@ func (e Expiration) MarshalXML(enc *xml.Encoder, startElement xml.StartElement) 
 		return nil
 	}
 	type expirationWrapper Expiration
+
 	return enc.EncodeElement(expirationWrapper(e), startElement)
 }
 
@@ -123,6 +127,7 @@ func (b ExpireDeleteMarker) MarshalXML(e *xml.Encoder, startElement xml.StartEle
 	if !b.set {
 		return nil
 	}
+
 	return e.EncodeElement(b.val, startElement)
 }
 
@@ -135,9 +140,10 @@ type ExpirationDate struct {
 // MarshalXML encodes expiration date if it is non-zero and encodes
 // empty string otherwise
 func (eDate ExpirationDate) MarshalXML(e *xml.Encoder, startElement xml.StartElement) error {
-	if eDate.Time.IsZero() {
+	if eDate.IsZero() {
 		return nil
 	}
+
 	return e.EncodeElement(eDate.Format(time.RFC3339), startElement)
 }
 
@@ -157,6 +163,7 @@ func (t Transition) MarshalXML(enc *xml.Encoder, start xml.StartElement) error {
 		return nil
 	}
 	type transitionWrapper Transition
+
 	return enc.EncodeElement(transitionWrapper(t), start)
 }
 

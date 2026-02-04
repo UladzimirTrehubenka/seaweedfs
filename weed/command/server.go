@@ -208,11 +208,9 @@ func init() {
 
 	mqAgentServerOptions.brokersString = cmdServer.Flag.String("mq.agent.brokers", "localhost:17777", "comma-separated message queue brokers")
 	mqAgentServerOptions.port = cmdServer.Flag.Int("mq.agent.port", 16777, "message queue agent gRPC listen port")
-
 }
 
 func runServer(cmd *Command, args []string) bool {
-
 	if *serverOptions.debug {
 		go http.ListenAndServe(fmt.Sprintf(":%d", *serverOptions.debugPort), nil)
 	}
@@ -373,7 +371,6 @@ func runServer(cmd *Command, args []string) bool {
 		go func() {
 			time.Sleep(2 * time.Second)
 			webdavOptions.startWebDav()
-
 		}()
 	}
 
@@ -411,5 +408,6 @@ func newHttpServer(h http.Handler, tlsConfig *tls.Config) *http.Server {
 	if tlsConfig != nil {
 		s.TLSConfig = tlsConfig.Clone()
 	}
+
 	return s
 }

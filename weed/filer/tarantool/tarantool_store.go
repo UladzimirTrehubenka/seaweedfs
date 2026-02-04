@@ -1,5 +1,4 @@
 //go:build tarantool
-// +build tarantool
 
 package tarantool
 
@@ -10,14 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tarantool/go-tarantool/v2"
+	"github.com/tarantool/go-tarantool/v2/crud"
+	"github.com/tarantool/go-tarantool/v2/pool"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	weed_util "github.com/seaweedfs/seaweedfs/weed/util"
-	"github.com/tarantool/go-tarantool/v2"
-	"github.com/tarantool/go-tarantool/v2/crud"
-	"github.com/tarantool/go-tarantool/v2/pool"
 )
 
 const (

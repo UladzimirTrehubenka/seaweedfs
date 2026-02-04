@@ -64,11 +64,11 @@ func TestReadMessagesAtOffset_SingleMessage(t *testing.T) {
 	if !endOfPartition {
 		t.Error("Expected endOfPartition=true after reading all messages")
 	}
-	if messages[0].Offset != 0 {
-		t.Errorf("Expected message offset=0, got %d", messages[0].Offset)
+	if messages[0].GetOffset() != 0 {
+		t.Errorf("Expected message offset=0, got %d", messages[0].GetOffset())
 	}
-	if string(messages[0].Key) != "key1" {
-		t.Errorf("Expected key='key1', got '%s'", string(messages[0].Key))
+	if string(messages[0].GetKey()) != "key1" {
+		t.Errorf("Expected key='key1', got '%s'", string(messages[0].GetKey()))
 	}
 }
 
@@ -77,7 +77,7 @@ func TestReadMessagesAtOffset_MultipleMessages(t *testing.T) {
 	lb.hasOffsets = true
 
 	// Add 5 messages
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),
@@ -104,8 +104,8 @@ func TestReadMessagesAtOffset_MultipleMessages(t *testing.T) {
 
 	// Verify offsets are sequential
 	for i, msg := range messages {
-		if msg.Offset != int64(i) {
-			t.Errorf("Message %d: expected offset=%d, got %d", i, i, msg.Offset)
+		if msg.GetOffset() != int64(i) {
+			t.Errorf("Message %d: expected offset=%d, got %d", i, i, msg.GetOffset())
 		}
 	}
 }
@@ -115,7 +115,7 @@ func TestReadMessagesAtOffset_StartFromMiddle(t *testing.T) {
 	lb.hasOffsets = true
 
 	// Add 10 messages (0-9)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),
@@ -143,8 +143,8 @@ func TestReadMessagesAtOffset_StartFromMiddle(t *testing.T) {
 	// Verify we got messages 5, 6, 7
 	expectedOffsets := []int64{5, 6, 7}
 	for i, msg := range messages {
-		if msg.Offset != expectedOffsets[i] {
-			t.Errorf("Message %d: expected offset=%d, got %d", i, expectedOffsets[i], msg.Offset)
+		if msg.GetOffset() != expectedOffsets[i] {
+			t.Errorf("Message %d: expected offset=%d, got %d", i, expectedOffsets[i], msg.GetOffset())
 		}
 	}
 }
@@ -154,7 +154,7 @@ func TestReadMessagesAtOffset_MaxBytesLimit(t *testing.T) {
 	lb.hasOffsets = true
 
 	// Add messages with 100 bytes each
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),
@@ -187,7 +187,7 @@ func TestReadMessagesAtOffset_ConcurrentReads(t *testing.T) {
 	lb.hasOffsets = true
 
 	// Add 100 messages
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),
@@ -202,7 +202,7 @@ func TestReadMessagesAtOffset_ConcurrentReads(t *testing.T) {
 	// Start 10 concurrent readers at different offsets
 	done := make(chan bool, 10)
 
-	for reader := 0; reader < 10; reader++ {
+	for reader := range 10 {
 		startOffset := int64(reader * 10)
 		go func(offset int64) {
 			messages, nextOffset, _, _, err := lb.ReadMessagesAtOffset(offset, 5, 10240)
@@ -220,9 +220,9 @@ func TestReadMessagesAtOffset_ConcurrentReads(t *testing.T) {
 			// Verify sequential offsets
 			for i, msg := range messages {
 				expectedOffset := offset + int64(i)
-				if msg.Offset != expectedOffset {
+				if msg.GetOffset() != expectedOffset {
 					t.Errorf("Reader at offset %d: message %d has offset %d, expected %d",
-						offset, i, msg.Offset, expectedOffset)
+						offset, i, msg.GetOffset(), expectedOffset)
 				}
 			}
 
@@ -231,7 +231,7 @@ func TestReadMessagesAtOffset_ConcurrentReads(t *testing.T) {
 	}
 
 	// Wait for all readers
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 }
@@ -241,7 +241,7 @@ func TestReadMessagesAtOffset_FutureOffset(t *testing.T) {
 	lb.hasOffsets = true
 
 	// Add 5 messages (0-4)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),
@@ -358,7 +358,7 @@ func TestGetHighWaterMark(t *testing.T) {
 	}
 
 	// Add messages (offsets 0-4)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),

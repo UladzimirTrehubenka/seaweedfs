@@ -3,6 +3,7 @@ package s3api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -60,6 +61,7 @@ type S3ApiServerOption struct {
 
 type S3ApiServer struct {
 	s3_pb.UnimplementedSeaweedS3IamCacheServer
+
 	option                *S3ApiServerOption
 	iam                   *IdentityAccessManagement
 	iamIntegration        *S3IAMIntegration // Advanced IAM integration for JWT authentication
@@ -86,7 +88,7 @@ func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer 
 
 func NewS3ApiServerWithStore(router *mux.Router, option *S3ApiServerOption, explicitStore string) (s3ApiServer *S3ApiServer, err error) {
 	if len(option.Filers) == 0 {
-		return nil, fmt.Errorf("at least one filer address is required")
+		return nil, errors.New("at least one filer address is required")
 	}
 
 	startTsNs := time.Now().UnixNano()
@@ -275,6 +277,7 @@ func (s3a *S3ApiServer) getFilerAddress() pb.ServerAddress {
 		return s3a.option.Filers[0]
 	}
 	glog.Warningf("getFilerAddress: no filer addresses available")
+
 	return ""
 }
 
@@ -323,7 +326,7 @@ func (s3a *S3ApiServer) checkPolicyWithEntry(r *http.Request, bucket, object, ac
 		}
 	}
 
-	var claims map[string]interface{}
+	var claims map[string]any
 	if identity != nil {
 		claims = identity.Claims
 	}
@@ -335,6 +338,7 @@ func (s3a *S3ApiServer) checkPolicyWithEntry(r *http.Request, bucket, object, ac
 	allowed, evaluated, err := s3a.policyEngine.EvaluatePolicy(bucket, object, action, principal, r, claims, objectEntry)
 	if err != nil {
 		glog.Errorf("checkPolicyWithEntry: error evaluating policy for %s/%s: %v", bucket, object, err)
+
 		return s3err.ErrInternalError, true
 	}
 
@@ -344,6 +348,7 @@ func (s3a *S3ApiServer) checkPolicyWithEntry(r *http.Request, bucket, object, ac
 
 	if !allowed {
 		glog.V(3).Infof("checkPolicyWithEntry: policy denied access to %s/%s for principal %s", bucket, object, principal)
+
 		return s3err.ErrAccessDenied, true
 	}
 
@@ -363,11 +368,13 @@ func (s3a *S3ApiServer) recheckPolicyWithObjectEntry(r *http.Request, bucket, ob
 		identity, ok = identityRaw.(*Identity)
 		if !ok {
 			glog.Errorf("%s: unexpected identity type in context for %s/%s", handlerName, bucket, object)
+
 			return s3err.ErrInternalError
 		}
 	}
 	principal := buildPrincipalARN(identity, r)
 	errCode, _ := s3a.checkPolicyWithEntry(r, bucket, object, action, principal, objectEntry)
+
 	return errCode
 }
 
@@ -392,6 +399,7 @@ func classifyDomainNames(domainNames []string) (pathStyleDomains, virtualHostDom
 			virtualHostDomains = append(virtualHostDomains, domainName)
 		}
 	}
+
 	return pathStyleDomains, virtualHostDomains
 }
 
@@ -402,15 +410,10 @@ func (s3a *S3ApiServer) handleCORSOriginValidation(w http.ResponseWriter, r *htt
 		if len(s3a.option.AllowedOrigins) == 0 || s3a.option.AllowedOrigins[0] == "*" {
 			origin = "*"
 		} else {
-			originFound := false
-			for _, allowedOrigin := range s3a.option.AllowedOrigins {
-				if origin == allowedOrigin {
-					originFound = true
-					break
-				}
-			}
+			originFound := slices.Contains(s3a.option.AllowedOrigins, origin)
 			if !originFound {
 				writeFailureResponse(w, r, http.StatusForbidden)
+
 				return false
 			}
 		}
@@ -421,6 +424,7 @@ func (s3a *S3ApiServer) handleCORSOriginValidation(w http.ResponseWriter, r *htt
 	w.Header().Set("Access-Control-Allow-Methods", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
+
 	return true
 }
 
@@ -611,10 +615,10 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		// PutBucketOwnershipControls
 		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.PutBucketOwnershipControls, ACTION_ADMIN), "PUT")).Queries("ownershipControls", "")
 
-		//GetBucketOwnershipControls
+		// GetBucketOwnershipControls
 		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketOwnershipControls, ACTION_READ), "GET")).Queries("ownershipControls", "")
 
-		//DeleteBucketOwnershipControls
+		// DeleteBucketOwnershipControls
 		bucket.Methods(http.MethodDelete).HandlerFunc(track(s3a.iam.Auth(s3a.DeleteBucketOwnershipControls, ACTION_ADMIN), "DELETE")).Queries("ownershipControls", "")
 
 		// raw buckets
@@ -641,7 +645,6 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		}, ACTION_LIST), "LIST"))
 
 		// raw buckets
-
 	}
 
 	// Global OPTIONS handler for service-level requests (non-bucket requests)
@@ -655,6 +658,7 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 			if bucket != "" {
 				// This is a bucket-specific request, let bucket CORS middleware handle it
 				http.NotFound(w, r)
+
 				return
 			}
 
@@ -735,7 +739,6 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 
 	// NotFound
 	apiRouter.NotFoundHandler = http.HandlerFunc(s3err.NotFoundHandler)
-
 }
 
 // loadIAMManagerFromConfig loads the advanced IAM manager from configuration file
@@ -750,7 +753,7 @@ func loadIAMManagerFromConfig(configPath string, filerAddressProvider func() str
 	var configRoot struct {
 		STS       *sts.STSConfig                `json:"sts"`
 		Policy    *policy.PolicyEngineConfig    `json:"policy"`
-		Providers []map[string]interface{}      `json:"providers"`
+		Providers []map[string]any              `json:"providers"`
 		Roles     []*integration.RoleDefinition `json:"roles"`
 		Policies  []struct {
 			Name     string                 `json:"name"`
@@ -800,19 +803,22 @@ func loadIAMManagerFromConfig(configPath string, filerAddressProvider func() str
 		name, ok := providerConfig["name"].(string)
 		if !ok || name == "" {
 			glog.Warningf("Skipping provider with invalid or missing name: %+v", providerConfig)
+
 			continue
 		}
 		providerType, ok := providerConfig["type"].(string)
 		if !ok || providerType == "" {
 			glog.Warningf("Skipping provider %s with invalid or missing type", name)
+
 			continue
 		}
 
 		// Fix: providerConfig["roleMapping"] might be missing from "config" map if configured externally
 		// We inject it into the config map so the factory can find it
-		configMap, ok := providerConfig["config"].(map[string]interface{})
+		configMap, ok := providerConfig["config"].(map[string]any)
 		if !ok {
 			glog.Warningf("Validation failed for provider %s: config must be a map", name)
+
 			continue
 		}
 
@@ -828,6 +834,7 @@ func loadIAMManagerFromConfig(configPath string, filerAddressProvider func() str
 		})
 		if err != nil {
 			glog.Warningf("Failed to create provider %s: %v", providerConfig["name"], err)
+
 			continue
 		}
 		if provider != nil {
@@ -859,7 +866,7 @@ func loadIAMManagerFromConfig(configPath string, filerAddressProvider func() str
 }
 
 // AuthenticateRequest authenticates the request and returns the identity name and object
-func (s3a *S3ApiServer) AuthenticateRequest(r *http.Request) (string, interface{}, s3err.ErrorCode) {
+func (s3a *S3ApiServer) AuthenticateRequest(r *http.Request) (string, any, s3err.ErrorCode) {
 	if s3a.iam == nil {
 		return "", nil, s3err.ErrAccessDenied
 	}
@@ -867,5 +874,6 @@ func (s3a *S3ApiServer) AuthenticateRequest(r *http.Request) (string, interface{
 	if identity != nil {
 		return identity.Name, identity, err
 	}
+
 	return "", nil, err
 }

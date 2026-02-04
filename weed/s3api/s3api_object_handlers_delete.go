@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,7 +22,6 @@ const (
 )
 
 func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Request) {
-
 	bucket, object := s3_constants.GetBucketAndObject(r)
 	glog.V(3).Infof("DeleteObjectHandler %s %s", bucket, object)
 
@@ -31,12 +31,14 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 	// Get detailed versioning state for proper handling of suspended vs enabled versioning
 	versioningState, err := s3a.getVersioningState(bucket)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -58,6 +60,7 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 			if err := s3a.enforceObjectLockProtections(r, bucket, object, versionId, governanceBypassAllowed); err != nil {
 				glog.V(2).Infof("DeleteObjectHandler: object lock check failed for %s/%s: %v", bucket, object, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 				return
 			}
 
@@ -66,6 +69,7 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 			if err != nil {
 				glog.Errorf("Failed to delete specific version %s: %v", versionId, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 				return
 			}
 
@@ -81,6 +85,7 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 				if err != nil {
 					glog.Errorf("Failed to create delete marker: %v", err)
 					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 					return
 				}
 
@@ -96,6 +101,7 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 				if err := s3a.enforceObjectLockProtections(r, bucket, object, "null", governanceBypassAllowed); err != nil {
 					glog.V(2).Infof("DeleteObjectHandler: object lock check failed for %s/%s: %v", bucket, object, err)
 					s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 					return
 				}
 
@@ -104,6 +110,7 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 				if err != nil {
 					glog.Errorf("Failed to delete null version: %v", err)
 					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 					return
 				}
 
@@ -118,6 +125,7 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 		if err := s3a.enforceObjectLockProtections(r, bucket, object, "", governanceBypassAllowed); err != nil {
 			glog.V(2).Infof("DeleteObjectHandler: object lock check failed for %s/%s: %v", bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 			return
 		}
 
@@ -132,6 +140,7 @@ func (s3a *S3ApiServer) DeleteObjectHandler(w http.ResponseWriter, r *http.Reque
 
 		if err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 			return
 		}
 	}
@@ -172,7 +181,7 @@ type DeleteError struct {
 
 // DeleteObjectsResponse container for multiple object deletes.
 type DeleteObjectsResponse struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult" json:"-"`
+	XMLName xml.Name `json:"-" xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult"`
 
 	// Collection of all deleted objects
 	DeletedObjects []ObjectIdentifier `xml:"Deleted,omitempty"`
@@ -183,24 +192,26 @@ type DeleteObjectsResponse struct {
 
 // DeleteMultipleObjectsHandler - Delete multiple objects
 func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *http.Request) {
-
 	bucket, _ := s3_constants.GetBucketAndObject(r)
 	glog.V(3).Infof("DeleteMultipleObjectsHandler %s", bucket)
 
 	deleteXMLBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
 	deleteObjects := &DeleteObjectsRequest{}
 	if err := xml.Unmarshal(deleteXMLBytes, deleteObjects); err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
 	if len(deleteObjects.Objects) > deleteMultipleObjectsLimit {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidMaxDeleteObjects)
+
 		return
 	}
 
@@ -215,12 +226,14 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 	// Get detailed versioning state for proper handling of suspended vs enabled versioning
 	versioningState, err := s3a.getVersioningState(bucket)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -247,6 +260,7 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 						Key:       object.Key,
 						VersionId: object.VersionId,
 					})
+
 					continue
 				}
 			}
@@ -266,6 +280,7 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 							Key:       object.Key,
 							VersionId: object.VersionId,
 						})
+
 						continue
 					}
 					deleteVersionId = object.VersionId
@@ -281,6 +296,7 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 								Key:       object.Key,
 								VersionId: object.VersionId,
 							})
+
 							continue
 						}
 						deleteVersionId = deleteMarkerVersionId
@@ -297,6 +313,7 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 								Key:       object.Key,
 								VersionId: "null",
 							})
+
 							continue
 						}
 						deleteVersionId = "null"
@@ -371,5 +388,4 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 	stats_collect.S3DeletedObjectsCounter.WithLabelValues(bucket).Add(float64(len(deletedObjects)))
 
 	writeSuccessResponseXML(w, r, deleteResp)
-
 }

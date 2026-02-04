@@ -9,7 +9,6 @@ import (
 )
 
 func TestReadingTomlConfiguration(t *testing.T) {
-
 	viper.SetConfigType("toml")
 
 	// any approach to require this configuration into your program.

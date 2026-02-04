@@ -22,6 +22,7 @@ func (v *Volume) checkReadWriteError(err error) {
 		if v.lastIoError != nil {
 			v.lastIoError = nil
 		}
+
 		return
 	}
 	if errors.Is(err, syscall.EIO) {
@@ -42,17 +43,20 @@ func (v *Volume) isFileUnchanged(n *needle.Needle) bool {
 		err := oldNeedle.ReadData(v.DataBackend, nv.Offset.ToActualOffset(), nv.Size, v.Version())
 		if err != nil {
 			glog.V(0).Infof("Failed to check updated file at offset %d size %d: %v", nv.Offset.ToActualOffset(), nv.Size, err)
+
 			return false
 		}
 		if oldNeedle.Cookie == n.Cookie && oldNeedle.Checksum == n.Checksum && bytes.Equal(oldNeedle.Data, n.Data) {
 			n.DataSize = oldNeedle.DataSize
+
 			return true
 		}
 	}
+
 	return false
 }
 
-var ErrVolumeNotEmpty = fmt.Errorf("volume not empty")
+var ErrVolumeNotEmpty = errors.New("volume not empty")
 
 // Destroy removes everything related to this volume
 func (v *Volume) Destroy(onlyEmpty bool) (err error) {
@@ -62,17 +66,20 @@ func (v *Volume) Destroy(onlyEmpty bool) (err error) {
 	if onlyEmpty {
 		isEmpty, e := v.doIsEmpty()
 		if e != nil {
-			err = fmt.Errorf("failed to read isEmpty %v", e)
-			return
+			err = fmt.Errorf("failed to read isEmpty %w", e)
+
+			return err
 		}
 		if !isEmpty {
 			err = ErrVolumeNotEmpty
-			return
+
+			return err
 		}
 	}
 	if v.isCompacting || v.isCommitCompacting {
 		err = fmt.Errorf("volume %d is compacting", v.Id)
-		return
+
+		return err
 	}
 	close(v.asyncRequestsChan)
 	storageName, storageKey := v.RemoteStorageNameKey()
@@ -84,7 +91,8 @@ func (v *Volume) Destroy(onlyEmpty bool) (err error) {
 	v.doClose()
 	removeVolumeFiles(v.DataFileName())
 	removeVolumeFiles(v.IndexFileName())
-	return
+
+	return err
 }
 
 func removeVolumeFiles(filename string) {
@@ -141,7 +149,8 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 	if v.isFileUnchanged(n) {
 		size = Size(n.DataSize)
 		isUnchanged = true
-		return
+
+		return offset, size, isUnchanged, err
 	}
 
 	// check whether existing needle cookie matches
@@ -150,7 +159,8 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 		existingNeedle, _, _, existingNeedleReadErr := needle.ReadNeedleHeader(v.DataBackend, v.Version(), nv.Offset.ToActualOffset())
 		if existingNeedleReadErr != nil {
 			err = fmt.Errorf("reading existing needle: %w", existingNeedleReadErr)
-			return
+
+			return offset, size, isUnchanged, err
 		}
 		if n.Cookie == 0 && !checkCookie {
 			// this is from batch deletion, and read back again when tailing a remote volume
@@ -161,7 +171,8 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 			glog.V(0).Infof("write cookie mismatch: existing %s, new %s",
 				needle.NewFileIdFromNeedle(v.Id, existingNeedle), needle.NewFileIdFromNeedle(v.Id, n))
 			err = fmt.Errorf("mismatching cookie %x", n.Cookie)
-			return
+
+			return offset, size, isUnchanged, err
 		}
 	}
 
@@ -171,8 +182,9 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 	offset, size, actualSize, err = n.Append(v.DataBackend, v.Version())
 	v.checkReadWriteError(err)
 	if err != nil {
-		err = fmt.Errorf("append to volume %d size %d actualSize %d: %v", v.Id, size, actualSize, err)
-		return
+		err = fmt.Errorf("append to volume %d size %d actualSize %d: %w", v.Id, size, actualSize, err)
+
+		return offset, size, isUnchanged, err
 	}
 	v.lastAppendAtNs = n.AppendAtNs
 
@@ -185,7 +197,8 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 	if v.lastModifiedTsSeconds < n.LastModified {
 		v.lastModifiedTsSeconds = n.LastModified
 	}
-	return
+
+	return offset, size, isUnchanged, err
 }
 
 func (v *Volume) syncDelete(n *needle.Needle) (Size, error) {
@@ -238,19 +251,19 @@ func (v *Volume) doDeleteRequest(n *needle.Needle) (Size, error) {
 		if err = v.nm.Delete(n.Id, ToOffset(int64(offset))); err != nil {
 			return size, err
 		}
+
 		return size, err
 	}
+
 	return 0, nil
 }
 
 func (v *Volume) startWorker() {
 	go func() {
 		chanClosed := false
-		for {
+		for !chanClosed {
 			// chan closed. go thread will exit
-			if chanClosed {
-				break
-			}
+
 			currentRequests := make([]*needle.AsyncRequest, 0, 128)
 			currentBytesToWrite := int64(0)
 			for {
@@ -258,11 +271,13 @@ func (v *Volume) startWorker() {
 				// volume may be closed
 				if !ok {
 					chanClosed = true
+
 					break
 				}
 				if MaxPossibleVolumeSize < v.ContentSize()+uint64(currentBytesToWrite+request.ActualSize) {
 					request.Complete(0, 0, false,
 						fmt.Errorf("volume size limit %d exceeded! current size is %d", MaxPossibleVolumeSize, v.ContentSize()))
+
 					break
 				}
 				currentRequests = append(currentRequests, request)
@@ -279,15 +294,16 @@ func (v *Volume) startWorker() {
 			v.dataFileAccessLock.Lock()
 			end, _, e := v.DataBackend.GetStat()
 			if e != nil {
-				for i := 0; i < len(currentRequests); i++ {
+				for i := range currentRequests {
 					currentRequests[i].Complete(0, 0, false,
-						fmt.Errorf("cannot read current volume position: %v", e))
+						fmt.Errorf("cannot read current volume position: %w", e))
 				}
 				v.dataFileAccessLock.Unlock()
+
 				continue
 			}
 
-			for i := 0; i < len(currentRequests); i++ {
+			for i := range currentRequests {
 				if currentRequests[i].IsWriteRequest {
 					offset, size, isUnchanged, err := v.doWriteRequest(currentRequests[i].N, true)
 					currentRequests[i].UpdateResult(offset, uint64(size), isUnchanged, err)
@@ -303,14 +319,14 @@ func (v *Volume) startWorker() {
 				if te := v.DataBackend.Truncate(end); te != nil {
 					glog.V(0).Infof("Failed to truncate %s back to %d with error: %v", v.DataBackend.Name(), end, te)
 				}
-				for i := 0; i < len(currentRequests); i++ {
+				for i := range currentRequests {
 					if currentRequests[i].IsSucceed() {
 						currentRequests[i].UpdateResult(0, 0, false, err)
 					}
 				}
 			}
 
-			for i := 0; i < len(currentRequests); i++ {
+			for i := range currentRequests {
 				currentRequests[i].Submit()
 			}
 			v.dataFileAccessLock.Unlock()
@@ -319,7 +335,6 @@ func (v *Volume) startWorker() {
 }
 
 func (v *Volume) WriteNeedleBlob(needleId NeedleId, needleBlob []byte, size Size) error {
-
 	v.dataFileAccessLock.Lock()
 	defer v.dataFileAccessLock.Unlock()
 
@@ -336,6 +351,7 @@ func (v *Volume) WriteNeedleBlob(needleId NeedleId, needleBlob []byte, size Size
 			err = newNeedle.ReadBytes(needleBlob, nv.Offset.ToActualOffset(), size, v.Version())
 			if err == nil && oldNeedle.Cookie == newNeedle.Cookie && oldNeedle.Checksum == newNeedle.Checksum && bytes.Equal(oldNeedle.Data, newNeedle.Data) {
 				glog.V(0).Infof("needle %v already exists", needleId)
+
 				return nil
 			}
 		}

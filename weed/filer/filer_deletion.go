@@ -103,6 +103,7 @@ func (h *retryHeap) Pop() any {
 	old[n-1] = nil      // avoid memory leak
 	item.heapIndex = -1 // mark as removed
 	*h = old[0 : n-1]
+
 	return item
 }
 
@@ -134,6 +135,7 @@ func NewDeletionRetryQueue() *DeletionRetryQueue {
 		itemIndex: make(map[string]*DeletionRetryItem),
 	}
 	heap.Init(&q.heap)
+
 	return q
 }
 
@@ -179,6 +181,7 @@ func (q *DeletionRetryQueue) AddOrUpdate(fileId string, errorMsg string) {
 		} else {
 			glog.V(2).Infof("retry for %s already scheduled: attempt %d, next retry in %v", fileId, item.RetryCount, time.Until(item.NextRetryAt))
 		}
+
 		return
 	}
 
@@ -266,6 +269,7 @@ func (q *DeletionRetryQueue) Remove(item *DeletionRetryItem) {
 func (q *DeletionRetryQueue) Size() int {
 	q.lock.Lock()
 	defer q.lock.Unlock()
+
 	return len(q.heap)
 }
 
@@ -287,12 +291,12 @@ func LookupByMasterClientFn(masterClient *wdclient.MasterClient) func(vids []str
 				Locations:      locations,
 			}
 		}
+
 		return m, nil
 	}
 }
 
 func (f *Filer) loopProcessingDeletion() {
-
 	lookupFunc := LookupByMasterClientFn(f.MasterClient)
 
 	// Start retry processor in a separate goroutine
@@ -305,14 +309,12 @@ func (f *Filer) loopProcessingDeletion() {
 		select {
 		case <-f.deletionQuit:
 			glog.V(0).Infof("deletion processor shutting down")
+
 			return
 		case <-ticker.C:
 			f.fileIdDeletionQueue.Consume(func(fileIds []string) {
 				for i := 0; i < len(fileIds); i += DeletionBatchSize {
-					end := i + DeletionBatchSize
-					if end > len(fileIds) {
-						end = len(fileIds)
-					}
+					end := min(i+DeletionBatchSize, len(fileIds))
 					toDeleteFileIds := fileIds[i:end]
 					f.processDeletionBatch(toDeleteFileIds, lookupFunc)
 				}
@@ -413,7 +415,7 @@ func deleteFilesAndClassify(grpcDialOption grpc.DialOption, fileIds []string, lo
 	// Group results by file ID to handle multiple results for replicated volumes
 	resultsByFileId := make(map[string][]*volume_server_pb.DeleteResult)
 	for _, result := range results {
-		resultsByFileId[result.FileId] = append(resultsByFileId[result.FileId], result)
+		resultsByFileId[result.GetFileId()] = append(resultsByFileId[result.GetFileId()], result)
 	}
 
 	// Classify outcome for each file
@@ -441,21 +443,22 @@ func classifyDeletionOutcome(fileId string, resultsByFileId map[string][]*volume
 	hasSuccess := false
 
 	for _, res := range fileIdResults {
-		if res.Error == "" {
+		if res.GetError() == "" {
 			hasSuccess = true
+
 			continue
 		}
-		if strings.Contains(res.Error, storage.ErrorDeleted.Error()) || res.Error == "not found" {
+		if strings.Contains(res.GetError(), storage.ErrorDeleted.Error()) || res.GetError() == "not found" {
 			continue
 		}
 
-		if isRetryableError(res.Error) {
+		if isRetryableError(res.GetError()) {
 			if firstRetryableError == "" {
-				firstRetryableError = res.Error
+				firstRetryableError = res.GetError()
 			}
 		} else {
 			// Permanent error takes highest precedence - return immediately
-			return deletionOutcome{status: deletionOutcomePermanent, errorMsg: res.Error}
+			return deletionOutcome{status: deletionOutcomePermanent, errorMsg: res.GetError()}
 		}
 	}
 
@@ -497,12 +500,12 @@ func isRetryableError(errorMsg string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
 // loopProcessingDeletionRetry processes the retry queue for failed deletions
 func (f *Filer) loopProcessingDeletionRetry(lookupFunc func([]string) (map[string]*operation.LookupResult, error)) {
-
 	ticker := time.NewTicker(DeletionRetryPollInterval)
 	defer ticker.Stop()
 
@@ -510,6 +513,7 @@ func (f *Filer) loopProcessingDeletionRetry(lookupFunc func([]string) (map[strin
 		select {
 		case <-f.deletionQuit:
 			glog.V(0).Infof("retry processor shutting down, %d items remaining in queue", f.DeletionRetryQueue.Size())
+
 			return
 		case <-ticker.C:
 			// Process all ready items in batches until queue is empty
@@ -587,7 +591,7 @@ func (f *Filer) DeleteUncommittedChunks(ctx context.Context, chunks []*filer_pb.
 
 func (f *Filer) DeleteChunks(ctx context.Context, fullpath util.FullPath, chunks []*filer_pb.FileChunk) {
 	rule := f.FilerConf.MatchStorageRule(string(fullpath))
-	if rule.DisableChunkDeletion {
+	if rule.GetDisableChunkDeletion() {
 		return
 	}
 	f.doDeleteChunks(ctx, chunks)
@@ -595,13 +599,14 @@ func (f *Filer) DeleteChunks(ctx context.Context, fullpath util.FullPath, chunks
 
 func (f *Filer) doDeleteChunks(ctx context.Context, chunks []*filer_pb.FileChunk) {
 	for _, chunk := range chunks {
-		if !chunk.IsChunkManifest {
+		if !chunk.GetIsChunkManifest() {
 			f.fileIdDeletionQueue.EnQueue(chunk.GetFileIdString())
+
 			continue
 		}
 		dataChunks, manifestResolveErr := ResolveOneChunkManifest(ctx, f.MasterClient.LookupFileId, chunk)
 		if manifestResolveErr != nil {
-			glog.V(0).InfofCtx(ctx, "failed to resolve manifest %s: %v", chunk.FileId, manifestResolveErr)
+			glog.V(0).InfofCtx(ctx, "failed to resolve manifest %s: %v", chunk.GetFileId(), manifestResolveErr)
 		}
 		for _, dChunk := range dataChunks {
 			f.fileIdDeletionQueue.EnQueue(dChunk.GetFileIdString())
@@ -628,6 +633,7 @@ func (f *Filer) deleteChunksIfNotNew(ctx context.Context, oldEntry, newEntry *En
 	toDelete, err := MinusChunks(ctx, f.MasterClient.GetLookupFileIdFunction(), oldChunks, newChunks)
 	if err != nil {
 		glog.ErrorfCtx(ctx, "Failed to resolve old entry chunks when delete old entry chunks. new: %s, old: %s", newChunks, oldChunks)
+
 		return
 	}
 	f.DeleteChunksNotRecursive(toDelete)

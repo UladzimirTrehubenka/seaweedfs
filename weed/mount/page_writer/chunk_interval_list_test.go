@@ -46,7 +46,6 @@ func Test_PageChunkWrittenIntervalList(t *testing.T) {
 
 	list.MarkWritten(70, 99, 12)
 	assert.Equal(t, 5, list.size(), "covered one intervals")
-
 }
 
 type interval struct {
@@ -78,5 +77,6 @@ func hasData(usage *ChunkWrittenIntervalList, chunkStartOffset, x int64) bool {
 			return true
 		}
 	}
+
 	return false
 }

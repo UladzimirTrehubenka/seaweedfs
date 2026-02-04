@@ -3,6 +3,7 @@ package ldap
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 	"github.com/mitchellh/mapstructure"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
@@ -103,7 +105,7 @@ func (p *LDAPProvider) Initialize(config interface{}) error {
 	defer p.mu.Unlock()
 
 	if p.initialized {
-		return fmt.Errorf("LDAP provider already initialized")
+		return errors.New("LDAP provider already initialized")
 	}
 
 	cfg := &LDAPConfig{}
@@ -132,10 +134,10 @@ func (p *LDAPProvider) Initialize(config interface{}) error {
 
 	// Validate required fields
 	if cfg.Server == "" {
-		return fmt.Errorf("LDAP server URL is required")
+		return errors.New("LDAP server URL is required")
 	}
 	if cfg.BaseDN == "" {
-		return fmt.Errorf("LDAP base DN is required")
+		return errors.New("LDAP base DN is required")
 	}
 	if cfg.UserFilter == "" {
 		cfg.UserFilter = "(cn=%s)" // Default filter
@@ -202,6 +204,7 @@ func (p *LDAPProvider) getConnection() (*ldap.Conn, error) {
 			// Connection is dead, create a new one
 			return p.createConnection()
 		}
+
 		return conn, nil
 	default:
 		// Pool is empty, create a new connection
@@ -215,12 +218,14 @@ func (p *LDAPProvider) returnConnection(conn *ldap.Conn) {
 		if conn != nil {
 			conn.Close()
 		}
+
 		return
 	}
 
 	// Check if pool is closed before attempting to send
 	if atomic.LoadUint32(&p.pool.closed) == 1 {
 		conn.Close()
+
 		return
 	}
 
@@ -261,6 +266,7 @@ func (p *LDAPProvider) createConnection() (*ldap.Conn, error) {
 			}
 			if err = conn.StartTLS(tlsConfig); err != nil {
 				conn.Close()
+
 				return nil, fmt.Errorf("failed to start TLS: %w", err)
 			}
 		}
@@ -295,6 +301,7 @@ func (p *LDAPProvider) Close() error {
 			conn.Close()
 		}
 	}
+
 	return nil
 }
 
@@ -303,7 +310,8 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, credentials string) (*p
 	p.mu.RLock()
 	if !p.initialized {
 		p.mu.RUnlock()
-		return nil, fmt.Errorf("LDAP provider not initialized")
+
+		return nil, errors.New("LDAP provider not initialized")
 	}
 	config := p.config
 	p.mu.RUnlock()
@@ -311,12 +319,12 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, credentials string) (*p
 	// Parse credentials (username:password format)
 	parts := strings.SplitN(credentials, ":", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid credentials format (expected username:password)")
+		return nil, errors.New("invalid credentials format (expected username:password)")
 	}
 	username, password := parts[0], parts[1]
 
 	if username == "" || password == "" {
-		return nil, fmt.Errorf("username and password are required")
+		return nil, errors.New("username and password are required")
 	}
 
 	// Get connection from pool
@@ -332,6 +340,7 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, credentials string) (*p
 		if err != nil {
 			glog.V(2).Infof("LDAP service bind failed: %v", err)
 			conn.Close() // Close on error, don't return to pool
+
 			return nil, fmt.Errorf("LDAP service bind failed: %w", err)
 		}
 	}
@@ -354,16 +363,19 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, credentials string) (*p
 	if err != nil {
 		glog.V(2).Infof("LDAP user search failed: %v", err)
 		conn.Close() // Close on error
+
 		return nil, fmt.Errorf("LDAP user search failed: %w", err)
 	}
 
 	if len(result.Entries) == 0 {
 		conn.Close() // Close on error
-		return nil, fmt.Errorf("user not found")
+
+		return nil, errors.New("user not found")
 	}
 	if len(result.Entries) > 1 {
 		conn.Close() // Close on error
-		return nil, fmt.Errorf("multiple users found")
+
+		return nil, errors.New("multiple users found")
 	}
 
 	userEntry := result.Entries[0]
@@ -374,7 +386,8 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, credentials string) (*p
 	if err != nil {
 		glog.V(2).Infof("LDAP user bind failed for %s: %v", username, err)
 		conn.Close() // Close on error, don't return to pool
-		return nil, fmt.Errorf("authentication failed: invalid credentials")
+
+		return nil, errors.New("authentication failed: invalid credentials")
 	}
 
 	// Rebind to service account before returning connection to pool
@@ -383,6 +396,7 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, credentials string) (*p
 		if err = conn.Bind(config.BindDN, config.BindPassword); err != nil {
 			glog.V(2).Infof("LDAP rebind to service account failed: %v", err)
 			conn.Close() // Close on error, don't return to pool
+
 			return nil, fmt.Errorf("LDAP service account rebind failed after successful user authentication (check bindDN %q and its credentials): %w", config.BindDN, err)
 		}
 	}
@@ -413,6 +427,7 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, credentials string) (*p
 	}
 
 	glog.V(2).Infof("LDAP authentication successful for user: %s, groups: %v", username, identity.Groups)
+
 	return identity, nil
 }
 
@@ -452,7 +467,8 @@ func (p *LDAPProvider) GetUserInfo(ctx context.Context, userID string) (*provide
 	p.mu.RLock()
 	if !p.initialized {
 		p.mu.RUnlock()
-		return nil, fmt.Errorf("LDAP provider not initialized")
+
+		return nil, errors.New("LDAP provider not initialized")
 	}
 	config := p.config
 	p.mu.RUnlock()
@@ -469,6 +485,7 @@ func (p *LDAPProvider) GetUserInfo(ctx context.Context, userID string) (*provide
 		err = conn.Bind(config.BindDN, config.BindPassword)
 		if err != nil {
 			conn.Close() // Close on bind failure
+
 			return nil, fmt.Errorf("LDAP service bind failed: %w", err)
 		}
 	}
@@ -494,10 +511,10 @@ func (p *LDAPProvider) GetUserInfo(ctx context.Context, userID string) (*provide
 	}
 
 	if len(result.Entries) == 0 {
-		return nil, fmt.Errorf("user not found")
+		return nil, errors.New("user not found")
 	}
 	if len(result.Entries) > 1 {
-		return nil, fmt.Errorf("multiple users found")
+		return nil, errors.New("multiple users found")
 	}
 
 	userEntry := result.Entries[0]
@@ -567,5 +584,6 @@ func (p *LDAPProvider) ValidateToken(ctx context.Context, token string) (*provid
 func (p *LDAPProvider) IsInitialized() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+
 	return p.initialized
 }

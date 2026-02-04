@@ -44,6 +44,7 @@ func (up *UploadPipeline) IsLocked(logicChunkIndex LogicChunkIndex) bool {
 	if count, found := up.activeReadChunks[logicChunkIndex]; found {
 		return count > 0
 	}
+
 	return false
 }
 

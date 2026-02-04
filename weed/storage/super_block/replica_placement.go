@@ -38,6 +38,7 @@ func NewReplicaPlacementFromString(t string) (*ReplicaPlacement, error) {
 	if value > 255 {
 		return rp, fmt.Errorf("unexpected replication type: %s", t)
 	}
+
 	return rp, nil
 }
 
@@ -53,6 +54,7 @@ func (a *ReplicaPlacement) Equals(b *ReplicaPlacement) bool {
 	if a == nil || b == nil {
 		return false
 	}
+
 	return (a.SameRackCount == b.SameRackCount &&
 		a.DiffRackCount == b.DiffRackCount &&
 		a.DiffDataCenterCount == b.DiffDataCenterCount)
@@ -63,6 +65,7 @@ func (rp *ReplicaPlacement) Byte() byte {
 		return 0
 	}
 	ret := rp.DiffDataCenterCount*100 + rp.DiffRackCount*10 + rp.SameRackCount
+
 	return byte(ret)
 }
 
@@ -71,6 +74,7 @@ func (rp *ReplicaPlacement) String() string {
 	b[0] = byte(rp.DiffDataCenterCount + '0')
 	b[1] = byte(rp.DiffRackCount + '0')
 	b[2] = byte(rp.SameRackCount + '0')
+
 	return string(b)
 }
 

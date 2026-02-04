@@ -26,5 +26,6 @@ func ReadMemoryMapMaxSizeMb(memoryMapMaxSizeMbString string) (uint32, error) {
 		return 0, nil
 	}
 	memoryMapMaxSize64, err := strconv.ParseUint(memoryMapMaxSizeMbString, 10, 32)
+
 	return uint32(memoryMapMaxSize64), err
 }

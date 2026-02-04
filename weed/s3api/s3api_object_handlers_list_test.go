@@ -3,16 +3,18 @@ package s3api
 import (
 	"context"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/stretchr/testify/assert"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 )
 
 type testListEntriesStream struct {
@@ -26,6 +28,7 @@ func (s *testListEntriesStream) Recv() (*filer_pb.ListEntriesResponse, error) {
 	}
 	resp := &filer_pb.ListEntriesResponse{Entry: s.entries[s.idx]}
 	s.idx++
+
 	return resp, nil
 }
 
@@ -33,33 +36,34 @@ func (s *testListEntriesStream) Header() (metadata.MD, error) { return metadata.
 func (s *testListEntriesStream) Trailer() metadata.MD         { return metadata.MD{} }
 func (s *testListEntriesStream) Close() error                 { return nil }
 func (s *testListEntriesStream) Context() context.Context     { return context.Background() }
-func (s *testListEntriesStream) SendMsg(m interface{}) error  { return nil }
-func (s *testListEntriesStream) RecvMsg(m interface{}) error  { return nil }
+func (s *testListEntriesStream) SendMsg(m any) error          { return nil }
+func (s *testListEntriesStream) RecvMsg(m any) error          { return nil }
 func (s *testListEntriesStream) CloseSend() error             { return nil }
 
 type testFilerClient struct {
 	filer_pb.SeaweedFilerClient
+
 	entriesByDir map[string][]*filer_pb.Entry
 }
 
 func (c *testFilerClient) ListEntries(ctx context.Context, in *filer_pb.ListEntriesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[filer_pb.ListEntriesResponse], error) {
-	entries := c.entriesByDir[in.Directory]
+	entries := c.entriesByDir[in.GetDirectory()]
 	// Simplified mock: implements basic prefix filtering but ignores Limit, StartFromFileName, and InclusiveStartFrom
 	// to keep test logic focused. Prefix "/" is treated as no filter for bucket root compatibility.
-	if in.Prefix != "" && in.Prefix != "/" {
+	if in.GetPrefix() != "" && in.GetPrefix() != "/" {
 		filtered := make([]*filer_pb.Entry, 0)
 		for _, e := range entries {
-			if strings.HasPrefix(e.Name, in.Prefix) {
+			if strings.HasPrefix(e.GetName(), in.GetPrefix()) {
 				filtered = append(filtered, e)
 			}
 		}
 		entries = filtered
 	}
+
 	return &testListEntriesStream{entries: entries}, nil
 }
 
 func TestListObjectsHandler(t *testing.T) {
-
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html
 
 	expected := `<?xml version="1.0" encoding="UTF-8"?>
@@ -219,8 +223,8 @@ func TestDoListFilerEntries_BucketRootPrefixSlashDelimiterSlash_ListsDirectories
 	cursor := &ListingCursor{maxKeys: 1000}
 	seen := make([]string, 0)
 	_, err := s3a.doListFilerEntries(client, "/buckets/test-bucket", "/", cursor, "", "/", false, "test-bucket", func(dir string, entry *filer_pb.Entry) {
-		if entry.IsDirectory {
-			seen = append(seen, entry.Name)
+		if entry.GetIsDirectory() {
+			seen = append(seen, entry.GetName())
 		}
 	})
 	assert.NoError(t, err)
@@ -230,7 +234,7 @@ func TestDoListFilerEntries_BucketRootPrefixSlashDelimiterSlash_ListsDirectories
 func TestAllowUnorderedWithDelimiterValidation(t *testing.T) {
 	t.Run("should return error when allow-unordered=true and delimiter are both present", func(t *testing.T) {
 		// Create a request with both allow-unordered=true and delimiter
-		req := httptest.NewRequest("GET", "/bucket?allow-unordered=true&delimiter=/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/bucket?allow-unordered=true&delimiter=/", nil)
 
 		// Extract query parameters like the handler would
 		values := req.URL.Query()
@@ -264,7 +268,7 @@ func TestAllowUnorderedWithDelimiterValidation(t *testing.T) {
 
 	t.Run("should allow allow-unordered=true without delimiter", func(t *testing.T) {
 		// Create a request with only allow-unordered=true
-		req := httptest.NewRequest("GET", "/bucket?allow-unordered=true", nil)
+		req := httptest.NewRequest(http.MethodGet, "/bucket?allow-unordered=true", nil)
 
 		values := req.URL.Query()
 
@@ -272,7 +276,7 @@ func TestAllowUnorderedWithDelimiterValidation(t *testing.T) {
 		_, _, delimiter, _, _, allowUnordered, errCode := getListObjectsV1Args(values)
 		assert.Equal(t, s3err.ErrNone, errCode, "should not return error for valid parameters")
 		assert.True(t, allowUnordered, "allow-unordered should be true")
-		assert.Equal(t, "", delimiter, "delimiter should be empty")
+		assert.Empty(t, delimiter, "delimiter should be empty")
 
 		// This combination should be valid
 		if allowUnordered && delimiter != "" {
@@ -284,7 +288,7 @@ func TestAllowUnorderedWithDelimiterValidation(t *testing.T) {
 
 	t.Run("should allow delimiter without allow-unordered", func(t *testing.T) {
 		// Create a request with only delimiter
-		req := httptest.NewRequest("GET", "/bucket?delimiter=/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/bucket?delimiter=/", nil)
 
 		values := req.URL.Query()
 

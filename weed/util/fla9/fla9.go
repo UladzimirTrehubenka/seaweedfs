@@ -100,16 +100,18 @@ type boolValue bool
 
 func newBoolValue(val bool, p *bool) *boolValue {
 	*p = val
+
 	return (*boolValue)(p)
 }
 
 func (b *boolValue) Set(s string) error {
 	v, err := strconv.ParseBool(s)
 	*b = boolValue(v)
+
 	return err
 }
 
-func (b *boolValue) Get() interface{} { return bool(*b) }
+func (b *boolValue) Get() any         { return bool(*b) }
 func (b *boolValue) String() string   { return fmt.Sprintf("%v", *b) }
 func (b *boolValue) IsBoolFlag() bool { return true }
 
@@ -125,118 +127,132 @@ type intValue int
 
 func newIntValue(val int, p *int) *intValue {
 	*p = val
+
 	return (*intValue)(p)
 }
 
 func (i *intValue) Set(s string) error {
 	v, err := strconv.ParseInt(s, 0, 64)
 	*i = intValue(v)
+
 	return err
 }
 
-func (i *intValue) Get() interface{} { return int(*i) }
-func (i *intValue) String() string   { return fmt.Sprintf("%v", *i) }
+func (i *intValue) Get() any       { return int(*i) }
+func (i *intValue) String() string { return fmt.Sprintf("%v", *i) }
 
 // -- int64 Value
 type int64Value int64
 
 func newInt64Value(val int64, p *int64) *int64Value {
 	*p = val
+
 	return (*int64Value)(p)
 }
 
 func (i *int64Value) Set(s string) error {
 	v, err := strconv.ParseInt(s, 0, 64)
 	*i = int64Value(v)
+
 	return err
 }
 
-func (i *int64Value) Get() interface{} { return int64(*i) }
-func (i *int64Value) String() string   { return fmt.Sprintf("%v", *i) }
+func (i *int64Value) Get() any       { return int64(*i) }
+func (i *int64Value) String() string { return fmt.Sprintf("%v", *i) }
 
 // -- uint Value
 type uintValue uint
 
 func newUintValue(val uint, p *uint) *uintValue {
 	*p = val
+
 	return (*uintValue)(p)
 }
 
 func (i *uintValue) Set(s string) error {
 	v, err := strconv.ParseUint(s, 0, 64)
 	*i = uintValue(v)
+
 	return err
 }
 
-func (i *uintValue) Get() interface{} { return uint(*i) }
-func (i *uintValue) String() string   { return fmt.Sprintf("%v", *i) }
+func (i *uintValue) Get() any       { return uint(*i) }
+func (i *uintValue) String() string { return fmt.Sprintf("%v", *i) }
 
 // -- uint64 Value
 type uint64Value uint64
 
 func newUint64Value(val uint64, p *uint64) *uint64Value {
 	*p = val
+
 	return (*uint64Value)(p)
 }
 
 func (i *uint64Value) Set(s string) error {
 	v, err := strconv.ParseUint(s, 0, 64)
 	*i = uint64Value(v)
+
 	return err
 }
 
-func (i *uint64Value) Get() interface{} { return uint64(*i) }
-func (i *uint64Value) String() string   { return fmt.Sprintf("%v", *i) }
+func (i *uint64Value) Get() any       { return uint64(*i) }
+func (i *uint64Value) String() string { return fmt.Sprintf("%v", *i) }
 
 // -- string Value
 type stringValue string
 
 func newStringValue(val string, p *string) *stringValue {
 	*p = val
+
 	return (*stringValue)(p)
 }
 
 func (s *stringValue) Set(val string) error {
 	*s = stringValue(val)
+
 	return nil
 }
 
-func (s *stringValue) Get() interface{} { return string(*s) }
-func (s *stringValue) String() string   { return fmt.Sprintf("%s", *s) }
+func (s *stringValue) Get() any       { return string(*s) }
+func (s *stringValue) String() string { return string(*s) }
 
 // -- float64 Value
 type float64Value float64
 
 func newFloat64Value(val float64, p *float64) *float64Value {
 	*p = val
+
 	return (*float64Value)(p)
 }
 
 func (f *float64Value) Set(s string) error {
 	v, err := strconv.ParseFloat(s, 64)
 	*f = float64Value(v)
+
 	return err
 }
 
-func (f *float64Value) Get() interface{} { return float64(*f) }
-func (f *float64Value) String() string   { return fmt.Sprintf("%v", *f) }
+func (f *float64Value) Get() any       { return float64(*f) }
+func (f *float64Value) String() string { return fmt.Sprintf("%v", *f) }
 
 // -- time.Duration Value
 type durationValue time.Duration
 
 func newDurationValue(val time.Duration, p *time.Duration) *durationValue {
 	*p = val
+
 	return (*durationValue)(p)
 }
 
 func (d *durationValue) Set(s string) error {
 	v, err := time.ParseDuration(s)
 	*d = durationValue(v)
+
 	return err
 }
 
-func (d *durationValue) Get() interface{} { return time.Duration(*d) }
-func (d *durationValue) String() string   { return (*time.Duration)(d).String() }
+func (d *durationValue) Get() any       { return time.Duration(*d) }
+func (d *durationValue) String() string { return (*time.Duration)(d).String() }
 
 // Value is the interface to the dynamic value stored in a flag.
 // (The default value is represented as a string.)
@@ -257,7 +273,7 @@ type Value interface {
 // by this package satisfy the Getter interface.
 type Getter interface {
 	Value
-	Get() interface{}
+	Get() any
 }
 
 // ErrorHandling defines how FlagSet.Parse behaves if the parse fails.
@@ -309,6 +325,7 @@ func sortFlags(flags map[string]*Flag) []*Flag {
 	for i, name := range list {
 		result[i] = flags[name]
 	}
+
 	return result
 }
 
@@ -316,6 +333,7 @@ func (f *FlagSet) out() io.Writer {
 	if f.output == nil {
 		return os.Stderr
 	}
+
 	return f.output
 }
 
@@ -368,6 +386,7 @@ func (f *FlagSet) Set(name, value string) error {
 		f.actual = make(map[string]*Flag)
 	}
 	f.actual[name] = flag
+
 	return nil
 }
 
@@ -395,6 +414,7 @@ func isZeroValue(flag *Flag, value string) bool {
 	case "false", "", "0":
 		return true
 	}
+
 	return false
 }
 
@@ -412,9 +432,11 @@ func UnquoteUsage(flag *Flag) (name string, usage string) {
 				if usage[j] == '`' {
 					name = usage[i+1 : j]
 					usage = usage[:i] + name + usage[j+1:]
+
 					return name, usage
 				}
 			}
+
 			break // Only one back quote; use type name.
 		}
 	}
@@ -434,7 +456,8 @@ func UnquoteUsage(flag *Flag) (name string, usage string) {
 	case *uintValue, *uint64Value:
 		name = "uint"
 	}
-	return
+
+	return name, usage
 }
 
 // PrintDefaults prints to standard error the default values of all
@@ -442,14 +465,14 @@ func UnquoteUsage(flag *Flag) (name string, usage string) {
 // the global function PrintDefaults for more information.
 func (f *FlagSet) PrintDefaults() {
 	f.VisitAll(func(flag *Flag) {
-		s := fmt.Sprintf("  -%s", flag.Name) // Two spaces before -; see next two comments.
+		s := "  -" + flag.Name // Two spaces before -; see next two comments.
 		name, usage := UnquoteUsage(flag)
 		if len(name) > 0 {
 			s += " " + name
 		}
 		// Boolean flags of one ASCII letter are so common we
 		// treat them specially, putting their usage on the same line.
-		if len(s) <= 4 { // space, space, '-', 'x'.
+		if len(s) <= 4 { // space, '-', 'x'.
 			s += "\t"
 		} else {
 			// Four spaces before the tab triggers good alignment
@@ -532,6 +555,7 @@ func (f *FlagSet) Arg(i int) string {
 	if i < 0 || i >= len(f.args) {
 		return ""
 	}
+
 	return f.args[i]
 }
 
@@ -569,6 +593,7 @@ func BoolVar(p *bool, name string, value bool, usage string) {
 func (f *FlagSet) Bool(name string, value bool, usage string) *bool {
 	p := new(bool)
 	f.BoolVar(p, name, value, usage)
+
 	return p
 }
 
@@ -595,6 +620,7 @@ func IntVar(p *int, name string, value int, usage string) {
 func (f *FlagSet) Int(name string, value int, usage string) *int {
 	p := new(int)
 	f.IntVar(p, name, value, usage)
+
 	return p
 }
 
@@ -621,6 +647,7 @@ func Int64Var(p *int64, name string, value int64, usage string) {
 func (f *FlagSet) Int64(name string, value int64, usage string) *int64 {
 	p := new(int64)
 	f.Int64Var(p, name, value, usage)
+
 	return p
 }
 
@@ -647,6 +674,7 @@ func UintVar(p *uint, name string, value uint, usage string) {
 func (f *FlagSet) Uint(name string, value uint, usage string) *uint {
 	p := new(uint)
 	f.UintVar(p, name, value, usage)
+
 	return p
 }
 
@@ -671,6 +699,7 @@ func Uint64Var(p *uint64, name string, value uint64, usage string) {
 func (f *FlagSet) Uint64(name string, value uint64, usage string) *uint64 {
 	p := new(uint64)
 	f.Uint64Var(p, name, value, usage)
+
 	return p
 }
 
@@ -697,6 +726,7 @@ func StringVar(p *string, name, value, usage string) {
 func (f *FlagSet) String(name, value, usage string) *string {
 	p := new(string)
 	f.StringVar(p, name, value, usage)
+
 	return p
 }
 
@@ -723,6 +753,7 @@ func Float64Var(p *float64, name string, value float64, usage string) {
 func (f *FlagSet) Float64(name string, value float64, usage string) *float64 {
 	p := new(float64)
 	f.Float64Var(p, name, value, usage)
+
 	return p
 }
 
@@ -752,6 +783,7 @@ func DurationVar(p *time.Duration, name string, value time.Duration, usage strin
 func (f *FlagSet) Duration(name string, value time.Duration, usage string) *time.Duration {
 	p := new(time.Duration)
 	f.DurationVar(p, name, value, usage)
+
 	return p
 }
 
@@ -775,7 +807,7 @@ func (f *FlagSet) Var(value Value, name string, usage string) {
 	if alreadythere {
 		var msg string
 		if f.name == "" {
-			msg = fmt.Sprintf("flag redefined: %s", name)
+			msg = "flag redefined: " + name
 		} else {
 			msg = fmt.Sprintf("%s flag redefined: %s", f.name, name)
 		}
@@ -800,10 +832,11 @@ func Var(value Value, name, usage string) {
 
 // failf prints to standard error a formatted error and usage message and
 // returns the error.
-func (f *FlagSet) failf(format string, a ...interface{}) error {
+func (f *FlagSet) failf(format string, a ...any) error {
 	err := fmt.Errorf(format, a...)
 	fmt.Fprintln(f.out(), err)
 	f.usage()
+
 	return err
 }
 
@@ -835,6 +868,7 @@ func (f *FlagSet) parseOne() (bool, error) {
 		numMinuses++
 		if len(s) == 2 { // "--" terminates the flags
 			f.args = f.args[1:]
+
 			return false, nil
 		}
 	}
@@ -857,6 +891,7 @@ func (f *FlagSet) parseOne() (bool, error) {
 			value = name[i+1:]
 			hasValue = true
 			name = name[0:i]
+
 			break
 		}
 	}
@@ -865,8 +900,10 @@ func (f *FlagSet) parseOne() (bool, error) {
 	if !alreadythere {
 		if name == "help" || name == "h" { // special case for nice help message.
 			f.usage()
+
 			return false, ErrHelp
 		}
+
 		return false, f.failf("flag provided but not defined: -%s", name)
 	}
 	if fv, ok := flag.Value.(boolFlag); ok && fv.IsBoolFlag() { // special case: doesn't need an arg
@@ -897,6 +934,7 @@ func (f *FlagSet) parseOne() (bool, error) {
 		f.actual = make(map[string]*Flag)
 	}
 	f.actual[name] = flag
+
 	return true, nil
 }
 
@@ -939,6 +977,7 @@ func (f *FlagSet) Parse(arguments []string) error {
 		case PanicOnError:
 			panic(err)
 		}
+
 		return err
 	}
 
@@ -965,6 +1004,7 @@ func (f *FlagSet) Parse(arguments []string) error {
 			case PanicOnError:
 				panic(err)
 			}
+
 			return err
 		}
 	}
@@ -974,7 +1014,7 @@ func (f *FlagSet) Parse(arguments []string) error {
 
 func (f *FlagSet) findConfigArgInUnresolved() string {
 	configArg := "-" + DefaultConfigFlagName
-	for i := 0; i < len(f.args); i++ {
+	for i := range len(f.args) {
 		if strings.HasPrefix(f.args[i], configArg) {
 			if f.args[i] == configArg && i+1 < len(f.args) {
 				return f.args[i+1]
@@ -985,6 +1025,7 @@ func (f *FlagSet) findConfigArgInUnresolved() string {
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -1016,6 +1057,7 @@ func NewFlagSet(name string, errorHandling ErrorHandling) *FlagSet {
 		errorHandling: errorHandling,
 		envPrefix:     EnvPrefix,
 	}
+
 	return f
 }
 
@@ -1052,6 +1094,7 @@ func (f *FlagSet) ParseEnv(environ []string) error {
 		if !alreadyThere {
 			if name == "help" || name == "h" { // special case for nice help message.
 				f.usage()
+
 				return ErrHelp
 			}
 
@@ -1063,8 +1106,8 @@ func (f *FlagSet) ParseEnv(environ []string) error {
 		if f.envPrefix != "" {
 			envKey = f.envPrefix + "_" + envKey
 		}
-		envKey = strings.Replace(envKey, "-", "_", -1)
-		envKey = strings.Replace(envKey, ".", "_", -1)
+		envKey = strings.ReplaceAll(envKey, "-", "_")
+		envKey = strings.ReplaceAll(envKey, ".", "_")
 
 		value, isSet := env[envKey]
 		if !isSet {
@@ -1086,6 +1129,7 @@ func (f *FlagSet) ParseEnv(environ []string) error {
 		}
 		f.actual[name] = flag
 	}
+
 	return nil
 }
 
@@ -1094,6 +1138,7 @@ func (f *FlagSet) ParseEnv(environ []string) error {
 func NewFlagSetWithEnvPrefix(name string, prefix string, errorHandling ErrorHandling) *FlagSet {
 	f := NewFlagSet(name, errorHandling)
 	f.envPrefix = prefix
+
 	return f
 }
 
@@ -1126,6 +1171,7 @@ func (f *FlagSet) ParseFile(path string, ignoreUndefinedConf bool) error {
 		for i, v := range line {
 			if v == '=' || v == ' ' || v == ':' {
 				name, value = strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+1:])
+
 				break
 			}
 		}
@@ -1145,8 +1191,10 @@ func (f *FlagSet) ParseFile(path string, ignoreUndefinedConf bool) error {
 
 			if name == "help" || name == "h" { // special case for nice help message.
 				f.usage()
+
 				return ErrHelp
 			}
+
 			return f.failf("configuration variable provided but not defined: %s", name)
 		}
 

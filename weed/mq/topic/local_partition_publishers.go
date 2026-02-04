@@ -24,6 +24,7 @@ func NewLocalPublisher() *LocalPublisher {
 	atomic.StoreInt64(&publisher.lastSeenTimeNs, now)
 	atomic.StoreInt64(&publisher.lastPublishedOffset, 0)
 	atomic.StoreInt64(&publisher.lastAckedOffset, 0)
+
 	return publisher
 }
 func (p *LocalPublisher) SignalShutdown() {
@@ -101,6 +102,7 @@ func (p *LocalPartitionPublishers) GetPublisherNames() []string {
 	for name := range p.publishers {
 		names = append(names, name)
 	}
+
 	return names
 }
 

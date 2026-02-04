@@ -36,7 +36,6 @@ func (c *commandMqTopicConfigure) HasTag(CommandTag) bool {
 }
 
 func (c *commandMqTopicConfigure) Do(args []string, commandEnv *CommandEnv, writer io.Writer) error {
-
 	// parse parameters
 	mqCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	namespace := mqCommand.String("namespace", "", "namespace name")
@@ -67,7 +66,7 @@ func (c *commandMqTopicConfigure) Do(args []string, commandEnv *CommandEnv, writ
 		}
 		output, _ := json.MarshalIndent(resp, "", "  ")
 		fmt.Fprintf(writer, "response:\n%+v\n", string(output))
+
 		return nil
 	})
-
 }

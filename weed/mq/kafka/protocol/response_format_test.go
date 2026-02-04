@@ -266,6 +266,7 @@ func TestCorrelationIDNotInResponseBody(t *testing.T) {
 
 		// Check if the first 4 bytes match the correlation ID
 		actual := binary.BigEndian.Uint32(responseBody[0:4])
+
 		return actual == correlationID
 	}
 

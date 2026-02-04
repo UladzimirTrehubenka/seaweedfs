@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -76,13 +77,14 @@ func (bc *BrokerClient) getOrCreatePublisher(topicName string, recordType *schem
 	// Create cache key that includes record type info
 	cacheKey := topicName
 	if recordType != nil {
-		cacheKey = fmt.Sprintf("%s:schematized", topicName)
+		cacheKey = topicName + ":schematized"
 	}
 
 	// Try to get existing publisher
 	bc.publishersLock.RLock()
 	if publisher, exists := bc.publishers[cacheKey]; exists {
 		bc.publishersLock.RUnlock()
+
 		return publisher, nil
 	}
 	bc.publishersLock.RUnlock()
@@ -152,6 +154,7 @@ func (bc *BrokerClient) getOrCreateSubscriber(topicName string) (*sub_client.Top
 	bc.subscribersLock.RLock()
 	if subscriber, exists := bc.subscribers[topicName]; exists {
 		bc.subscribersLock.RUnlock()
+
 		return subscriber, nil
 	}
 	bc.subscribersLock.RUnlock()
@@ -169,7 +172,7 @@ func (bc *BrokerClient) getOrCreateSubscriber(topicName string) (*sub_client.Top
 	subscriberConfig := &sub_client.SubscriberConfiguration{
 		ClientId:                "kafka-gateway-schema",
 		ConsumerGroup:           "kafka-gateway",
-		ConsumerGroupInstanceId: fmt.Sprintf("kafka-gateway-%s", topicName),
+		ConsumerGroupInstanceId: "kafka-gateway-" + topicName,
 		MaxPartitionCount:       1,
 		SlidingWindowSize:       10,
 	}
@@ -223,7 +226,7 @@ func (bc *BrokerClient) getOrCreateSubscriber(topicName string) (*sub_client.Top
 	select {
 	case <-time.After(100 * time.Millisecond):
 		// Connection attempt timed out (expected with mock brokers)
-		return nil, fmt.Errorf("failed to connect to brokers: connection timeout")
+		return nil, errors.New("failed to connect to brokers: connection timeout")
 	case <-subCtx.Done():
 		// Connection attempt failed (expected with mock brokers)
 		return nil, fmt.Errorf("failed to connect to brokers: %w", subCtx.Err())
@@ -235,7 +238,7 @@ func (bc *BrokerClient) receiveRecordValue(subscriber *sub_client.TopicSubscribe
 	// This is a simplified implementation - in a real system, this would
 	// integrate with the subscriber's message receiving mechanism
 	// For now, return an error to indicate no messages available
-	return nil, fmt.Errorf("no messages available")
+	return nil, errors.New("no messages available")
 }
 
 // reconstructConfluentEnvelope reconstructs a Confluent envelope from a RecordValue
@@ -294,13 +297,13 @@ func (bc *BrokerClient) Close() error {
 }
 
 // GetPublisherStats returns statistics about active publishers and subscribers
-func (bc *BrokerClient) GetPublisherStats() map[string]interface{} {
+func (bc *BrokerClient) GetPublisherStats() map[string]any {
 	bc.publishersLock.RLock()
 	bc.subscribersLock.RLock()
 	defer bc.publishersLock.RUnlock()
 	defer bc.subscribersLock.RUnlock()
 
-	stats := make(map[string]interface{})
+	stats := make(map[string]any)
 	stats["active_publishers"] = len(bc.publishers)
 	stats["active_subscribers"] = len(bc.subscribers)
 	stats["brokers"] = bc.brokers
@@ -362,6 +365,7 @@ func (bc *BrokerClient) CreateRecordType(schemaID uint32, format Format) (*schem
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Avro decoder: %w", err)
 		}
+
 		return decoder.InferRecordType()
 
 	case FormatJSONSchema:
@@ -369,6 +373,7 @@ func (bc *BrokerClient) CreateRecordType(schemaID uint32, format Format) (*schem
 		if err != nil {
 			return nil, fmt.Errorf("failed to create JSON Schema decoder: %w", err)
 		}
+
 		return decoder.InferRecordType()
 
 	case FormatProtobuf:
@@ -376,6 +381,7 @@ func (bc *BrokerClient) CreateRecordType(schemaID uint32, format Format) (*schem
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Protobuf decoder: %w", err)
 		}
+
 		return decoder.InferRecordType()
 
 	default:

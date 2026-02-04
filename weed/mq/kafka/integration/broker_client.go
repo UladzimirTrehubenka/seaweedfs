@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -46,7 +47,8 @@ func NewBrokerClientWithFilerAccessor(brokerAddress string, filerClientAccessor 
 	)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to connect to broker %s: %v", brokerAddress, err)
+
+		return nil, fmt.Errorf("failed to connect to broker %s: %w", brokerAddress, err)
 	}
 
 	client := mq_pb.NewSeaweedMessagingClient(conn)
@@ -105,7 +107,7 @@ func (bc *BrokerClient) HealthCheck() error {
 	// Try to list topics as a health check
 	_, err := bc.client.ListTopics(ctx, &mq_pb.ListTopicsRequest{})
 	if err != nil {
-		return fmt.Errorf("broker health check failed: %v", err)
+		return fmt.Errorf("broker health check failed: %w", err)
 	}
 
 	return nil
@@ -113,9 +115,8 @@ func (bc *BrokerClient) HealthCheck() error {
 
 // GetPartitionRangeInfo gets comprehensive range information from SeaweedMQ broker's native range manager
 func (bc *BrokerClient) GetPartitionRangeInfo(topic string, partition int32) (*PartitionRangeInfo, error) {
-
 	if bc.client == nil {
-		return nil, fmt.Errorf("broker client not connected")
+		return nil, errors.New("broker client not connected")
 	}
 
 	// Get the actual partition assignment from the broker instead of hardcoding
@@ -127,7 +128,7 @@ func (bc *BrokerClient) GetPartitionRangeInfo(topic string, partition int32) (*P
 	// Get the actual partition assignment for this Kafka partition
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actual partition assignment: %v", err)
+		return nil, fmt.Errorf("failed to get actual partition assignment: %w", err)
 	}
 
 	// Call the broker's gRPC method
@@ -136,26 +137,26 @@ func (bc *BrokerClient) GetPartitionRangeInfo(topic string, partition int32) (*P
 		Partition: actualPartition,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get partition range info from broker: %v", err)
+		return nil, fmt.Errorf("failed to get partition range info from broker: %w", err)
 	}
 
-	if resp.Error != "" {
-		return nil, fmt.Errorf("broker error: %s", resp.Error)
+	if resp.GetError() != "" {
+		return nil, fmt.Errorf("broker error: %s", resp.GetError())
 	}
 
 	// Extract offset range information
 	var earliestOffset, latestOffset, highWaterMark int64
-	if resp.OffsetRange != nil {
-		earliestOffset = resp.OffsetRange.EarliestOffset
-		latestOffset = resp.OffsetRange.LatestOffset
-		highWaterMark = resp.OffsetRange.HighWaterMark
+	if resp.GetOffsetRange() != nil {
+		earliestOffset = resp.GetOffsetRange().GetEarliestOffset()
+		latestOffset = resp.GetOffsetRange().GetLatestOffset()
+		highWaterMark = resp.GetOffsetRange().GetHighWaterMark()
 	}
 
 	// Extract timestamp range information
 	var earliestTimestampNs, latestTimestampNs int64
-	if resp.TimestampRange != nil {
-		earliestTimestampNs = resp.TimestampRange.EarliestTimestampNs
-		latestTimestampNs = resp.TimestampRange.LatestTimestampNs
+	if resp.GetTimestampRange() != nil {
+		earliestTimestampNs = resp.GetTimestampRange().GetEarliestTimestampNs()
+		latestTimestampNs = resp.GetTimestampRange().GetLatestTimestampNs()
 	}
 
 	info := &PartitionRangeInfo{
@@ -164,8 +165,8 @@ func (bc *BrokerClient) GetPartitionRangeInfo(topic string, partition int32) (*P
 		HighWaterMark:       highWaterMark,
 		EarliestTimestampNs: earliestTimestampNs,
 		LatestTimestampNs:   latestTimestampNs,
-		RecordCount:         resp.RecordCount,
-		ActiveSubscriptions: resp.ActiveSubscriptions,
+		RecordCount:         resp.GetRecordCount(),
+		ActiveSubscriptions: resp.GetActiveSubscriptions(),
 	}
 
 	return info, nil
@@ -173,7 +174,6 @@ func (bc *BrokerClient) GetPartitionRangeInfo(topic string, partition int32) (*P
 
 // GetHighWaterMark gets the high water mark for a topic partition
 func (bc *BrokerClient) GetHighWaterMark(topic string, partition int32) (int64, error) {
-
 	// Primary approach: Use SeaweedMQ's native range manager via gRPC
 	info, err := bc.GetPartitionRangeInfo(topic, partition)
 	if err != nil {
@@ -182,6 +182,7 @@ func (bc *BrokerClient) GetHighWaterMark(topic string, partition int32) (int64, 
 		if err != nil {
 			return 0, err
 		}
+
 		return highWaterMark, nil
 	}
 
@@ -190,7 +191,6 @@ func (bc *BrokerClient) GetHighWaterMark(topic string, partition int32) (int64, 
 
 // GetEarliestOffset gets the earliest offset from SeaweedMQ broker's native offset manager
 func (bc *BrokerClient) GetEarliestOffset(topic string, partition int32) (int64, error) {
-
 	// Primary approach: Use SeaweedMQ's native range manager via gRPC
 	info, err := bc.GetPartitionRangeInfo(topic, partition)
 	if err != nil {
@@ -199,6 +199,7 @@ func (bc *BrokerClient) GetEarliestOffset(topic string, partition int32) (int64,
 		if err != nil {
 			return 0, err
 		}
+
 		return earliestOffset, nil
 	}
 
@@ -208,11 +209,11 @@ func (bc *BrokerClient) GetEarliestOffset(topic string, partition int32) (int64,
 // getOffsetRangeFromChunkMetadata reads chunk metadata to find both earliest and latest offsets
 func (bc *BrokerClient) getOffsetRangeFromChunkMetadata(topic string, partition int32) (earliestOffset int64, highWaterMark int64, err error) {
 	if bc.filerClientAccessor == nil {
-		return 0, 0, fmt.Errorf("filer client not available")
+		return 0, 0, errors.New("filer client not available")
 	}
 
 	// Get the topic path and find the latest version
-	topicPath := fmt.Sprintf("/topics/kafka/%s", topic)
+	topicPath := "/topics/kafka/" + topic
 
 	// First, list the topic versions to find the latest
 	var latestVersion string
@@ -226,22 +227,23 @@ func (bc *BrokerClient) getOffsetRangeFromChunkMetadata(topic string, partition 
 
 		for {
 			resp, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
 				return err
 			}
-			if resp.Entry.IsDirectory && strings.HasPrefix(resp.Entry.Name, "v") {
-				if latestVersion == "" || resp.Entry.Name > latestVersion {
-					latestVersion = resp.Entry.Name
+			if resp.GetEntry().GetIsDirectory() && strings.HasPrefix(resp.GetEntry().GetName(), "v") {
+				if latestVersion == "" || resp.GetEntry().GetName() > latestVersion {
+					latestVersion = resp.GetEntry().GetName()
 				}
 			}
 		}
+
 		return nil
 	})
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list topic versions: %v", err)
+		return 0, 0, fmt.Errorf("failed to list topic versions: %w", err)
 	}
 
 	if latestVersion == "" {
@@ -261,21 +263,23 @@ func (bc *BrokerClient) getOffsetRangeFromChunkMetadata(topic string, partition 
 
 		for {
 			resp, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
 				return err
 			}
-			if resp.Entry.IsDirectory && strings.Contains(resp.Entry.Name, "-") {
-				partitionDir = resp.Entry.Name
+			if resp.GetEntry().GetIsDirectory() && strings.Contains(resp.GetEntry().GetName(), "-") {
+				partitionDir = resp.GetEntry().GetName()
+
 				break // Use the first partition directory we find
 			}
 		}
+
 		return nil
 	})
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list partition directories: %v", err)
+		return 0, 0, fmt.Errorf("failed to list partition directories: %w", err)
 	}
 
 	if partitionDir == "" {
@@ -297,17 +301,17 @@ func (bc *BrokerClient) getOffsetRangeFromChunkMetadata(topic string, partition 
 
 		for {
 			resp, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
 				return err
 			}
-			if !resp.Entry.IsDirectory && resp.Entry.Name != "checkpoint.offset" {
+			if !resp.GetEntry().GetIsDirectory() && resp.GetEntry().GetName() != "checkpoint.offset" {
 				// Check for offset ranges in Extended attributes (both log files and parquet files)
 				if resp.Entry.Extended != nil {
 					// Track maximum offset for high water mark
-					if maxOffsetBytes, exists := resp.Entry.Extended[mq.ExtendedAttrOffsetMax]; exists && len(maxOffsetBytes) == 8 {
+					if maxOffsetBytes, exists := resp.GetEntry().GetExtended()[mq.ExtendedAttrOffsetMax]; exists && len(maxOffsetBytes) == 8 {
 						maxOffset := int64(binary.BigEndian.Uint64(maxOffsetBytes))
 						if maxOffset > highWaterMark {
 							highWaterMark = maxOffset
@@ -315,7 +319,7 @@ func (bc *BrokerClient) getOffsetRangeFromChunkMetadata(topic string, partition 
 					}
 
 					// Track minimum offset for earliest offset
-					if minOffsetBytes, exists := resp.Entry.Extended[mq.ExtendedAttrOffsetMin]; exists && len(minOffsetBytes) == 8 {
+					if minOffsetBytes, exists := resp.GetEntry().GetExtended()[mq.ExtendedAttrOffsetMin]; exists && len(minOffsetBytes) == 8 {
 						minOffset := int64(binary.BigEndian.Uint64(minOffsetBytes))
 						if earliestOffset == -1 || minOffset < earliestOffset {
 							earliestOffset = minOffset
@@ -324,10 +328,11 @@ func (bc *BrokerClient) getOffsetRangeFromChunkMetadata(topic string, partition 
 				}
 			}
 		}
+
 		return nil
 	})
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to scan message files: %v", err)
+		return 0, 0, fmt.Errorf("failed to scan message files: %w", err)
 	}
 
 	// High water mark is the next offset after the highest written offset
@@ -346,12 +351,14 @@ func (bc *BrokerClient) getOffsetRangeFromChunkMetadata(topic string, partition 
 // getHighWaterMarkFromChunkMetadata is a wrapper for backward compatibility
 func (bc *BrokerClient) getHighWaterMarkFromChunkMetadata(topic string, partition int32) (int64, error) {
 	_, highWaterMark, err := bc.getOffsetRangeFromChunkMetadata(topic, partition)
+
 	return highWaterMark, err
 }
 
 // getEarliestOffsetFromChunkMetadata gets the earliest offset from chunk metadata (fallback)
 func (bc *BrokerClient) getEarliestOffsetFromChunkMetadata(topic string, partition int32) (int64, error) {
 	earliestOffset, _, err := bc.getOffsetRangeFromChunkMetadata(topic, partition)
+
 	return earliestOffset, err
 }
 
@@ -363,6 +370,7 @@ func (bc *BrokerClient) GetFilerAddress() string {
 			return string(filers[0])
 		}
 	}
+
 	return ""
 }
 
@@ -382,7 +390,7 @@ func (bc *BrokerClient) GetGrpcDialOption() grpc.DialOption {
 // ListTopics gets all topics from SeaweedMQ broker (includes in-memory topics)
 func (bc *BrokerClient) ListTopics() ([]string, error) {
 	if bc.client == nil {
-		return nil, fmt.Errorf("broker client not connected")
+		return nil, errors.New("broker client not connected")
 	}
 
 	ctx, cancel := context.WithTimeout(bc.ctx, 5*time.Second)
@@ -390,14 +398,14 @@ func (bc *BrokerClient) ListTopics() ([]string, error) {
 
 	resp, err := bc.client.ListTopics(ctx, &mq_pb.ListTopicsRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list topics from broker: %v", err)
+		return nil, fmt.Errorf("failed to list topics from broker: %w", err)
 	}
 
 	var topics []string
-	for _, topic := range resp.Topics {
+	for _, topic := range resp.GetTopics() {
 		// Filter for kafka namespace topics
-		if topic.Namespace == "kafka" {
-			topics = append(topics, topic.Name)
+		if topic.GetNamespace() == "kafka" {
+			topics = append(topics, topic.GetName())
 		}
 	}
 
@@ -407,7 +415,7 @@ func (bc *BrokerClient) ListTopics() ([]string, error) {
 // GetTopicConfiguration gets topic configuration including partition count from the broker
 func (bc *BrokerClient) GetTopicConfiguration(topicName string) (*mq_pb.GetTopicConfigurationResponse, error) {
 	if bc.client == nil {
-		return nil, fmt.Errorf("broker client not connected")
+		return nil, errors.New("broker client not connected")
 	}
 
 	ctx, cancel := context.WithTimeout(bc.ctx, 5*time.Second)
@@ -420,7 +428,7 @@ func (bc *BrokerClient) GetTopicConfiguration(topicName string) (*mq_pb.GetTopic
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get topic configuration from broker: %v", err)
+		return nil, fmt.Errorf("failed to get topic configuration from broker: %w", err)
 	}
 
 	return resp, nil
@@ -429,7 +437,7 @@ func (bc *BrokerClient) GetTopicConfiguration(topicName string) (*mq_pb.GetTopic
 // TopicExists checks if a topic exists in SeaweedMQ broker (includes in-memory topics)
 func (bc *BrokerClient) TopicExists(topicName string) (bool, error) {
 	if bc.client == nil {
-		return false, fmt.Errorf("broker client not connected")
+		return false, errors.New("broker client not connected")
 	}
 
 	ctx, cancel := context.WithTimeout(bc.ctx, 5*time.Second)
@@ -444,9 +452,11 @@ func (bc *BrokerClient) TopicExists(topicName string) (bool, error) {
 	})
 	if err != nil {
 		glog.V(1).Infof("[BrokerClient] TopicExists: ERROR for topic %s: %v", topicName, err)
-		return false, fmt.Errorf("failed to check topic existence: %v", err)
+
+		return false, fmt.Errorf("failed to check topic existence: %w", err)
 	}
 
-	glog.V(2).Infof("[BrokerClient] TopicExists: Topic %s exists=%v", topicName, resp.Exists)
-	return resp.Exists, nil
+	glog.V(2).Infof("[BrokerClient] TopicExists: Topic %s exists=%v", topicName, resp.GetExists())
+
+	return resp.GetExists(), nil
 }

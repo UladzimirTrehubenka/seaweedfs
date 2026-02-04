@@ -1,7 +1,7 @@
 package broker
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -77,6 +77,7 @@ func (bom *BrokerOffsetManager) CreateSubscription(
 	startOffset int64,
 ) (*offset.OffsetSubscription, error) {
 	partition := topicPartitionToSchemaPartition(t, p)
+
 	return bom.offsetIntegration.CreateSubscription(subscriptionID, t.Namespace, t.Name, partition, offsetType, startOffset)
 }
 
@@ -172,31 +173,35 @@ func (bom *BrokerOffsetManager) Shutdown() {
 // SaveConsumerGroupOffset saves the committed offset for a consumer group
 func (bom *BrokerOffsetManager) SaveConsumerGroupOffset(t topic.Topic, p topic.Partition, consumerGroup string, offset int64) error {
 	if bom.consumerGroupStorage == nil {
-		return fmt.Errorf("consumer group storage not configured")
+		return errors.New("consumer group storage not configured")
 	}
+
 	return bom.consumerGroupStorage.SaveConsumerGroupOffset(t, p, consumerGroup, offset)
 }
 
 // LoadConsumerGroupOffset loads the committed offset for a consumer group
 func (bom *BrokerOffsetManager) LoadConsumerGroupOffset(t topic.Topic, p topic.Partition, consumerGroup string) (int64, error) {
 	if bom.consumerGroupStorage == nil {
-		return -1, fmt.Errorf("consumer group storage not configured")
+		return -1, errors.New("consumer group storage not configured")
 	}
+
 	return bom.consumerGroupStorage.LoadConsumerGroupOffset(t, p, consumerGroup)
 }
 
 // ListConsumerGroups returns all consumer groups for a topic partition
 func (bom *BrokerOffsetManager) ListConsumerGroups(t topic.Topic, p topic.Partition) ([]string, error) {
 	if bom.consumerGroupStorage == nil {
-		return nil, fmt.Errorf("consumer group storage not configured")
+		return nil, errors.New("consumer group storage not configured")
 	}
+
 	return bom.consumerGroupStorage.ListConsumerGroups(t, p)
 }
 
 // DeleteConsumerGroupOffset removes the offset file for a consumer group
 func (bom *BrokerOffsetManager) DeleteConsumerGroupOffset(t topic.Topic, p topic.Partition, consumerGroup string) error {
 	if bom.consumerGroupStorage == nil {
-		return fmt.Errorf("consumer group storage not configured")
+		return errors.New("consumer group storage not configured")
 	}
+
 	return bom.consumerGroupStorage.DeleteConsumerGroupOffset(t, p, consumerGroup)
 }

@@ -2,9 +2,12 @@ package policy_engine
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +68,7 @@ func (engine *PolicyEngine) SetBucketPolicy(bucketName string, policyJSON string
 
 	engine.contexts[bucketName] = context
 	glog.V(4).Infof("SetBucketPolicy: Successfully cached policy for bucket=%s, statements=%d", bucketName, len(compiled.Statements))
+
 	return nil
 }
 
@@ -88,6 +92,7 @@ func (engine *PolicyEngine) DeleteBucketPolicy(bucketName string) error {
 
 	delete(engine.contexts, bucketName)
 	glog.V(2).Infof("Deleted bucket policy for %s", bucketName)
+
 	return nil
 }
 
@@ -96,6 +101,7 @@ func (engine *PolicyEngine) HasPolicyForBucket(bucketName string) bool {
 	engine.mutex.RLock()
 	defer engine.mutex.RUnlock()
 	_, exists := engine.contexts[bucketName]
+
 	return exists
 }
 
@@ -107,11 +113,13 @@ func (engine *PolicyEngine) EvaluatePolicy(bucketName string, args *PolicyEvalua
 
 	if !exists {
 		glog.V(4).Infof("EvaluatePolicy: No policy found for bucket=%s (PolicyResultIndeterminate)", bucketName)
+
 		return PolicyResultIndeterminate
 	}
 
 	glog.V(4).Infof("EvaluatePolicy: Found policy for bucket=%s, evaluating with action=%s resource=%s principal=%s",
 		bucketName, args.Action, args.Resource, args.Principal)
+
 	return engine.evaluateCompiledPolicy(context.policy, args)
 }
 
@@ -152,6 +160,7 @@ func (engine *PolicyEngine) matchesDynamicPatterns(patterns []string, value stri
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -184,6 +193,7 @@ func (engine *PolicyEngine) evaluateStatement(stmt *CompiledStatement, args *Pol
 		for _, matcher := range stmt.NotResourceMatchers {
 			if matcher.Match(args.Resource) {
 				matchedNotResource = true
+
 				break
 			}
 		}
@@ -226,6 +236,7 @@ func (engine *PolicyEngine) matchesPatterns(patterns []*regexp.Regexp, value str
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -234,7 +245,7 @@ func (engine *PolicyEngine) matchesPatterns(patterns []*regexp.Regexp, value str
 //   - Standard context variables (aws:SourceIp, s3:prefix, etc.)
 //   - JWT claims (jwt:preferred_username, jwt:sub, jwt:*)
 //   - LDAP claims (ldap:username, ldap:dn, ldap:*)
-func SubstituteVariables(pattern string, context map[string][]string, claims map[string]interface{}) string {
+func SubstituteVariables(pattern string, context map[string][]string, claims map[string]any) string {
 	result := PolicyVariableRegex.ReplaceAllStringFunc(pattern, func(match string) string {
 		// match is like "${aws:username}"
 		// extract variable name "aws:username"
@@ -255,17 +266,18 @@ func SubstituteVariables(pattern string, context map[string][]string, claims map
 				case float64:
 					// JWT numbers are often float64
 					if v == float64(int64(v)) {
-						return fmt.Sprintf("%d", int64(v))
+						return strconv.FormatInt(int64(v), 10)
 					}
+
 					return fmt.Sprintf("%g", v)
 				case bool:
-					return fmt.Sprintf("%t", v)
+					return strconv.FormatBool(v)
 				case int:
-					return fmt.Sprintf("%d", v)
+					return strconv.Itoa(v)
 				case int32:
-					return fmt.Sprintf("%d", v)
+					return strconv.Itoa(int(v))
 				case int64:
-					return fmt.Sprintf("%d", v)
+					return strconv.FormatInt(v, 10)
 				default:
 					return fmt.Sprintf("%v", v)
 				}
@@ -280,7 +292,7 @@ func SubstituteVariables(pattern string, context map[string][]string, claims map
 		if strings.HasPrefix(variable, "ldap:") {
 			claimName := variable[5:] // Remove "ldap:" prefix
 			// Try prefixed key first (e.g., "ldap:username"), then unprefixed
-			var claimValue interface{}
+			var claimValue any
 			var ok bool
 			if claimValue, ok = claims[variable]; !ok {
 				claimValue, ok = claims[claimName]
@@ -291,17 +303,18 @@ func SubstituteVariables(pattern string, context map[string][]string, claims map
 					return v
 				case float64:
 					if v == float64(int64(v)) {
-						return fmt.Sprintf("%d", int64(v))
+						return strconv.FormatInt(int64(v), 10)
 					}
+
 					return fmt.Sprintf("%g", v)
 				case bool:
-					return fmt.Sprintf("%t", v)
+					return strconv.FormatBool(v)
 				case int:
-					return fmt.Sprintf("%d", v)
+					return strconv.Itoa(v)
 				case int32:
-					return fmt.Sprintf("%d", v)
+					return strconv.Itoa(int(v))
 				case int64:
-					return fmt.Sprintf("%d", v)
+					return strconv.FormatInt(v, 10)
 				default:
 					return fmt.Sprintf("%v", v)
 				}
@@ -311,6 +324,7 @@ func SubstituteVariables(pattern string, context map[string][]string, claims map
 		// Variable not found, leave as-is to avoid unexpected matching
 		return match
 	})
+
 	return result
 }
 
@@ -390,7 +404,7 @@ func ExtractConditionValuesFromRequest(r *http.Request) map[string][]string {
 		host = r.RemoteAddr
 	}
 	values["aws:SourceIp"] = []string{host}
-	values["aws:SecureTransport"] = []string{fmt.Sprintf("%t", r.TLS != nil)}
+	values["aws:SecureTransport"] = []string{strconv.FormatBool(r.TLS != nil)}
 	// Use AWS standard condition key for current time
 	values["aws:CurrentTime"] = []string{time.Now().Format(time.RFC3339)}
 	// Keep RequestTime for backward compatibility
@@ -448,8 +462,9 @@ func ExtractConditionValuesFromRequest(r *http.Request) map[string][]string {
 // BuildResourceArn builds an ARN for the given bucket and object
 func BuildResourceArn(bucketName, objectName string) string {
 	if objectName == "" {
-		return fmt.Sprintf("arn:aws:s3:::%s", bucketName)
+		return "arn:aws:s3:::" + bucketName
 	}
+
 	return fmt.Sprintf("arn:aws:s3:::%s/%s", bucketName, objectName)
 }
 
@@ -458,7 +473,8 @@ func BuildActionName(action string) string {
 	if strings.HasPrefix(action, "s3:") {
 		return action
 	}
-	return fmt.Sprintf("s3:%s", action)
+
+	return "s3:" + action
 }
 
 // IsReadAction checks if an action is a read action
@@ -484,12 +500,7 @@ func IsReadAction(action string) bool {
 		"s3:GetObjectLegalHold",
 	}
 
-	for _, readAction := range readActions {
-		if action == readAction {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(readActions, action)
 }
 
 // IsWriteAction checks if an action is a write action
@@ -519,20 +530,17 @@ func IsWriteAction(action string) bool {
 		"s3:BypassGovernanceRetention",
 	}
 
-	for _, writeAction := range writeActions {
-		if action == writeAction {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(writeActions, action)
 }
 
 // GetBucketNameFromArn extracts bucket name from ARN
 func GetBucketNameFromArn(arn string) string {
 	if strings.HasPrefix(arn, "arn:aws:s3:::") {
 		parts := strings.SplitN(arn[13:], "/", 2)
+
 		return parts[0]
 	}
+
 	return ""
 }
 
@@ -544,6 +552,7 @@ func GetObjectNameFromArn(arn string) string {
 			return parts[1]
 		}
 	}
+
 	return ""
 }
 
@@ -600,6 +609,7 @@ func (engine *PolicyEngine) GetAllBucketsWithPolicies() []string {
 	for bucketName := range engine.contexts {
 		buckets = append(buckets, bucketName)
 	}
+
 	return buckets
 }
 
@@ -611,9 +621,7 @@ func (engine *PolicyEngine) EvaluatePolicyForRequest(bucketName, objectName, act
 
 	// Extract principal information for variables
 	principalVars := ExtractPrincipalVariables(principal)
-	for k, v := range principalVars {
-		conditions[k] = v
-	}
+	maps.Copy(conditions, principalVars)
 
 	args := &PolicyEvaluationArgs{
 		Action:     actionName,

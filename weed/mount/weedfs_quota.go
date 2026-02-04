@@ -65,11 +65,11 @@ func (wfs *WFS) IsOverQuotaWithUncommitted() bool {
 	// Check if uncommitted writes would exceed quota
 	uncommitted := atomic.LoadInt64(&uncommittedBytes)
 	usedSize := int64(wfs.stats.UsedSize)
+
 	return (usedSize + uncommitted) > wfs.option.Quota
 }
 
 func (wfs *WFS) loopCheckQuota() {
-
 	// Skip quota checking if no quota is set
 	if wfs.option.Quota <= 0 {
 		return
@@ -106,12 +106,12 @@ func (wfs *WFS) getQuotaCheckInterval() time.Duration {
 	if float64(totalUsed) >= float64(wfs.option.Quota)*quotaWarningThreshold {
 		return fastQuotaCheckInterval
 	}
+
 	return defaultQuotaCheckInterval
 }
 
 func (wfs *WFS) checkQuotaOnce() {
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.StatisticsRequest{
 			Collection:  wfs.option.Collection,
 			Replication: wfs.option.Replication,
@@ -122,22 +122,23 @@ func (wfs *WFS) checkQuotaOnce() {
 		resp, err := client.Statistics(context.Background(), request)
 		if err != nil {
 			glog.V(0).Infof("reading quota usage %v: %v", request, err)
+
 			return err
 		}
 		glog.V(4).Infof("read quota usage: %+v", resp)
 
 		// Update the stats cache with latest filer data
-		wfs.stats.UsedSize = resp.UsedSize
-		wfs.stats.TotalSize = resp.TotalSize
+		wfs.stats.UsedSize = resp.GetUsedSize()
+		wfs.stats.TotalSize = resp.GetTotalSize()
 
 		// Reset uncommitted counter since we now have fresh data from filer
 		wfs.ResetUncommittedBytes()
 
-		isOverQuota := int64(resp.UsedSize) > wfs.option.Quota
+		isOverQuota := int64(resp.GetUsedSize()) > wfs.option.Quota
 		if isOverQuota && !wfs.IsOverQuota {
-			glog.Warningf("Quota Exceeded! quota:%d used:%d", wfs.option.Quota, resp.UsedSize)
+			glog.Warningf("Quota Exceeded! quota:%d used:%d", wfs.option.Quota, resp.GetUsedSize())
 		} else if !isOverQuota && wfs.IsOverQuota {
-			glog.Warningf("Within quota limit! quota:%d used:%d", wfs.option.Quota, resp.UsedSize)
+			glog.Warningf("Within quota limit! quota:%d used:%d", wfs.option.Quota, resp.GetUsedSize())
 		}
 		wfs.IsOverQuota = isOverQuota
 

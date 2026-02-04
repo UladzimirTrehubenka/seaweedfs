@@ -11,10 +11,10 @@ import (
 
 func (ms *MasterServer) ListClusterNodes(ctx context.Context, req *master_pb.ListClusterNodesRequest) (*master_pb.ListClusterNodesResponse, error) {
 	resp := &master_pb.ListClusterNodesResponse{}
-	filerGroup := cluster.FilerGroupName(req.FilerGroup)
+	filerGroup := cluster.FilerGroupName(req.GetFilerGroup())
 
-	clusterNodes := ms.Cluster.ListClusterNode(filerGroup, req.ClientType)
-	clusterNodes = limitTo(clusterNodes, req.Limit)
+	clusterNodes := ms.Cluster.ListClusterNode(filerGroup, req.GetClientType())
+	clusterNodes = limitTo(clusterNodes, req.GetLimit())
 	for _, node := range clusterNodes {
 		resp.ClusterNodes = append(resp.ClusterNodes, &master_pb.ListClusterNodesResponse_ClusterNode{
 			Address:     string(node.Address),
@@ -24,16 +24,17 @@ func (ms *MasterServer) ListClusterNodes(ctx context.Context, req *master_pb.Lis
 			Rack:        string(node.Rack),
 		})
 	}
+
 	return resp, nil
 }
 
 func (ms *MasterServer) GetOneFiler(filerGroup cluster.FilerGroupName) pb.ServerAddress {
-
 	filers := ms.Cluster.ListClusterNode(filerGroup, cluster.FilerType)
 
 	if len(filers) > 0 {
 		return filers[rand.IntN(len(filers))].Address
 	}
+
 	return "localhost:8888"
 }
 
@@ -42,7 +43,7 @@ func limitTo(nodes []*cluster.ClusterNode, limit int32) (selected []*cluster.Clu
 		return nodes
 	}
 	selectedSet := make(map[pb.ServerAddress]*cluster.ClusterNode)
-	for i := 0; i < int(limit)*3; i++ {
+	for range int(limit) * 3 {
 		x := rand.IntN(len(nodes))
 		if _, found := selectedSet[nodes[x].Address]; found {
 			continue
@@ -52,5 +53,6 @@ func limitTo(nodes []*cluster.ClusterNode, limit int32) (selected []*cluster.Clu
 	for _, node := range selectedSet {
 		selected = append(selected, node)
 	}
+
 	return
 }

@@ -2,11 +2,13 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/linkedin/goavro/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -28,14 +30,14 @@ func NewAvroDecoder(schemaStr string) (*AvroDecoder, error) {
 }
 
 // Decode decodes Avro binary data to a Go map
-func (ad *AvroDecoder) Decode(data []byte) (map[string]interface{}, error) {
+func (ad *AvroDecoder) Decode(data []byte) (map[string]any, error) {
 	native, _, err := ad.codec.NativeFromBinary(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode Avro data: %w", err)
 	}
 
 	// Convert to map[string]interface{} for easier processing
-	result, ok := native.(map[string]interface{})
+	result, ok := native.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("expected Avro record, got %T", native)
 	}
@@ -56,11 +58,12 @@ func (ad *AvroDecoder) DecodeToRecordValue(data []byte) (*schema_pb.RecordValue,
 // InferRecordType infers a SeaweedMQ RecordType from an Avro schema
 func (ad *AvroDecoder) InferRecordType() (*schema_pb.RecordType, error) {
 	schema := ad.codec.Schema()
+
 	return avroSchemaToRecordType(schema)
 }
 
 // MapToRecordValue converts a Go map to SeaweedMQ RecordValue
-func MapToRecordValue(m map[string]interface{}) *schema_pb.RecordValue {
+func MapToRecordValue(m map[string]any) *schema_pb.RecordValue {
 	fields := make(map[string]*schema_pb.Value)
 
 	for key, value := range m {
@@ -73,7 +76,7 @@ func MapToRecordValue(m map[string]interface{}) *schema_pb.RecordValue {
 }
 
 // goValueToSchemaValue converts a Go value to a SeaweedMQ Value
-func goValueToSchemaValue(value interface{}) *schema_pb.Value {
+func goValueToSchemaValue(value any) *schema_pb.Value {
 	if value == nil {
 		// For null values, use an empty string as default
 		return &schema_pb.Value{
@@ -123,12 +126,13 @@ func goValueToSchemaValue(value interface{}) *schema_pb.Value {
 				},
 			},
 		}
-	case []interface{}:
+	case []any:
 		// Handle arrays
 		listValues := make([]*schema_pb.Value, len(v))
 		for i, item := range v {
 			listValues[i] = goValueToSchemaValue(item)
 		}
+
 		return &schema_pb.Value{
 			Kind: &schema_pb.Value_ListValue{
 				ListValue: &schema_pb.ListValue{
@@ -136,7 +140,7 @@ func goValueToSchemaValue(value interface{}) *schema_pb.Value {
 				},
 			},
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		// Check if this is an Avro union type (single key-value pair with type name as key)
 		// Union types have keys that are typically Avro type names like "int", "string", etc.
 		// Regular nested records would have meaningful field names like "inner", "name", etc.
@@ -240,6 +244,7 @@ func goValueToSchemaValue(value interface{}) *schema_pb.Value {
 		for key, val := range v {
 			fields[key] = goValueToSchemaValue(val)
 		}
+
 		return &schema_pb.Value{
 			Kind: &schema_pb.Value_RecordValue{
 				RecordValue: &schema_pb.RecordValue{
@@ -266,7 +271,7 @@ func avroSchemaToRecordType(schemaStr string) (*schema_pb.RecordType, error) {
 	}
 
 	// Parse the schema JSON to extract field definitions
-	var avroSchema map[string]interface{}
+	var avroSchema map[string]any
 	if err := json.Unmarshal([]byte(schemaStr), &avroSchema); err != nil {
 		return nil, fmt.Errorf("failed to parse Avro schema JSON: %w", err)
 	}
@@ -283,7 +288,7 @@ func avroSchemaToRecordType(schemaStr string) (*schema_pb.RecordType, error) {
 }
 
 // extractAvroFields extracts field definitions from parsed Avro schema JSON
-func extractAvroFields(avroSchema map[string]interface{}) ([]*schema_pb.Field, error) {
+func extractAvroFields(avroSchema map[string]any) ([]*schema_pb.Field, error) {
 	// Check if this is a record type
 	schemaType, ok := avroSchema["type"].(string)
 	if !ok || schemaType != "record" {
@@ -293,18 +298,18 @@ func extractAvroFields(avroSchema map[string]interface{}) ([]*schema_pb.Field, e
 	// Extract fields array
 	fieldsInterface, ok := avroSchema["fields"]
 	if !ok {
-		return nil, fmt.Errorf("no fields found in Avro record schema")
+		return nil, errors.New("no fields found in Avro record schema")
 	}
 
-	fieldsArray, ok := fieldsInterface.([]interface{})
+	fieldsArray, ok := fieldsInterface.([]any)
 	if !ok {
-		return nil, fmt.Errorf("fields must be an array")
+		return nil, errors.New("fields must be an array")
 	}
 
 	// Convert each Avro field to SeaweedMQ field
 	fields := make([]*schema_pb.Field, 0, len(fieldsArray))
 	for i, fieldInterface := range fieldsArray {
-		fieldMap, ok := fieldInterface.(map[string]interface{})
+		fieldMap, ok := fieldInterface.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("field %d is not a valid object", i)
 		}
@@ -321,11 +326,11 @@ func extractAvroFields(avroSchema map[string]interface{}) ([]*schema_pb.Field, e
 }
 
 // convertAvroFieldToSeaweedMQ converts a single Avro field to SeaweedMQ Field
-func convertAvroFieldToSeaweedMQ(avroField map[string]interface{}, fieldIndex int32) (*schema_pb.Field, error) {
+func convertAvroFieldToSeaweedMQ(avroField map[string]any, fieldIndex int32) (*schema_pb.Field, error) {
 	// Extract field name
 	name, ok := avroField["name"].(string)
 	if !ok {
-		return nil, fmt.Errorf("field name is required")
+		return nil, errors.New("field name is required")
 	}
 
 	// Extract field type and check if it's an array
@@ -348,26 +353,29 @@ func convertAvroFieldToSeaweedMQ(avroField map[string]interface{}, fieldIndex in
 }
 
 // convertAvroTypeToSeaweedMQ converts Avro type to SeaweedMQ Type
-func convertAvroTypeToSeaweedMQ(avroType interface{}) (*schema_pb.Type, error) {
+func convertAvroTypeToSeaweedMQ(avroType any) (*schema_pb.Type, error) {
 	fieldType, _, err := convertAvroTypeToSeaweedMQWithRepeated(avroType)
+
 	return fieldType, err
 }
 
 // convertAvroTypeToSeaweedMQWithRepeated converts Avro type to SeaweedMQ Type and returns if it's repeated
-func convertAvroTypeToSeaweedMQWithRepeated(avroType interface{}) (*schema_pb.Type, bool, error) {
+func convertAvroTypeToSeaweedMQWithRepeated(avroType any) (*schema_pb.Type, bool, error) {
 	switch t := avroType.(type) {
 	case string:
 		// Simple type
 		fieldType, err := convertAvroSimpleType(t)
+
 		return fieldType, false, err
 
-	case map[string]interface{}:
+	case map[string]any:
 		// Complex type (record, enum, array, map, fixed)
 		return convertAvroComplexTypeWithRepeated(t)
 
-	case []interface{}:
+	case []any:
 		// Union type
 		fieldType, err := convertAvroUnionType(t)
+
 		return fieldType, false, err
 
 	default:
@@ -432,16 +440,17 @@ func convertAvroSimpleType(avroType string) (*schema_pb.Type, error) {
 }
 
 // convertAvroComplexType converts complex Avro types to SeaweedMQ types
-func convertAvroComplexType(avroType map[string]interface{}) (*schema_pb.Type, error) {
+func convertAvroComplexType(avroType map[string]any) (*schema_pb.Type, error) {
 	fieldType, _, err := convertAvroComplexTypeWithRepeated(avroType)
+
 	return fieldType, err
 }
 
 // convertAvroComplexTypeWithRepeated converts complex Avro types to SeaweedMQ types and returns if it's repeated
-func convertAvroComplexTypeWithRepeated(avroType map[string]interface{}) (*schema_pb.Type, bool, error) {
+func convertAvroComplexTypeWithRepeated(avroType map[string]any) (*schema_pb.Type, bool, error) {
 	typeStr, ok := avroType["type"].(string)
 	if !ok {
-		return nil, false, fmt.Errorf("complex type must have a type field")
+		return nil, false, errors.New("complex type must have a type field")
 	}
 
 	// Handle logical types - they are based on underlying primitive types
@@ -457,6 +466,7 @@ func convertAvroComplexTypeWithRepeated(avroType map[string]interface{}) (*schem
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to extract nested record fields: %w", err)
 		}
+
 		return &schema_pb.Type{
 			Kind: &schema_pb.Type_RecordType{
 				RecordType: &schema_pb.RecordType{
@@ -506,7 +516,7 @@ func convertAvroComplexTypeWithRepeated(avroType map[string]interface{}) (*schem
 }
 
 // convertAvroSimpleTypeWithLogical handles logical types based on their underlying primitive types
-func convertAvroSimpleTypeWithLogical(primitiveType string, avroType map[string]interface{}) (*schema_pb.Type, bool, error) {
+func convertAvroSimpleTypeWithLogical(primitiveType string, avroType map[string]any) (*schema_pb.Type, bool, error) {
 	logicalType, _ := avroType["logicalType"].(string)
 
 	// Map logical types to appropriate SeaweedMQ types
@@ -563,12 +573,13 @@ func convertAvroSimpleTypeWithLogical(primitiveType string, avroType map[string]
 	default:
 		// For unknown logical types, fall back to the underlying primitive type
 		fieldType, err := convertAvroSimpleType(primitiveType)
+
 		return fieldType, false, err
 	}
 }
 
 // convertAvroUnionType converts Avro union types to SeaweedMQ types
-func convertAvroUnionType(unionTypes []interface{}) (*schema_pb.Type, error) {
+func convertAvroUnionType(unionTypes []any) (*schema_pb.Type, error) {
 	// For unions, we'll use the first non-null type
 	// This is a simplification - in a full implementation, we might want to create a union type
 	for _, unionType := range unionTypes {
@@ -590,7 +601,7 @@ func convertAvroUnionType(unionTypes []interface{}) (*schema_pb.Type, error) {
 
 // InferRecordTypeFromMap infers a RecordType from a decoded map
 // This is useful when we don't have the original Avro schema
-func InferRecordTypeFromMap(m map[string]interface{}) *schema_pb.RecordType {
+func InferRecordTypeFromMap(m map[string]any) *schema_pb.RecordType {
 	fields := make([]*schema_pb.Field, 0, len(m))
 	fieldIndex := int32(0)
 
@@ -620,7 +631,7 @@ func InferRecordTypeFromMap(m map[string]interface{}) *schema_pb.RecordType {
 }
 
 // inferTypeFromValue infers a SeaweedMQ Type from a Go value
-func inferTypeFromValue(value interface{}) *schema_pb.Type {
+func inferTypeFromValue(value any) *schema_pb.Type {
 	if value == nil {
 		// Default to string for null values
 		return &schema_pb.Type{
@@ -679,7 +690,7 @@ func inferTypeFromValue(value interface{}) *schema_pb.Type {
 				ScalarType: schema_pb.ScalarType_TIMESTAMP,
 			},
 		}
-	case []interface{}:
+	case []any:
 		// Handle arrays - infer element type from first element
 		var elementType *schema_pb.Type
 		if len(v) > 0 {
@@ -700,9 +711,10 @@ func inferTypeFromValue(value interface{}) *schema_pb.Type {
 				},
 			},
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		// Handle nested records
 		nestedRecordType := InferRecordTypeFromMap(v)
+
 		return &schema_pb.Type{
 			Kind: &schema_pb.Type_RecordType{
 				RecordType: nestedRecordType,

@@ -81,6 +81,7 @@ func mounted(mountPoint string) (bool, error) {
 			return true, nil
 		}
 	}
+
 	return false, nil
 }
 
@@ -116,7 +117,7 @@ func parseInfoFile(r io.Reader) ([]*Info, error) {
 		if _, err := fmt.Sscanf(text, mountinfoFormat,
 			&p.ID, &p.Parent, &p.Major, &p.Minor,
 			&p.Root, &p.Mountpoint, &p.Opts, &optionalFields); err != nil {
-			return nil, fmt.Errorf("Scanning '%s' failed: %s", text, err)
+			return nil, fmt.Errorf("Scanning '%s' failed: %w", text, err)
 		}
 		// Safe as mountinfo encodes mountpoints with spaces as \040.
 		index := strings.Index(text, " - ")
@@ -134,6 +135,7 @@ func parseInfoFile(r io.Reader) ([]*Info, error) {
 		p.VfsOpts = strings.Join(postSeparatorFields[2:], " ")
 		out = append(out, p)
 	}
+
 	return out, nil
 }
 
@@ -147,6 +149,7 @@ func checkMountPointAvailable(dir string) bool {
 		if err != nil {
 			glog.Errorf("check %s: %v", mountPoint, err)
 		}
+
 		return false
 	}
 

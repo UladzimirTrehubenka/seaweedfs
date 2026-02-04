@@ -3,6 +3,7 @@ package abstract_sql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ type SqlGenerator interface {
 
 type AbstractSqlStore struct {
 	SqlGenerator
+
 	DB                     *sql.DB
 	SupportBucketTable     bool
 	dbs                    map[string]bool
@@ -68,9 +70,9 @@ const (
 )
 
 type TxOrDB interface {
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
-	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
-	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 func (store *AbstractSqlStore) BeginTransaction(ctx context.Context) (context.Context, error) {
@@ -88,17 +90,18 @@ func (store *AbstractSqlStore) CommitTransaction(ctx context.Context) error {
 	if tx, ok := ctx.Value("tx").(*sql.Tx); ok {
 		return tx.Commit()
 	}
+
 	return nil
 }
 func (store *AbstractSqlStore) RollbackTransaction(ctx context.Context) error {
 	if tx, ok := ctx.Value("tx").(*sql.Tx); ok {
 		return tx.Rollback()
 	}
+
 	return nil
 }
 
 func (store *AbstractSqlStore) getTxOrDB(ctx context.Context, fullpath util.FullPath, isForChildren bool) (txOrDB TxOrDB, bucket string, shortPath util.FullPath, err error) {
-
 	shortPath = fullpath
 	bucket = DEFAULT_TABLE
 
@@ -109,18 +112,18 @@ func (store *AbstractSqlStore) getTxOrDB(ctx context.Context, fullpath util.Full
 	}
 
 	if !store.SupportBucketTable {
-		return
+		return txOrDB, bucket, shortPath, err
 	}
 
 	if !strings.HasPrefix(string(fullpath), "/buckets/") {
-		return
+		return txOrDB, bucket, shortPath, err
 	}
 
 	// detect bucket
 	bucketAndObjectKey := string(fullpath)[len("/buckets/"):]
 	t := strings.Index(bucketAndObjectKey, "/")
 	if t < 0 && !isForChildren {
-		return
+		return txOrDB, bucket, shortPath, err
 	}
 	bucket = bucketAndObjectKey
 	shortPath = "/"
@@ -142,19 +145,16 @@ func (store *AbstractSqlStore) getTxOrDB(ctx context.Context, fullpath util.Full
 				store.dbs[bucket] = true
 			}
 		}
-
 	} else {
 		err = fmt.Errorf("invalid bucket name %s", bucket)
 	}
 
-	return
+	return txOrDB, bucket, shortPath, err
 }
 
 func (store *AbstractSqlStore) InsertEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	// define the work to be done
-	var doInsert func() error
-	doInsert = func() error {
+	var doInsert = func() error {
 		db, bucket, shortPath, err := store.getTxOrDB(ctx, entry.FullPath, false)
 		if err != nil {
 			return fmt.Errorf("findDB %s : %w", entry.FullPath, err)
@@ -172,7 +172,6 @@ func (store *AbstractSqlStore) InsertEntry(ctx context.Context, entry *filer.Ent
 		sqlInsert := "insert"
 		res, err := db.ExecContext(ctx, store.GetSqlInsert(bucket), util.HashStringToLong(dir), name, dir, meta)
 		if err != nil && strings.Contains(strings.ToLower(err.Error()), "duplicate entry") {
-			// now the insert failed possibly due to duplication constraints
 			sqlInsert = "falls back to update"
 			glog.V(1).InfofCtx(ctx, "insert %s %s: %v", entry.FullPath, sqlInsert, err)
 			res, err = db.ExecContext(ctx, store.GetSqlUpdate(bucket), meta, util.HashStringToLong(dir), name, dir)
@@ -193,15 +192,15 @@ func (store *AbstractSqlStore) InsertEntry(ctx context.Context, entry *filer.Ent
 		if ctx.Value("tx") != nil {
 			return doInsert()
 		}
+
 		return util.RetryUntil("InsertEntry", doInsert, store.RetryableErrorCallback)
 	}
+
 	return doInsert()
 }
 
 func (store *AbstractSqlStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
-	var doUpdate func() error
-	doUpdate = func() error {
+	var doUpdate = func() error {
 		db, bucket, shortPath, err := store.getTxOrDB(ctx, entry.FullPath, false)
 		if err != nil {
 			return fmt.Errorf("findDB %s : %w", entry.FullPath, err)
@@ -222,6 +221,7 @@ func (store *AbstractSqlStore) UpdateEntry(ctx context.Context, entry *filer.Ent
 		if err != nil {
 			return fmt.Errorf("update %s but no rows affected: %w", entry.FullPath, err)
 		}
+
 		return nil
 	}
 
@@ -229,16 +229,17 @@ func (store *AbstractSqlStore) UpdateEntry(ctx context.Context, entry *filer.Ent
 		if ctx.Value("tx") != nil {
 			return doUpdate()
 		}
+
 		return util.RetryUntil("UpdateEntry", doUpdate, store.RetryableErrorCallback)
 	}
+
 	return doUpdate()
 }
 
 func (store *AbstractSqlStore) FindEntry(ctx context.Context, fullpath util.FullPath) (*filer.Entry, error) {
-
 	db, bucket, shortPath, err := store.getTxOrDB(ctx, fullpath, false)
 	if err != nil {
-		return nil, fmt.Errorf("findDB %s : %v", fullpath, err)
+		return nil, fmt.Errorf("findDB %s : %w", fullpath, err)
 	}
 
 	dir, name := shortPath.DirAndName()
@@ -246,26 +247,25 @@ func (store *AbstractSqlStore) FindEntry(ctx context.Context, fullpath util.Full
 
 	var data []byte
 	if err := row.Scan(&data); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, filer_pb.ErrNotFound
 		}
-		return nil, fmt.Errorf("find %s: %v", fullpath, err)
+
+		return nil, fmt.Errorf("find %s: %w", fullpath, err)
 	}
 
 	entry := &filer.Entry{
 		FullPath: fullpath,
 	}
 	if err := entry.DecodeAttributesAndChunks(util.MaybeDecompressData(data)); err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
 }
 
 func (store *AbstractSqlStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) error {
-
-	var doDelete func() error
-	doDelete = func() error {
+	var doDelete = func() error {
 		db, bucket, shortPath, err := store.getTxOrDB(ctx, fullpath, false)
 		if err != nil {
 			return fmt.Errorf("findDB %s : %w", fullpath, err)
@@ -282,6 +282,7 @@ func (store *AbstractSqlStore) DeleteEntry(ctx context.Context, fullpath util.Fu
 		if err != nil {
 			return fmt.Errorf("delete %s but no rows affected: %w", fullpath, err)
 		}
+
 		return nil
 	}
 
@@ -289,15 +290,15 @@ func (store *AbstractSqlStore) DeleteEntry(ctx context.Context, fullpath util.Fu
 		if ctx.Value("tx") != nil {
 			return doDelete()
 		}
+
 		return util.RetryUntil("DeleteEntry", doDelete, store.RetryableErrorCallback)
 	}
+
 	return doDelete()
 }
 
 func (store *AbstractSqlStore) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) error {
-
-	var doDeleteFolderChildren func() error
-	doDeleteFolderChildren = func() error {
+	var doDeleteFolderChildren = func() error {
 		db, bucket, shortPath, err := store.getTxOrDB(ctx, fullpath, true)
 		if err != nil {
 			return fmt.Errorf("findDB %s : %w", fullpath, err)
@@ -308,6 +309,7 @@ func (store *AbstractSqlStore) DeleteFolderChildren(ctx context.Context, fullpat
 				store.dbsLock.Lock()
 				delete(store.dbs, bucket)
 				store.dbsLock.Unlock()
+
 				return nil
 			} else {
 				return err
@@ -324,6 +326,7 @@ func (store *AbstractSqlStore) DeleteFolderChildren(ctx context.Context, fullpat
 		if err != nil {
 			return fmt.Errorf("deleteFolderChildren %s but no rows affected: %w", fullpath, err)
 		}
+
 		return nil
 	}
 
@@ -331,16 +334,17 @@ func (store *AbstractSqlStore) DeleteFolderChildren(ctx context.Context, fullpat
 		if ctx.Value("tx") != nil {
 			return doDeleteFolderChildren()
 		}
+
 		return util.RetryUntil("DeleteFolderChildren", doDeleteFolderChildren, store.RetryableErrorCallback)
 	}
+
 	return doDeleteFolderChildren()
 }
 
 func (store *AbstractSqlStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, prefix string, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
-
 	db, bucket, shortPath, err := store.getTxOrDB(ctx, dirPath, true)
 	if err != nil {
-		return lastFileName, fmt.Errorf("findDB %s : %v", dirPath, err)
+		return lastFileName, fmt.Errorf("findDB %s : %w", dirPath, err)
 	}
 
 	sqlText := store.GetSqlListExclusive(bucket)
@@ -350,7 +354,7 @@ func (store *AbstractSqlStore) ListDirectoryPrefixedEntries(ctx context.Context,
 
 	rows, err := db.QueryContext(ctx, sqlText, util.HashStringToLong(string(shortPath)), startFileName, string(shortPath), prefix+"%", limit+1)
 	if err != nil {
-		return lastFileName, fmt.Errorf("list %s : %v", dirPath, err)
+		return lastFileName, fmt.Errorf("list %s : %w", dirPath, err)
 	}
 	defer rows.Close()
 
@@ -359,7 +363,8 @@ func (store *AbstractSqlStore) ListDirectoryPrefixedEntries(ctx context.Context,
 		var data []byte
 		if err = rows.Scan(&name, &data); err != nil {
 			glog.V(0).InfofCtx(ctx, "scan %s : %v", dirPath, err)
-			return lastFileName, fmt.Errorf("scan %s: %v", dirPath, err)
+
+			return lastFileName, fmt.Errorf("scan %s: %w", dirPath, err)
 		}
 		lastFileName = name
 
@@ -368,19 +373,20 @@ func (store *AbstractSqlStore) ListDirectoryPrefixedEntries(ctx context.Context,
 		}
 		if err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData(data)); err != nil {
 			glog.V(0).InfofCtx(ctx, "scan decode %s : %v", entry.FullPath, err)
-			return lastFileName, fmt.Errorf("scan decode %s : %v", entry.FullPath, err)
+
+			return lastFileName, fmt.Errorf("scan decode %s : %w", entry.FullPath, err)
 		}
 
 		resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 		if resEachEntryFuncErr != nil {
 			err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 			break
 		}
 
 		if !resEachEntryFunc {
 			break
 		}
-
 	}
 
 	return lastFileName, err
@@ -398,6 +404,7 @@ func isValidBucket(bucket string) bool {
 	if s3bucket.VerifyS3BucketName(bucket) != nil {
 		return false
 	}
+
 	return bucket != DEFAULT_TABLE && bucket != ""
 }
 
@@ -405,7 +412,8 @@ func (store *AbstractSqlStore) CreateTable(ctx context.Context, bucket string) e
 	if !store.SupportBucketTable {
 		return nil
 	}
-	_, err := store.DB.ExecContext(ctx, store.SqlGenerator.GetSqlCreateTable(bucket))
+	_, err := store.DB.ExecContext(ctx, store.GetSqlCreateTable(bucket))
+
 	return err
 }
 
@@ -413,6 +421,7 @@ func (store *AbstractSqlStore) deleteTable(ctx context.Context, bucket string) e
 	if !store.SupportBucketTable {
 		return nil
 	}
-	_, err := store.DB.ExecContext(ctx, store.SqlGenerator.GetSqlDropTable(bucket))
+	_, err := store.DB.ExecContext(ctx, store.GetSqlDropTable(bucket))
+
 	return err
 }

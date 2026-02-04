@@ -56,6 +56,7 @@ func (f *FilerOffsetStorage) LoadCheckpoint(namespace, topicName string, partiti
 			return fmt.Errorf("invalid checkpoint file format: expected 8 bytes, got %d", len(data))
 		}
 		offset = int64(util.BytesToUint64(data))
+
 		return nil
 	})
 
@@ -85,10 +86,10 @@ func (f *FilerOffsetStorage) Reset() error {
 // Format: /topics/{namespace}/{topic}/{version}/{partition}
 func (f *FilerOffsetStorage) getPartitionDir(namespace, topicName string, partition *schema_pb.Partition) string {
 	// Generate version from UnixTimeNs
-	version := time.Unix(0, partition.UnixTimeNs).UTC().Format("v2006-01-02-15-04-05")
+	version := time.Unix(0, partition.GetUnixTimeNs()).UTC().Format("v2006-01-02-15-04-05")
 
 	// Generate partition range string
-	partitionRange := fmt.Sprintf("%04d-%04d", partition.RangeStart, partition.RangeStop)
+	partitionRange := fmt.Sprintf("%04d-%04d", partition.GetRangeStart(), partition.GetRangeStop())
 
 	return fmt.Sprintf("%s/%s/%s/%s/%s", filer.TopicsDir, namespace, topicName, version, partitionRange)
 }
@@ -96,5 +97,5 @@ func (f *FilerOffsetStorage) getPartitionDir(namespace, topicName string, partit
 // getPartitionKey generates a unique key for a partition
 func (f *FilerOffsetStorage) getPartitionKey(partition *schema_pb.Partition) string {
 	return fmt.Sprintf("ring:%d:range:%d-%d:time:%d",
-		partition.RingSize, partition.RangeStart, partition.RangeStop, partition.UnixTimeNs)
+		partition.GetRingSize(), partition.GetRangeStart(), partition.GetRangeStop(), partition.GetUnixTimeNs())
 }

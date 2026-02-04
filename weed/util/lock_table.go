@@ -49,6 +49,7 @@ func NewLockTable[T comparable]() *LockTable[T] {
 func (lt *LockTable[T]) NewActiveLock(intention string, lockType LockType) *ActiveLock {
 	id := atomic.AddInt64(&lt.lockIdSeq, 1)
 	l := &ActiveLock{ID: id, intention: intention, lockType: lockType}
+
 	return l
 }
 
@@ -134,6 +135,7 @@ func (lt *LockTable[T]) ReleaseLock(key T, lock *ActiveLock) {
 		if waiter == lock {
 			waiter.isDeleted = true
 			entry.waiters = append(entry.waiters[:i], entry.waiters[i+1:]...)
+
 			break
 		}
 	}

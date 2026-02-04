@@ -3,16 +3,18 @@ package filer
 import (
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -24,7 +26,6 @@ type LogFileEntry struct {
 }
 
 func (f *Filer) collectPersistedLogBuffer(startPosition log_buffer.MessagePosition, stopTsNs int64) (v *OrderedLogVisitor, err error) {
-
 	if stopTsNs != 0 && startPosition.Time.UnixNano() > stopTsNs {
 		return nil, io.EOF
 	}
@@ -37,7 +38,6 @@ func (f *Filer) collectPersistedLogBuffer(startPosition log_buffer.MessagePositi
 	}
 
 	return NewOrderedLogVisitor(f, startPosition, stopTsNs, dayEntries)
-
 }
 
 func (f *Filer) HasPersistedLogFiles(startPosition log_buffer.MessagePosition) (bool, error) {
@@ -50,6 +50,7 @@ func (f *Filer) HasPersistedLogFiles(startPosition log_buffer.MessagePosition) (
 	if len(dayEntries) == 0 {
 		return false, nil
 	}
+
 	return true, nil
 }
 
@@ -64,7 +65,7 @@ type LogEntryItemPriorityQueue []*LogEntryItem
 
 func (pq LogEntryItemPriorityQueue) Len() int { return len(pq) }
 func (pq LogEntryItemPriorityQueue) Less(i, j int) bool {
-	return pq[i].Entry.TsNs < pq[j].Entry.TsNs
+	return pq[i].Entry.GetTsNs() < pq[j].Entry.GetTsNs()
 }
 func (pq LogEntryItemPriorityQueue) Swap(i, j int) { pq[i], pq[j] = pq[j], pq[i] }
 func (pq *LogEntryItemPriorityQueue) Push(x any) {
@@ -75,6 +76,7 @@ func (pq *LogEntryItemPriorityQueue) Pop() any {
 	n := len(*pq)
 	item := (*pq)[n-1]
 	*pq = (*pq)[:n-1]
+
 	return item
 }
 
@@ -87,7 +89,6 @@ type OrderedLogVisitor struct {
 }
 
 func NewOrderedLogVisitor(f *Filer, startPosition log_buffer.MessagePosition, stopTsNs int64, dayEntries []*Entry) (*OrderedLogVisitor, error) {
-
 	perFilerQueueMap := make(map[string]*LogFileQueueIterator)
 	// initialize the priority queue
 	pq := &LogEntryItemPriorityQueue{}
@@ -98,9 +99,10 @@ func NewOrderedLogVisitor(f *Filer, startPosition log_buffer.MessagePosition, st
 		pq:                    pq,
 		logFileEntryCollector: NewLogFileEntryCollector(f, startPosition, stopTsNs, dayEntries),
 	}
-	if err := t.logFileEntryCollector.collectMore(t); err != nil && err != io.EOF {
+	if err := t.logFileEntryCollector.collectMore(t); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
+
 	return t, nil
 }
 
@@ -115,7 +117,7 @@ func (o *OrderedLogVisitor) GetNext() (logEntry *filer_pb.LogEntry, err error) {
 	it := o.perFilerIteratorMap[filerId]
 	next, nextErr := it.getNext(o)
 	if nextErr != nil {
-		if nextErr == io.EOF {
+		if errors.Is(nextErr, io.EOF) {
 			// do nothing since the filer has no more log entries
 		} else {
 			return nil, fmt.Errorf("failed to get next log entry: %w", nextErr)
@@ -126,6 +128,7 @@ func (o *OrderedLogVisitor) GetNext() (logEntry *filer_pb.LogEntry, err error) {
 			filer: filerId,
 		})
 	}
+
 	return item.Entry, nil
 }
 
@@ -134,6 +137,7 @@ func getFilerId(name string) string {
 	if idx < 0 {
 		return ""
 	}
+
 	return name[idx+1:]
 }
 
@@ -196,7 +200,7 @@ func (c *LogFileEntryCollector) collectMore(v *OrderedLogVisitor) (err error) {
 
 	hourMinuteEntries, _, listHourMinuteErr := c.f.ListDirectoryEntries(context.Background(), util.NewFullPath(SystemLogDir, dayEntry.Name()), "", false, math.MaxInt32, "", "", "")
 	if listHourMinuteErr != nil {
-		return fmt.Errorf("fail to list log %s by day: %v", dayEntry.Name(), listHourMinuteErr)
+		return fmt.Errorf("fail to list log %s by day: %w", dayEntry.Name(), listHourMinuteErr)
 	}
 	freshFilerIds := make(map[string]string)
 	for _, hourMinuteEntry := range hourMinuteEntries {
@@ -218,11 +222,13 @@ func (c *LogFileEntryCollector) collectMore(v *OrderedLogVisitor) (err error) {
 		t, parseErr := time.Parse("2006-01-02-15-04", tsMinute)
 		if parseErr != nil {
 			glog.Errorf("failed to parse %s: %v", tsMinute, parseErr)
+
 			continue
 		}
 		filerId := getFilerId(hourMinuteEntry.Name())
 		if filerId == "" {
 			glog.Warningf("Invalid log file name format: %s", hourMinuteEntry.Name())
+
 			continue // Skip files with invalid format
 		}
 		iter, found := v.perFilerIteratorMap[filerId]
@@ -242,11 +248,12 @@ func (c *LogFileEntryCollector) collectMore(v *OrderedLogVisitor) (err error) {
 		iter, found := v.perFilerIteratorMap[filerId]
 		if !found {
 			glog.Errorf("Unexpected! failed to find iterator for filer %s", filerId)
+
 			continue
 		}
 		next, nextErr := iter.getNext(v)
 		if nextErr != nil {
-			if nextErr == io.EOF {
+			if errors.Is(nextErr, io.EOF) {
 				// do nothing since the filer has no more log entries
 			} else {
 				return fmt.Errorf("failed to get next log entry for %v: %w", entryName, nextErr)
@@ -289,6 +296,7 @@ func (iter *LogFileQueueIterator) getNext(v *OrderedLogVisitor) (logEntry *filer
 		if iter.pendingIndex < len(iter.pendingEntries) {
 			logEntry = iter.pendingEntries[iter.pendingIndex]
 			iter.pendingIndex++
+
 			return logEntry, nil
 		}
 		// reset for next file
@@ -309,7 +317,7 @@ func (iter *LogFileQueueIterator) getNext(v *OrderedLogVisitor) (logEntry *filer
 		}
 		next := iter.q.Peek()
 		if next == nil {
-			if collectErr := v.logFileEntryCollector.collectMore(v); collectErr != nil && collectErr != io.EOF {
+			if collectErr := v.logFileEntryCollector.collectMore(v); collectErr != nil && !errors.Is(collectErr, io.EOF) {
 				return nil, collectErr
 			}
 			next = iter.q.Peek() // Re-peek after collectMore
@@ -338,15 +346,17 @@ func (iter *LogFileQueueIterator) readFileEntries(fileEntry *Entry) (entries []*
 
 	for {
 		logEntry, err := fileIterator.getNext()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return entries, nil
 		}
 		if err != nil {
 			if isChunkNotFoundError(err) {
 				// Volume or chunk was deleted, skip the rest of this log file
 				glog.Warningf("skipping rest of %s: %v", fileIterator.filePath, err)
+
 				return entries, nil
 			}
+
 			return nil, err
 		}
 		entries = append(entries, logEntry)
@@ -377,6 +387,7 @@ func (iter *LogFileIterator) Close() error {
 	if r, ok := iter.r.(io.Closer); ok {
 		return r.Close()
 	}
+
 	return nil
 }
 
@@ -386,7 +397,7 @@ func (iter *LogFileIterator) getNext() (logEntry *filer_pb.LogEntry, err error) 
 	for {
 		n, err = iter.r.Read(iter.sizeBuf)
 		if err != nil {
-			return
+			return logEntry, err
 		}
 		if n != 4 {
 			return nil, fmt.Errorf("size %d bytes, expected 4 bytes", n)
@@ -396,21 +407,22 @@ func (iter *LogFileIterator) getNext() (logEntry *filer_pb.LogEntry, err error) 
 		entryData := make([]byte, size)
 		n, err = iter.r.Read(entryData)
 		if err != nil {
-			return
+			return logEntry, err
 		}
 		if n != int(size) {
 			return nil, fmt.Errorf("entry data %d bytes, expected %d bytes", n, size)
 		}
 		logEntry = &filer_pb.LogEntry{}
 		if err = proto.Unmarshal(entryData, logEntry); err != nil {
-			return
+			return logEntry, err
 		}
-		if logEntry.TsNs <= iter.startTsNs {
+		if logEntry.GetTsNs() <= iter.startTsNs {
 			continue
 		}
-		if iter.stopTsNs != 0 && logEntry.TsNs > iter.stopTsNs {
+		if iter.stopTsNs != 0 && logEntry.GetTsNs() > iter.stopTsNs {
 			return nil, io.EOF
 		}
-		return
+
+		return logEntry, err
 	}
 }

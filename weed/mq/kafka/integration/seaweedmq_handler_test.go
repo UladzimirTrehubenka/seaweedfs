@@ -313,7 +313,7 @@ func TestSeaweedMQHandler_MultiplePartitions(t *testing.T) {
 	defer handler.DeleteTopic(topicName)
 
 	// Produce to different partitions
-	for partitionID := int32(0); partitionID < numPartitions; partitionID++ {
+	for partitionID := range numPartitions {
 		key := []byte("partition-key")
 		value := []byte("partition-value")
 

@@ -3,8 +3,9 @@ package broker
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 func TestValidateRecordValue(t *testing.T) {
@@ -160,21 +161,21 @@ func TestRecordValueMarshalUnmarshalIntegration(t *testing.T) {
 	}
 
 	// Verify field values
-	keyField := unmarshaledRecord.Fields["key"]
-	if keyValue, ok := keyField.Kind.(*schema_pb.Value_BytesValue); ok {
+	keyField := unmarshaledRecord.GetFields()["key"]
+	if keyValue, ok := keyField.GetKind().(*schema_pb.Value_BytesValue); ok {
 		if string(keyValue.BytesValue) != "integration-key" {
 			t.Errorf("Key field mismatch: expected 'integration-key', got '%s'", string(keyValue.BytesValue))
 		}
 	} else {
-		t.Errorf("Key field is not BytesValue: %T", keyField.Kind)
+		t.Errorf("Key field is not BytesValue: %T", keyField.GetKind())
 	}
 
-	valueField := unmarshaledRecord.Fields["value"]
-	if valueValue, ok := valueField.Kind.(*schema_pb.Value_StringValue); ok {
+	valueField := unmarshaledRecord.GetFields()["value"]
+	if valueValue, ok := valueField.GetKind().(*schema_pb.Value_StringValue); ok {
 		if valueValue.StringValue != "integration-value" {
 			t.Errorf("Value field mismatch: expected 'integration-value', got '%s'", valueValue.StringValue)
 		}
 	} else {
-		t.Errorf("Value field is not StringValue: %T", valueField.Kind)
+		t.Errorf("Value field is not StringValue: %T", valueField.GetKind())
 	}
 }

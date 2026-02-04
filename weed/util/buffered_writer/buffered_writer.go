@@ -23,7 +23,6 @@ func NewBufferedWriteCloser(bufferLimit int) *BufferedWriteCloser {
 }
 
 func (b *BufferedWriteCloser) Write(p []byte) (n int, err error) {
-
 	if b.buffer.Len()+len(p) >= b.bufferLimit {
 		if err := b.FlushFunc(b.buffer.Bytes(), b.nextFlushOffset); err != nil {
 			return 0, err
@@ -33,7 +32,6 @@ func (b *BufferedWriteCloser) Write(p []byte) (n int, err error) {
 	}
 
 	return b.buffer.Write(p)
-
 }
 
 func (b *BufferedWriteCloser) Close() error {

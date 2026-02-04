@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 	"github.com/seaweedfs/seaweedfs/weed/iam/utils"
@@ -40,6 +41,7 @@ func (fd *FlexibleDuration) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("invalid duration string %q: %w", durationStr, parseErr)
 		}
 		fd.Duration = duration
+
 		return nil
 	}
 
@@ -47,6 +49,7 @@ func (fd *FlexibleDuration) UnmarshalJSON(data []byte) error {
 	var nanoseconds int64
 	if err := json.Unmarshal(data, &nanoseconds); err == nil {
 		fd.Duration = time.Duration(nanoseconds)
+
 		return nil
 	}
 
@@ -55,6 +58,7 @@ func (fd *FlexibleDuration) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &numberStr); err == nil {
 		if nanoseconds, parseErr := strconv.ParseInt(numberStr, 10, 64); parseErr == nil {
 			fd.Duration = time.Duration(nanoseconds)
+
 			return nil
 		}
 	}
@@ -65,7 +69,7 @@ func (fd *FlexibleDuration) UnmarshalJSON(data []byte) error {
 // MarshalJSON implements JSON marshaling for FlexibleDuration
 // Always marshals as a human-readable duration string
 func (fd FlexibleDuration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(fd.Duration.String())
+	return json.Marshal(fd.String())
 }
 
 // STSService provides Security Token Service functionality
@@ -118,7 +122,7 @@ type ProviderConfig struct {
 	Type string `json:"type"`
 
 	// Config contains provider-specific configuration
-	Config map[string]interface{} `json:"config"`
+	Config map[string]any `json:"config"`
 
 	// Enabled indicates if this provider should be active
 	Enabled bool `json:"enabled"`
@@ -238,7 +242,7 @@ type SessionInfo struct {
 	Policies []string `json:"policies"`
 
 	// RequestContext contains additional request context for policy evaluation
-	RequestContext map[string]interface{} `json:"requestContext,omitempty"`
+	RequestContext map[string]any `json:"requestContext,omitempty"`
 
 	// CreatedAt is when the session was created
 	CreatedAt time.Time `json:"createdAt"`
@@ -261,7 +265,7 @@ func NewSTSService() *STSService {
 // Initialize initializes the STS service with configuration
 func (s *STSService) Initialize(config *STSConfig) error {
 	if config == nil {
-		return fmt.Errorf(ErrConfigCannotBeNil)
+		return errors.New(ErrConfigCannotBeNil)
 	}
 
 	if err := s.validateConfig(config); err != nil {
@@ -279,21 +283,22 @@ func (s *STSService) Initialize(config *STSConfig) error {
 	}
 
 	s.initialized = true
+
 	return nil
 }
 
 // validateConfig validates the STS configuration
 func (s *STSService) validateConfig(config *STSConfig) error {
 	if config.TokenDuration.Duration <= 0 {
-		return fmt.Errorf(ErrInvalidTokenDuration)
+		return errors.New(ErrInvalidTokenDuration)
 	}
 
 	if config.MaxSessionLength.Duration <= 0 {
-		return fmt.Errorf(ErrInvalidMaxSessionLength)
+		return errors.New(ErrInvalidMaxSessionLength)
 	}
 
 	if config.Issuer == "" {
-		return fmt.Errorf(ErrIssuerRequired)
+		return errors.New(ErrIssuerRequired)
 	}
 
 	if len(config.SigningKey) < MinSigningKeyLength {
@@ -307,6 +312,7 @@ func (s *STSService) validateConfig(config *STSConfig) error {
 func (s *STSService) loadProvidersFromConfig(config *STSConfig) error {
 	if len(config.Providers) == 0 {
 		glog.V(2).Infof("No providers configured in STS config")
+
 		return nil
 	}
 
@@ -346,6 +352,7 @@ func (s *STSService) getProviderNames() []string {
 	for name := range s.providers {
 		names = append(names, name)
 	}
+
 	return names
 }
 
@@ -357,12 +364,12 @@ func (s *STSService) IsInitialized() bool {
 // RegisterProvider registers an identity provider
 func (s *STSService) RegisterProvider(provider providers.IdentityProvider) error {
 	if provider == nil {
-		return fmt.Errorf(ErrProviderCannotBeNil)
+		return errors.New(ErrProviderCannotBeNil)
 	}
 
 	name := provider.Name()
 	if name == "" {
-		return fmt.Errorf(ErrProviderNameEmpty)
+		return errors.New(ErrProviderNameEmpty)
 	}
 
 	s.providers[name] = provider
@@ -406,11 +413,11 @@ func (s *STSService) SetTrustPolicyValidator(validator TrustPolicyValidator) {
 // This method is now completely stateless - all session information is embedded in the JWT token
 func (s *STSService) AssumeRoleWithWebIdentity(ctx context.Context, request *AssumeRoleWithWebIdentityRequest) (*AssumeRoleResponse, error) {
 	if !s.initialized {
-		return nil, fmt.Errorf(ErrSTSServiceNotInitialized)
+		return nil, errors.New(ErrSTSServiceNotInitialized)
 	}
 
 	if request == nil {
-		return nil, fmt.Errorf("request cannot be nil")
+		return nil, errors.New("request cannot be nil")
 	}
 
 	// Validate request parameters
@@ -420,7 +427,7 @@ func (s *STSService) AssumeRoleWithWebIdentity(ctx context.Context, request *Ass
 
 	// Check for unsupported session policy
 	if request.Policy != nil {
-		return nil, fmt.Errorf("session policies are not currently supported - Policy parameter must be omitted")
+		return nil, errors.New("session policies are not currently supported - Policy parameter must be omitted")
 	}
 
 	// 1. Validate the web identity token with appropriate provider
@@ -459,7 +466,7 @@ func (s *STSService) AssumeRoleWithWebIdentity(ctx context.Context, request *Ass
 	}
 
 	// Create request context from identity attributes for policy evaluation
-	requestContext := make(map[string]interface{}, len(externalIdentity.Attributes)+3)
+	requestContext := make(map[string]any, len(externalIdentity.Attributes)+3)
 
 	// Add generic attributes (including preferred_username, etc.)
 	if externalIdentity.Attributes != nil {
@@ -505,11 +512,11 @@ func (s *STSService) AssumeRoleWithWebIdentity(ctx context.Context, request *Ass
 // This method is now completely stateless - all session information is embedded in the JWT token
 func (s *STSService) AssumeRoleWithCredentials(ctx context.Context, request *AssumeRoleWithCredentialsRequest) (*AssumeRoleResponse, error) {
 	if !s.initialized {
-		return nil, fmt.Errorf("STS service not initialized")
+		return nil, errors.New("STS service not initialized")
 	}
 
 	if request == nil {
-		return nil, fmt.Errorf("request cannot be nil")
+		return nil, errors.New("request cannot be nil")
 	}
 
 	// Validate request parameters
@@ -585,11 +592,11 @@ func (s *STSService) AssumeRoleWithCredentials(ctx context.Context, request *Ass
 // This method is now completely stateless - all session information is extracted from the JWT token
 func (s *STSService) ValidateSessionToken(ctx context.Context, sessionToken string) (*SessionInfo, error) {
 	if !s.initialized {
-		return nil, fmt.Errorf(ErrSTSServiceNotInitialized)
+		return nil, errors.New(ErrSTSServiceNotInitialized)
 	}
 
 	if sessionToken == "" {
-		return nil, fmt.Errorf(ErrSessionTokenCannotBeEmpty)
+		return nil, errors.New(ErrSessionTokenCannotBeEmpty)
 	}
 
 	// Validate JWT and extract comprehensive session claims
@@ -621,21 +628,21 @@ func (s *STSService) ValidateSessionToken(ctx context.Context, sessionToken stri
 // validateAssumeRoleWithWebIdentityRequest validates the request parameters
 func (s *STSService) validateAssumeRoleWithWebIdentityRequest(request *AssumeRoleWithWebIdentityRequest) error {
 	if request.RoleArn == "" {
-		return fmt.Errorf("RoleArn is required")
+		return errors.New("RoleArn is required")
 	}
 
 	if request.WebIdentityToken == "" {
-		return fmt.Errorf("WebIdentityToken is required")
+		return errors.New("WebIdentityToken is required")
 	}
 
 	if request.RoleSessionName == "" {
-		return fmt.Errorf("RoleSessionName is required")
+		return errors.New("RoleSessionName is required")
 	}
 
 	// Validate session duration if provided
 	if request.DurationSeconds != nil {
 		if *request.DurationSeconds < 900 || *request.DurationSeconds > 43200 { // 15min to 12 hours
-			return fmt.Errorf("DurationSeconds must be between 900 and 43200 seconds")
+			return errors.New("DurationSeconds must be between 900 and 43200 seconds")
 		}
 	}
 
@@ -670,15 +677,15 @@ func (s *STSService) validateWebIdentityToken(ctx context.Context, token string)
 		// Map provider errors to STS errors using errors.Is() for robust error checking
 		// This eliminates fragile string matching and provides reliable error classification
 		if errors.Is(err, providers.ErrProviderTokenExpired) {
-			return nil, nil, fmt.Errorf("%w: %v", ErrTypedTokenExpired, err)
+			return nil, nil, fmt.Errorf("%w: %w", ErrTypedTokenExpired, err)
 		} else if errors.Is(err, providers.ErrProviderInvalidToken) {
-			return nil, nil, fmt.Errorf("%w: %v", ErrTypedInvalidToken, err)
+			return nil, nil, fmt.Errorf("%w: %w", ErrTypedInvalidToken, err)
 		} else if errors.Is(err, providers.ErrProviderInvalidIssuer) {
-			return nil, nil, fmt.Errorf("%w: %v", ErrTypedInvalidIssuer, err)
+			return nil, nil, fmt.Errorf("%w: %w", ErrTypedInvalidIssuer, err)
 		} else if errors.Is(err, providers.ErrProviderInvalidAudience) {
-			return nil, nil, fmt.Errorf("%w: %v", ErrTypedInvalidAudience, err)
+			return nil, nil, fmt.Errorf("%w: %w", ErrTypedInvalidAudience, err)
 		} else if errors.Is(err, providers.ErrProviderMissingClaims) {
-			return nil, nil, fmt.Errorf("%w: %v", ErrTypedMissingClaims, err)
+			return nil, nil, fmt.Errorf("%w: %w", ErrTypedMissingClaims, err)
 		}
 		// For other errors, return with context
 		return nil, nil, fmt.Errorf("token validation failed with provider for issuer %s: %w", issuer, err)
@@ -702,19 +709,19 @@ func (s *STSService) extractIssuerFromJWT(token string) (string, error) {
 	// Parse token without verification to get claims
 	parsedToken, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
 	if err != nil {
-		return "", fmt.Errorf("failed to parse JWT token: %v", err)
+		return "", fmt.Errorf("failed to parse JWT token: %w", err)
 	}
 
 	// Extract claims
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", fmt.Errorf("invalid token claims")
+		return "", errors.New("invalid token claims")
 	}
 
 	// Get issuer claim
 	issuer, ok := claims["iss"].(string)
 	if !ok || issuer == "" {
-		return "", fmt.Errorf("missing or invalid issuer claim")
+		return "", errors.New("missing or invalid issuer claim")
 	}
 
 	return issuer, nil
@@ -724,11 +731,11 @@ func (s *STSService) extractIssuerFromJWT(token string) (string, error) {
 // This method performs complete trust policy validation to prevent unauthorized role assumptions
 func (s *STSService) validateRoleAssumptionForWebIdentity(ctx context.Context, roleArn string, webIdentityToken string, durationSeconds *int64) error {
 	if roleArn == "" {
-		return fmt.Errorf("role ARN cannot be empty")
+		return errors.New("role ARN cannot be empty")
 	}
 
 	if webIdentityToken == "" {
-		return fmt.Errorf("web identity token cannot be empty")
+		return errors.New("web identity token cannot be empty")
 	}
 
 	// Validate role ARN and extract role information
@@ -753,7 +760,8 @@ func (s *STSService) validateRoleAssumptionForWebIdentity(ctx context.Context, r
 	} else {
 		// If no trust policy validator is configured, fail closed for security
 		glog.Errorf("SECURITY WARNING: No trust policy validator configured - denying role assumption for security")
-		return fmt.Errorf("trust policy validation not available - role assumption denied for security")
+
+		return errors.New("trust policy validation not available - role assumption denied for security")
 	}
 
 	return nil
@@ -763,11 +771,11 @@ func (s *STSService) validateRoleAssumptionForWebIdentity(ctx context.Context, r
 // This method performs complete trust policy validation to prevent unauthorized role assumptions
 func (s *STSService) validateRoleAssumptionForCredentials(ctx context.Context, roleArn string, identity *providers.ExternalIdentity) error {
 	if roleArn == "" {
-		return fmt.Errorf("role ARN cannot be empty")
+		return errors.New("role ARN cannot be empty")
 	}
 
 	if identity == nil {
-		return fmt.Errorf("identity cannot be nil")
+		return errors.New("identity cannot be nil")
 	}
 
 	// Validate role ARN and extract role information
@@ -792,7 +800,8 @@ func (s *STSService) validateRoleAssumptionForCredentials(ctx context.Context, r
 	} else {
 		// If no trust policy validator is configured, fail closed for security
 		glog.Errorf("SECURITY WARNING: No trust policy validator configured - denying role assumption for security")
-		return fmt.Errorf("trust policy validation not available - role assumption denied for security")
+
+		return errors.New("trust policy validation not available - role assumption denied for security")
 	}
 
 	return nil
@@ -845,6 +854,7 @@ func (s *STSService) extractSessionIdFromToken(sessionToken string) string {
 		if len(sessionToken) == 32 { // Typical session ID length
 			return sessionToken
 		}
+
 		return ""
 	}
 
@@ -854,29 +864,29 @@ func (s *STSService) extractSessionIdFromToken(sessionToken string) string {
 // validateAssumeRoleWithCredentialsRequest validates the credentials request parameters
 func (s *STSService) validateAssumeRoleWithCredentialsRequest(request *AssumeRoleWithCredentialsRequest) error {
 	if request.RoleArn == "" {
-		return fmt.Errorf("RoleArn is required")
+		return errors.New("RoleArn is required")
 	}
 
 	if request.Username == "" {
-		return fmt.Errorf("Username is required")
+		return errors.New("Username is required")
 	}
 
 	if request.Password == "" {
-		return fmt.Errorf("Password is required")
+		return errors.New("Password is required")
 	}
 
 	if request.RoleSessionName == "" {
-		return fmt.Errorf("RoleSessionName is required")
+		return errors.New("RoleSessionName is required")
 	}
 
 	if request.ProviderName == "" {
-		return fmt.Errorf("ProviderName is required")
+		return errors.New("ProviderName is required")
 	}
 
 	// Validate session duration if provided
 	if request.DurationSeconds != nil {
 		if *request.DurationSeconds < 900 || *request.DurationSeconds > 43200 { // 15min to 12 hours
-			return fmt.Errorf("DurationSeconds must be between 900 and 43200 seconds")
+			return errors.New("DurationSeconds must be between 900 and 43200 seconds")
 		}
 	}
 
@@ -886,11 +896,11 @@ func (s *STSService) validateAssumeRoleWithCredentialsRequest(request *AssumeRol
 // ExpireSessionForTesting manually expires a session for testing purposes
 func (s *STSService) ExpireSessionForTesting(ctx context.Context, sessionToken string) error {
 	if !s.initialized {
-		return fmt.Errorf("STS service not initialized")
+		return errors.New("STS service not initialized")
 	}
 
 	if sessionToken == "" {
-		return fmt.Errorf("session token cannot be empty")
+		return errors.New("session token cannot be empty")
 	}
 
 	// Just validate the signature
@@ -903,5 +913,5 @@ func (s *STSService) ExpireSessionForTesting(ctx context.Context, sessionToken s
 	// The token expiration is embedded in the token itself and handled by JWT validation
 	glog.V(1).Infof("Manual session expiration requested for stateless token - cannot expire JWT tokens manually")
 
-	return fmt.Errorf("manual session expiration not supported in stateless JWT system")
+	return errors.New("manual session expiration not supported in stateless JWT system")
 }

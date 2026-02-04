@@ -96,5 +96,6 @@ func (store *MemoryStore) GetServiceAccountByAccessKey(ctx context.Context, acce
 	if id, ok := store.serviceAccountAccessKeys[accessKey]; ok {
 		return store.serviceAccounts[id], nil
 	}
+
 	return nil, credential.ErrAccessKeyNotFound
 }

@@ -1,13 +1,15 @@
 package log_buffer
 
 import (
+	"errors"
 	"fmt"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 // ReadMessagesAtOffset provides Kafka-style stateless reads from LogBuffer
@@ -84,6 +86,7 @@ func (logBuffer *LogBuffer) ReadMessagesAtOffset(startOffset int64, maxMessages 
 
 			// Check if we reached the end
 			endOfPartition = (nextOffset >= currentBufferEnd) && (len(messages) == 0 || len(messages) < maxMessages)
+
 			return messages, nextOffset, highWaterMark, endOfPartition, nil
 		}
 
@@ -111,10 +114,12 @@ func (logBuffer *LogBuffer) ReadMessagesAtOffset(startOffset int64, maxMessages 
 						len(messages), nextOffset)
 
 					endOfPartition = false // More data might be in current buffer
+
 					return messages, nextOffset, highWaterMark, endOfPartition, nil
 				}
 				// Empty previous buffer means data was flushed to disk - fall through to disk read
 				glog.V(2).Infof("[StatelessRead] Data at offset %d was flushed, attempting disk read", startOffset)
+
 				break
 			}
 		}
@@ -146,10 +151,12 @@ func (logBuffer *LogBuffer) ReadMessagesAtOffset(startOffset int64, maxMessages 
 					}
 
 					endOfPartition = false // More data might exist
+
 					return messages, nextOffset, highWaterMark, endOfPartition, nil
 				}
 				// Empty previous buffer - data was flushed to disk
 				glog.V(2).Infof("[StatelessRead] Found empty previous buffer for offset %d, will try disk", startOffset)
+
 				break
 			}
 		}
@@ -180,6 +187,7 @@ func (logBuffer *LogBuffer) ReadMessagesAtOffset(startOffset int64, maxMessages 
 				return messages, startOffset, highWaterMark, false, fmt.Errorf("offset %d too old (earliest in-memory: %d), and ReadFromDiskFn is nil",
 					startOffset, bufferStartOffset)
 			}
+
 			return messages, startOffset, highWaterMark, false, fmt.Errorf("offset %d not in memory (buffer: %d-%d), and ReadFromDiskFn is nil",
 				startOffset, bufferStartOffset, currentBufferEnd)
 		}
@@ -192,7 +200,7 @@ func (logBuffer *LogBuffer) ReadMessagesAtOffset(startOffset int64, maxMessages 
 		if diskErr != nil {
 			glog.Errorf("[StatelessRead] CRITICAL: Disk read FAILED for offset %d: %v", startOffset, diskErr)
 			// IMPORTANT: Return retryable error instead of silently returning empty!
-			return messages, startOffset, highWaterMark, false, fmt.Errorf("disk read failed for offset %d: %v", startOffset, diskErr)
+			return messages, startOffset, highWaterMark, false, fmt.Errorf("disk read failed for offset %d: %w", startOffset, diskErr)
 		}
 
 		if len(diskMessages) == 0 {
@@ -202,12 +210,14 @@ func (logBuffer *LogBuffer) ReadMessagesAtOffset(startOffset int64, maxMessages 
 
 		// Return disk data
 		endOfPartition = diskNextOffset >= bufferStartOffset && len(diskMessages) < maxMessages
+
 		return diskMessages, diskNextOffset, highWaterMark, endOfPartition, nil
 	}
 
 	// startOffset >= currentBufferEnd - future offset, no data available yet
 	glog.V(4).Infof("[StatelessRead] Future offset %d >= buffer end %d, no data available",
 		startOffset, currentBufferEnd)
+
 	return messages, startOffset, highWaterMark, true, nil
 }
 
@@ -281,6 +291,7 @@ func readHistoricalDataFromDisk(
 
 	if readErr != nil {
 		glog.Errorf("[DiskRead] CRITICAL: ReadFromDiskFn returned ERROR: %v", readErr)
+
 		return nil, startOffset, fmt.Errorf("failed to read from disk: %w", readErr)
 	}
 
@@ -293,6 +304,7 @@ func readHistoricalDataFromDisk(
 
 	// Extract requested messages from the chunk
 	result, resNextOffset, resErr := extractMessagesFromCache(chunkMessages, startOffset, maxMessages, maxBytes)
+
 	return result, resNextOffset, resErr
 }
 
@@ -304,6 +316,7 @@ func getCachedDiskChunk(logBuffer *LogBuffer, chunkStartOffset int64) ([]*filer_
 	if chunk, exists := logBuffer.diskChunkCache.chunks[chunkStartOffset]; exists {
 		// Update last access time
 		chunk.lastAccess = time.Now()
+
 		return chunk.messages, true
 	}
 
@@ -316,9 +329,7 @@ func invalidateCachedDiskChunk(logBuffer *LogBuffer, chunkStartOffset int64) {
 	logBuffer.diskChunkCache.mu.Lock()
 	defer logBuffer.diskChunkCache.mu.Unlock()
 
-	if _, exists := logBuffer.diskChunkCache.chunks[chunkStartOffset]; exists {
-		delete(logBuffer.diskChunkCache.chunks, chunkStartOffset)
-	}
+	delete(logBuffer.diskChunkCache.chunks, chunkStartOffset)
 }
 
 // cacheDiskChunk stores a disk chunk in the cache with LRU eviction
@@ -369,6 +380,7 @@ func extractMessagesFromCache(chunkMessages []*filer_pb.LogEntry, startOffset in
 	if positionInChunk < 0 {
 		glog.Errorf("[DiskCache] CRITICAL: Requested offset %d is BEFORE chunk start %d (positionInChunk=%d < 0)",
 			startOffset, chunkStartOffset, positionInChunk)
+
 		return nil, startOffset, fmt.Errorf("offset %d before chunk start %d", startOffset, chunkStartOffset)
 	}
 
@@ -427,6 +439,7 @@ func parseMessagesFromBuffer(buf []byte, startOffset int64, maxMessages int, max
 			// Incomplete message at end of buffer
 			glog.V(4).Infof("[parseMessages] Incomplete message at pos %d, size %d, bufLen %d",
 				pos, size, len(buf))
+
 			break
 		}
 
@@ -436,6 +449,7 @@ func parseMessagesFromBuffer(buf []byte, startOffset int64, maxMessages int, max
 		if err = proto.Unmarshal(entryData, logEntry); err != nil {
 			glog.Warningf("[parseMessages] Failed to unmarshal message: %v", err)
 			pos += 4 + int(size)
+
 			continue
 		}
 
@@ -444,23 +458,24 @@ func parseMessagesFromBuffer(buf []byte, startOffset int64, maxMessages int, max
 		// Initialize foundStart from first message
 		if !foundStart {
 			// Find the first message at or after startOffset
-			if logEntry.Offset >= startOffset {
+			if logEntry.GetOffset() >= startOffset {
 				foundStart = true
-				nextOffset = logEntry.Offset
+				nextOffset = logEntry.GetOffset()
 			} else {
 				// Skip messages before startOffset
-				glog.V(3).Infof("[parseMessages] Skipping message at offset %d (before startOffset %d)", logEntry.Offset, startOffset)
+				glog.V(3).Infof("[parseMessages] Skipping message at offset %d (before startOffset %d)", logEntry.GetOffset(), startOffset)
 				pos += 4 + int(size)
+
 				continue
 			}
 		}
 
 		// Check if this message matches expected offset
-		if foundStart && logEntry.Offset >= startOffset {
-			glog.V(3).Infof("[parseMessages] Adding message at offset %d (count=%d)", logEntry.Offset, len(messages)+1)
+		if foundStart && logEntry.GetOffset() >= startOffset {
+			glog.V(3).Infof("[parseMessages] Adding message at offset %d (count=%d)", logEntry.GetOffset(), len(messages)+1)
 			messages = append(messages, logEntry)
 			totalBytes += 4 + int(size)
-			nextOffset = logEntry.Offset + 1
+			nextOffset = logEntry.GetOffset() + 1
 		}
 
 		pos += 4 + int(size)
@@ -482,7 +497,7 @@ func (logBuffer *LogBuffer) readMessagesFromDisk(startOffset int64, maxMessages 
 ) {
 	if logBuffer.ReadFromDiskFn == nil {
 		return nil, startOffset, highWaterMark, true,
-			fmt.Errorf("no disk read function configured")
+			errors.New("no disk read function configured")
 	}
 
 	messages = make([]*filer_pb.LogEntry, 0, maxMessages)
@@ -496,16 +511,16 @@ func (logBuffer *LogBuffer) readMessagesFromDisk(startOffset int64, maxMessages 
 			return true, nil // Done
 		}
 
-		entrySize := 4 + len(logEntry.Data) + len(logEntry.Key)
+		entrySize := 4 + len(logEntry.GetData()) + len(logEntry.GetKey())
 		if totalBytes+entrySize > maxBytes {
 			return true, nil // Done
 		}
 
 		// Only include messages at or after startOffset
-		if logEntry.Offset >= startOffset {
+		if logEntry.GetOffset() >= startOffset {
 			messages = append(messages, logEntry)
 			totalBytes += entrySize
-			nextOffset = logEntry.Offset + 1
+			nextOffset = logEntry.GetOffset() + 1
 		}
 
 		return false, nil // Continue
@@ -517,6 +532,7 @@ func (logBuffer *LogBuffer) readMessagesFromDisk(startOffset int64, maxMessages 
 
 	if err != nil {
 		glog.Warningf("[StatelessRead] Disk read error: %v", err)
+
 		return nil, startOffset, highWaterMark, false, err
 	}
 
@@ -534,6 +550,7 @@ func (logBuffer *LogBuffer) readMessagesFromDisk(startOffset int64, maxMessages 
 func (logBuffer *LogBuffer) GetHighWaterMark() int64 {
 	logBuffer.RLock()
 	defer logBuffer.RUnlock()
+
 	return logBuffer.offset
 }
 
@@ -585,6 +602,7 @@ func (logBuffer *LogBuffer) WaitForDataWithTimeout(startOffset int64, maxWaitMs 
 		logBuffer.RLock()
 		currentEnd := logBuffer.offset
 		logBuffer.RUnlock()
+
 		return currentEnd >= startOffset
 	case <-timeout.C:
 		return false

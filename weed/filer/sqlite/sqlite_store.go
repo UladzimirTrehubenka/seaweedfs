@@ -1,6 +1,4 @@
 //go:build (linux || darwin || windows) && sqlite
-// +build linux darwin windows
-// +build sqlite
 
 // limited GOOS due to modernc.org/libc/unistd
 
@@ -11,11 +9,12 @@ import (
 	"database/sql"
 	"fmt"
 
+	_ "modernc.org/sqlite"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/filer/abstract_sql"
 	"github.com/seaweedfs/seaweedfs/weed/filer/mysql"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	_ "modernc.org/sqlite"
 )
 
 func init() {

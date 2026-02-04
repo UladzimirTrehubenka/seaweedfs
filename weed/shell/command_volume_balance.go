@@ -2,6 +2,7 @@ package shell
 
 import (
 	"cmp"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -84,7 +85,6 @@ func (c *commandVolumeBalance) HasTag(CommandTag) bool {
 }
 
 func (c *commandVolumeBalance) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	balanceCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	collection := balanceCommand.String("collection", "ALL_COLLECTIONS", "collection name, or use \"ALL_COLLECTIONS\" across collections, \"EACH_COLLECTION\" for each collection")
 	dc := balanceCommand.String("dataCenter", "", "only apply the balancing for this dataCenter")
@@ -108,7 +108,7 @@ func (c *commandVolumeBalance) Do(args []string, commandEnv *CommandEnv, writer 
 		commandEnv.noLock = true
 	} else {
 		if err = commandEnv.confirmIsLocked(args); err != nil {
-			return
+			return err
 		}
 	}
 	c.commandEnv = commandEnv
@@ -124,7 +124,8 @@ func (c *commandVolumeBalance) Do(args []string, commandEnv *CommandEnv, writer 
 	volumeReplicas, _ := collectVolumeReplicaLocations(topologyInfo)
 	diskTypes := collectVolumeDiskTypes(topologyInfo)
 
-	if *collection == "EACH_COLLECTION" {
+	switch *collection {
+	case "EACH_COLLECTION":
 		collections, err := ListCollectionNames(commandEnv, true, false)
 		if err != nil {
 			return err
@@ -135,16 +136,16 @@ func (c *commandVolumeBalance) Do(args []string, commandEnv *CommandEnv, writer 
 				return err
 			}
 		}
-	} else if *collection == "ALL_COLLECTIONS" {
+	case "ALL_COLLECTIONS":
 		// Pass nil pattern for all collections
 		if err = c.balanceVolumeServers(diskTypes, volumeReplicas, volumeServers, nil, *collection); err != nil {
 			return err
 		}
-	} else {
+	default:
 		// Compile user-provided pattern
 		collectionPattern, err := compileCollectionPattern(*collection)
 		if err != nil {
-			return fmt.Errorf("invalid collection pattern '%s': %v", *collection, err)
+			return fmt.Errorf("invalid collection pattern '%s': %w", *collection, err)
 		}
 		if err = c.balanceVolumeServers(diskTypes, volumeReplicas, volumeServers, collectionPattern, *collection); err != nil {
 			return err
@@ -160,6 +161,7 @@ func (c *commandVolumeBalance) balanceVolumeServers(diskTypes []types.DiskType, 
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -169,22 +171,23 @@ func (c *commandVolumeBalance) balanceVolumeServersByDiskType(diskType types.Dis
 			if collectionName != "ALL_COLLECTIONS" {
 				if collectionPattern != nil {
 					// Use regex pattern matching
-					if !collectionPattern.MatchString(v.Collection) {
+					if !collectionPattern.MatchString(v.GetCollection()) {
 						return false
 					}
 				} else {
 					// Use exact string matching (for EACH_COLLECTION)
-					if v.Collection != collectionName {
+					if v.GetCollection() != collectionName {
 						return false
 					}
 				}
 			}
-			if v.DiskType != string(diskType) {
+			if v.GetDiskType() != string(diskType) {
 				return false
 			}
-			if c.writable && v.Size > c.volumeSizeLimitMb {
+			if c.writable && v.GetSize() > c.volumeSizeLimitMb {
 				return false
 			}
+
 			return true
 		})
 	}
@@ -196,35 +199,36 @@ func (c *commandVolumeBalance) balanceVolumeServersByDiskType(diskType types.Dis
 }
 
 func collectVolumeServersByDcRackNode(t *master_pb.TopologyInfo, selectedDataCenter string, selectedRacks string, selectedNodes string) (nodes []*Node) {
-	for _, dc := range t.DataCenterInfos {
-		if selectedDataCenter != "" && dc.Id != selectedDataCenter {
+	for _, dc := range t.GetDataCenterInfos() {
+		if selectedDataCenter != "" && dc.GetId() != selectedDataCenter {
 			continue
 		}
-		for _, r := range dc.RackInfos {
-			if selectedRacks != "" && !strings.Contains(selectedRacks, r.Id) {
+		for _, r := range dc.GetRackInfos() {
+			if selectedRacks != "" && !strings.Contains(selectedRacks, r.GetId()) {
 				continue
 			}
-			for _, dn := range r.DataNodeInfos {
-				if selectedNodes != "" && !strings.Contains(selectedNodes, dn.Id) {
+			for _, dn := range r.GetDataNodeInfos() {
+				if selectedNodes != "" && !strings.Contains(selectedNodes, dn.GetId()) {
 					continue
 				}
 				nodes = append(nodes, &Node{
 					info: dn,
-					dc:   dc.Id,
-					rack: r.Id,
+					dc:   dc.GetId(),
+					rack: r.GetId(),
 				})
 			}
 		}
 	}
+
 	return
 }
 
 func collectVolumeDiskTypes(t *master_pb.TopologyInfo) (diskTypes []types.DiskType) {
 	knownTypes := make(map[string]bool)
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
-				for diskType := range dn.DiskInfos {
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
+				for diskType := range dn.GetDiskInfos() {
 					if _, found := knownTypes[diskType]; !found {
 						knownTypes[diskType] = true
 					}
@@ -235,6 +239,7 @@ func collectVolumeDiskTypes(t *master_pb.TopologyInfo) (diskTypes []types.DiskTy
 	for diskType := range knownTypes {
 		diskTypes = append(diskTypes, types.ToDiskType(diskType))
 	}
+
 	return
 }
 
@@ -249,29 +254,31 @@ type CapacityFunc func(*master_pb.DataNodeInfo) float64
 
 func capacityByMaxVolumeCount(diskType types.DiskType) CapacityFunc {
 	return func(info *master_pb.DataNodeInfo) float64 {
-		diskInfo, found := info.DiskInfos[string(diskType)]
+		diskInfo, found := info.GetDiskInfos()[string(diskType)]
 		if !found {
 			return 0
 		}
 		var ecShardCount int
-		for _, ecShardInfo := range diskInfo.EcShardInfos {
+		for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
 			ecShardCount += erasure_coding.GetShardCount(ecShardInfo)
 		}
-		return float64(diskInfo.MaxVolumeCount) - float64(ecShardCount)/erasure_coding.DataShardsCount
+
+		return float64(diskInfo.GetMaxVolumeCount()) - float64(ecShardCount)/erasure_coding.DataShardsCount
 	}
 }
 
 func capacityByFreeVolumeCount(diskType types.DiskType) CapacityFunc {
 	return func(info *master_pb.DataNodeInfo) float64 {
-		diskInfo, found := info.DiskInfos[string(diskType)]
+		diskInfo, found := info.GetDiskInfos()[string(diskType)]
 		if !found {
 			return 0
 		}
 		var ecShardCount int
-		for _, ecShardInfo := range diskInfo.EcShardInfos {
+		for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
 			ecShardCount += erasure_coding.GetShardCount(ecShardInfo)
 		}
-		return float64(diskInfo.MaxVolumeCount-diskInfo.VolumeCount) - float64(ecShardCount)/erasure_coding.DataShardsCount
+
+		return float64(diskInfo.GetMaxVolumeCount()-diskInfo.GetVolumeCount()) - float64(ecShardCount)/erasure_coding.DataShardsCount
 	}
 }
 
@@ -287,20 +294,21 @@ func (n *Node) isOneVolumeOnly() bool {
 	if len(n.selectedVolumes) != 1 {
 		return false
 	}
-	for _, disk := range n.info.DiskInfos {
-		if disk.VolumeCount == 1 && disk.MaxVolumeCount == 1 {
+	for _, disk := range n.info.GetDiskInfos() {
+		if disk.GetVolumeCount() == 1 && disk.GetMaxVolumeCount() == 1 {
 			return true
 		}
 	}
+
 	return false
 }
 
 func (n *Node) selectVolumes(fn func(v *master_pb.VolumeInformationMessage) bool) {
 	n.selectedVolumes = make(map[uint32]*master_pb.VolumeInformationMessage)
-	for _, diskInfo := range n.info.DiskInfos {
-		for _, v := range diskInfo.VolumeInfos {
+	for _, diskInfo := range n.info.GetDiskInfos() {
+		for _, v := range diskInfo.GetVolumeInfos() {
 			if fn(v) {
-				n.selectedVolumes[v.Id] = v
+				n.selectedVolumes[v.GetId()] = v
 			}
 		}
 	}
@@ -308,7 +316,7 @@ func (n *Node) selectVolumes(fn func(v *master_pb.VolumeInformationMessage) bool
 
 func sortWritableVolumes(volumes []*master_pb.VolumeInformationMessage) {
 	slices.SortFunc(volumes, func(a, b *master_pb.VolumeInformationMessage) int {
-		return cmp.Compare(a.Size, b.Size)
+		return cmp.Compare(a.GetSize(), b.GetSize())
 	})
 }
 
@@ -338,6 +346,7 @@ func balanceSelectedVolume(commandEnv *CommandEnv, diskType types.DiskType, volu
 		})
 		if len(nodesWithCapacity) == 0 {
 			fmt.Printf("no volume server found with capacity for %s", diskType.ReadableString())
+
 			return nil
 		}
 
@@ -362,7 +371,7 @@ func balanceSelectedVolume(commandEnv *CommandEnv, diskType types.DiskType, volu
 			fmt.Fprintf(os.Stdout, "%s %.2f %.2f:%.2f\t", diskType.ReadableString(), idealVolumeRatio, fullNode.localVolumeRatio(capacityFunc), emptyNode.localVolumeNextRatio(capacityFunc))
 			hasMoved, err = attemptToMoveOneVolume(commandEnv, volumeReplicas, fullNode, candidateVolumes, emptyNode, applyBalancing)
 			if err != nil {
-				return
+				return err
 			}
 			if hasMoved {
 				// moved one volume
@@ -370,11 +379,11 @@ func balanceSelectedVolume(commandEnv *CommandEnv, diskType types.DiskType, volu
 			}
 		}
 	}
+
 	return nil
 }
 
 func attemptToMoveOneVolume(commandEnv *CommandEnv, volumeReplicas map[uint32][]*VolumeReplica, fullNode *Node, candidateVolumes []*master_pb.VolumeInformationMessage, emptyNode *Node, applyBalancing bool) (hasMoved bool, err error) {
-
 	for _, v := range candidateVolumes {
 		hasMoved, err = maybeMoveOneVolume(commandEnv, volumeReplicas, fullNode, v, emptyNode, applyBalancing)
 		if err != nil {
@@ -384,50 +393,54 @@ func attemptToMoveOneVolume(commandEnv *CommandEnv, volumeReplicas map[uint32][]
 			break
 		}
 	}
+
 	return
 }
 
 func maybeMoveOneVolume(commandEnv *CommandEnv, volumeReplicas map[uint32][]*VolumeReplica, fullNode *Node, candidateVolume *master_pb.VolumeInformationMessage, emptyNode *Node, applyChange bool) (hasMoved bool, err error) {
 	if !commandEnv.isLocked() {
-		return false, fmt.Errorf("lock is lost")
+		return false, errors.New("lock is lost")
 	}
 
-	if candidateVolume.RemoteStorageName != "" {
-		return false, fmt.Errorf("does not move volume in remove storage")
+	if candidateVolume.GetRemoteStorageName() != "" {
+		return false, errors.New("does not move volume in remove storage")
 	}
 
-	if candidateVolume.ReplicaPlacement > 0 {
-		replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(candidateVolume.ReplicaPlacement))
-		if !isGoodMove(replicaPlacement, volumeReplicas[candidateVolume.Id], fullNode, emptyNode) {
+	if candidateVolume.GetReplicaPlacement() > 0 {
+		replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(candidateVolume.GetReplicaPlacement()))
+		if !isGoodMove(replicaPlacement, volumeReplicas[candidateVolume.GetId()], fullNode, emptyNode) {
 			return false, nil
 		}
 	}
-	if _, found := emptyNode.selectedVolumes[candidateVolume.Id]; !found {
+	if _, found := emptyNode.selectedVolumes[candidateVolume.GetId()]; !found {
 		if err = moveVolume(commandEnv, candidateVolume, fullNode, emptyNode, applyChange); err == nil {
 			adjustAfterMove(candidateVolume, volumeReplicas, fullNode, emptyNode)
+
 			return true, nil
 		} else {
 			return
 		}
 	}
+
 	return
 }
 
 func moveVolume(commandEnv *CommandEnv, v *master_pb.VolumeInformationMessage, fullNode *Node, emptyNode *Node, applyChange bool) error {
-	collectionPrefix := v.Collection + "_"
-	if v.Collection == "" {
+	collectionPrefix := v.GetCollection() + "_"
+	if v.GetCollection() == "" {
 		collectionPrefix = ""
 	}
-	fmt.Fprintf(os.Stdout, "  moving %s volume %s%d %s => %s\n", v.DiskType, collectionPrefix, v.Id, fullNode.info.Id, emptyNode.info.Id)
+	fmt.Fprintf(os.Stdout, "  moving %s volume %s%d %s => %s\n", v.GetDiskType(), collectionPrefix, v.GetId(), fullNode.info.GetId(), emptyNode.info.GetId())
 	if applyChange {
-		return LiveMoveVolume(commandEnv.option.GrpcDialOption, os.Stderr, needle.VolumeId(v.Id), pb.NewServerAddressFromDataNode(fullNode.info), pb.NewServerAddressFromDataNode(emptyNode.info), 5*time.Second, v.DiskType, 0, false)
+		return LiveMoveVolume(commandEnv.option.GrpcDialOption, os.Stderr, needle.VolumeId(v.GetId()), pb.NewServerAddressFromDataNode(fullNode.info), pb.NewServerAddressFromDataNode(emptyNode.info), 5*time.Second, v.GetDiskType(), 0, false)
 	}
+
 	return nil
 }
 
 func isGoodMove(placement *super_block.ReplicaPlacement, existingReplicas []*VolumeReplica, sourceNode, targetNode *Node) bool {
 	for _, replica := range existingReplicas {
-		if replica.location.dataNode.Id == targetNode.info.Id &&
+		if replica.location.dataNode.GetId() == targetNode.info.GetId() &&
 			replica.location.rack == targetNode.rack &&
 			replica.location.dc == targetNode.dc {
 			// never move to existing nodes
@@ -438,7 +451,7 @@ func isGoodMove(placement *super_block.ReplicaPlacement, existingReplicas []*Vol
 	// existing replicas except the one on sourceNode
 	existingReplicasExceptSourceNode := make([]*VolumeReplica, 0)
 	for _, replica := range existingReplicas {
-		if replica.location.dataNode.Id != sourceNode.info.Id {
+		if replica.location.dataNode.GetId() != sourceNode.info.GetId() {
 			existingReplicasExceptSourceNode = append(existingReplicasExceptSourceNode, replica)
 		}
 	}
@@ -455,27 +468,28 @@ func isGoodMove(placement *super_block.ReplicaPlacement, existingReplicas []*Vol
 }
 
 func adjustAfterMove(v *master_pb.VolumeInformationMessage, volumeReplicas map[uint32][]*VolumeReplica, fullNode *Node, emptyNode *Node) {
-	delete(fullNode.selectedVolumes, v.Id)
+	delete(fullNode.selectedVolumes, v.GetId())
 	if emptyNode.selectedVolumes != nil {
-		emptyNode.selectedVolumes[v.Id] = v
+		emptyNode.selectedVolumes[v.GetId()] = v
 	}
-	existingReplicas := volumeReplicas[v.Id]
+	existingReplicas := volumeReplicas[v.GetId()]
 	for _, replica := range existingReplicas {
-		if replica.location.dataNode.Id == fullNode.info.Id &&
+		if replica.location.dataNode.GetId() == fullNode.info.GetId() &&
 			replica.location.rack == fullNode.rack &&
 			replica.location.dc == fullNode.dc {
 			loc := newLocation(emptyNode.dc, emptyNode.rack, emptyNode.info)
 			replica.location = &loc
-			for diskType, diskInfo := range fullNode.info.DiskInfos {
-				if diskType == v.DiskType {
+			for diskType, diskInfo := range fullNode.info.GetDiskInfos() {
+				if diskType == v.GetDiskType() {
 					addVolumeCount(diskInfo, -1)
 				}
 			}
-			for diskType, diskInfo := range emptyNode.info.DiskInfos {
-				if diskType == v.DiskType {
+			for diskType, diskInfo := range emptyNode.info.GetDiskInfos() {
+				if diskType == v.GetDiskType() {
 					addVolumeCount(diskInfo, 1)
 				}
 			}
+
 			return
 		}
 	}

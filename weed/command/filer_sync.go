@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -21,7 +23,6 @@ import (
 	statsCollect "github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/grace"
-	"google.golang.org/grpc"
 )
 
 type SyncOptions struct {
@@ -153,12 +154,14 @@ func runFilerSynchronize(cmd *Command, args []string) bool {
 	aFilerSignature, aFilerErr := replication.ReadFilerSignature(grpcDialOption, filerA)
 	if aFilerErr != nil {
 		glog.Errorf("get filer 'a' signature %d error from %s to %s: %v", aFilerSignature, *syncOptions.filerA, *syncOptions.filerB, aFilerErr)
+
 		return true
 	}
 	// read b filer signature
 	bFilerSignature, bFilerErr := replication.ReadFilerSignature(grpcDialOption, filerB)
 	if bFilerErr != nil {
 		glog.Errorf("get filer 'b' signature %d error from %s to %s: %v", bFilerSignature, *syncOptions.filerA, *syncOptions.filerB, bFilerErr)
+
 		return true
 	}
 
@@ -277,12 +280,12 @@ func initOffsetFromTsMs(grpcDialOption grpc.DialOption, targetFiler pb.ServerAdd
 		return setOffsetErr
 	}
 	glog.Infof("setOffset from timestamp ms success! start offset: %d from %s to %s", fromTsNs, *syncOptions.filerA, *syncOptions.filerB)
+
 	return nil
 }
 
 func doSubscribeFilerMetaChanges(clientId int32, clientEpoch int32, grpcDialOption grpc.DialOption, sourceFiler pb.ServerAddress, sourcePath string, sourceExcludePaths []string, sourceReadChunkFromFiler bool, targetFiler pb.ServerAddress, targetPath string,
 	replicationStr, collection string, ttlSec int, sinkWriteChunkByFiler bool, diskType string, debug bool, concurrency int, doDeleteFiles bool, sourceFilerSignature int32, targetFilerSignature int32, statePtr *atomic.Pointer[syncState]) error {
-
 	// if first time, start from now
 	// if has previously synced, resume from that point of time
 	sourceFilerOffsetTsNs, err := getOffset(grpcDialOption, targetFiler, getSignaturePrefixByPath(sourcePath), sourceFilerSignature)
@@ -302,13 +305,15 @@ func doSubscribeFilerMetaChanges(clientId int32, clientEpoch int32, grpcDialOpti
 	persistEventFn := genProcessFunction(sourcePath, targetPath, sourceExcludePaths, nil, filerSink, doDeleteFiles, debug)
 
 	processEventFn := func(resp *filer_pb.SubscribeMetadataResponse) error {
-		message := resp.EventNotification
-		for _, sig := range message.Signatures {
+		message := resp.GetEventNotification()
+		for _, sig := range message.GetSignatures() {
 			if sig == targetFilerSignature && targetFilerSignature != 0 {
 				fmt.Printf("%s skipping %s change to %v\n", targetFiler, sourceFiler, message)
+
 				return nil
 			}
 		}
+
 		return persistEventFn(resp)
 	}
 
@@ -333,6 +338,7 @@ func doSubscribeFilerMetaChanges(clientId int32, clientEpoch int32, grpcDialOpti
 	var clientName = fmt.Sprintf("syncFrom_%s_To_%s", string(sourceFiler), string(targetFiler))
 	processEventFnWithOffset := pb.AddOffsetFunc(func(resp *filer_pb.SubscribeMetadataResponse) error {
 		processor.AddSyncJob(resp)
+
 		return nil
 	}, 3*time.Second, func(counter int64, lastTsNs int64) error {
 		offsetTsNs := processor.processedTsWatermark.Load()
@@ -345,6 +351,7 @@ func doSubscribeFilerMetaChanges(clientId int32, clientEpoch int32, grpcDialOpti
 		lastLogTsNs = now
 		// collect synchronous offset
 		statsCollect.FilerSyncOffsetGauge.WithLabelValues(sourceFiler.String(), targetFiler.String(), clientName, sourcePath).Set(float64(offsetTsNs))
+
 		return setOffset(grpcDialOption, targetFiler, getSignaturePrefixByPath(sourcePath), sourceFilerSignature, offsetTsNs)
 	})
 
@@ -367,7 +374,6 @@ func doSubscribeFilerMetaChanges(clientId int32, clientEpoch int32, grpcDialOpti
 	}
 
 	return pb.FollowMetadata(sourceFiler, grpcDialOption, metadataFollowOption, processEventFnWithOffset)
-
 }
 
 // When each business is distinguished according to path, and offsets need to be maintained separately.
@@ -381,7 +387,6 @@ func getSignaturePrefixByPath(path string) string {
 }
 
 func getOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signaturePrefix string, signature int32) (lastOffsetTsNs int64, readErr error) {
-
 	readErr = pb.WithFilerClient(false, signature, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		syncKey := []byte(signaturePrefix + "____")
 		util.Uint32toBytes(syncKey[len(signaturePrefix):len(signaturePrefix)+4], uint32(signature))
@@ -391,25 +396,23 @@ func getOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signature
 			return err
 		}
 
-		if len(resp.Error) != 0 {
-			return errors.New(resp.Error)
+		if len(resp.GetError()) != 0 {
+			return errors.New(resp.GetError())
 		}
-		if len(resp.Value) < 8 {
+		if len(resp.GetValue()) < 8 {
 			return nil
 		}
 
-		lastOffsetTsNs = int64(util.BytesToUint64(resp.Value))
+		lastOffsetTsNs = int64(util.BytesToUint64(resp.GetValue()))
 
 		return nil
 	})
 
 	return
-
 }
 
 func setOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signaturePrefix string, signature int32, offsetTsNs int64) error {
 	return pb.WithFilerClient(false, signature, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-
 		syncKey := []byte(signaturePrefix + "____")
 		util.Uint32toBytes(syncKey[len(signaturePrefix):len(signaturePrefix)+4], uint32(signature))
 
@@ -424,46 +427,44 @@ func setOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signature
 			return err
 		}
 
-		if len(resp.Error) != 0 {
-			return errors.New(resp.Error)
+		if len(resp.GetError()) != 0 {
+			return errors.New(resp.GetError())
 		}
 
 		return nil
-
 	})
-
 }
 
 func genProcessFunction(sourcePath string, targetPath string, excludePaths []string, reExcludeFileName *regexp.Regexp, dataSink sink.ReplicationSink, doDeleteFiles bool, debug bool) func(resp *filer_pb.SubscribeMetadataResponse) error {
 	// process function
 	processEventFn := func(resp *filer_pb.SubscribeMetadataResponse) error {
-		message := resp.EventNotification
+		message := resp.GetEventNotification()
 
 		var sourceOldKey, sourceNewKey util.FullPath
-		if message.OldEntry != nil {
-			sourceOldKey = util.FullPath(resp.Directory).Child(message.OldEntry.Name)
+		if message.GetOldEntry() != nil {
+			sourceOldKey = util.FullPath(resp.GetDirectory()).Child(message.GetOldEntry().GetName())
 		}
-		if message.NewEntry != nil {
-			sourceNewKey = util.FullPath(message.NewParentPath).Child(message.NewEntry.Name)
+		if message.GetNewEntry() != nil {
+			sourceNewKey = util.FullPath(message.GetNewParentPath()).Child(message.GetNewEntry().GetName())
 		}
 
 		if debug {
 			glog.V(0).Infof("received %v", resp)
 		}
 
-		if isMultipartUploadDir(resp.Directory + "/") {
+		if isMultipartUploadDir(resp.GetDirectory() + "/") {
 			return nil
 		}
 
-		if !strings.HasPrefix(resp.Directory+"/", sourcePath) {
+		if !strings.HasPrefix(resp.GetDirectory()+"/", sourcePath) {
 			return nil
 		}
 		for _, excludePath := range excludePaths {
-			if strings.HasPrefix(resp.Directory+"/", excludePath) {
+			if strings.HasPrefix(resp.GetDirectory()+"/", excludePath) {
 				return nil
 			}
 		}
-		if reExcludeFileName != nil && reExcludeFileName.MatchString(message.NewEntry.Name) {
+		if reExcludeFileName != nil && reExcludeFileName.MatchString(message.GetNewEntry().GetName()) {
 			return nil
 		}
 		if dataSink.IsIncremental() {
@@ -478,7 +479,8 @@ func genProcessFunction(sourcePath string, targetPath string, excludePaths []str
 				return nil
 			}
 			key := buildKey(dataSink, message, targetPath, sourceOldKey, sourcePath)
-			return dataSink.DeleteEntry(key, message.OldEntry.IsDirectory, message.DeleteChunks, message.Signatures)
+
+			return dataSink.DeleteEntry(key, message.GetOldEntry().GetIsDirectory(), message.GetDeleteChunks(), message.GetSignatures())
 		}
 
 		// handle new entries
@@ -487,7 +489,7 @@ func genProcessFunction(sourcePath string, targetPath string, excludePaths []str
 				return nil
 			}
 			key := buildKey(dataSink, message, targetPath, sourceNewKey, sourcePath)
-			if err := dataSink.CreateEntry(key, message.NewEntry, message.Signatures); err != nil {
+			if err := dataSink.CreateEntry(key, message.GetNewEntry(), message.GetSignatures()); err != nil {
 				return fmt.Errorf("create entry1 : %w", err)
 			} else {
 				return nil
@@ -507,33 +509,33 @@ func genProcessFunction(sourcePath string, targetPath string, excludePaths []str
 				if doDeleteFiles {
 					oldKey := util.Join(targetPath, string(sourceOldKey)[len(sourcePath):])
 					if strings.HasSuffix(sourcePath, "/") {
-						message.NewParentPath = util.Join(targetPath, message.NewParentPath[len(sourcePath)-1:])
+						message.NewParentPath = util.Join(targetPath, message.GetNewParentPath()[len(sourcePath)-1:])
 					} else {
-						message.NewParentPath = util.Join(targetPath, message.NewParentPath[len(sourcePath):])
+						message.NewParentPath = util.Join(targetPath, message.GetNewParentPath()[len(sourcePath):])
 					}
-					foundExisting, err := dataSink.UpdateEntry(string(oldKey), message.OldEntry, message.NewParentPath, message.NewEntry, message.DeleteChunks, message.Signatures)
+					foundExisting, err := dataSink.UpdateEntry(string(oldKey), message.GetOldEntry(), message.GetNewParentPath(), message.GetNewEntry(), message.GetDeleteChunks(), message.GetSignatures())
 					if foundExisting {
 						return err
 					}
 
 					// not able to find old entry
-					if err = dataSink.DeleteEntry(string(oldKey), message.OldEntry.IsDirectory, false, message.Signatures); err != nil {
+					if err = dataSink.DeleteEntry(string(oldKey), message.GetOldEntry().GetIsDirectory(), false, message.GetSignatures()); err != nil {
 						return fmt.Errorf("delete old entry %v: %w", oldKey, err)
 					}
 				}
 				// create the new entry
 				newKey := buildKey(dataSink, message, targetPath, sourceNewKey, sourcePath)
-				if err := dataSink.CreateEntry(newKey, message.NewEntry, message.Signatures); err != nil {
+				if err := dataSink.CreateEntry(newKey, message.GetNewEntry(), message.GetSignatures()); err != nil {
 					return fmt.Errorf("create entry2 : %w", err)
 				} else {
 					return nil
 				}
-
 			} else {
 				// new key is outside the watched directory
 				if doDeleteFiles {
 					key := buildKey(dataSink, message, targetPath, sourceOldKey, sourcePath)
-					return dataSink.DeleteEntry(key, message.OldEntry.IsDirectory, message.DeleteChunks, message.Signatures)
+
+					return dataSink.DeleteEntry(key, message.GetOldEntry().GetIsDirectory(), message.GetDeleteChunks(), message.GetSignatures())
 				}
 			}
 		} else {
@@ -541,7 +543,7 @@ func genProcessFunction(sourcePath string, targetPath string, excludePaths []str
 			if strings.HasPrefix(string(sourceNewKey), sourcePath) {
 				// new key is in the watched directory
 				key := buildKey(dataSink, message, targetPath, sourceNewKey, sourcePath)
-				if err := dataSink.CreateEntry(key, message.NewEntry, message.Signatures); err != nil {
+				if err := dataSink.CreateEntry(key, message.GetNewEntry(), message.GetSignatures()); err != nil {
 					return fmt.Errorf("create entry3 : %w", err)
 				} else {
 					return nil
@@ -554,6 +556,7 @@ func genProcessFunction(sourcePath string, targetPath string, excludePaths []str
 
 		return nil
 	}
+
 	return processEventFn
 }
 
@@ -562,10 +565,10 @@ func buildKey(dataSink sink.ReplicationSink, message *filer_pb.EventNotification
 		key = util.Join(targetPath, string(sourceKey)[len(sourcePath):])
 	} else {
 		var mTime int64
-		if message.NewEntry != nil {
-			mTime = message.NewEntry.Attributes.Mtime
-		} else if message.OldEntry != nil {
-			mTime = message.OldEntry.Attributes.Mtime
+		if message.GetNewEntry() != nil {
+			mTime = message.GetNewEntry().GetAttributes().GetMtime()
+		} else if message.GetOldEntry() != nil {
+			mTime = message.GetOldEntry().GetAttributes().GetMtime()
 		}
 		dateKey := time.Unix(mTime, 0).Format("2006-01-02")
 		key = util.Join(targetPath, dateKey, string(sourceKey)[len(sourcePath):])

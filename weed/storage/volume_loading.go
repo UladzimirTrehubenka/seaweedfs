@@ -21,6 +21,7 @@ func loadVolumeWithoutIndex(dirname string, collection string, id needle.VolumeI
 	v.SuperBlock = super_block.SuperBlock{}
 	v.needleMapKind = needleMapKind
 	err = v.load(false, false, needleMapKind, 0, ver)
+
 	return
 }
 
@@ -43,7 +44,7 @@ func (v *Volume) load(alsoLoadIndex bool, createDatIfMissing bool, needleMapKind
 
 	hasVolumeInfoFile := v.maybeLoadVolumeInfo()
 
-	if v.volumeInfo.ReadOnly && !v.HasRemoteFile() {
+	if v.volumeInfo.GetReadOnly() && !v.HasRemoteFile() {
 		// this covers the case where the volume is marked as read-only and has no remote file
 		v.noWriteOrDelete = true
 	}
@@ -97,9 +98,9 @@ func (v *Volume) load(alsoLoadIndex bool, createDatIfMissing bool, needleMapKind
 
 	if err != nil {
 		if !os.IsPermission(err) {
-			return fmt.Errorf("cannot load volume data %s: %v", v.FileName(".dat"), err)
+			return fmt.Errorf("cannot load volume data %s: %w", v.FileName(".dat"), err)
 		} else {
-			return fmt.Errorf("load data file %s: %v", v.FileName(".dat"), err)
+			return fmt.Errorf("load data file %s: %w", v.FileName(".dat"), err)
 		}
 	}
 
@@ -118,7 +119,7 @@ func (v *Volume) load(alsoLoadIndex bool, createDatIfMissing bool, needleMapKind
 			err = nil
 		}
 	} else {
-		if !v.SuperBlock.Initialized() {
+		if !v.Initialized() {
 			return fmt.Errorf("volume %s not initialized", v.FileName(".dat"))
 		}
 		err = v.maybeWriteSuperBlock(ver)
@@ -138,12 +139,12 @@ func (v *Volume) load(alsoLoadIndex bool, createDatIfMissing bool, needleMapKind
 		if v.noWriteOrDelete {
 			glog.V(0).Infoln("open to read file", v.FileName(".idx"))
 			if indexFile, err = os.OpenFile(v.FileName(".idx"), os.O_RDONLY, 0644); err != nil {
-				return fmt.Errorf("cannot read Volume Index %s: %v", v.FileName(".idx"), err)
+				return fmt.Errorf("cannot read Volume Index %s: %w", v.FileName(".idx"), err)
 			}
 		} else {
 			glog.V(1).Infoln("open to write file", v.FileName(".idx"))
 			if indexFile, err = os.OpenFile(v.FileName(".idx"), os.O_RDWR|os.O_CREATE, 0644); err != nil {
-				return fmt.Errorf("cannot write Volume Index %s: %v", v.FileName(".idx"), err)
+				return fmt.Errorf("cannot write Volume Index %s: %w", v.FileName(".idx"), err)
 			}
 		}
 		// Do not need to check the data integrity for remote volumes,

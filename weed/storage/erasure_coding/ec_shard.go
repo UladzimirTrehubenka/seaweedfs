@@ -1,6 +1,7 @@
 package erasure_coding
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,7 @@ func Uint32ToShardIds(ids []uint32) []ShardId {
 	for i, id := range ids {
 		res[i] = ShardId(id)
 	}
+
 	return res
 }
 
@@ -30,6 +32,7 @@ func ShardIdsToUint32(ids []ShardId) []uint32 {
 	for i, id := range ids {
 		res[i] = uint32(id)
 	}
+
 	return res
 }
 
@@ -39,6 +42,7 @@ func AllShardIds() []ShardId {
 	for i := range res {
 		res[i] = ShardId(i)
 	}
+
 	return res
 }
 
@@ -53,22 +57,23 @@ type EcVolumeShard struct {
 }
 
 func NewEcVolumeShard(diskType types.DiskType, dirname string, collection string, id needle.VolumeId, shardId ShardId) (v *EcVolumeShard, e error) {
-
 	v = &EcVolumeShard{dir: dirname, Collection: collection, VolumeId: id, ShardId: shardId, DiskType: diskType}
 
 	baseFileName := v.FileName()
 
 	// open ecd file
 	if v.ecdFile, e = os.OpenFile(baseFileName+ToExt(int(shardId)), os.O_RDONLY, 0644); e != nil {
-		if e == os.ErrNotExist || strings.Contains(e.Error(), "no such file or directory") {
+		if errors.Is(e, os.ErrNotExist) || strings.Contains(e.Error(), "no such file or directory") {
 			return nil, os.ErrNotExist
 		}
-		return nil, fmt.Errorf("cannot read ec volume shard %s%s: %v", baseFileName, ToExt(int(shardId)), e)
+
+		return nil, fmt.Errorf("cannot read ec volume shard %s%s: %w", baseFileName, ToExt(int(shardId)), e)
 	}
 	ecdFi, statErr := v.ecdFile.Stat()
 	if statErr != nil {
 		_ = v.ecdFile.Close()
-		return nil, fmt.Errorf("can not stat ec volume shard %s%s: %v", baseFileName, ToExt(int(shardId)), statErr)
+
+		return nil, fmt.Errorf("can not stat ec volume shard %s%s: %w", baseFileName, ToExt(int(shardId)), statErr)
 	}
 	v.ecdFileSize = ecdFi.Size()
 
@@ -104,6 +109,7 @@ func EcShardFileName(collection string, dir string, id int) (fileName string) {
 	} else {
 		fileName = path.Join(dir, collection+"_"+idString)
 	}
+
 	return
 }
 
@@ -112,6 +118,7 @@ func EcShardBaseFileName(collection string, id int) (baseFileName string) {
 	if collection != "" {
 		baseFileName = collection + "_" + baseFileName
 	}
+
 	return
 }
 
@@ -128,11 +135,10 @@ func (shard *EcVolumeShard) Destroy() {
 }
 
 func (shard *EcVolumeShard) ReadAt(buf []byte, offset int64) (int, error) {
-
 	n, err := shard.ecdFile.ReadAt(buf, offset)
 	if err == io.EOF && n == len(buf) {
 		err = nil
 	}
-	return n, err
 
+	return n, err
 }

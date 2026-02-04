@@ -97,6 +97,7 @@ func TestManager_SchemaEvolution(t *testing.T) {
 		for _, suggestion := range suggestions {
 			if strings.Contains(suggestion, "default") {
 				found = true
+
 				break
 			}
 		}
@@ -334,8 +335,7 @@ func BenchmarkSchemaEvolution(b *testing.B) {
 		]
 	}`
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := manager.CheckSchemaCompatibility(oldSchema, newSchema, FormatAvro, CompatibilityBackward)
 		if err != nil {
 			b.Fatal(err)

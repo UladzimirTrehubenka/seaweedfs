@@ -167,7 +167,7 @@ func TestParseRequest(t *testing.T) {
 		{
 			name: "simple GET request",
 			req: &http.Request{
-				Method: "GET",
+				Method: http.MethodGet,
 				Header: http.Header{
 					"Origin": []string{"http://example.com"},
 				},
@@ -181,7 +181,7 @@ func TestParseRequest(t *testing.T) {
 		{
 			name: "OPTIONS preflight request",
 			req: &http.Request{
-				Method: "OPTIONS",
+				Method: http.MethodOptions,
 				Header: http.Header{
 					"Origin":                         []string{"http://example.com"},
 					"Access-Control-Request-Method":  []string{"PUT"},
@@ -199,7 +199,7 @@ func TestParseRequest(t *testing.T) {
 		{
 			name: "request without origin",
 			req: &http.Request{
-				Method: "GET",
+				Method: http.MethodGet,
 				Header: http.Header{},
 			},
 			want: &CORSRequest{
@@ -488,6 +488,7 @@ func TestEvaluateRequest(t *testing.T) {
 			got, err := EvaluateRequest(tt.config, tt.corsReq)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("EvaluateRequest() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {

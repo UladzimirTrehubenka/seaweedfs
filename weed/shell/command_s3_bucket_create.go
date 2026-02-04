@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -52,7 +53,6 @@ func (c *commandS3BucketCreate) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3BucketCreate) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	bucketName := bucketCommand.String("name", "", "bucket name")
 	bucketOwner := bucketCommand.String("owner", "", "bucket owner identity name (for S3 IAM authentication)")
@@ -62,7 +62,7 @@ func (c *commandS3BucketCreate) Do(args []string, commandEnv *CommandEnv, writer
 	}
 
 	if *bucketName == "" {
-		return fmt.Errorf("empty bucket name")
+		return errors.New("empty bucket name")
 	}
 
 	err = s3bucket.VerifyS3BucketName(*bucketName)
@@ -74,12 +74,11 @@ func (c *commandS3BucketCreate) Do(args []string, commandEnv *CommandEnv, writer
 	owner := strings.TrimSpace(*bucketOwner)
 
 	err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
 			return fmt.Errorf("get filer configuration: %w", err)
 		}
-		filerBucketsPath := resp.DirBuckets
+		filerBucketsPath := resp.GetDirBuckets()
 
 		fmt.Fprintln(writer, "create bucket under", filerBucketsPath)
 
@@ -129,9 +128,7 @@ func (c *commandS3BucketCreate) Do(args []string, commandEnv *CommandEnv, writer
 		}
 
 		return nil
-
 	})
 
 	return err
-
 }

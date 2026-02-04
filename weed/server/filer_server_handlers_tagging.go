@@ -12,7 +12,6 @@ import (
 // add or replace one file Seaweed- prefixed attributes
 // curl -X PUT -H "Seaweed-Name1: value1" http://localhost:8888/path/to/a/file?tagging
 func (fs *FilerServer) PutTaggingHandler(w http.ResponseWriter, r *http.Request) {
-
 	ctx := r.Context()
 
 	path := r.URL.Path
@@ -23,10 +22,12 @@ func (fs *FilerServer) PutTaggingHandler(w http.ResponseWriter, r *http.Request)
 	existingEntry, err := fs.filer.FindEntry(ctx, util.FullPath(path))
 	if err != nil {
 		writeJsonError(w, r, http.StatusNotFound, err)
+
 		return
 	}
 	if existingEntry == nil {
 		writeJsonError(w, r, http.StatusNotFound, err)
+
 		return
 	}
 
@@ -45,17 +46,18 @@ func (fs *FilerServer) PutTaggingHandler(w http.ResponseWriter, r *http.Request)
 	if dbErr := fs.filer.CreateEntry(ctx, existingEntry, false, false, nil, false, fs.filer.MaxFilenameLength); dbErr != nil {
 		glog.V(0).InfofCtx(ctx, "failing to update %s tagging : %v", path, dbErr)
 		writeJsonError(w, r, http.StatusInternalServerError, dbErr)
+
 		return
 	}
 
 	writeJsonQuiet(w, r, http.StatusAccepted, nil)
+
 	return
 }
 
 // remove all Seaweed- prefixed attributes
 // curl -X DELETE http://localhost:8888/path/to/a/file?tagging
 func (fs *FilerServer) DeleteTaggingHandler(w http.ResponseWriter, r *http.Request) {
-
 	ctx := r.Context()
 
 	path := r.URL.Path
@@ -66,10 +68,12 @@ func (fs *FilerServer) DeleteTaggingHandler(w http.ResponseWriter, r *http.Reque
 	existingEntry, err := fs.filer.FindEntry(ctx, util.FullPath(path))
 	if err != nil {
 		writeJsonError(w, r, http.StatusNotFound, err)
+
 		return
 	}
 	if existingEntry == nil {
 		writeJsonError(w, r, http.StatusNotFound, err)
+
 		return
 	}
 
@@ -88,7 +92,7 @@ func (fs *FilerServer) DeleteTaggingHandler(w http.ResponseWriter, r *http.Reque
 
 	// delete all tags or specific tags
 	hasDeletion := false
-	for header, _ := range existingEntry.Extended {
+	for header := range existingEntry.Extended {
 		if strings.HasPrefix(header, needle.PairNamePrefix) {
 			if len(deletions) == 0 {
 				delete(existingEntry.Extended, header)
@@ -105,15 +109,18 @@ func (fs *FilerServer) DeleteTaggingHandler(w http.ResponseWriter, r *http.Reque
 
 	if !hasDeletion {
 		writeJsonQuiet(w, r, http.StatusNotModified, nil)
+
 		return
 	}
 
 	if dbErr := fs.filer.CreateEntry(ctx, existingEntry, false, false, nil, false, fs.filer.MaxFilenameLength); dbErr != nil {
 		glog.V(0).InfofCtx(ctx, "failing to delete %s tagging : %v", path, dbErr)
 		writeJsonError(w, r, http.StatusInternalServerError, dbErr)
+
 		return
 	}
 
 	writeJsonQuiet(w, r, http.StatusAccepted, nil)
+
 	return
 }

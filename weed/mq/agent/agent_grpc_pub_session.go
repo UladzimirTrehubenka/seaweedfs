@@ -15,11 +15,11 @@ func (a *MessageQueueAgent) StartPublishSession(ctx context.Context, req *mq_age
 
 	topicPublisher, err := pub_client.NewTopicPublisher(
 		&pub_client.PublisherConfiguration{
-			Topic:          topic.NewTopic(req.Topic.Namespace, req.Topic.Name),
-			PartitionCount: req.PartitionCount,
+			Topic:          topic.NewTopic(req.GetTopic().GetNamespace(), req.GetTopic().GetName()),
+			PartitionCount: req.GetPartitionCount(),
 			Brokers:        a.brokersList(),
-			PublisherName:  req.PublisherName,
-			RecordType:     req.RecordType,
+			PublisherName:  req.GetPublisherName(),
+			RecordType:     req.GetRecordType(),
 		})
 	if err != nil {
 		return nil, err
@@ -39,15 +39,16 @@ func (a *MessageQueueAgent) StartPublishSession(ctx context.Context, req *mq_age
 func (a *MessageQueueAgent) ClosePublishSession(ctx context.Context, req *mq_agent_pb.ClosePublishSessionRequest) (*mq_agent_pb.ClosePublishSessionResponse, error) {
 	var finishErr string
 	a.publishersLock.Lock()
-	publisherEntry, found := a.publishers[SessionId(req.SessionId)]
+	publisherEntry, found := a.publishers[SessionId(req.GetSessionId())]
 	if found {
 		if err := publisherEntry.entry.FinishPublish(); err != nil {
 			finishErr = err.Error()
 			slog.Warn("failed to finish publish", "error", err)
 		}
-		delete(a.publishers, SessionId(req.SessionId))
+		delete(a.publishers, SessionId(req.GetSessionId()))
 	}
 	a.publishersLock.Unlock()
+
 	return &mq_agent_pb.ClosePublishSessionResponse{
 		Error: finishErr,
 	}, nil

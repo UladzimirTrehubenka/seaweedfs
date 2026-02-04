@@ -17,7 +17,7 @@ import (
 
 func (vs *VolumeServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "SeaweedFS Volume "+version.VERSION)
-	infos := make(map[string]interface{})
+	infos := make(map[string]any)
 	infos["Up Time"] = time.Since(startTime).Truncate(time.Second).String()
 	var ds []*volume_server_pb.DiskStatus
 	for _, loc := range vs.store.Locations {
@@ -39,11 +39,11 @@ func (vs *VolumeServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) 
 	args := struct {
 		Version       string
 		Masters       []pb.ServerAddress
-		Volumes       interface{}
-		EcVolumes     interface{}
-		RemoteVolumes interface{}
-		DiskStatuses  interface{}
-		Stats         interface{}
+		Volumes       any
+		EcVolumes     any
+		RemoteVolumes any
+		DiskStatuses  any
+		Stats         any
 		Counters      *stats.ServerStats
 	}{
 		version.Version(),

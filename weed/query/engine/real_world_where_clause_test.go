@@ -50,11 +50,13 @@ func TestRealWorldWhereClauseFailure(t *testing.T) {
 
 			if err != nil {
 				t.Errorf("Query failed: %v", err)
+
 				return
 			}
 
 			if result.Error != nil {
 				t.Errorf("Result error: %v", result.Error)
+
 				return
 			}
 
@@ -67,12 +69,9 @@ func TestRealWorldWhereClauseFailure(t *testing.T) {
 
 			if actualRows > 0 {
 				t.Logf("Sample IDs returned:")
-				sampleSize := 5
-				if actualRows < sampleSize {
-					sampleSize = actualRows
-				}
+				sampleSize := min(actualRows, 5)
 
-				for i := 0; i < sampleSize; i++ {
+				for i := range sampleSize {
 					idStr := result.Rows[i][0].ToString()
 					if idValue, err := strconv.ParseInt(idStr, 10, 64); err == nil {
 						t.Logf("  Row %d: id = %d", i+1, idValue)
@@ -147,11 +146,13 @@ func TestWhereClauseWithLimitOffset(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("Query failed: %v", err)
+
 		return
 	}
 
 	if result.Error != nil {
 		t.Errorf("Result error: %v", result.Error)
+
 		return
 	}
 

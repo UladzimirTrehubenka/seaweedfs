@@ -70,10 +70,7 @@ func TestCalculateExpectedShardSizeWithRealEncoding(t *testing.T) {
 
 			written := int64(0)
 			for written < tt.datFileSize {
-				toWrite := tt.datFileSize - written
-				if toWrite > int64(len(pattern)) {
-					toWrite = int64(len(pattern))
-				}
+				toWrite := min(tt.datFileSize-written, int64(len(pattern)))
 				n, err := datFile.Write(pattern[:toWrite])
 				if err != nil {
 					t.Fatalf("Failed to write to .dat file: %v", err)
@@ -92,7 +89,7 @@ func TestCalculateExpectedShardSizeWithRealEncoding(t *testing.T) {
 			}
 
 			// Measure actual shard sizes
-			for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+			for i := range erasure_coding.TotalShardsCount {
 				shardFileName := baseFileName + erasure_coding.ToExt(i)
 				shardInfo, err := os.Stat(shardFileName)
 				if err != nil {
@@ -120,7 +117,7 @@ func TestCalculateExpectedShardSizeWithRealEncoding(t *testing.T) {
 
 			// Cleanup
 			os.Remove(datFileName)
-			for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+			for i := range erasure_coding.TotalShardsCount {
 				os.Remove(baseFileName + erasure_coding.ToExt(i))
 			}
 		})
@@ -190,7 +187,7 @@ func TestCalculateExpectedShardSizeEdgeCases(t *testing.T) {
 
 			// Cleanup
 			os.Remove(datFileName)
-			for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+			for i := range erasure_coding.TotalShardsCount {
 				os.Remove(baseFileName + erasure_coding.ToExt(i))
 			}
 		})

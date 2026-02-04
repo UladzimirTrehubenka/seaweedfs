@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/mount_pb"
-	"github.com/seaweedfs/seaweedfs/weed/util"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	_ "google.golang.org/grpc/resolver/passthrough"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/mount_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func init() {
@@ -40,7 +41,6 @@ func (c *commandMountConfigure) HasTag(CommandTag) bool {
 }
 
 func (c *commandMountConfigure) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	mountConfigureCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	mountDir := mountConfigureCommand.String("dir", "", "the mount directory same as how \"weed mount -dir=<mount_directory>\" was started")
 	mountQuota := mountConfigureCommand.Int("quotaMB", 0, "the quota in MB")

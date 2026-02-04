@@ -3,10 +3,15 @@ package engine
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	jsonpb "google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
@@ -19,9 +24,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	jsonpb "google.golang.org/protobuf/encoding/protojson"
 )
 
 // BrokerClient handles communication with SeaweedFS MQ broker
@@ -60,7 +62,7 @@ func (c *BrokerClient) discoverFiler() error {
 
 	conn, err := grpc.NewClient(c.masterAddress, c.grpcDialOption)
 	if err != nil {
-		return fmt.Errorf("failed to connect to master at %s: %v", c.masterAddress, err)
+		return fmt.Errorf("failed to connect to master at %s: %w", c.masterAddress, err)
 	}
 	defer conn.Close()
 
@@ -72,15 +74,15 @@ func (c *BrokerClient) discoverFiler() error {
 		ClientType: cluster.FilerType,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list filers from master: %v", err)
+		return fmt.Errorf("failed to list filers from master: %w", err)
 	}
 
-	if len(resp.ClusterNodes) == 0 {
-		return fmt.Errorf("no filers found in cluster")
+	if len(resp.GetClusterNodes()) == 0 {
+		return errors.New("no filers found in cluster")
 	}
 
 	// Use the first available filer and convert HTTP address to gRPC
-	filerHTTPAddress := resp.ClusterNodes[0].Address
+	filerHTTPAddress := resp.GetClusterNodes()[0].GetAddress()
 	httpAddr := pb.ServerAddress(filerHTTPAddress)
 	c.filerAddress = httpAddr.ToGrpcAddress()
 
@@ -96,12 +98,12 @@ func (c *BrokerClient) findBrokerBalancer() error {
 
 	// First discover filer from master
 	if err := c.discoverFiler(); err != nil {
-		return fmt.Errorf("failed to discover filer: %v", err)
+		return fmt.Errorf("failed to discover filer: %w", err)
 	}
 
 	conn, err := grpc.NewClient(c.filerAddress, c.grpcDialOption)
 	if err != nil {
-		return fmt.Errorf("failed to connect to filer at %s: %v", c.filerAddress, err)
+		return fmt.Errorf("failed to connect to filer at %s: %w", c.filerAddress, err)
 	}
 	defer conn.Close()
 
@@ -114,10 +116,11 @@ func (c *BrokerClient) findBrokerBalancer() error {
 		Name: pub_balancer.LockBrokerBalancer,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to find broker balancer: %v", err)
+		return fmt.Errorf("failed to find broker balancer: %w", err)
 	}
 
-	c.brokerAddress = resp.Owner
+	c.brokerAddress = resp.GetOwner()
+
 	return nil
 }
 
@@ -126,7 +129,7 @@ func (c *BrokerClient) findBrokerBalancer() error {
 func (c *BrokerClient) GetFilerClient() (filer_pb.FilerClient, error) {
 	// Ensure filer is discovered
 	if err := c.discoverFiler(); err != nil {
-		return nil, fmt.Errorf("failed to discover filer: %v", err)
+		return nil, fmt.Errorf("failed to discover filer: %w", err)
 	}
 
 	return &filerClientImpl{
@@ -145,17 +148,18 @@ type filerClientImpl struct {
 func (f *filerClientImpl) WithFilerClient(followRedirect bool, fn func(client filer_pb.SeaweedFilerClient) error) error {
 	conn, err := grpc.NewClient(f.filerAddress, f.grpcDialOption)
 	if err != nil {
-		return fmt.Errorf("failed to connect to filer at %s: %v", f.filerAddress, err)
+		return fmt.Errorf("failed to connect to filer at %s: %w", f.filerAddress, err)
 	}
 	defer conn.Close()
 
 	client := filer_pb.NewSeaweedFilerClient(conn)
+
 	return fn(client)
 }
 
 // AdjustedUrl implements the FilerClient interface (placeholder implementation)
 func (f *filerClientImpl) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 // GetDataCenter implements the FilerClient interface (placeholder implementation)
@@ -169,7 +173,7 @@ func (c *BrokerClient) ListNamespaces(ctx context.Context) ([]string, error) {
 	// Get filer client to list directories under /topics
 	filerClient, err := c.GetFilerClient()
 	if err != nil {
-		return []string{}, fmt.Errorf("failed to get filer client: %v", err)
+		return []string{}, fmt.Errorf("failed to get filer client: %w", err)
 	}
 
 	var namespaces []string
@@ -181,21 +185,22 @@ func (c *BrokerClient) ListNamespaces(ctx context.Context) ([]string, error) {
 
 		stream, streamErr := client.ListEntries(ctx, request)
 		if streamErr != nil {
-			return fmt.Errorf("failed to list topics directory: %v", streamErr)
+			return fmt.Errorf("failed to list topics directory: %w", streamErr)
 		}
 
 		for {
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break // End of stream
 				}
-				return fmt.Errorf("failed to receive entry: %v", recvErr)
+
+				return fmt.Errorf("failed to receive entry: %w", recvErr)
 			}
 
 			// Only include directories (namespaces), skip files and system directories (starting with .)
-			if resp.Entry != nil && resp.Entry.IsDirectory && !strings.HasPrefix(resp.Entry.Name, ".") {
-				namespaces = append(namespaces, resp.Entry.Name)
+			if resp.GetEntry() != nil && resp.GetEntry().GetIsDirectory() && !strings.HasPrefix(resp.GetEntry().GetName(), ".") {
+				namespaces = append(namespaces, resp.GetEntry().GetName())
 			}
 		}
 
@@ -203,7 +208,7 @@ func (c *BrokerClient) ListNamespaces(ctx context.Context) ([]string, error) {
 	})
 
 	if err != nil {
-		return []string{}, fmt.Errorf("failed to list namespaces from /topics: %v", err)
+		return []string{}, fmt.Errorf("failed to list namespaces from /topics: %w", err)
 	}
 
 	// Return actual namespaces found (may be empty if no topics exist)
@@ -222,28 +227,29 @@ func (c *BrokerClient) ListTopics(ctx context.Context, namespace string) ([]stri
 	var topics []string
 	err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		// List directories under /topics/{namespace} to get topics
-		namespaceDir := fmt.Sprintf("/topics/%s", namespace)
+		namespaceDir := "/topics/" + namespace
 		request := &filer_pb.ListEntriesRequest{
 			Directory: namespaceDir,
 		}
 
 		stream, streamErr := client.ListEntries(ctx, request)
 		if streamErr != nil {
-			return fmt.Errorf("failed to list namespace directory %s: %v", namespaceDir, streamErr)
+			return fmt.Errorf("failed to list namespace directory %s: %w", namespaceDir, streamErr)
 		}
 
 		for {
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break // End of stream
 				}
-				return fmt.Errorf("failed to receive entry: %v", recvErr)
+
+				return fmt.Errorf("failed to receive entry: %w", recvErr)
 			}
 
 			// Only include directories (topics), skip files
-			if resp.Entry != nil && resp.Entry.IsDirectory {
-				topics = append(topics, resp.Entry.Name)
+			if resp.GetEntry() != nil && resp.GetEntry().GetIsDirectory() {
+				topics = append(topics, resp.GetEntry().GetName())
 			}
 		}
 
@@ -265,7 +271,7 @@ func (c *BrokerClient) GetTopicSchema(ctx context.Context, namespace, topicName 
 	// Get filer client to read topic configuration
 	filerClient, err := c.GetFilerClient()
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("failed to get filer client: %v", err)
+		return nil, nil, "", fmt.Errorf("failed to get filer client: %w", err)
 	}
 
 	var flatSchema *schema_pb.RecordType
@@ -281,25 +287,25 @@ func (c *BrokerClient) GetTopicSchema(ctx context.Context, namespace, topicName 
 			Name:      "topic.conf",
 		})
 		if err != nil {
-			return fmt.Errorf("topic %s.%s not found: %v", namespace, topicName, err)
+			return fmt.Errorf("topic %s.%s not found: %w", namespace, topicName, err)
 		}
 
 		// Read the topic.conf file content
 		data, err := filer.ReadInsideFiler(client, topicDir, "topic.conf")
 		if err != nil {
-			return fmt.Errorf("failed to read topic.conf for %s.%s: %v", namespace, topicName, err)
+			return fmt.Errorf("failed to read topic.conf for %s.%s: %w", namespace, topicName, err)
 		}
 
 		// Parse the configuration
 		conf := &mq_pb.ConfigureTopicResponse{}
 		if err = jsonpb.Unmarshal(data, conf); err != nil {
-			return fmt.Errorf("failed to unmarshal topic %s.%s configuration: %v", namespace, topicName, err)
+			return fmt.Errorf("failed to unmarshal topic %s.%s configuration: %w", namespace, topicName, err)
 		}
 
 		// Extract flat schema, key columns, and schema format
-		flatSchema = conf.MessageRecordType
-		keyColumns = conf.KeyColumns
-		schemaFormat = conf.SchemaFormat
+		flatSchema = conf.GetMessageRecordType()
+		keyColumns = conf.GetKeyColumns()
+		schemaFormat = conf.GetSchemaFormat()
 
 		return nil
 	})
@@ -319,7 +325,7 @@ func (c *BrokerClient) ConfigureTopic(ctx context.Context, namespace, topicName 
 
 	conn, err := grpc.NewClient(c.brokerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return fmt.Errorf("failed to connect to broker at %s: %v", c.brokerAddress, err)
+		return fmt.Errorf("failed to connect to broker at %s: %w", c.brokerAddress, err)
 	}
 	defer conn.Close()
 
@@ -336,7 +342,7 @@ func (c *BrokerClient) ConfigureTopic(ctx context.Context, namespace, topicName 
 		KeyColumns:        keyColumns,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to configure topic %s.%s: %v", namespace, topicName, err)
+		return fmt.Errorf("failed to configure topic %s.%s: %w", namespace, topicName, err)
 	}
 
 	return nil
@@ -352,7 +358,7 @@ func (c *BrokerClient) DeleteTopic(ctx context.Context, namespace, topicName str
 	// TODO: Implement topic deletion
 	// This may require a new gRPC method in the broker service
 
-	return fmt.Errorf("topic deletion not yet implemented in broker - need to add DeleteTopic gRPC method")
+	return errors.New("topic deletion not yet implemented in broker - need to add DeleteTopic gRPC method")
 }
 
 // ListTopicPartitions discovers the actual partitions for a given topic via MQ broker
@@ -375,6 +381,7 @@ func (c *BrokerClient) ListTopicPartitions(ctx context.Context, namespace, topic
 	var topicConf *mq_pb.ConfigureTopicResponse
 	err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		topicConf, err = topicObj.ReadConfFile(client)
+
 		return err
 	})
 
@@ -385,8 +392,8 @@ func (c *BrokerClient) ListTopicPartitions(ctx context.Context, namespace, topic
 
 	// Generate partitions based on topic configuration
 	partitionCount := int32(4) // Default partition count for topics
-	if len(topicConf.BrokerPartitionAssignments) > 0 {
-		partitionCount = int32(len(topicConf.BrokerPartitionAssignments))
+	if len(topicConf.GetBrokerPartitionAssignments()) > 0 {
+		partitionCount = int32(len(topicConf.GetBrokerPartitionAssignments()))
 	}
 
 	// Create partition ranges - simplified approach
@@ -394,7 +401,7 @@ func (c *BrokerClient) ListTopicPartitions(ctx context.Context, namespace, topic
 	rangeSize := topic.PartitionCount / partitionCount
 	var partitions []topic.Partition
 
-	for i := int32(0); i < partitionCount; i++ {
+	for i := range partitionCount {
 		rangeStart := i * rangeSize
 		rangeStop := (i + 1) * rangeSize
 		if i == partitionCount-1 {
@@ -486,24 +493,24 @@ func (c *BrokerClient) GetUnflushedMessages(ctx context.Context, namespace, topi
 		}
 
 		// Handle error messages
-		if response.Error != "" {
+		if response.GetError() != "" {
 			// Log the error but return empty slice - prevents double-counting
 			// (In debug mode, this would be visible)
 			return []*filer_pb.LogEntry{}, nil
 		}
 
 		// Check for end of stream
-		if response.EndOfStream {
+		if response.GetEndOfStream() {
 			break
 		}
 
 		// Convert and collect the message
-		if response.Message != nil {
+		if response.GetMessage() != nil {
 			logEntries = append(logEntries, &filer_pb.LogEntry{
-				TsNs:             response.Message.TsNs,
-				Key:              response.Message.Key,
-				Data:             response.Message.Data,
-				PartitionKeyHash: int32(response.Message.PartitionKeyHash), // Convert uint32 to int32
+				TsNs:             response.GetMessage().GetTsNs(),
+				Key:              response.GetMessage().GetKey(),
+				Data:             response.GetMessage().GetData(),
+				PartitionKeyHash: int32(response.GetMessage().GetPartitionKeyHash()), // Convert uint32 to int32
 			})
 		}
 	}
@@ -522,7 +529,7 @@ func (c *BrokerClient) GetUnflushedMessages(ctx context.Context, namespace, topi
 func (c *BrokerClient) getEarliestBufferStart(ctx context.Context, partitionPath string) (int64, error) {
 	filerClient, err := c.GetFilerClient()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get filer client: %v", err)
+		return 0, fmt.Errorf("failed to get filer client: %w", err)
 	}
 
 	var earliestBufferIndex int64 = -1 // -1 means no buffer_start found
@@ -531,12 +538,12 @@ func (c *BrokerClient) getEarliestBufferStart(ctx context.Context, partitionPath
 
 	err = filer_pb.ReadDirAllEntries(ctx, filerClient, util.FullPath(partitionPath), "", func(entry *filer_pb.Entry, isLast bool) error {
 		// Skip directories
-		if entry.IsDirectory {
+		if entry.GetIsDirectory() {
 			return nil
 		}
 
 		// Count file types for scenario detection
-		if strings.HasSuffix(entry.Name, ".parquet") {
+		if strings.HasSuffix(entry.GetName(), ".parquet") {
 			parquetFileCount++
 		} else {
 			logFileCount++
@@ -548,18 +555,18 @@ func (c *BrokerClient) getEarliestBufferStart(ctx context.Context, partitionPath
 			if earliestBufferIndex == -1 || bufferStart.StartIndex < earliestBufferIndex {
 				earliestBufferIndex = bufferStart.StartIndex
 			}
-			bufferStartSources = append(bufferStartSources, entry.Name)
+			bufferStartSources = append(bufferStartSources, entry.GetName())
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to scan partition directory: %v", err)
+		return 0, fmt.Errorf("failed to scan partition directory: %w", err)
 	}
 
 	if earliestBufferIndex == -1 {
-		return 0, fmt.Errorf("no buffer_start metadata found in partition")
+		return 0, errors.New("no buffer_start metadata found in partition")
 	}
 
 	return earliestBufferIndex, nil
@@ -572,7 +579,7 @@ func (c *BrokerClient) getBufferStartFromEntry(entry *filer_pb.Entry) *LogBuffer
 		return nil
 	}
 
-	if startData, exists := entry.Extended["buffer_start"]; exists {
+	if startData, exists := entry.GetExtended()["buffer_start"]; exists {
 		// Only support binary format
 		if len(startData) == 8 {
 			startIndex := int64(binary.BigEndian.Uint64(startData))

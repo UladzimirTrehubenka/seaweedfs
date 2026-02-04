@@ -3,6 +3,7 @@ package sftpd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,12 +12,13 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/sftpd/auth"
 	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
-	"golang.org/x/crypto/ssh"
-	"google.golang.org/grpc"
 )
 
 // SFTPService holds configuration for the SFTP service.
@@ -121,20 +123,22 @@ func (s *SFTPService) buildSSHConfig() (*ssh.ServerConfig, error) {
 			if err := s.addHostKey(config, keyPath); err != nil {
 				// Log the error but continue with other keys
 				glog.V(0).Info(fmt.Sprintf("Failed to add host key %s: %v", keyPath, err))
+
 				continue
 			}
 			hostKeysAdded++
 		}
 
 		if hostKeysAdded == 0 {
-			glog.V(0).Info(fmt.Sprintf("Warning: no valid host keys found in folder %s", s.options.HostKeysFolder))
+			glog.V(0).Info("Warning: no valid host keys found in folder " + s.options.HostKeysFolder)
 		}
 	}
 
 	// Ensure we have at least one host key
 	if hostKeysAdded == 0 {
-		return nil, fmt.Errorf("no host keys provided")
+		return nil, errors.New("no host keys provided")
 	}
+
 	return config, nil
 }
 
@@ -142,20 +146,23 @@ func (s *SFTPService) buildSSHConfig() (*ssh.ServerConfig, error) {
 func (s *SFTPService) addHostKey(config *ssh.ServerConfig, keyPath string) error {
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
-		return fmt.Errorf("failed to read host key %s: %v", keyPath, err)
+		return fmt.Errorf("failed to read host key %s: %w", keyPath, err)
 	}
 
 	// Try parsing as private key
 	signer, err := ssh.ParsePrivateKey(keyBytes)
 	if err != nil {
 		// Try parsing with passphrase if available
-		if passphraseErr, ok := err.(*ssh.PassphraseMissingError); ok {
-			return fmt.Errorf("host key %s requires passphrase: %v", keyPath, passphraseErr)
+		passphraseErr := &ssh.PassphraseMissingError{}
+		if errors.As(err, &passphraseErr) {
+			return fmt.Errorf("host key %s requires passphrase: %w", keyPath, passphraseErr)
 		}
-		return fmt.Errorf("failed to parse host key %s: %v", keyPath, err)
+
+		return fmt.Errorf("failed to parse host key %s: %w", keyPath, err)
 	}
 	config.AddHostKey(signer)
 	glog.V(0).Infof("Added host key %s (%s)", keyPath, signer.PublicKey().Type())
+
 	return nil
 }
 
@@ -169,6 +176,7 @@ func (s *SFTPService) handleSSHConnection(conn net.Conn, config *ssh.ServerConfi
 	if err != nil {
 		glog.Errorf("Failed to handshake: %v", err)
 		conn.Close()
+
 		return
 	}
 
@@ -191,6 +199,7 @@ func (s *SFTPService) handleSSHConnection(conn net.Conn, config *ssh.ServerConfi
 	if err != nil {
 		glog.Errorf("Failed to retrieve user %s: %v", username, err)
 		sshConn.Close()
+
 		return
 	}
 
@@ -242,6 +251,7 @@ func (s *SFTPService) monitorConnection(ctx context.Context, sshConn *ssh.Server
 				if missedCount >= s.options.ClientAliveCountMax {
 					glog.Warningf("Closing unresponsive connection from %s", sshConn.RemoteAddr())
 					sshConn.Close()
+
 					return
 				}
 			} else {
@@ -255,12 +265,14 @@ func (s *SFTPService) monitorConnection(ctx context.Context, sshConn *ssh.Server
 func (s *SFTPService) handleChannel(newChannel ssh.NewChannel, fs *SftpServer) {
 	if newChannel.ChannelType() != "session" {
 		_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+
 		return
 	}
 
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
 		glog.Errorf("Could not accept channel: %v", err)
+
 		return
 	}
 
@@ -293,7 +305,7 @@ func (s *SFTPService) handleSFTP(channel ssh.Channel, fs *SftpServer) {
 		FileList: fs,
 	}, serverOptions)
 
-	if err := server.Serve(); err == io.EOF {
+	if err := server.Serve(); errors.Is(err, io.EOF) {
 		server.Close()
 		glog.V(0).Info("SFTP client exited session.")
 	} else if err != nil {

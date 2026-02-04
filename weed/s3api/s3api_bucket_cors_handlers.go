@@ -81,6 +81,7 @@ func (s3a *S3ApiServer) GetBucketCorsHandler(w http.ResponseWriter, r *http.Requ
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -92,11 +93,13 @@ func (s3a *S3ApiServer) GetBucketCorsHandler(w http.ResponseWriter, r *http.Requ
 		} else {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		}
+
 		return
 	}
 
 	if config == nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchCORSConfiguration)
+
 		return
 	}
 
@@ -112,6 +115,7 @@ func (s3a *S3ApiServer) PutBucketCorsHandler(w http.ResponseWriter, r *http.Requ
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -120,6 +124,7 @@ func (s3a *S3ApiServer) PutBucketCorsHandler(w http.ResponseWriter, r *http.Requ
 	if err := xml.NewDecoder(r.Body).Decode(&config); err != nil {
 		glog.V(1).Infof("Failed to parse CORS configuration: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
@@ -127,6 +132,7 @@ func (s3a *S3ApiServer) PutBucketCorsHandler(w http.ResponseWriter, r *http.Requ
 	if err := cors.ValidateConfiguration(&config); err != nil {
 		glog.V(1).Infof("Invalid CORS configuration: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
+
 		return
 	}
 
@@ -135,6 +141,7 @@ func (s3a *S3ApiServer) PutBucketCorsHandler(w http.ResponseWriter, r *http.Requ
 	if err := s3a.updateCORSConfiguration(bucket, &config); err != s3err.ErrNone {
 		glog.Errorf("Failed to update CORS configuration: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -150,6 +157,7 @@ func (s3a *S3ApiServer) DeleteBucketCorsHandler(w http.ResponseWriter, r *http.R
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -158,6 +166,7 @@ func (s3a *S3ApiServer) DeleteBucketCorsHandler(w http.ResponseWriter, r *http.R
 	if err := s3a.removeCORSConfiguration(bucket); err != s3err.ErrNone {
 		glog.Errorf("Failed to remove CORS configuration: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 

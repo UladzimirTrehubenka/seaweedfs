@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -39,13 +40,12 @@ func (c *commandFsMv) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsMv) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
 
 	if len(args) != 2 {
-		return fmt.Errorf("need to have 2 arguments")
+		return errors.New("need to have 2 arguments")
 	}
 
 	sourcePath, err := commandEnv.parseUrl(args[0])
@@ -63,7 +63,6 @@ func (c *commandFsMv) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 	destinationDir, destinationName := util.FullPath(destinationPath).DirAndName()
 
 	return commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		// collect destination entry info
 		destinationRequest := &filer_pb.LookupDirectoryEntryRequest{
 			Name:      destinationDir,
@@ -74,7 +73,7 @@ func (c *commandFsMv) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 		var targetDir, targetName string
 
 		// moving a file or folder
-		if err == nil && respDestinationLookupEntry.Entry.IsDirectory {
+		if err == nil && respDestinationLookupEntry.GetEntry().GetIsDirectory() {
 			// to a directory
 			targetDir = util.Join(destinationDir, destinationName)
 			targetName = sourceName
@@ -96,7 +95,5 @@ func (c *commandFsMv) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 		fmt.Fprintf(writer, "move: %s => %s\n", sourcePath, util.NewFullPath(targetDir, targetName))
 
 		return err
-
 	})
-
 }

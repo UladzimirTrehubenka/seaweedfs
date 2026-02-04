@@ -2,6 +2,7 @@ package erasure_coding
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -43,25 +44,24 @@ func TestEncodingDecoding(t *testing.T) {
 	}
 
 	removeGeneratedFiles(baseFileName, ctx)
-
 }
 
 func validateFiles(baseFileName string, ctx *ECContext) error {
 	nm, err := readNeedleMap(baseFileName)
 	if err != nil {
-		return fmt.Errorf("readNeedleMap: %v", err)
+		return fmt.Errorf("readNeedleMap: %w", err)
 	}
 	defer nm.Close()
 
 	datFile, err := os.OpenFile(baseFileName+".dat", os.O_RDONLY, 0)
 	if err != nil {
-		return fmt.Errorf("failed to open dat file: %v", err)
+		return fmt.Errorf("failed to open dat file: %w", err)
 	}
 	defer datFile.Close()
 
 	fi, err := datFile.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to stat dat file: %v", err)
+		return fmt.Errorf("failed to stat dat file: %w", err)
 	}
 
 	ecFiles, err := openEcFiles(baseFileName, true, ctx)
@@ -74,47 +74,46 @@ func validateFiles(baseFileName string, ctx *ECContext) error {
 		return assertSame(datFile, fi.Size(), ecFiles, value.Offset, value.Size)
 	})
 	if err != nil {
-		return fmt.Errorf("failed to check ec files: %v", err)
+		return fmt.Errorf("failed to check ec files: %w", err)
 	}
+
 	return nil
 }
 
 func assertSame(datFile *os.File, datSize int64, ecFiles []*os.File, offset types.Offset, size types.Size) error {
-
 	data, err := readDatFile(datFile, offset, size)
 	if err != nil {
-		return fmt.Errorf("failed to read dat file: %v", err)
+		return fmt.Errorf("failed to read dat file: %w", err)
 	}
 
 	ecFileStat, _ := ecFiles[0].Stat()
 
 	ecData, err := readEcFile(ecFileStat.Size(), ecFiles, offset, size)
 	if err != nil {
-		return fmt.Errorf("failed to read ec file: %v", err)
+		return fmt.Errorf("failed to read ec file: %w", err)
 	}
 
-	if bytes.Compare(data, ecData) != 0 {
-		return fmt.Errorf("unexpected data read")
+	if !bytes.Equal(data, ecData) {
+		return errors.New("unexpected data read")
 	}
 
 	return nil
 }
 
 func readDatFile(datFile *os.File, offset types.Offset, size types.Size) ([]byte, error) {
-
 	data := make([]byte, size)
 	n, err := datFile.ReadAt(data, offset.ToActualOffset())
 	if err != nil {
-		return nil, fmt.Errorf("failed to ReadAt dat file: %v", err)
+		return nil, fmt.Errorf("failed to ReadAt dat file: %w", err)
 	}
 	if n != int(size) {
 		return nil, fmt.Errorf("unexpected read size %d, expected %d", n, size)
 	}
+
 	return data, nil
 }
 
 func readEcFile(shardDatSize int64, ecFiles []*os.File, offset types.Offset, size types.Size) (data []byte, err error) {
-
 	intervals := LocateData(largeBlockSize, smallBlockSize, shardDatSize, offset.ToActualOffset(), size)
 
 	for i, interval := range intervals {
@@ -133,7 +132,6 @@ func readEcFile(shardDatSize int64, ecFiles []*os.File, offset types.Offset, siz
 }
 
 func readOneInterval(interval Interval, ecFiles []*os.File) (data []byte, err error) {
-
 	ecFileIndex, ecFileOffset := interval.ToShardIdAndOffset(largeBlockSize, smallBlockSize)
 
 	data = make([]byte, interval.Size)
@@ -141,19 +139,20 @@ func readOneInterval(interval Interval, ecFiles []*os.File) (data []byte, err er
 	if false { // do some ec testing
 		ecData, err := readFromOtherEcFiles(ecFiles, int(ecFileIndex), ecFileOffset, interval.Size)
 		if err != nil {
-			return nil, fmt.Errorf("ec reconstruct error: %v", err)
+			return nil, fmt.Errorf("ec reconstruct error: %w", err)
 		}
-		if bytes.Compare(data, ecData) != 0 {
-			return nil, fmt.Errorf("ec compare error")
+		if !bytes.Equal(data, ecData) {
+			return nil, errors.New("ec compare error")
 		}
 	}
+
 	return
 }
 
 func readFromOtherEcFiles(ecFiles []*os.File, ecFileIndex int, ecFileOffset int64, size types.Size) (data []byte, err error) {
 	enc, err := reedsolomon.New(DataShardsCount, ParityShardsCount)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create encoder: %v", err)
+		return nil, fmt.Errorf("failed to create encoder: %w", err)
 	}
 
 	bufs := make([][]byte, TotalShardsCount)
@@ -172,7 +171,7 @@ func readFromOtherEcFiles(ecFiles []*os.File, ecFileIndex int, ecFileOffset int6
 		}
 		err = readFromFile(ecFiles[i], buf, ecFileOffset)
 		if err != nil {
-			return
+			return data, err
 		}
 	}
 
@@ -185,6 +184,7 @@ func readFromOtherEcFiles(ecFiles []*os.File, ecFileIndex int, ecFileOffset int6
 
 func readFromFile(file *os.File, data []byte, ecFileOffset int64) (err error) {
 	_, err = file.ReadAt(data, ecFileOffset)
+
 	return
 }
 
@@ -218,13 +218,13 @@ func (this Interval) sameAs(that Interval) bool {
 
 func TestLocateData2(t *testing.T) {
 	intervals := LocateData(ErasureCodingLargeBlockSize, ErasureCodingSmallBlockSize, 3221225472, 21479557912, 4194339)
-	assert.Equal(t, intervals, []Interval{
+	assert.Equal(t, []Interval{
 		{BlockIndex: 4, InnerBlockOffset: 527128, Size: 521448, IsLargeBlock: false, LargeBlockRowsCount: 2},
 		{BlockIndex: 5, InnerBlockOffset: 0, Size: 1048576, IsLargeBlock: false, LargeBlockRowsCount: 2},
 		{BlockIndex: 6, InnerBlockOffset: 0, Size: 1048576, IsLargeBlock: false, LargeBlockRowsCount: 2},
 		{BlockIndex: 7, InnerBlockOffset: 0, Size: 1048576, IsLargeBlock: false, LargeBlockRowsCount: 2},
 		{BlockIndex: 8, InnerBlockOffset: 0, Size: 527163, IsLargeBlock: false, LargeBlockRowsCount: 2},
-	})
+	}, intervals)
 }
 
 func TestLocateData3(t *testing.T) {
@@ -232,9 +232,9 @@ func TestLocateData3(t *testing.T) {
 	for _, interval := range intervals {
 		fmt.Printf("%+v\n", interval)
 	}
-	assert.Equal(t, intervals, []Interval{
+	assert.Equal(t, []Interval{
 		{BlockIndex: 8876, InnerBlockOffset: 912752, Size: 112568, IsLargeBlock: false, LargeBlockRowsCount: 2},
-	})
+	}, intervals)
 }
 
 func TestLocateData_Issue8179(t *testing.T) {
@@ -249,7 +249,7 @@ func TestLocateData_Issue8179(t *testing.T) {
 	for offset := largeAreaSize - 500; offset < largeAreaSize+500; offset++ {
 		intervals := LocateData(large, small, shardSize, offset, 200)
 		for _, interval := range intervals {
-			assert.True(t, interval.Size > 0, "Interval size must be positive at offset %d, got %+v", offset, interval)
+			assert.Positive(t, interval.Size, "Interval size must be positive at offset %d, got %+v", offset, interval)
 		}
 	}
 }

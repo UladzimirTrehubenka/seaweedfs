@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -66,6 +67,7 @@ func (fs *FilerServer) tusSessionInfoPath(uploadID string) string {
 func (fs *FilerServer) tusChunkPath(uploadID string, offset, size int64, fileId string) string {
 	// Use URL-safe base64 encoding to safely encode fileId (handles both / and _ in fileId)
 	encodedFileId := base64.RawURLEncoding.EncodeToString([]byte(fileId))
+
 	return fmt.Sprintf("/%s/%s/chunk_%016d_%016d_%s", TusUploadsFolder, uploadID, offset, size, encodedFileId)
 }
 
@@ -100,6 +102,7 @@ func parseTusChunkPath(entry *filer.Entry) (*TusChunkInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid fileId encoding in chunk file %q: %w", name, err)
 	}
+
 	return &TusChunkInfo{
 		Offset:   offset,
 		Size:     size,
@@ -140,10 +143,12 @@ func (fs *FilerServer) createTusSession(ctx context.Context, uploadID, targetPat
 	if err := fs.saveTusSession(ctx, session); err != nil {
 		// Cleanup the directory on failure
 		fs.filer.DeleteEntryMetaAndData(ctx, sessionDirPath, true, true, false, false, nil, 0)
+
 		return nil, fmt.Errorf("save session info: %w", err)
 	}
 
 	glog.V(2).Infof("Created TUS session %s for %s, size=%d", uploadID, targetPath, size)
+
 	return session, nil
 }
 
@@ -179,9 +184,10 @@ func (fs *FilerServer) getTusSession(ctx context.Context, uploadID string) (*Tus
 	infoPath := util.FullPath(fs.tusSessionInfoPath(uploadID))
 	entry, err := fs.filer.FindEntry(ctx, infoPath)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			return nil, fmt.Errorf("TUS upload session not found: %s", uploadID)
 		}
+
 		return nil, fmt.Errorf("find session: %w", err)
 	}
 
@@ -208,6 +214,7 @@ func (fs *FilerServer) getTusSession(ctx context.Context, uploadID string) (*Tus
 				chunk, parseErr := parseTusChunkPath(e)
 				if parseErr != nil {
 					glog.V(1).Infof("Skipping invalid chunk file %s: %v", e.Name(), parseErr)
+
 					continue
 				}
 				session.Chunks = append(session.Chunks, chunk)
@@ -274,11 +281,11 @@ func (fs *FilerServer) saveTusChunk(ctx context.Context, uploadID string, chunk 
 
 // deleteTusSession removes a TUS upload session and all its data
 func (fs *FilerServer) deleteTusSession(ctx context.Context, uploadID string) error {
-
 	session, err := fs.getTusSession(ctx, uploadID)
 	if err != nil {
 		// Session might already be deleted or never existed
 		glog.V(1).Infof("TUS session %s not found for deletion: %v", uploadID, err)
+
 		return nil
 	}
 
@@ -302,6 +309,7 @@ func (fs *FilerServer) deleteTusSession(ctx context.Context, uploadID string) er
 	}
 
 	glog.V(2).Infof("Deleted TUS session %s", uploadID)
+
 	return nil
 }
 
@@ -413,6 +421,7 @@ func (fs *FilerServer) cleanupExpiredTusSessions() {
 		entries, hasMore, err := fs.filer.ListDirectoryEntries(ctx, uploadsDir, lastFileName, false, int64(pageSize), "", "", "")
 		if err != nil {
 			glog.V(1).Infof("TUS cleanup: failed to list sessions: %v", err)
+
 			return
 		}
 
@@ -420,6 +429,7 @@ func (fs *FilerServer) cleanupExpiredTusSessions() {
 		for _, entry := range entries {
 			if !entry.IsDirectory() {
 				lastFileName = entry.Name()
+
 				continue
 			}
 
@@ -428,6 +438,7 @@ func (fs *FilerServer) cleanupExpiredTusSessions() {
 			if err != nil {
 				glog.V(2).Infof("TUS cleanup: skipping session %s: %v", uploadID, err)
 				lastFileName = uploadID
+
 				continue
 			}
 

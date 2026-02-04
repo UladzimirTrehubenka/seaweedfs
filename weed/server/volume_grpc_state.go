@@ -17,7 +17,7 @@ func (vs *VolumeServer) GetState(ctx context.Context, req *volume_server_pb.GetS
 
 // SetState updates state flags for volume servers.
 func (vs *VolumeServer) SetState(ctx context.Context, req *volume_server_pb.SetStateRequest) (*volume_server_pb.SetStateResponse, error) {
-	err := vs.store.State.Update(req.State)
+	err := vs.store.State.Update(req.GetState())
 	resp := &volume_server_pb.SetStateResponse{
 		State: vs.store.State.Pb,
 	}

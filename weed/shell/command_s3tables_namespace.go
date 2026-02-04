@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -66,13 +67,13 @@ func (c *commandS3TablesNamespace) Do(args []string, commandEnv *CommandEnv, wri
 		}
 	}
 	if count != 1 {
-		return fmt.Errorf("exactly one action must be specified")
+		return errors.New("exactly one action must be specified")
 	}
 	if *bucketName == "" {
-		return fmt.Errorf("-bucket is required")
+		return errors.New("-bucket is required")
 	}
 	if *account == "" {
-		return fmt.Errorf("-account is required")
+		return errors.New("-account is required")
 	}
 
 	bucketArn, err := buildS3TablesBucketARN(*bucketName, *account)
@@ -82,7 +83,7 @@ func (c *commandS3TablesNamespace) Do(args []string, commandEnv *CommandEnv, wri
 
 	namespace := strings.TrimSpace(*name)
 	if (namespace == "" || namespace == "-") && (*create || *get || *deleteNamespace) {
-		return fmt.Errorf("-name is required")
+		return errors.New("-name is required")
 	}
 
 	switch {
@@ -101,6 +102,7 @@ func (c *commandS3TablesNamespace) Do(args []string, commandEnv *CommandEnv, wri
 		}
 		if len(resp.Namespaces) == 0 {
 			fmt.Fprintln(writer, "No namespaces found")
+
 			return nil
 		}
 		for _, ns := range resp.Namespaces {
@@ -127,5 +129,6 @@ func (c *commandS3TablesNamespace) Do(args []string, commandEnv *CommandEnv, wri
 		}
 		fmt.Fprintln(writer, "Namespace deleted")
 	}
+
 	return nil
 }

@@ -11,7 +11,7 @@ func (a *MessageQueueAgent) PublishRecord(stream mq_agent_pb.SeaweedMessagingAge
 	if err != nil {
 		return err
 	}
-	sessionId := SessionId(m.SessionId)
+	sessionId := SessionId(m.GetSessionId())
 	a.publishersLock.RLock()
 	publisherEntry, found := a.publishers[sessionId]
 	a.publishersLock.RUnlock()
@@ -24,8 +24,8 @@ func (a *MessageQueueAgent) PublishRecord(stream mq_agent_pb.SeaweedMessagingAge
 		a.publishersLock.Unlock()
 	}()
 
-	if m.Value != nil {
-		if err := publisherEntry.entry.PublishRecord(m.Key, m.Value); err != nil {
+	if m.GetValue() != nil {
+		if err := publisherEntry.entry.PublishRecord(m.GetKey(), m.GetValue()); err != nil {
 			return err
 		}
 	}
@@ -35,10 +35,10 @@ func (a *MessageQueueAgent) PublishRecord(stream mq_agent_pb.SeaweedMessagingAge
 		if err != nil {
 			return err
 		}
-		if m.Value == nil {
+		if m.GetValue() == nil {
 			continue
 		}
-		if err := publisherEntry.entry.PublishRecord(m.Key, m.Value); err != nil {
+		if err := publisherEntry.entry.PublishRecord(m.GetKey(), m.GetValue()); err != nil {
 			return err
 		}
 	}

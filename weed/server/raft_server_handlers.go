@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
@@ -34,6 +35,7 @@ func (s *RaftServer) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 	leader, err := s.topo.Leader()
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
+
 		return
 	}
 	if s.serverAddr == leader {
@@ -47,6 +49,7 @@ func (s *RaftServer) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if isLocked {
 			w.WriteHeader(http.StatusLocked)
+
 			return
 		}
 	}
@@ -56,6 +59,7 @@ func (s *RaftServer) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 func (s *RaftServer) StatsRaftHandler(w http.ResponseWriter, r *http.Request) {
 	if s.RaftHashicorp == nil {
 		writeJsonQuiet(w, r, http.StatusNotFound, nil)
+
 		return
 	}
 	writeJsonQuiet(w, r, http.StatusOK, s.RaftHashicorp.Stats())

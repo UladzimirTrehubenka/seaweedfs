@@ -12,6 +12,7 @@ type MemorySequencer struct {
 
 func NewMemorySequencer() (m *MemorySequencer) {
 	m = &MemorySequencer{counter: 1}
+
 	return
 }
 
@@ -20,6 +21,7 @@ func (m *MemorySequencer) NextFileId(count uint64) uint64 {
 	defer m.sequenceLock.Unlock()
 	ret := m.counter
 	m.counter += count
+
 	return ret
 }
 

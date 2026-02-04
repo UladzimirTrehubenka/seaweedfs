@@ -45,6 +45,7 @@ func (t *Topology) ToInfo() (info TopologyInfo) {
 		}
 	}
 	info.Layouts = layouts
+
 	return
 }
 
@@ -56,23 +57,24 @@ func (t *Topology) ListVolumeLayoutCollections() (volumeLayouts []*VolumeLayoutC
 			)
 		}
 	}
+
 	return volumeLayouts
 }
 
-func (t *Topology) ToVolumeMap() interface{} {
-	m := make(map[string]interface{})
+func (t *Topology) ToVolumeMap() any {
+	m := make(map[string]any)
 	m["Max"] = t.diskUsages.GetMaxVolumeCount()
 	m["Free"] = t.diskUsages.FreeSpace()
-	dcs := make(map[NodeId]interface{})
+	dcs := make(map[NodeId]any)
 	for _, c := range t.Children() {
 		dc := c.(*DataCenter)
-		racks := make(map[NodeId]interface{})
+		racks := make(map[NodeId]any)
 		for _, r := range dc.Children() {
 			rack := r.(*Rack)
-			dataNodes := make(map[NodeId]interface{})
+			dataNodes := make(map[NodeId]any)
 			for _, d := range rack.Children() {
 				dn := d.(*DataNode)
-				var volumes []interface{}
+				var volumes []any
 				for _, v := range dn.GetVolumes() {
 					volumes = append(volumes, v)
 				}
@@ -83,6 +85,7 @@ func (t *Topology) ToVolumeMap() interface{} {
 		dcs[dc.Id()] = racks
 	}
 	m["DataCenters"] = dcs
+
 	return m
 }
 
@@ -109,6 +112,7 @@ func (t *Topology) ToVolumeLocations() (volumeLocations []*master_pb.VolumeLocat
 			}
 		}
 	}
+
 	return
 }
 
@@ -121,5 +125,6 @@ func (t *Topology) ToTopologyInfo() *master_pb.TopologyInfo {
 		dc := c.(*DataCenter)
 		m.DataCenterInfos = append(m.DataCenterInfos, dc.ToDataCenterInfo())
 	}
+
 	return m
 }

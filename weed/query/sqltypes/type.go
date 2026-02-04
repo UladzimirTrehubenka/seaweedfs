@@ -67,6 +67,7 @@ func IsTemporal(t Type) bool {
 	case Timestamp, Date, Time, Datetime:
 		return true
 	}
+
 	return false
 }
 

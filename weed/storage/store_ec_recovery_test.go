@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/reedsolomon"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
@@ -18,6 +19,7 @@ func mockEcVolume(volumeId needle.VolumeId, shardLocations map[erasure_coding.Sh
 		VolumeId:       volumeId,
 		ShardLocations: shardLocations,
 	}
+
 	return ecVolume
 }
 
@@ -31,7 +33,7 @@ func TestRecoverOneRemoteEcShardInterval_SufficientShards(t *testing.T) {
 
 	// Create shard locations with all shards except the one to recover
 	shardLocations := make(map[erasure_coding.ShardId][]pb.ServerAddress)
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		if i != int(shardIdToRecover) {
 			shardLocations[erasure_coding.ShardId(i)] = []pb.ServerAddress{"localhost:8080"}
 		}
@@ -39,7 +41,7 @@ func TestRecoverOneRemoteEcShardInterval_SufficientShards(t *testing.T) {
 
 	// Verify we have enough shards for recovery
 	availableCount := 0
-	for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+	for shardId := range erasure_coding.TotalShardsCount {
 		if shardId != int(shardIdToRecover) && len(shardLocations[erasure_coding.ShardId(shardId)]) > 0 {
 			availableCount++
 		}
@@ -58,7 +60,7 @@ func TestRecoverOneRemoteEcShardInterval_InsufficientShards(t *testing.T) {
 
 	// Create shard locations with only 8 shards (less than DataShardsCount=10)
 	shardLocations := make(map[erasure_coding.ShardId][]pb.ServerAddress)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if i != int(shardIdToRecover) {
 			shardLocations[erasure_coding.ShardId(i)] = []pb.ServerAddress{"localhost:8080"}
 		}
@@ -66,7 +68,7 @@ func TestRecoverOneRemoteEcShardInterval_InsufficientShards(t *testing.T) {
 
 	// Count available shards
 	availableCount := 0
-	for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+	for shardId := range erasure_coding.TotalShardsCount {
 		if len(shardLocations[erasure_coding.ShardId(shardId)]) > 0 {
 			availableCount++
 		}
@@ -137,7 +139,7 @@ func TestRecoverOneRemoteEcShardInterval_ShardCounting(t *testing.T) {
 			// Count available and missing shards (mimicking the corrected code)
 			availableShards := make([]erasure_coding.ShardId, 0, erasure_coding.TotalShardsCount)
 			missingShards := make([]erasure_coding.ShardId, 0, erasure_coding.ParityShardsCount+1)
-			for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+			for shardId := range erasure_coding.TotalShardsCount {
 				if bufs[shardId] != nil {
 					availableShards = append(availableShards, erasure_coding.ShardId(shardId))
 				} else {
@@ -205,7 +207,7 @@ func TestRecoverOneRemoteEcShardInterval_ReconstructDataSlicing(t *testing.T) {
 	bufs := make([][]byte, erasure_coding.MaxShardCount)
 
 	// Fill data shards
-	for i := 0; i < erasure_coding.DataShardsCount; i++ {
+	for i := range erasure_coding.DataShardsCount {
 		bufs[i] = make([]byte, shardSize)
 		for j := range bufs[i] {
 			bufs[i][j] = byte(i + j)
@@ -240,6 +242,7 @@ func TestRecoverOneRemoteEcShardInterval_ReconstructDataSlicing(t *testing.T) {
 			if originalShard5[i] != bufs[5][i] {
 				t.Errorf("Recovered shard 5 data mismatch at byte %d: expected %d, got %d",
 					i, originalShard5[i], bufs[5][i])
+
 				break
 			}
 		}
@@ -261,7 +264,7 @@ func TestRecoverOneRemoteEcShardInterval_ParityShardRecovery(t *testing.T) {
 	bufs := make([][]byte, erasure_coding.TotalShardsCount)
 
 	// Fill all shards initially
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		bufs[i] = make([]byte, shardSize)
 		for j := range bufs[i] {
 			bufs[i][j] = byte(i * j)
@@ -304,7 +307,7 @@ func TestRecoverOneRemoteEcShardInterval_ConcurrentShardReading(t *testing.T) {
 	shardIdToRecover := erasure_coding.ShardId(7)
 
 	shardLocations := make(map[erasure_coding.ShardId][]pb.ServerAddress)
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		if i != int(shardIdToRecover) {
 			shardLocations[erasure_coding.ShardId(i)] = []pb.ServerAddress{"server1:8080"}
 		}
@@ -344,7 +347,7 @@ func TestRecoverOneRemoteEcShardInterval_ConcurrentShardReading(t *testing.T) {
 
 	// Count available shards
 	availableCount := 0
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		if bufs[i] != nil {
 			availableCount++
 		}
@@ -373,7 +376,7 @@ func TestRecoverOneRemoteEcShardInterval_BuggyMaxShardCount(t *testing.T) {
 	bufs := make([][]byte, erasure_coding.MaxShardCount)
 
 	// Set up only 9 valid shards (less than DataShardsCount=10)
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		bufs[i] = make([]byte, 1024)
 	}
 
@@ -386,7 +389,7 @@ func TestRecoverOneRemoteEcShardInterval_BuggyMaxShardCount(t *testing.T) {
 	// Count using the CORRECTED logic (should only check 0..TotalShardsCount-1)
 	availableShards := make([]erasure_coding.ShardId, 0, erasure_coding.TotalShardsCount)
 	missingShards := make([]erasure_coding.ShardId, 0, erasure_coding.ParityShardsCount+1)
-	for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+	for shardId := range erasure_coding.TotalShardsCount {
 		if bufs[shardId] != nil {
 			availableShards = append(availableShards, erasure_coding.ShardId(shardId))
 		} else {
@@ -405,7 +408,7 @@ func TestRecoverOneRemoteEcShardInterval_BuggyMaxShardCount(t *testing.T) {
 
 	// Count using the BUGGY logic (what the old code did)
 	buggyAvailableCount := 0
-	for shardId := 0; shardId < erasure_coding.MaxShardCount; shardId++ {
+	for shardId := range erasure_coding.MaxShardCount {
 		if bufs[shardId] != nil {
 			buggyAvailableCount++
 		}

@@ -23,7 +23,9 @@ func MaybePreprocessImage(filename string, data []byte, width, height int) (resi
 		return Resized(ext, bytes.NewReader(data), width, height, "")
 	case ".jpg", ".jpeg":
 		data = FixJpgOrientation(data)
+
 		return Resized(ext, bytes.NewReader(data), width, height, "")
 	}
+
 	return bytes.NewReader(data), 0, 0
 }

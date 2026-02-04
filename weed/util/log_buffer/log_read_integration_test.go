@@ -24,7 +24,7 @@ func TestConcurrentProducerConsumer(t *testing.T) {
 	// Start producer
 	producerDone := make(chan bool)
 	go func() {
-		for i := 0; i < numMessages; i++ {
+		for i := range numMessages {
 			entry := &filer_pb.LogEntry{
 				TsNs:   time.Now().UnixNano(),
 				Key:    []byte("key"),
@@ -33,6 +33,7 @@ func TestConcurrentProducerConsumer(t *testing.T) {
 			}
 			if err := lb.AddLogEntryToBuffer(entry); err != nil {
 				t.Errorf("Failed to add log entry: %v", err)
+
 				return
 			}
 			time.Sleep(1 * time.Millisecond) // Simulate production rate
@@ -45,7 +46,7 @@ func TestConcurrentProducerConsumer(t *testing.T) {
 	consumerErrors := make(chan error, numConsumers)
 	consumedCounts := make([]int64, numConsumers)
 
-	for consumerID := 0; consumerID < numConsumers; consumerID++ {
+	for consumerID := range numConsumers {
 		consumerWg.Add(1)
 		go func(id int, startOffset int64, endOffset int64) {
 			defer consumerWg.Done()
@@ -56,23 +57,25 @@ func TestConcurrentProducerConsumer(t *testing.T) {
 				messages, nextOffset, _, _, err := lb.ReadMessagesAtOffset(currentOffset, 10, 10240)
 				if err != nil {
 					consumerErrors <- err
+
 					return
 				}
 
 				if len(messages) == 0 {
 					// No data yet, wait a bit
 					time.Sleep(5 * time.Millisecond)
+
 					continue
 				}
 
 				// Count only messages in this consumer's assigned range
 				messagesInRange := 0
 				for i, msg := range messages {
-					if msg.Offset >= startOffset && msg.Offset < endOffset {
+					if msg.GetOffset() >= startOffset && msg.GetOffset() < endOffset {
 						messagesInRange++
 						expectedOffset := currentOffset + int64(i)
-						if msg.Offset != expectedOffset {
-							t.Errorf("Consumer %d: Expected offset %d, got %d", id, expectedOffset, msg.Offset)
+						if msg.GetOffset() != expectedOffset {
+							t.Errorf("Consumer %d: Expected offset %d, got %d", id, expectedOffset, msg.GetOffset())
 						}
 					}
 				}
@@ -126,7 +129,7 @@ func TestBackwardSeeksWhileProducing(t *testing.T) {
 	// Start producer
 	producerDone := make(chan bool)
 	go func() {
-		for i := 0; i < numMessages; i++ {
+		for i := range numMessages {
 			entry := &filer_pb.LogEntry{
 				TsNs:   time.Now().UnixNano(),
 				Key:    []byte("key"),
@@ -135,6 +138,7 @@ func TestBackwardSeeksWhileProducing(t *testing.T) {
 			}
 			if err := lb.AddLogEntryToBuffer(entry); err != nil {
 				t.Errorf("Failed to add log entry: %v", err)
+
 				return
 			}
 			time.Sleep(1 * time.Millisecond)
@@ -157,6 +161,7 @@ func TestBackwardSeeksWhileProducing(t *testing.T) {
 				// For stateless reads, "offset out of range" means data not in memory yet
 				// This is expected when reading historical data or before production starts
 				time.Sleep(5 * time.Millisecond)
+
 				continue
 			}
 
@@ -169,12 +174,13 @@ func TestBackwardSeeksWhileProducing(t *testing.T) {
 					// At end of partition, wait for more production
 					time.Sleep(5 * time.Millisecond)
 				}
+
 				continue
 			}
 
 			// Track read offsets
 			for _, msg := range messages {
-				readOffsets[msg.Offset]++
+				readOffsets[msg.GetOffset()]++
 			}
 
 			// Periodically seek backward (simulating rebalancing)
@@ -196,7 +202,7 @@ func TestBackwardSeeksWhileProducing(t *testing.T) {
 	<-consumerDone
 
 	// Verify each offset was read at least once
-	for i := int64(0); i < numMessages; i++ {
+	for i := range int64(numMessages) {
 		if readOffsets[i] == 0 {
 			t.Errorf("Offset %d was never read", i)
 		}
@@ -215,7 +221,7 @@ func TestHighConcurrencyReads(t *testing.T) {
 	const numReaders = 10
 
 	// Pre-populate buffer
-	for i := 0; i < numMessages; i++ {
+	for i := range numMessages {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),
@@ -231,7 +237,7 @@ func TestHighConcurrencyReads(t *testing.T) {
 	wg := sync.WaitGroup{}
 	errors := make(chan error, numReaders)
 
-	for reader := 0; reader < numReaders; reader++ {
+	for reader := range numReaders {
 		wg.Add(1)
 		go func(startOffset int64) {
 			defer wg.Done()
@@ -244,14 +250,15 @@ func TestHighConcurrencyReads(t *testing.T) {
 				messages, nextOffset, _, _, err := lb.ReadMessagesAtOffset(currentOffset, 10, 10240)
 				if err != nil {
 					errors <- err
+
 					return
 				}
 
 				// Verify offsets are sequential
 				for i, msg := range messages {
 					expected := currentOffset + int64(i)
-					if msg.Offset != expected {
-						t.Errorf("Reader at %d: expected offset %d, got %d", startOffset, expected, msg.Offset)
+					if msg.GetOffset() != expected {
+						t.Errorf("Reader at %d: expected offset %d, got %d", startOffset, expected, msg.GetOffset())
 					}
 				}
 
@@ -287,7 +294,7 @@ func TestRepeatedReadsAtSameOffset(t *testing.T) {
 	const numMessages = 100
 
 	// Pre-populate buffer
-	for i := 0; i < numMessages; i++ {
+	for i := range numMessages {
 		entry := &filer_pb.LogEntry{
 			TsNs:   time.Now().UnixNano(),
 			Key:    []byte("key"),
@@ -306,13 +313,14 @@ func TestRepeatedReadsAtSameOffset(t *testing.T) {
 	wg := sync.WaitGroup{}
 	results := make([][]*filer_pb.LogEntry, numReads)
 
-	for i := 0; i < numReads; i++ {
+	for i := range numReads {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 			messages, _, _, _, err := lb.ReadMessagesAtOffset(testOffset, 10, 10240)
 			if err != nil {
 				t.Errorf("Read %d error: %v", idx, err)
+
 				return
 			}
 			results[idx] = messages
@@ -329,9 +337,9 @@ func TestRepeatedReadsAtSameOffset(t *testing.T) {
 		}
 
 		for j := range results[i] {
-			if results[i][j].Offset != firstRead[j].Offset {
+			if results[i][j].GetOffset() != firstRead[j].GetOffset() {
 				t.Errorf("Read %d message %d has offset %d, expected %d",
-					i, j, results[i][j].Offset, firstRead[j].Offset)
+					i, j, results[i][j].GetOffset(), firstRead[j].GetOffset())
 			}
 		}
 	}

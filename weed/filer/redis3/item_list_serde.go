@@ -2,13 +2,13 @@ package redis3
 
 import (
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util/skiplist"
-	"google.golang.org/protobuf/proto"
 )
 
 func LoadItemList(data []byte, prefix string, client redis.UniversalClient, store skiplist.ListStore, batchSize int) *ItemList {
-
 	nl := &ItemList{
 		skipList:  skiplist.New(store),
 		batchSize: batchSize,
@@ -24,20 +24,21 @@ func LoadItemList(data []byte, prefix string, client redis.UniversalClient, stor
 	if err := proto.Unmarshal(data, message); err != nil {
 		glog.Errorf("loading skiplist: %v", err)
 	}
-	nl.skipList.MaxNewLevel = int(message.MaxNewLevel)
-	nl.skipList.MaxLevel = int(message.MaxLevel)
-	for i, ref := range message.StartLevels {
+	nl.skipList.MaxNewLevel = int(message.GetMaxNewLevel())
+	nl.skipList.MaxLevel = int(message.GetMaxLevel())
+	for i, ref := range message.GetStartLevels() {
 		nl.skipList.StartLevels[i] = &skiplist.SkipListElementReference{
-			ElementPointer: ref.ElementPointer,
-			Key:            ref.Key,
+			ElementPointer: ref.GetElementPointer(),
+			Key:            ref.GetKey(),
 		}
 	}
-	for i, ref := range message.EndLevels {
+	for i, ref := range message.GetEndLevels() {
 		nl.skipList.EndLevels[i] = &skiplist.SkipListElementReference{
-			ElementPointer: ref.ElementPointer,
-			Key:            ref.Key,
+			ElementPointer: ref.GetElementPointer(),
+			Key:            ref.GetKey(),
 		}
 	}
+
 	return nl
 }
 
@@ -54,8 +55,8 @@ func (nl *ItemList) ToBytes() []byte {
 			break
 		}
 		message.StartLevels = append(message.StartLevels, &skiplist.SkipListElementReference{
-			ElementPointer: ref.ElementPointer,
-			Key:            ref.Key,
+			ElementPointer: ref.GetElementPointer(),
+			Key:            ref.GetKey(),
 		})
 	}
 	for _, ref := range nl.skipList.EndLevels {
@@ -63,13 +64,14 @@ func (nl *ItemList) ToBytes() []byte {
 			break
 		}
 		message.EndLevels = append(message.EndLevels, &skiplist.SkipListElementReference{
-			ElementPointer: ref.ElementPointer,
-			Key:            ref.Key,
+			ElementPointer: ref.GetElementPointer(),
+			Key:            ref.GetKey(),
 		})
 	}
 	data, err := proto.Marshal(message)
 	if err != nil {
 		glog.Errorf("marshal skiplist: %v", err)
 	}
+
 	return data
 }

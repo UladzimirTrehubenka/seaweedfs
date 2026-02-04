@@ -12,10 +12,11 @@ import (
 
 	"slices"
 
+	"maps"
+
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"golang.org/x/exp/maps"
 
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -51,7 +52,6 @@ func (c *commandFsMergeVolumes) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	fsMergeVolumesCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	dirArg := fsMergeVolumesCommand.String("dir", "/", "base directory to find and update files")
 	fromVolumeArg := fsMergeVolumesCommand.Uint("fromVolumeId", 0, "move chunks with this volume id")
@@ -110,20 +110,21 @@ func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer
 
 	return commandEnv.WithFilerClient(false, func(filerClient filer_pb.SeaweedFilerClient) error {
 		return filer_pb.TraverseBfs(context.Background(), commandEnv, util.FullPath(dir), func(parentPath util.FullPath, entry *filer_pb.Entry) error {
-			if entry.IsDirectory {
+			if entry.GetIsDirectory() {
 				return nil
 			}
-			for _, chunk := range entry.Chunks {
-				chunkVolumeId := needle.VolumeId(chunk.Fid.VolumeId)
+			for _, chunk := range entry.GetChunks() {
+				chunkVolumeId := needle.VolumeId(chunk.GetFid().GetVolumeId())
 				toVolumeId, found := plan[chunkVolumeId]
 				if !found {
 					continue
 				}
-				if chunk.IsChunkManifest {
-					fmt.Printf("Change volume id for large file is not implemented yet: %s/%s\n", parentPath, entry.Name)
+				if chunk.GetIsChunkManifest() {
+					fmt.Printf("Change volume id for large file is not implemented yet: %s/%s\n", parentPath, entry.GetName())
+
 					continue
 				}
-				path := parentPath.Child(entry.Name)
+				path := parentPath.Child(entry.GetName())
 
 				fmt.Printf("move %s(%s)\n", path, chunk.GetFileIdString())
 				if !*apply {
@@ -131,6 +132,7 @@ func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer
 				}
 				if err = moveChunk(chunk, toVolumeId, commandEnv.MasterClient); err != nil {
 					fmt.Printf("failed to move %s/%s: %v\n", path, chunk.GetFileIdString(), err)
+
 					continue
 				}
 
@@ -141,6 +143,7 @@ func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer
 					fmt.Printf("failed to update %s: %v\n", path, err)
 				}
 			}
+
 			return nil
 		})
 	})
@@ -152,6 +155,7 @@ func (c *commandFsMergeVolumes) getVolumeInfoById(vid needle.VolumeId) (*master_
 	if info == nil {
 		err = errors.New("cannot find volume")
 	}
+
 	return info, err
 }
 
@@ -164,9 +168,10 @@ func (c *commandFsMergeVolumes) volumesAreCompatible(src needle.VolumeId, dest n
 	if err != nil {
 		return false, err
 	}
-	return (srcInfo.Collection == destInfo.Collection &&
-		srcInfo.Ttl == destInfo.Ttl &&
-		srcInfo.ReplicaPlacement == destInfo.ReplicaPlacement), nil
+
+	return (srcInfo.GetCollection() == destInfo.GetCollection() &&
+		srcInfo.GetTtl() == destInfo.GetTtl() &&
+		srcInfo.GetReplicaPlacement() == destInfo.GetReplicaPlacement()), nil
 }
 
 func (c *commandFsMergeVolumes) reloadVolumesInfo(masterClient *wdclient.MasterClient) error {
@@ -180,12 +185,12 @@ func (c *commandFsMergeVolumes) reloadVolumesInfo(masterClient *wdclient.MasterC
 
 		c.volumeSizeLimit = volumes.GetVolumeSizeLimitMb() * 1024 * 1024
 
-		for _, dc := range volumes.TopologyInfo.DataCenterInfos {
-			for _, rack := range dc.RackInfos {
-				for _, node := range rack.DataNodeInfos {
-					for _, disk := range node.DiskInfos {
-						for _, volume := range disk.VolumeInfos {
-							vid := needle.VolumeId(volume.Id)
+		for _, dc := range volumes.GetTopologyInfo().GetDataCenterInfos() {
+			for _, rack := range dc.GetRackInfos() {
+				for _, node := range rack.GetDataNodeInfos() {
+					for _, disk := range node.GetDiskInfos() {
+						for _, volume := range disk.GetVolumeInfos() {
+							vid := needle.VolumeId(volume.GetId())
 							if found := c.volumes[vid]; found == nil {
 								c.volumes[vid] = volume
 							}
@@ -194,22 +199,22 @@ func (c *commandFsMergeVolumes) reloadVolumesInfo(masterClient *wdclient.MasterC
 				}
 			}
 		}
+
 		return nil
 	})
 }
 
 func (c *commandFsMergeVolumes) createMergePlan(collection string, toVolumeId needle.VolumeId, fromVolumeId needle.VolumeId) (map[needle.VolumeId]needle.VolumeId, error) {
 	plan := make(map[needle.VolumeId]needle.VolumeId)
-	volumeIds := maps.Keys(c.volumes)
+	volumeIds := slices.AppendSeq(make([]needle.VolumeId, 0, len(c.volumes)), maps.Keys(c.volumes))
 	sort.Slice(volumeIds, func(a, b int) bool {
-		return c.volumes[volumeIds[b]].Size < c.volumes[volumeIds[a]].Size
+		return c.volumes[volumeIds[b]].GetSize() < c.volumes[volumeIds[a]].GetSize()
 	})
 
 	l := len(volumeIds)
 	for i := 0; i < l; i++ {
 		volume := c.volumes[volumeIds[i]]
 		if volume.GetReadOnly() || c.getVolumeSize(volume) == 0 || (collection != "*" && collection != volume.GetCollection()) {
-
 			if fromVolumeId != 0 && volumeIds[i] == fromVolumeId || toVolumeId != 0 && volumeIds[i] == toVolumeId {
 				if volume.GetReadOnly() {
 					return nil, fmt.Errorf("volume %d is readonly", volumeIds[i])
@@ -228,7 +233,7 @@ func (c *commandFsMergeVolumes) createMergePlan(collection string, toVolumeId ne
 		if fromVolumeId != 0 && src != fromVolumeId {
 			continue
 		}
-		for j := 0; j < i; j++ {
+		for j := range i {
 			candidate := volumeIds[j]
 			if toVolumeId != 0 && candidate != toVolumeId {
 				continue
@@ -242,6 +247,7 @@ func (c *commandFsMergeVolumes) createMergePlan(collection string, toVolumeId ne
 			}
 			if !compatible {
 				fmt.Printf("volume %d is not compatible with volume %d\n", src, candidate)
+
 				continue
 			}
 			if c.getVolumeSizeBasedOnPlan(plan, candidate)+c.getVolumeSizeById(src) > c.volumeSizeLimit {
@@ -249,9 +255,11 @@ func (c *commandFsMergeVolumes) createMergePlan(collection string, toVolumeId ne
 					src, c.getVolumeSizeById(src)/1024/1024,
 					candidate, c.getVolumeSizeById(candidate)/1024/1024,
 					c.volumeSizeLimit/1024/1024)
+
 				continue
 			}
 			plan[src] = candidate
+
 			break
 		}
 	}
@@ -266,11 +274,12 @@ func (c *commandFsMergeVolumes) getVolumeSizeBasedOnPlan(plan map[needle.VolumeI
 			size += c.getVolumeSizeById(src)
 		}
 	}
+
 	return size
 }
 
 func (c *commandFsMergeVolumes) getVolumeSize(volume *master_pb.VolumeInformationMessage) uint64 {
-	return volume.Size - volume.DeletedByteCount
+	return volume.GetSize() - volume.GetDeletedByteCount()
 }
 
 func (c *commandFsMergeVolumes) getVolumeSizeById(vid needle.VolumeId) uint64 {
@@ -294,15 +303,14 @@ func (c *commandFsMergeVolumes) printPlan(plan map[needle.VolumeId]needle.Volume
 				dest, currentSize/1024/1024, newSize/1024/1024,
 			)
 			currentSize = newSize
-
 		}
 		fmt.Println()
 	}
 }
 
 func moveChunk(chunk *filer_pb.FileChunk, toVolumeId needle.VolumeId, masterClient *wdclient.MasterClient) error {
-	fromFid := needle.NewFileId(needle.VolumeId(chunk.Fid.VolumeId), chunk.Fid.FileKey, chunk.Fid.Cookie)
-	toFid := needle.NewFileId(toVolumeId, chunk.Fid.FileKey, chunk.Fid.Cookie)
+	fromFid := needle.NewFileId(needle.VolumeId(chunk.GetFid().GetVolumeId()), chunk.GetFid().GetFileKey(), chunk.GetFid().GetCookie())
+	toFid := needle.NewFileId(toVolumeId, chunk.GetFid().GetFileKey(), chunk.GetFid().GetCookie())
 
 	downloadURLs, err := masterClient.LookupVolumeServerUrl(fromFid.VolumeId.String())
 	if err != nil {
@@ -372,7 +380,6 @@ func moveChunk(chunk *filer_pb.FileChunk, toVolumeId needle.VolumeId, masterClie
 }
 
 func readUrl(fileUrl string) (*http.Response, io.ReadCloser, error) {
-
 	req, err := http.NewRequest(http.MethodGet, fileUrl, nil)
 	if err != nil {
 		return nil, nil, err
@@ -385,6 +392,7 @@ func readUrl(fileUrl string) (*http.Response, io.ReadCloser, error) {
 	}
 	if r.StatusCode >= 400 {
 		util_http.CloseResponse(r)
+
 		return nil, nil, fmt.Errorf("%s: %s", fileUrl, r.Status)
 	}
 

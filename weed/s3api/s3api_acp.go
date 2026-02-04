@@ -25,5 +25,6 @@ func (s3a *S3ApiServer) checkAccessByOwnership(r *http.Request, bucket string) s
 	if accountId == AccountAdmin.Id || accountId == *metadata.Owner.ID {
 		return s3err.ErrNone
 	}
+
 	return s3err.ErrAccessDenied
 }

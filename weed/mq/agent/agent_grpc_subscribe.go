@@ -3,6 +3,10 @@ package agent
 import (
 	"context"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/client/sub_client"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
@@ -10,9 +14,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/proto"
 )
 
 func (a *MessageQueueAgent) SubscribeRecord(stream mq_agent_pb.SeaweedMessagingAgent_SubscribeRecordServer) error {
@@ -23,25 +24,26 @@ func (a *MessageQueueAgent) SubscribeRecord(stream mq_agent_pb.SeaweedMessagingA
 		return err
 	}
 
-	subscriber := a.handleInitSubscribeRecordRequest(stream.Context(), initMessage.Init)
+	subscriber := a.handleInitSubscribeRecordRequest(stream.Context(), initMessage.GetInit())
 
 	var lastErr error
 	executors := util.NewLimitedConcurrentExecutor(int(subscriber.SubscriberConfig.SlidingWindowSize))
 	subscriber.SetOnDataMessageFn(func(m *mq_pb.SubscribeMessageResponse_Data) {
 		executors.Execute(func() {
 			record := &schema_pb.RecordValue{}
-			err := proto.Unmarshal(m.Data.Value, record)
+			err := proto.Unmarshal(m.Data.GetValue(), record)
 			if err != nil {
 				glog.V(0).Infof("unmarshal record value: %v", err)
 				if lastErr == nil {
 					lastErr = err
 				}
+
 				return
 			}
 			if sendErr := stream.Send(&mq_agent_pb.SubscribeRecordResponse{
-				Key:   m.Data.Key,
+				Key:   m.Data.GetKey(),
 				Value: record,
-				TsNs:  m.Data.TsNs,
+				TsNs:  m.Data.GetTsNs(),
 			}); sendErr != nil {
 				glog.V(0).Infof("send record: %v", sendErr)
 				if lastErr == nil {
@@ -65,33 +67,33 @@ func (a *MessageQueueAgent) SubscribeRecord(stream mq_agent_pb.SeaweedMessagingA
 		m, err := stream.Recv()
 		if err != nil {
 			glog.V(0).Infof("subscriber %s receive: %v", subscriber.SubscriberConfig.String(), err)
+
 			return err
 		}
 		if m != nil {
 			subscriber.PartitionOffsetChan <- sub_client.KeyedTimestamp{
-				Key:  m.AckKey,
-				TsNs: m.AckSequence, // Note: AckSequence should be renamed to AckTsNs in agent protocol
+				Key:  m.GetAckKey(),
+				TsNs: m.GetAckSequence(), // Note: AckSequence should be renamed to AckTsNs in agent protocol
 			}
 		}
 	}
 }
 
 func (a *MessageQueueAgent) handleInitSubscribeRecordRequest(ctx context.Context, req *mq_agent_pb.SubscribeRecordRequest_InitSubscribeRecordRequest) *sub_client.TopicSubscriber {
-
 	subscriberConfig := &sub_client.SubscriberConfiguration{
-		ConsumerGroup:           req.ConsumerGroup,
-		ConsumerGroupInstanceId: req.ConsumerGroupInstanceId,
+		ConsumerGroup:           req.GetConsumerGroup(),
+		ConsumerGroupInstanceId: req.GetConsumerGroupInstanceId(),
 		GrpcDialOption:          grpc.WithTransportCredentials(insecure.NewCredentials()),
-		MaxPartitionCount:       req.MaxSubscribedPartitions,
-		SlidingWindowSize:       req.SlidingWindowSize,
+		MaxPartitionCount:       req.GetMaxSubscribedPartitions(),
+		SlidingWindowSize:       req.GetSlidingWindowSize(),
 	}
 
 	contentConfig := &sub_client.ContentConfiguration{
-		Topic:            topic.FromPbTopic(req.Topic),
-		Filter:           req.Filter,
-		PartitionOffsets: req.PartitionOffsets,
-		OffsetType:       req.OffsetType,
-		OffsetTsNs:       req.OffsetTsNs,
+		Topic:            topic.FromPbTopic(req.GetTopic()),
+		Filter:           req.GetFilter(),
+		PartitionOffsets: req.GetPartitionOffsets(),
+		OffsetType:       req.GetOffsetType(),
+		OffsetTsNs:       req.GetOffsetTsNs(),
 	}
 
 	topicSubscriber := sub_client.NewTopicSubscriber(

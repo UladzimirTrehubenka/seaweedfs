@@ -22,6 +22,7 @@ import (
 
 type VolumeServer struct {
 	volume_server_pb.UnimplementedVolumeServerServer
+
 	inFlightUploadDataSize        int64
 	inFlightDownloadDataSize      int64
 	concurrentUploadLimit         int64
@@ -77,7 +78,6 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 	readBufferSizeMB int,
 	ldbTimeout int64,
 ) *VolumeServer {
-
 	v := util.GetViper()
 	signingKey := v.GetString("jwt.signing.key")
 	v.SetDefault("jwt.signing.expires_after_seconds", 10)
@@ -178,6 +178,7 @@ func (vs *VolumeServer) MaintenanceMode() bool {
 	if vs.store == nil {
 		return false
 	}
+
 	return vs.store.State.Pb.GetMaintenance()
 }
 
@@ -186,5 +187,6 @@ func (vs *VolumeServer) CheckMaintenanceMode() error {
 	if !vs.MaintenanceMode() {
 		return nil
 	}
+
 	return fmt.Errorf("volume server %s is in maintenance mode", vs.store.Id)
 }

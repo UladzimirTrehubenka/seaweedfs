@@ -80,6 +80,7 @@ func (c *Command) Name() string {
 	if i >= 0 {
 		name = name[:i]
 	}
+
 	return name
 }
 

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
 
@@ -20,7 +21,7 @@ func CompactArrayLength(length uint32) []byte {
 // Returns the actual length and number of bytes consumed
 func DecodeCompactArrayLength(data []byte) (uint32, int, error) {
 	if len(data) == 0 {
-		return 0, 0, fmt.Errorf("no data for compact array length")
+		return 0, 0, errors.New("no data for compact array length")
 	}
 
 	if data[0] == 0 {
@@ -33,7 +34,7 @@ func DecodeCompactArrayLength(data []byte) (uint32, int, error) {
 	}
 
 	if length == 0 {
-		return 0, consumed, fmt.Errorf("invalid compact array length encoding")
+		return 0, consumed, errors.New("invalid compact array length encoding")
 	}
 
 	return length - 1, consumed, nil
@@ -45,6 +46,7 @@ func CompactStringLength(length int) []byte {
 	if length < 0 {
 		return []byte{0} // Null string
 	}
+
 	return EncodeUvarint(uint32(length + 1))
 }
 
@@ -52,7 +54,7 @@ func CompactStringLength(length int) []byte {
 // Returns the actual length (-1 for null), and number of bytes consumed
 func DecodeCompactStringLength(data []byte) (int, int, error) {
 	if len(data) == 0 {
-		return 0, 0, fmt.Errorf("no data for compact string length")
+		return 0, 0, errors.New("no data for compact string length")
 	}
 
 	if data[0] == 0 {
@@ -65,7 +67,7 @@ func DecodeCompactStringLength(data []byte) (int, int, error) {
 	}
 
 	if length == 0 {
-		return 0, consumed, fmt.Errorf("invalid compact string length encoding")
+		return 0, consumed, errors.New("invalid compact string length encoding")
 	}
 
 	return int(length - 1), consumed, nil
@@ -80,6 +82,7 @@ func EncodeUvarint(value uint32) []byte {
 		value >>= 7
 	}
 	buf = append(buf, byte(value))
+
 	return buf
 }
 
@@ -100,11 +103,11 @@ func DecodeUvarint(data []byte) (uint32, int, error) {
 
 		shift += 7
 		if shift >= 32 {
-			return 0, consumed, fmt.Errorf("uvarint overflow")
+			return 0, consumed, errors.New("uvarint overflow")
 		}
 	}
 
-	return 0, consumed, fmt.Errorf("incomplete uvarint")
+	return 0, consumed, errors.New("incomplete uvarint")
 }
 
 // TaggedField represents a tagged field in flexible versions
@@ -144,7 +147,7 @@ func (tf *TaggedFields) Encode() []byte {
 // DecodeTaggedFields decodes tagged fields from flexible versions
 func DecodeTaggedFields(data []byte) (*TaggedFields, int, error) {
 	if len(data) == 0 {
-		return &TaggedFields{}, 0, fmt.Errorf("no data for tagged fields")
+		return &TaggedFields{}, 0, errors.New("no data for tagged fields")
 	}
 
 	if data[0] == 0 {
@@ -162,7 +165,7 @@ func DecodeTaggedFields(data []byte) (*TaggedFields, int, error) {
 
 	fields := make([]TaggedField, numFields)
 
-	for i := uint32(0); i < numFields; i++ {
+	for i := range numFields {
 		// Tag
 		tag, consumed, err := DecodeUvarint(data[offset:])
 		if err != nil {
@@ -235,6 +238,7 @@ func FlexibleString(s string) []byte {
 	var buf []byte
 	buf = append(buf, CompactStringLength(len(s))...)
 	buf = append(buf, []byte(s)...)
+
 	return buf
 }
 
@@ -278,14 +282,8 @@ func parseCompactString(data []byte) ([]byte, int) {
 	}
 
 	result := data[consumed : consumed+actualLength]
-	return result, consumed + actualLength
-}
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	return result, consumed + actualLength
 }
 
 // decodeUnsignedVarint decodes an unsigned varint (no zigzag decoding)
@@ -322,6 +320,7 @@ func FlexibleNullableString(s *string) []byte {
 	if s == nil {
 		return []byte{0} // Null string
 	}
+
 	return FlexibleString(*s)
 }
 
@@ -338,7 +337,7 @@ func DecodeFlexibleString(data []byte) (string, int, error) {
 	}
 
 	if consumed+length > len(data) {
-		return "", 0, fmt.Errorf("string data truncated")
+		return "", 0, errors.New("string data truncated")
 	}
 
 	return string(data[consumed : consumed+length]), consumed + length, nil
@@ -356,7 +355,7 @@ type FlexibleVersionHeader struct {
 // parseRegularHeader parses a regular (non-flexible) Kafka request header
 func parseRegularHeader(data []byte) (*FlexibleVersionHeader, []byte, error) {
 	if len(data) < 8 {
-		return nil, nil, fmt.Errorf("header too short")
+		return nil, nil, errors.New("header too short")
 	}
 
 	header := &FlexibleVersionHeader{}
@@ -376,7 +375,7 @@ func parseRegularHeader(data []byte) (*FlexibleVersionHeader, []byte, error) {
 
 	// Regular versions use standard strings
 	if len(data) < offset+2 {
-		return nil, nil, fmt.Errorf("missing client_id length")
+		return nil, nil, errors.New("missing client_id length")
 	}
 
 	clientIDLen := int16(binary.BigEndian.Uint16(data[offset : offset+2]))
@@ -384,7 +383,7 @@ func parseRegularHeader(data []byte) (*FlexibleVersionHeader, []byte, error) {
 
 	if clientIDLen >= 0 {
 		if len(data) < offset+int(clientIDLen) {
-			return nil, nil, fmt.Errorf("client_id truncated")
+			return nil, nil, errors.New("client_id truncated")
 		}
 		clientID := string(data[offset : offset+int(clientIDLen)])
 		header.ClientID = &clientID
@@ -397,7 +396,7 @@ func parseRegularHeader(data []byte) (*FlexibleVersionHeader, []byte, error) {
 // ParseRequestHeader parses a Kafka request header, handling both regular and flexible versions
 func ParseRequestHeader(data []byte) (*FlexibleVersionHeader, []byte, error) {
 	if len(data) < 8 {
-		return nil, nil, fmt.Errorf("header too short")
+		return nil, nil, errors.New("header too short")
 	}
 
 	header := &FlexibleVersionHeader{}
@@ -439,11 +438,10 @@ func ParseRequestHeader(data []byte) (*FlexibleVersionHeader, []byte, error) {
 		}
 		offset += consumed
 		header.TaggedFields = taggedFields
-
 	} else {
 		// Regular versions use standard strings
 		if len(data) < offset+2 {
-			return nil, nil, fmt.Errorf("missing client_id length")
+			return nil, nil, errors.New("missing client_id length")
 		}
 
 		clientIDLen := int16(binary.BigEndian.Uint16(data[offset : offset+2]))
@@ -451,7 +449,7 @@ func ParseRequestHeader(data []byte) (*FlexibleVersionHeader, []byte, error) {
 
 		if clientIDLen >= 0 {
 			if len(data) < offset+int(clientIDLen) {
-				return nil, nil, fmt.Errorf("client_id truncated")
+				return nil, nil, errors.New("client_id truncated")
 			}
 
 			clientID := string(data[offset : offset+int(clientIDLen)])

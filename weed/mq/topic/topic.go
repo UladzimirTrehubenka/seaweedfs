@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
+	jsonpb "google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	jsonpb "google.golang.org/protobuf/encoding/protojson"
 )
 
 type Topic struct {
@@ -29,8 +30,8 @@ func NewTopic(namespace string, name string) Topic {
 }
 func FromPbTopic(topic *schema_pb.Topic) Topic {
 	return Topic{
-		Namespace: topic.Namespace,
-		Name:      topic.Name,
+		Namespace: topic.GetNamespace(),
+		Name:      topic.GetName(),
 	}
 }
 
@@ -62,6 +63,7 @@ func (t Topic) ReadConfFile(client filer_pb.SeaweedFilerClient) (*mq_pb.Configur
 	if err = jsonpb.Unmarshal(data, conf); err != nil {
 		return nil, fmt.Errorf("unmarshal topic %v conf: %w", t, err)
 	}
+
 	return conf, nil
 }
 
@@ -78,19 +80,20 @@ func (t Topic) ReadConfFileWithMetadata(client filer_pb.SeaweedFilerClient) (*mq
 		if errors.Is(err, filer_pb.ErrNotFound) {
 			return nil, 0, 0, err
 		}
+
 		return nil, 0, 0, fmt.Errorf("lookup topic.conf of %v: %w", t, err)
 	}
 
 	// Get file metadata
 	var createdAtNs, modifiedAtNs int64
-	if resp.Entry.Attributes != nil {
-		createdAtNs = resp.Entry.Attributes.Crtime * 1e9 // convert seconds to nanoseconds
-		modifiedAtNs = resp.Entry.Attributes.Mtime * 1e9 // convert seconds to nanoseconds
+	if resp.GetEntry().GetAttributes() != nil {
+		createdAtNs = resp.GetEntry().GetAttributes().GetCrtime() * 1e9 // convert seconds to nanoseconds
+		modifiedAtNs = resp.GetEntry().GetAttributes().GetMtime() * 1e9 // convert seconds to nanoseconds
 	}
 
 	// Parse the configuration
 	conf := &mq_pb.ConfigureTopicResponse{}
-	if err = jsonpb.Unmarshal(resp.Entry.Content, conf); err != nil {
+	if err = jsonpb.Unmarshal(resp.GetEntry().GetContent(), conf); err != nil {
 		return nil, 0, 0, fmt.Errorf("unmarshal topic %v conf: %w", t, err)
 	}
 
@@ -103,6 +106,7 @@ func (t Topic) WriteConfFile(client filer_pb.SeaweedFilerClient, conf *mq_pb.Con
 	if err := filer.SaveInsideFiler(client, t.Dir(), filer.TopicConfFile, buf.Bytes()); err != nil {
 		return fmt.Errorf("save topic %v conf: %w", t, err)
 	}
+
 	return nil
 }
 
@@ -113,31 +117,33 @@ func (t Topic) DiscoverPartitions(ctx context.Context, filerClient filer_pb.File
 
 	// Scan the topic directory for version directories (e.g., v2025-09-01-07-16-34)
 	err := filer_pb.ReadDirAllEntries(ctx, filerClient, util.FullPath(t.Dir()), "", func(versionEntry *filer_pb.Entry, isLast bool) error {
-		if !versionEntry.IsDirectory {
+		if !versionEntry.GetIsDirectory() {
 			return nil // Skip non-directories
 		}
 
 		// Parse version timestamp from directory name (e.g., "v2025-09-01-07-16-34")
-		if !IsValidVersionDirectory(versionEntry.Name) {
+		if !IsValidVersionDirectory(versionEntry.GetName()) {
 			// Skip directories that don't match the version format
 			return nil
 		}
 
 		// Scan partition directories within this version (e.g., 0000-0630)
-		versionDir := fmt.Sprintf("%s/%s", t.Dir(), versionEntry.Name)
+		versionDir := fmt.Sprintf("%s/%s", t.Dir(), versionEntry.GetName())
+
 		return filer_pb.ReadDirAllEntries(ctx, filerClient, util.FullPath(versionDir), "", func(partitionEntry *filer_pb.Entry, isLast bool) error {
-			if !partitionEntry.IsDirectory {
+			if !partitionEntry.GetIsDirectory() {
 				return nil // Skip non-directories
 			}
 
 			// Parse partition boundary from directory name (e.g., "0000-0630")
-			if !IsValidPartitionDirectory(partitionEntry.Name) {
+			if !IsValidPartitionDirectory(partitionEntry.GetName()) {
 				return nil // Skip invalid partition names
 			}
 
 			// Add this partition path to the list
-			partitionPath := fmt.Sprintf("%s/%s", versionDir, partitionEntry.Name)
+			partitionPath := fmt.Sprintf("%s/%s", versionDir, partitionEntry.GetName())
 			partitionPaths = append(partitionPaths, partitionPath)
+
 			return nil
 		})
 	})
@@ -155,6 +161,7 @@ func IsValidVersionDirectory(name string) bool {
 	// Try to parse the timestamp part
 	timestampStr := name[1:] // Remove 'v' prefix
 	_, err := time.Parse("2006-01-02-15-04-05", timestampStr)
+
 	return err == nil
 }
 

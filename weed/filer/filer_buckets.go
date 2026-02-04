@@ -8,7 +8,7 @@ func (f *Filer) IsBucket(entry *Entry) bool {
 	if !entry.IsDirectory() {
 		return false
 	}
-	parent, dirName := entry.FullPath.DirAndName()
+	parent, dirName := entry.DirAndName()
 	if parent != f.DirBucketsPath {
 		return false
 	}
@@ -17,5 +17,4 @@ func (f *Filer) IsBucket(entry *Entry) bool {
 	}
 
 	return true
-
 }

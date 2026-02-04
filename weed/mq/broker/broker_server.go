@@ -11,11 +11,12 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/mq/sub_coordinator"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/cluster/lock_manager"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -50,6 +51,7 @@ type topicCacheEntry struct {
 
 type MessageQueueBroker struct {
 	mq_pb.UnimplementedSeaweedMessagingServer
+
 	option            *MessageQueueBrokerOption
 	grpcDialOption    grpc.DialOption
 	MasterClient      *wdclient.MasterClient
@@ -74,7 +76,6 @@ type MessageQueueBroker struct {
 }
 
 func NewMessageBroker(option *MessageQueueBrokerOption, grpcDialOption grpc.DialOption) (mqBroker *MessageQueueBroker, err error) {
-
 	pubBalancer := pub_balancer.NewPubBalancer()
 	subCoordinator := sub_coordinator.NewSubCoordinator()
 
@@ -98,6 +99,7 @@ func NewMessageBroker(option *MessageQueueBrokerOption, grpcDialOption grpc.Dial
 			if filer != "" {
 				return []pb.ServerAddress{filer}
 			}
+
 			return []pb.ServerAddress{}
 		},
 	}
@@ -151,12 +153,12 @@ func NewMessageBroker(option *MessageQueueBrokerOption, grpcDialOption grpc.Dial
 }
 
 func (b *MessageQueueBroker) OnBrokerUpdate(update *master_pb.ClusterNodeUpdate, startFrom time.Time) {
-	if update.NodeType != cluster.FilerType {
+	if update.GetNodeType() != cluster.FilerType {
 		return
 	}
 
-	address := pb.ServerAddress(update.Address)
-	if update.IsAdd {
+	address := pb.ServerAddress(update.GetAddress())
+	if update.GetIsAdd() {
 		b.filers[address] = struct{}{}
 		if b.currentFiler == "" {
 			b.currentFiler = address
@@ -170,11 +172,11 @@ func (b *MessageQueueBroker) OnBrokerUpdate(update *master_pb.ClusterNodeUpdate,
 				b.currentFiler = filer
 				// The offset manager will automatically use the new filer through the filer accessor
 				glog.V(0).Infof("broker switched to filer %s (offset manager will automatically use it)", filer)
+
 				break
 			}
 		}
 	}
-
 }
 
 func (b *MessageQueueBroker) GetGrpcDialOption() grpc.DialOption {
@@ -186,35 +188,25 @@ func (b *MessageQueueBroker) GetFiler() pb.ServerAddress {
 }
 
 func (b *MessageQueueBroker) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
-
 	return pb.WithFilerClient(streamingMode, 0, b.GetFiler(), b.grpcDialOption, fn)
-
 }
 
 func (b *MessageQueueBroker) AdjustedUrl(location *filer_pb.Location) string {
-
-	return location.Url
-
+	return location.GetUrl()
 }
 
 func (b *MessageQueueBroker) GetDataCenter() string {
-
 	return ""
-
 }
 
 func (b *MessageQueueBroker) withMasterClient(streamingMode bool, master pb.ServerAddress, fn func(client master_pb.SeaweedClient) error) error {
-
 	return pb.WithMasterClient(streamingMode, master, b.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 		return fn(client)
 	})
-
 }
 
 func (b *MessageQueueBroker) withBrokerClient(streamingMode bool, server pb.ServerAddress, fn func(client mq_pb.SeaweedMessagingClient) error) error {
-
 	return pb.WithBrokerGrpcClient(streamingMode, server.String(), b.grpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
 		return fn(client)
 	})
-
 }

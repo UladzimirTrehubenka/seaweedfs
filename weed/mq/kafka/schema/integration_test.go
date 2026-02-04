@@ -32,13 +32,13 @@ func TestFullIntegration_AvroWorkflow(t *testing.T) {
 	// Test 1: Producer workflow - encode schematized message
 	t.Run("Producer_Workflow", func(t *testing.T) {
 		// Create realistic user data (with proper Avro union handling)
-		userData := map[string]interface{}{
+		userData := map[string]any{
 			"id":    int32(12345),
 			"name":  "Alice Johnson",
-			"email": map[string]interface{}{"string": "alice@example.com"}, // Avro union
-			"age":   map[string]interface{}{"int": int32(28)},              // Avro union
-			"preferences": map[string]interface{}{
-				"Preferences": map[string]interface{}{ // Avro union with record type
+			"email": map[string]any{"string": "alice@example.com"}, // Avro union
+			"age":   map[string]any{"int": int32(28)},              // Avro union
+			"preferences": map[string]any{
+				"Preferences": map[string]any{ // Avro union with record type
 					"notifications": true,
 					"theme":         "dark",
 				},
@@ -76,7 +76,7 @@ func TestFullIntegration_AvroWorkflow(t *testing.T) {
 		}
 
 		// Verify field values
-		fields := decodedMsg.RecordValue.Fields
+		fields := decodedMsg.RecordValue.GetFields()
 		if fields["id"].GetInt32Value() != 12345 {
 			t.Errorf("Expected id=12345, got %v", fields["id"].GetInt32Value())
 		}
@@ -91,11 +91,11 @@ func TestFullIntegration_AvroWorkflow(t *testing.T) {
 	// Test 2: Consumer workflow - reconstruct original message
 	t.Run("Consumer_Workflow", func(t *testing.T) {
 		// Create test RecordValue (simulate what's stored in SeaweedMQ)
-		testData := map[string]interface{}{
+		testData := map[string]any{
 			"id":    int32(67890),
 			"name":  "Bob Smith",
-			"email": map[string]interface{}{"string": "bob@example.com"},
-			"age":   map[string]interface{}{"int": int32(35)}, // Avro union
+			"email": map[string]any{"string": "bob@example.com"},
+			"age":   map[string]any{"int": int32(35)}, // Avro union
 		}
 		recordValue := MapToRecordValue(testData)
 
@@ -128,7 +128,7 @@ func TestFullIntegration_AvroWorkflow(t *testing.T) {
 		}
 
 		// Verify data integrity
-		decodedMap := decodedData.(map[string]interface{})
+		decodedMap := decodedData.(map[string]any)
 		if decodedMap["id"] != int32(67890) {
 			t.Errorf("Expected id=67890, got %v", decodedMap["id"])
 		}
@@ -142,13 +142,13 @@ func TestFullIntegration_AvroWorkflow(t *testing.T) {
 
 	// Test 3: Round-trip integrity
 	t.Run("Round_Trip_Integrity", func(t *testing.T) {
-		originalData := map[string]interface{}{
+		originalData := map[string]any{
 			"id":    int32(99999),
 			"name":  "Charlie Brown",
-			"email": map[string]interface{}{"string": "charlie@example.com"},
-			"age":   map[string]interface{}{"int": int32(42)}, // Avro union
-			"preferences": map[string]interface{}{
-				"Preferences": map[string]interface{}{ // Avro union with record type
+			"email": map[string]any{"string": "charlie@example.com"},
+			"age":   map[string]any{"int": int32(42)}, // Avro union
+			"preferences": map[string]any{
+				"Preferences": map[string]any{ // Avro union with record type
 					"notifications": true,
 					"theme":         "dark",
 				},
@@ -191,7 +191,7 @@ func TestFullIntegration_AvroWorkflow(t *testing.T) {
 		}
 
 		// Verify data integrity through complete round-trip
-		finalFields := finalDecodedMsg.RecordValue.Fields
+		finalFields := finalDecodedMsg.RecordValue.GetFields()
 		if finalFields["id"].GetInt32Value() != 99999 {
 			t.Error("Round-trip failed for id field")
 		}
@@ -223,13 +223,13 @@ func TestFullIntegration_MultiFormatSupport(t *testing.T) {
 		name     string
 		format   Format
 		schemaID uint32
-		testData interface{}
+		testData any
 	}{
 		{
 			name:     "Avro_Format",
 			format:   FormatAvro,
 			schemaID: 1,
-			testData: map[string]interface{}{
+			testData: map[string]any{
 				"id":   int32(123),
 				"name": "Avro User",
 			},
@@ -238,7 +238,7 @@ func TestFullIntegration_MultiFormatSupport(t *testing.T) {
 			name:     "JSON_Schema_Format",
 			format:   FormatJSONSchema,
 			schemaID: 3,
-			testData: map[string]interface{}{
+			testData: map[string]any{
 				"id":     float64(456), // JSON numbers are float64
 				"name":   "JSON User",
 				"active": true,
@@ -249,7 +249,7 @@ func TestFullIntegration_MultiFormatSupport(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create RecordValue from test data
-			recordValue := MapToRecordValue(tc.testData.(map[string]interface{}))
+			recordValue := MapToRecordValue(tc.testData.(map[string]any))
 
 			// Test encoding
 			encoded, err := manager.EncodeMessage(recordValue, tc.schemaID, tc.format)
@@ -299,7 +299,7 @@ func TestIntegration_CachePerformance(t *testing.T) {
 	}
 
 	// Create test message
-	testData := map[string]interface{}{
+	testData := map[string]any{
 		"id":   int32(1),
 		"name": "Cache Test",
 	}
@@ -319,7 +319,7 @@ func TestIntegration_CachePerformance(t *testing.T) {
 
 	// Subsequent decodes (should hit cache)
 	start = time.Now()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		_, err = manager.DecodeMessage(testMsg)
 		if err != nil {
 			t.Fatalf("Cached decode failed: %v", err)
@@ -426,7 +426,7 @@ func TestIntegration_SchemaEvolution(t *testing.T) {
 	// Test decoding messages with different schema versions
 	t.Run("Schema_V1_Message", func(t *testing.T) {
 		// Create message with schema v1 (basic user)
-		userData := map[string]interface{}{
+		userData := map[string]any{
 			"id":   int32(1),
 			"name": "User V1",
 		}
@@ -448,10 +448,10 @@ func TestIntegration_SchemaEvolution(t *testing.T) {
 
 	t.Run("Schema_V2_Message", func(t *testing.T) {
 		// Create message with schema v2 (user with email)
-		userData := map[string]interface{}{
+		userData := map[string]any{
 			"id":    int32(2),
 			"name":  "User V2",
-			"email": map[string]interface{}{"string": "user@example.com"},
+			"email": map[string]any{"string": "user@example.com"},
 		}
 
 		avroSchema := getUserAvroSchemaV2()
@@ -482,7 +482,7 @@ func createMockSchemaRegistry(t *testing.T) *httptest.Server {
 
 		case "/schemas/ids/1":
 			// Avro user schema
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema":  getUserAvroSchema(),
 				"subject": "user-value",
 				"version": 1,
@@ -491,7 +491,7 @@ func createMockSchemaRegistry(t *testing.T) *httptest.Server {
 
 		case "/schemas/ids/2":
 			// Protobuf schema (simplified)
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema":  "syntax = \"proto3\"; message User { int32 id = 1; string name = 2; }",
 				"subject": "user-value",
 				"version": 2,
@@ -500,7 +500,7 @@ func createMockSchemaRegistry(t *testing.T) *httptest.Server {
 
 		case "/schemas/ids/3":
 			// JSON Schema
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema":  getUserJSONSchema(),
 				"subject": "user-value",
 				"version": 3,
@@ -518,7 +518,7 @@ func createMockSchemaRegistryWithEvolution(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case "/schemas/ids/1":
 			// Schema v1
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema":  getUserAvroSchemaV1(),
 				"subject": "user-value",
 				"version": 1,
@@ -527,7 +527,7 @@ func createMockSchemaRegistryWithEvolution(t *testing.T) *httptest.Server {
 
 		case "/schemas/ids/2":
 			// Schema v2 (evolved)
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema":  getUserAvroSchemaV2(),
 				"subject": "user-value",
 				"version": 2,
@@ -609,7 +609,7 @@ func BenchmarkIntegration_AvroDecoding(b *testing.B) {
 	manager, _ := NewManager(config)
 
 	// Create test message
-	testData := map[string]interface{}{
+	testData := map[string]any{
 		"id":   int32(1),
 		"name": "Benchmark User",
 	}
@@ -619,8 +619,7 @@ func BenchmarkIntegration_AvroDecoding(b *testing.B) {
 	avroBinary, _ := codec.BinaryFromNative(nil, testData)
 	testMsg := CreateConfluentEnvelope(FormatAvro, 1, nil, avroBinary)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = manager.DecodeMessage(testMsg)
 	}
 }
@@ -636,8 +635,7 @@ func BenchmarkIntegration_JSONSchemaDecoding(b *testing.B) {
 	jsonData := []byte(`{"id": 1, "name": "Benchmark User", "active": true}`)
 	testMsg := CreateConfluentEnvelope(FormatJSONSchema, 3, nil, jsonData)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = manager.DecodeMessage(testMsg)
 	}
 }

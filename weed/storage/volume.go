@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -65,12 +66,14 @@ func NewVolume(dirname string, dirIdx string, collection string, id needle.Volum
 	v.ldbTimeout = ldbTimeout
 	e = v.load(true, true, needleMapKind, preallocate, ver)
 	v.startWorker()
+
 	return
 }
 
 func (v *Volume) String() string {
 	v.noWriteLock.RLock()
 	defer v.noWriteLock.RUnlock()
+
 	return fmt.Sprintf("Id:%v dir:%s dirIdx:%s Collection:%s dataFile:%v nm:%v noWrite:%v canDelete:%v", v.Id, v.dir, v.dirIdx, v.Collection, v.DataBackend, v.nm, v.noWriteOrDelete || v.noWriteCanDelete, v.noWriteCanDelete)
 }
 
@@ -81,6 +84,7 @@ func VolumeFileName(dir string, collection string, id int) (fileName string) {
 	} else {
 		fileName = path.Join(dir, collection+"_"+idString)
 	}
+
 	return
 }
 
@@ -104,9 +108,10 @@ func (v *Volume) FileName(ext string) (fileName string) {
 func (v *Volume) Version() needle.Version {
 	v.superBlockAccessLock.Lock()
 	defer v.superBlockAccessLock.Unlock()
-	if v.volumeInfo.Version != 0 {
-		v.SuperBlock.Version = needle.Version(v.volumeInfo.Version)
+	if v.volumeInfo.GetVersion() != 0 {
+		v.SuperBlock.Version = needle.Version(v.volumeInfo.GetVersion())
 	}
+
 	return v.SuperBlock.Version
 }
 
@@ -123,6 +128,7 @@ func (v *Volume) FileStat() (datSize uint64, idxSize uint64, modTime time.Time) 
 		return uint64(datFileSize), v.nm.IndexFileSize(), modTime
 	}
 	glog.V(0).Infof("Failed to read file size %s %v", v.DataBackend.Name(), e)
+
 	return // -1 causes integer overflow and the volume to become unwritable.
 }
 
@@ -132,18 +138,20 @@ func (v *Volume) ContentSize() uint64 {
 	if v.nm == nil {
 		return 0
 	}
+
 	return v.nm.ContentSize()
 }
 
 func (v *Volume) doIsEmpty() (bool, error) {
 	// check v.DataBackend.GetStat()
 	if v.DataBackend == nil {
-		return false, fmt.Errorf("v.DataBackend is nil")
+		return false, errors.New("v.DataBackend is nil")
 	} else {
 		datFileSize, _, e := v.DataBackend.GetStat()
 		if e != nil {
 			glog.V(0).Infof("Failed to read file size %s %v", v.DataBackend.Name(), e)
-			return false, fmt.Errorf("v.DataBackend.GetStat(): %v", e)
+
+			return false, fmt.Errorf("v.DataBackend.GetStat(): %w", e)
 		}
 		if datFileSize > super_block.SuperBlockSize {
 			return false, nil
@@ -155,6 +163,7 @@ func (v *Volume) doIsEmpty() (bool, error) {
 			return false, nil
 		}
 	}
+
 	return true, nil
 }
 
@@ -164,6 +173,7 @@ func (v *Volume) DeletedSize() uint64 {
 	if v.nm == nil {
 		return 0
 	}
+
 	return v.nm.DeletedSize()
 }
 
@@ -173,6 +183,7 @@ func (v *Volume) FileCount() uint64 {
 	if v.nm == nil {
 		return 0
 	}
+
 	return uint64(v.nm.FileCount())
 }
 
@@ -182,6 +193,7 @@ func (v *Volume) DeletedCount() uint64 {
 	if v.nm == nil {
 		return 0
 	}
+
 	return uint64(v.nm.DeletedCount())
 }
 
@@ -191,6 +203,7 @@ func (v *Volume) MaxFileKey() types.NeedleId {
 	if v.nm == nil {
 		return 0
 	}
+
 	return v.nm.MaxFileKey()
 }
 
@@ -200,6 +213,7 @@ func (v *Volume) IndexFileSize() uint64 {
 	if v.nm == nil {
 		return 0
 	}
+
 	return v.nm.IndexFileSize()
 }
 
@@ -277,6 +291,7 @@ func (v *Volume) expired(contentSize uint64, volumeSizeLimit uint64) bool {
 	if int64(v.Ttl.Minutes()) < livedMinutes {
 		return true
 	}
+
 	return false
 }
 
@@ -285,14 +300,12 @@ func (v *Volume) expiredLongEnough(maxDelayMinutes uint32) bool {
 	if v.Ttl == nil || v.Ttl.Minutes() == 0 {
 		return false
 	}
-	removalDelay := v.Ttl.Minutes() / 10
-	if removalDelay > maxDelayMinutes {
-		removalDelay = maxDelayMinutes
-	}
+	removalDelay := min(v.Ttl.Minutes()/10, maxDelayMinutes)
 
 	if uint64(v.Ttl.Minutes()+removalDelay)*60+v.lastModifiedTsSeconds < uint64(time.Now().Unix()) {
 		return true
 	}
+
 	return false
 }
 
@@ -317,7 +330,6 @@ func (v *Volume) collectStatus() (maxFileKey types.NeedleId, datFileSize int64, 
 }
 
 func (v *Volume) ToVolumeInformationMessage() (types.NeedleId, *master_pb.VolumeInformationMessage) {
-
 	maxFileKey, volumeSize, modTime, fileCount, deletedCount, deletedSize, ok := v.collectStatus()
 
 	if !ok {
@@ -335,7 +347,7 @@ func (v *Volume) ToVolumeInformationMessage() (types.NeedleId, *master_pb.Volume
 		ReplicaPlacement: uint32(v.ReplicaPlacement.Byte()),
 		Version:          uint32(v.Version()),
 		Ttl:              v.Ttl.ToUint32(),
-		CompactRevision:  uint32(v.SuperBlock.CompactionRevision),
+		CompactRevision:  uint32(v.CompactionRevision),
 		ModifiedAtSecond: modTime.Unix(),
 		DiskType:         string(v.location.DiskType),
 		DiskId:           v.diskId,
@@ -353,12 +365,14 @@ func (v *Volume) RemoteStorageNameKey() (storageName, storageKey string) {
 	if len(v.volumeInfo.GetFiles()) == 0 {
 		return
 	}
+
 	return v.volumeInfo.GetFiles()[0].BackendName(), v.volumeInfo.GetFiles()[0].GetKey()
 }
 
 func (v *Volume) IsReadOnly() bool {
 	v.noWriteLock.RLock()
 	defer v.noWriteLock.RUnlock()
+
 	return v.noWriteOrDelete || v.noWriteCanDelete || v.location.isDiskSpaceLow
 }
 

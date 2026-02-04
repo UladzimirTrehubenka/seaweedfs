@@ -89,6 +89,7 @@ func (rtm *RebalanceTimeoutManager) evictExpiredMembers(group *ConsumerGroup, ex
 			if group.Leader == "" {
 				for memberID := range group.Members {
 					group.Leader = memberID
+
 					break
 				}
 			}
@@ -125,6 +126,7 @@ func (rtm *RebalanceTimeoutManager) ForceCompleteRebalance(group *ConsumerGroup)
 	if group.State == GroupStatePreparingRebalance {
 		group.State = GroupStateCompletingRebalance
 		group.LastActivity = time.Now()
+
 		return
 	}
 
@@ -135,6 +137,7 @@ func (rtm *RebalanceTimeoutManager) ForceCompleteRebalance(group *ConsumerGroup)
 			member.State = MemberStateStable
 		}
 		group.LastActivity = time.Now()
+
 		return
 	}
 }
@@ -173,17 +176,11 @@ func (rtm *RebalanceTimeoutManager) GetRebalanceStatus(groupID string) *Rebalanc
 		}
 
 		// Calculate time until session timeout
-		sessionTimeRemaining := memberStatus.SessionTimeout - now.Sub(member.LastHeartbeat)
-		if sessionTimeRemaining < 0 {
-			sessionTimeRemaining = 0
-		}
+		sessionTimeRemaining := max(memberStatus.SessionTimeout-now.Sub(member.LastHeartbeat), 0)
 		memberStatus.SessionTimeRemaining = sessionTimeRemaining
 
 		// Calculate time until rebalance timeout
-		rebalanceTimeRemaining := memberStatus.RebalanceTimeout - now.Sub(member.JoinedAt)
-		if rebalanceTimeRemaining < 0 {
-			rebalanceTimeRemaining = 0
-		}
+		rebalanceTimeRemaining := max(memberStatus.RebalanceTimeout-now.Sub(member.JoinedAt), 0)
 		memberStatus.RebalanceTimeRemaining = rebalanceTimeRemaining
 
 		status.Members = append(status.Members, memberStatus)

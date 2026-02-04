@@ -18,6 +18,7 @@ func (s3a *S3ApiServer) GetBucketTaggingHandler(w http.ResponseWriter, r *http.R
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -26,12 +27,14 @@ func (s3a *S3ApiServer) GetBucketTaggingHandler(w http.ResponseWriter, r *http.R
 	if err != nil {
 		glog.V(3).Infof("GetBucketTagging: failed to get bucket metadata for %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
 	if len(metadata.Tags) == 0 {
 		glog.V(3).Infof("GetBucketTagging: no tags found for bucket %s", bucket)
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchTagSet)
+
 		return
 	}
 
@@ -50,6 +53,7 @@ func (s3a *S3ApiServer) PutBucketTaggingHandler(w http.ResponseWriter, r *http.R
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -59,11 +63,13 @@ func (s3a *S3ApiServer) PutBucketTaggingHandler(w http.ResponseWriter, r *http.R
 	if err != nil {
 		glog.Errorf("PutBucketTagging read input %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 	if err = xml.Unmarshal(input, tagging); err != nil {
 		glog.Errorf("PutBucketTagging Unmarshal %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
@@ -74,6 +80,7 @@ func (s3a *S3ApiServer) PutBucketTaggingHandler(w http.ResponseWriter, r *http.R
 	if err != nil {
 		glog.Errorf("PutBucketTagging ValidateTags error %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidTag)
+
 		return
 	}
 
@@ -81,6 +88,7 @@ func (s3a *S3ApiServer) PutBucketTaggingHandler(w http.ResponseWriter, r *http.R
 	if err = s3a.UpdateBucketTags(bucket, tags); err != nil {
 		glog.Errorf("PutBucketTagging UpdateBucketTags %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -95,6 +103,7 @@ func (s3a *S3ApiServer) DeleteBucketTaggingHandler(w http.ResponseWriter, r *htt
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -102,6 +111,7 @@ func (s3a *S3ApiServer) DeleteBucketTaggingHandler(w http.ResponseWriter, r *htt
 	if err := s3a.ClearBucketTags(bucket); err != nil {
 		glog.Errorf("DeleteBucketTagging ClearBucketTags %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 

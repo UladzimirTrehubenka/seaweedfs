@@ -26,6 +26,7 @@ func (m *MockIAMIntegration) AuthorizeAction(ctx context.Context, identity *IAMI
 	if m.authorizeFunc != nil {
 		return m.authorizeFunc(ctx, identity, action, bucket, object, r)
 	}
+
 	return s3err.ErrNone
 }
 
@@ -41,6 +42,7 @@ func (m *MockIAMIntegration) ValidateTrustPolicyForPrincipal(ctx context.Context
 	if m.validateTrustPolicyFunc != nil {
 		return m.validateTrustPolicyFunc(ctx, roleArn, principalArn)
 	}
+
 	return nil
 }
 
@@ -88,6 +90,7 @@ func TestVerifyV4SignatureWithSTSIdentity(t *testing.T) {
 					if action == s3_constants.ACTION_WRITE {
 						return s3err.ErrAccessDenied
 					}
+
 					return s3err.ErrNone
 				},
 			},
@@ -149,7 +152,7 @@ func TestVerifyV4SignatureWithSTSIdentity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock request for PUT operation (requires WRITE action)
-			req, err := http.NewRequest("PUT", "http://s3.amazonaws.com/test-bucket/test-object", nil)
+			req, err := http.NewRequest(http.MethodPut, "http://s3.amazonaws.com/test-bucket/test-object", nil)
 			require.NoError(t, err)
 			req.Header.Set("Host", "s3.amazonaws.com")
 
@@ -223,12 +226,13 @@ func TestVerifyV4SignatureSTSStreamingUpload(t *testing.T) {
 			assert.Equal(t, s3_constants.ACTION_WRITE, string(action))
 			assert.Equal(t, "test-bucket", bucket)
 			assert.Equal(t, "test-object", object)
+
 			return s3err.ErrNone
 		},
 	}
 
 	// Create a streaming upload request (PUT with streaming content)
-	req, err := http.NewRequest("PUT", "/test-bucket/test-object", nil)
+	req, err := http.NewRequest(http.MethodPut, "/test-bucket/test-object", nil)
 	require.NoError(t, err)
 	req.Host = "s3.amazonaws.com"
 	req.Header.Set("Host", "s3.amazonaws.com")

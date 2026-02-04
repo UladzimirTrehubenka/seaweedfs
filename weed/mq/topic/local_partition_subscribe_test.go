@@ -1,6 +1,7 @@
 package topic
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -50,19 +51,20 @@ func (m *MockLogBuffer) MockReadFromDiskFn(startPosition log_buffer.MessagePosit
 	for _, entry := range m.diskEntries {
 		// Filter based on mode
 		if isOffsetBased {
-			if entry.Offset < startPosition.Offset {
+			if entry.GetOffset() < startPosition.Offset {
 				continue
 			}
 		} else {
-			entryTime := time.Unix(0, entry.TsNs)
+			entryTime := time.Unix(0, entry.GetTsNs())
 			if entryTime.Before(startPosition.Time) {
 				continue
 			}
 		}
 
 		// Apply stopTsNs filter
-		if stopTsNs > 0 && entry.TsNs > stopTsNs {
+		if stopTsNs > 0 && entry.GetTsNs() > stopTsNs {
 			isDone = true
+
 			break
 		}
 
@@ -73,14 +75,15 @@ func (m *MockLogBuffer) MockReadFromDiskFn(startPosition log_buffer.MessagePosit
 		}
 		if done {
 			isDone = true
+
 			break
 		}
 
 		// Update position
 		if isOffsetBased {
-			lastPosition = log_buffer.NewMessagePosition(entry.TsNs, entry.Offset+1)
+			lastPosition = log_buffer.NewMessagePosition(entry.GetTsNs(), entry.GetOffset()+1)
 		} else {
-			lastPosition = log_buffer.NewMessagePosition(entry.TsNs, entry.Offset)
+			lastPosition = log_buffer.NewMessagePosition(entry.GetTsNs(), entry.GetOffset())
 		}
 	}
 
@@ -108,28 +111,30 @@ func (m *MockLogBuffer) MockLoopProcessLogDataWithOffset(readerName string, star
 
 	for _, entry := range m.memoryEntries {
 		// Filter by offset
-		if entry.Offset < startPosition.Offset {
+		if entry.GetOffset() < startPosition.Offset {
 			continue
 		}
 
 		// Apply stopTsNs filter
-		if stopTsNs > 0 && entry.TsNs > stopTsNs {
+		if stopTsNs > 0 && entry.GetTsNs() > stopTsNs {
 			isDone = true
+
 			break
 		}
 
 		// Call handler
-		done, err := eachLogDataFn(entry, entry.Offset)
+		done, err := eachLogDataFn(entry, entry.GetOffset())
 		if err != nil {
 			return lastPosition, false, err
 		}
 		if done {
 			isDone = true
+
 			break
 		}
 
 		// Update position
-		lastPosition = log_buffer.NewMessagePosition(entry.TsNs, entry.Offset+1)
+		lastPosition = log_buffer.NewMessagePosition(entry.GetTsNs(), entry.GetOffset()+1)
 	}
 
 	return lastPosition, isDone, nil
@@ -167,7 +172,8 @@ func TestOffsetBasedSubscribe_AllDataInMemory(t *testing.T) {
 		startPos := log_buffer.NewMessagePositionFromOffset(0)
 
 		eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-			receivedOffsets = append(receivedOffsets, entry.Offset)
+			receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 			return false, nil
 		}
 
@@ -187,7 +193,7 @@ func TestOffsetBasedSubscribe_AllDataInMemory(t *testing.T) {
 		}
 
 		_, _, err = mock.MockLoopProcessLogDataWithOffset("test", pos, 0, func() bool { return true }, eachLogWithOffsetFn)
-		if err != nil && err != log_buffer.ResumeFromDiskError {
+		if err != nil && !errors.Is(err, log_buffer.ResumeFromDiskError) {
 			t.Fatalf("Memory read failed: %v", err)
 		}
 
@@ -209,7 +215,8 @@ func TestOffsetBasedSubscribe_AllDataInMemory(t *testing.T) {
 		startPos := log_buffer.NewMessagePositionFromOffset(2)
 
 		eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-			receivedOffsets = append(receivedOffsets, entry.Offset)
+			receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 			return false, nil
 		}
 
@@ -224,7 +231,7 @@ func TestOffsetBasedSubscribe_AllDataInMemory(t *testing.T) {
 		}
 
 		_, _, err = mock.MockLoopProcessLogDataWithOffset("test", pos, 0, func() bool { return true }, eachLogWithOffsetFn)
-		if err != nil && err != log_buffer.ResumeFromDiskError {
+		if err != nil && !errors.Is(err, log_buffer.ResumeFromDiskError) {
 			t.Fatalf("Memory read failed: %v", err)
 		}
 
@@ -277,7 +284,8 @@ func TestOffsetBasedSubscribe_DataOnDisk(t *testing.T) {
 		startPos := log_buffer.NewMessagePositionFromOffset(0)
 
 		eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-			receivedOffsets = append(receivedOffsets, entry.Offset)
+			receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 			return false, nil
 		}
 
@@ -296,7 +304,7 @@ func TestOffsetBasedSubscribe_DataOnDisk(t *testing.T) {
 
 		// 2. Read from memory (should get 10-12)
 		_, _, err = mock.MockLoopProcessLogDataWithOffset("test", pos, 0, func() bool { return true }, eachLogWithOffsetFn)
-		if err != nil && err != log_buffer.ResumeFromDiskError {
+		if err != nil && !errors.Is(err, log_buffer.ResumeFromDiskError) {
 			t.Fatalf("Memory read failed: %v", err)
 		}
 
@@ -318,7 +326,8 @@ func TestOffsetBasedSubscribe_DataOnDisk(t *testing.T) {
 		startPos := log_buffer.NewMessagePositionFromOffset(5)
 
 		eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-			receivedOffsets = append(receivedOffsets, entry.Offset)
+			receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 			return false, nil
 		}
 
@@ -334,7 +343,7 @@ func TestOffsetBasedSubscribe_DataOnDisk(t *testing.T) {
 
 		// 2. Read from memory (should get 10-12)
 		_, _, err = mock.MockLoopProcessLogDataWithOffset("test", pos, 0, func() bool { return true }, eachLogWithOffsetFn)
-		if err != nil && err != log_buffer.ResumeFromDiskError {
+		if err != nil && !errors.Is(err, log_buffer.ResumeFromDiskError) {
 			t.Fatalf("Memory read failed: %v", err)
 		}
 
@@ -356,7 +365,8 @@ func TestOffsetBasedSubscribe_DataOnDisk(t *testing.T) {
 		startPos := log_buffer.NewMessagePositionFromOffset(11)
 
 		eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-			receivedOffsets = append(receivedOffsets, entry.Offset)
+			receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 			return false, nil
 		}
 
@@ -372,7 +382,7 @@ func TestOffsetBasedSubscribe_DataOnDisk(t *testing.T) {
 
 		// 2. Read from memory (should get 11-12)
 		_, _, err = mock.MockLoopProcessLogDataWithOffset("test", pos, 0, func() bool { return true }, eachLogWithOffsetFn)
-		if err != nil && err != log_buffer.ResumeFromDiskError {
+		if err != nil && !errors.Is(err, log_buffer.ResumeFromDiskError) {
 			t.Fatalf("Memory read failed: %v", err)
 		}
 
@@ -411,7 +421,8 @@ func TestTimestampBasedSubscribe(t *testing.T) {
 		startPos := log_buffer.NewMessagePosition(baseTime.UnixNano(), -1) // Timestamp-based
 
 		eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-			receivedOffsets = append(receivedOffsets, entry.Offset)
+			receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 			return false, nil
 		}
 
@@ -435,7 +446,8 @@ func TestTimestampBasedSubscribe(t *testing.T) {
 		startPos := log_buffer.NewMessagePosition(baseTime.Add(15*time.Second).UnixNano(), -1)
 
 		eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-			receivedOffsets = append(receivedOffsets, entry.Offset)
+			receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 			return false, nil
 		}
 
@@ -476,7 +488,7 @@ func TestConcurrentSubscribers(t *testing.T) {
 	var mu sync.Mutex
 
 	// Spawn 3 concurrent subscribers
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		wg.Add(1)
 		subscriberName := fmt.Sprintf("subscriber-%d", i)
 
@@ -487,7 +499,8 @@ func TestConcurrentSubscribers(t *testing.T) {
 			startPos := log_buffer.NewMessagePositionFromOffset(0)
 
 			eachLogFn := func(entry *filer_pb.LogEntry) (bool, error) {
-				receivedOffsets = append(receivedOffsets, entry.Offset)
+				receivedOffsets = append(receivedOffsets, entry.GetOffset())
+
 				return false, nil
 			}
 
@@ -514,6 +527,7 @@ func TestConcurrentSubscribers(t *testing.T) {
 	for name, offsets := range results {
 		if len(offsets) != len(expected) {
 			t.Errorf("%s: Expected %d offsets, got %d", name, len(expected), len(offsets))
+
 			continue
 		}
 		for i, offset := range offsets {
@@ -560,7 +574,7 @@ func TestResumeFromDiskError(t *testing.T) {
 
 	// Memory read should return ResumeFromDiskError (offset 5 < memory start)
 	_, _, err = mock.MockLoopProcessLogDataWithOffset("test", startPos, 0, func() bool { return true }, eachLogWithOffsetFn)
-	if err != log_buffer.ResumeFromDiskError {
+	if !errors.Is(err, log_buffer.ResumeFromDiskError) {
 		t.Errorf("Expected ResumeFromDiskError, got: %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package policy_engine
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -161,6 +162,7 @@ func extractBucketAndPrefix(pattern string) (string, string) {
 	}
 	// Has slash, first part is bucket, rest is prefix
 	prefix := strings.Trim(parts[1], "/")
+
 	return bucket, prefix
 }
 
@@ -189,6 +191,7 @@ func ConvertIdentityToPolicy(identityActions []string) (*PolicyDocument, error) 
 		stmt, err := convertSingleAction(action)
 		if err != nil {
 			glog.Warningf("Failed to convert action %s: %v", action, err)
+
 			continue
 		}
 		if stmt != nil {
@@ -197,7 +200,7 @@ func ConvertIdentityToPolicy(identityActions []string) (*PolicyDocument, error) 
 	}
 
 	if len(statements) == 0 {
-		return nil, fmt.Errorf("no valid statements generated")
+		return nil, errors.New("no valid statements generated")
 	}
 
 	return &PolicyDocument{
@@ -244,7 +247,7 @@ func convertSingleAction(action string) (*PolicyStatement, error) {
 		objectResources := buildObjectResourceArn(resourcePattern)
 		// Include both bucket ARN (for ListBucket* and Get*Bucket operations) and object ARNs (for GetObject* operations)
 		if bucket != "" {
-			resources = append([]string{fmt.Sprintf("arn:aws:s3:::%s", bucket)}, objectResources...)
+			resources = append([]string{"arn:aws:s3:::" + bucket}, objectResources...)
 		} else {
 			resources = objectResources
 		}
@@ -278,7 +281,7 @@ func convertSingleAction(action string) (*PolicyStatement, error) {
 		// Include bucket ARN so bucket-level write operations (e.g., PutBucketVersioning, PutBucketCors)
 		// have the correct resource, while still allowing object-level writes.
 		if bucket != "" {
-			resources = append([]string{fmt.Sprintf("arn:aws:s3:::%s", bucket)}, objectResources...)
+			resources = append([]string{"arn:aws:s3:::" + bucket}, objectResources...)
 		} else {
 			resources = objectResources
 		}
@@ -288,18 +291,18 @@ func convertSingleAction(action string) (*PolicyStatement, error) {
 		bucket, prefix := extractBucketAndPrefix(resourcePattern)
 		if bucket == "" {
 			// Invalid pattern, return error
-			return nil, fmt.Errorf("Admin action requires a valid bucket name")
+			return nil, errors.New("Admin action requires a valid bucket name")
 		}
 		if prefix != "" {
 			// Subpath admin access: restrict to objects under this prefix
 			resources = []string{
-				fmt.Sprintf("arn:aws:s3:::%s", bucket),
+				"arn:aws:s3:::" + bucket,
 				fmt.Sprintf("arn:aws:s3:::%s/%s/*", bucket, prefix),
 			}
 		} else {
 			// Bucket-level admin access: full bucket permissions
 			resources = []string{
-				fmt.Sprintf("arn:aws:s3:::%s", bucket),
+				"arn:aws:s3:::" + bucket,
 				fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
 			}
 		}
@@ -310,7 +313,7 @@ func convertSingleAction(action string) (*PolicyStatement, error) {
 		// ListBucket actions only require bucket ARN, not object-level ARNs
 		bucket, _ := extractBucketAndPrefix(resourcePattern)
 		if bucket != "" {
-			resources = []string{fmt.Sprintf("arn:aws:s3:::%s", bucket)}
+			resources = []string{"arn:aws:s3:::" + bucket}
 		} else {
 			// Invalid pattern, return empty resources to fail validation
 			resources = []string{}
@@ -330,7 +333,7 @@ func convertSingleAction(action string) (*PolicyStatement, error) {
 		objectResources := buildObjectResourceArn(resourcePattern)
 		// Include bucket ARN so bucket-level tagging operations have the correct resource
 		if bucket != "" {
-			resources = append([]string{fmt.Sprintf("arn:aws:s3:::%s", bucket)}, objectResources...)
+			resources = append([]string{"arn:aws:s3:::" + bucket}, objectResources...)
 		} else {
 			resources = objectResources
 		}
@@ -359,7 +362,7 @@ func convertSingleAction(action string) (*PolicyStatement, error) {
 		s3Actions = []string{"s3:GetBucketObjectLockConfiguration"}
 		bucket, _ := extractBucketAndPrefix(resourcePattern)
 		if bucket != "" {
-			resources = []string{fmt.Sprintf("arn:aws:s3:::%s", bucket)}
+			resources = []string{"arn:aws:s3:::" + bucket}
 		} else {
 			// Invalid pattern, return empty resources to fail validation
 			resources = []string{}
@@ -369,7 +372,7 @@ func convertSingleAction(action string) (*PolicyStatement, error) {
 		s3Actions = []string{"s3:PutBucketObjectLockConfiguration"}
 		bucket, _ := extractBucketAndPrefix(resourcePattern)
 		if bucket != "" {
-			resources = []string{fmt.Sprintf("arn:aws:s3:::%s", bucket)}
+			resources = []string{"arn:aws:s3:::" + bucket}
 		} else {
 			// Invalid pattern, return empty resources to fail validation
 			resources = []string{}
@@ -480,7 +483,7 @@ func ValidateActionMapping(action string) error {
 	}
 
 	if resource == "" {
-		return fmt.Errorf("resource cannot be empty")
+		return errors.New("resource cannot be empty")
 	}
 
 	return nil
@@ -530,6 +533,7 @@ func GetResourcesFromLegacyAction(legacyAction string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return stmt.Resource.Strings(), nil
 }
 
@@ -544,6 +548,7 @@ func CreatePolicyFromLegacyIdentity(identityName string, actions []string) (*Pol
 		// Validate action format before processing
 		if err := ValidateActionMapping(action); err != nil {
 			glog.Warningf("Skipping invalid action %q for identity %q: %v", action, identityName, err)
+
 			continue
 		}
 
@@ -576,15 +581,17 @@ func CreatePolicyFromLegacyIdentity(identityName string, actions []string) (*Pol
 			if actionType == "Admin" {
 				s3Actions = []string{"s3:*"}
 				// Admin action determines the resources, so we can break after processing it.
-				res, err := GetResourcesFromLegacyAction(fmt.Sprintf("Admin:%s", resourcePattern))
+				res, err := GetResourcesFromLegacyAction("Admin:" + resourcePattern)
 				if err != nil {
 					glog.Warningf("Failed to get resources for Admin action on %s: %v", resourcePattern, err)
 					resourceSet = nil // Invalidate to skip this statement
+
 					break
 				}
 				for _, r := range res {
 					resourceSet[r] = struct{}{}
 				}
+
 				break
 			}
 
@@ -594,6 +601,7 @@ func CreatePolicyFromLegacyIdentity(identityName string, actions []string) (*Pol
 				if err != nil {
 					glog.Warningf("Failed to get resources for %s action on %s: %v", actionType, resourcePattern, err)
 					resourceSet = nil // Invalidate to skip this statement
+
 					break
 				}
 				for _, r := range res {

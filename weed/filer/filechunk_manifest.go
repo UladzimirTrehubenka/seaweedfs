@@ -24,41 +24,43 @@ const (
 )
 
 var bytesBufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }
 
 func HasChunkManifest(chunks []*filer_pb.FileChunk) bool {
 	for _, chunk := range chunks {
-		if chunk.IsChunkManifest {
+		if chunk.GetIsChunkManifest() {
 			return true
 		}
 	}
+
 	return false
 }
 
 func SeparateManifestChunks(chunks []*filer_pb.FileChunk) (manifestChunks, nonManifestChunks []*filer_pb.FileChunk) {
 	for _, c := range chunks {
-		if c.IsChunkManifest {
+		if c.GetIsChunkManifest() {
 			manifestChunks = append(manifestChunks, c)
 		} else {
 			nonManifestChunks = append(nonManifestChunks, c)
 		}
 	}
+
 	return
 }
 
 func ResolveChunkManifest(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, chunks []*filer_pb.FileChunk, startOffset, stopOffset int64) (dataChunks, manifestChunks []*filer_pb.FileChunk, manifestResolveErr error) {
 	// TODO maybe parallel this
 	for _, chunk := range chunks {
-
-		if max(chunk.Offset, startOffset) >= min(chunk.Offset+int64(chunk.Size), stopOffset) {
+		if max(chunk.GetOffset(), startOffset) >= min(chunk.GetOffset()+int64(chunk.GetSize()), stopOffset) {
 			continue
 		}
 
-		if !chunk.IsChunkManifest {
+		if !chunk.GetIsChunkManifest() {
 			dataChunks = append(dataChunks, chunk)
+
 			continue
 		}
 
@@ -76,11 +78,12 @@ func ResolveChunkManifest(ctx context.Context, lookupFileIdFn wdclient.LookupFil
 		dataChunks = append(dataChunks, subDataChunks...)
 		manifestChunks = append(manifestChunks, subManifestChunks...)
 	}
+
 	return
 }
 
 func ResolveOneChunkManifest(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, chunk *filer_pb.FileChunk) (dataChunks []*filer_pb.FileChunk, manifestResolveErr error) {
-	if !chunk.IsChunkManifest {
+	if !chunk.GetIsChunkManifest() {
 		return
 	}
 
@@ -88,18 +91,19 @@ func ResolveOneChunkManifest(ctx context.Context, lookupFileIdFn wdclient.Lookup
 	bytesBuffer := bytesBufferPool.Get().(*bytes.Buffer)
 	bytesBuffer.Reset()
 	defer bytesBufferPool.Put(bytesBuffer)
-	err := fetchWholeChunk(ctx, bytesBuffer, lookupFileIdFn, chunk.GetFileIdString(), chunk.CipherKey, chunk.IsCompressed)
+	err := fetchWholeChunk(ctx, bytesBuffer, lookupFileIdFn, chunk.GetFileIdString(), chunk.GetCipherKey(), chunk.GetIsCompressed())
 	if err != nil {
-		return nil, fmt.Errorf("fail to read manifest %s: %v", chunk.GetFileIdString(), err)
+		return nil, fmt.Errorf("fail to read manifest %s: %w", chunk.GetFileIdString(), err)
 	}
 	m := &filer_pb.FileChunkManifest{}
 	if err := proto.Unmarshal(bytesBuffer.Bytes(), m); err != nil {
-		return nil, fmt.Errorf("fail to unmarshal manifest %s: %v", chunk.GetFileIdString(), err)
+		return nil, fmt.Errorf("fail to unmarshal manifest %s: %w", chunk.GetFileIdString(), err)
 	}
 
 	// recursive
-	filer_pb.AfterEntryDeserialization(m.Chunks)
-	return m.Chunks, nil
+	filer_pb.AfterEntryDeserialization(m.GetChunks())
+
+	return m.GetChunks(), nil
 }
 
 // TODO fetch from cache for weed mount?
@@ -107,6 +111,7 @@ func fetchWholeChunk(ctx context.Context, bytesBuffer *bytes.Buffer, lookupFileI
 	urlStrings, err := lookupFileIdFn(ctx, fileId)
 	if err != nil {
 		glog.ErrorfCtx(ctx, "operation LookupFileId %s failed, err: %v", fileId, err)
+
 		return err
 	}
 	jwt := JwtForVolumeServer(fileId)
@@ -114,6 +119,7 @@ func fetchWholeChunk(ctx context.Context, bytesBuffer *bytes.Buffer, lookupFileI
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -121,13 +127,14 @@ func fetchChunkRange(ctx context.Context, buffer []byte, lookupFileIdFn wdclient
 	urlStrings, err := lookupFileIdFn(ctx, fileId)
 	if err != nil {
 		glog.ErrorfCtx(ctx, "operation LookupFileId %s failed, err: %v", fileId, err)
+
 		return 0, err
 	}
+
 	return util_http.RetriedFetchChunkData(ctx, buffer, urlStrings, cipherKey, isGzipped, false, offset, fileId)
 }
 
 func retriedStreamFetchChunkData(ctx context.Context, writer io.Writer, urlStrings []string, jwt string, cipherKey []byte, isGzipped bool, isFullChunk bool, offset int64, size int) (written int64, err error) {
-
 	var shouldRetry bool
 	var totalWritten int
 
@@ -156,6 +163,7 @@ func retriedStreamFetchChunkData(ctx context.Context, writer io.Writer, urlStrin
 				select {
 				case <-ctx.Done():
 					writeErr = ctx.Err()
+
 					return
 				default:
 				}
@@ -164,6 +172,7 @@ func retriedStreamFetchChunkData(ctx context.Context, writer io.Writer, urlStrin
 					toBeSkipped := totalWritten - localProcessed
 					if len(data) <= toBeSkipped {
 						localProcessed += len(data)
+
 						return // skip if already processed
 					}
 					data = data[toBeSkipped:]
@@ -179,6 +188,7 @@ func retriedStreamFetchChunkData(ctx context.Context, writer io.Writer, urlStrin
 			}
 			if writeErr != nil {
 				err = writeErr
+
 				break
 			}
 			if err != nil {
@@ -198,6 +208,7 @@ func retriedStreamFetchChunkData(ctx context.Context, writer io.Writer, urlStrin
 			select {
 			case <-ctx.Done():
 				timer.Stop()
+
 				return int64(totalWritten), ctx.Err()
 			case <-timer.C:
 				// Continue with retry
@@ -208,7 +219,6 @@ func retriedStreamFetchChunkData(ctx context.Context, writer io.Writer, urlStrin
 	}
 
 	return int64(totalWritten), err
-
 }
 
 func MaybeManifestize(saveFunc SaveDataAsChunkFunctionType, inputChunks []*filer_pb.FileChunk) (chunks []*filer_pb.FileChunk, err error) {
@@ -218,14 +228,14 @@ func MaybeManifestize(saveFunc SaveDataAsChunkFunctionType, inputChunks []*filer
 			return inputChunks, nil
 		}
 	}
+
 	return doMaybeManifestize(saveFunc, inputChunks, ManifestBatch, mergeIntoManifest)
 }
 
 func doMaybeManifestize(saveFunc SaveDataAsChunkFunctionType, inputChunks []*filer_pb.FileChunk, mergeFactor int, mergefn func(saveFunc SaveDataAsChunkFunctionType, dataChunks []*filer_pb.FileChunk) (manifestChunk *filer_pb.FileChunk, err error)) (chunks []*filer_pb.FileChunk, err error) {
-
 	var dataChunks []*filer_pb.FileChunk
 	for _, chunk := range inputChunks {
-		if !chunk.IsChunkManifest {
+		if !chunk.GetIsChunkManifest() {
 			dataChunks = append(dataChunks, chunk)
 		} else {
 			chunks = append(chunks, chunk)
@@ -245,11 +255,11 @@ func doMaybeManifestize(saveFunc SaveDataAsChunkFunctionType, inputChunks []*fil
 	for i := len(dataChunks) - remaining; i < len(dataChunks); i++ {
 		chunks = append(chunks, dataChunks[i])
 	}
+
 	return
 }
 
 func mergeIntoManifest(saveFunc SaveDataAsChunkFunctionType, dataChunks []*filer_pb.FileChunk) (manifestChunk *filer_pb.FileChunk, err error) {
-
 	filer_pb.BeforeEntrySerialization(dataChunks)
 
 	// create and serialize the manifest
@@ -262,11 +272,11 @@ func mergeIntoManifest(saveFunc SaveDataAsChunkFunctionType, dataChunks []*filer
 
 	minOffset, maxOffset := int64(math.MaxInt64), int64(math.MinInt64)
 	for _, chunk := range dataChunks {
-		if minOffset > int64(chunk.Offset) {
-			minOffset = chunk.Offset
+		if minOffset > int64(chunk.GetOffset()) {
+			minOffset = chunk.GetOffset()
 		}
-		if maxOffset < int64(chunk.Size)+chunk.Offset {
-			maxOffset = int64(chunk.Size) + chunk.Offset
+		if maxOffset < int64(chunk.GetSize())+chunk.GetOffset() {
+			maxOffset = int64(chunk.GetSize()) + chunk.GetOffset()
 		}
 	}
 
@@ -278,7 +288,7 @@ func mergeIntoManifest(saveFunc SaveDataAsChunkFunctionType, dataChunks []*filer
 	manifestChunk.Offset = minOffset
 	manifestChunk.Size = uint64(maxOffset - minOffset)
 
-	return
+	return manifestChunk, err
 }
 
 type SaveDataAsChunkFunctionType func(reader io.Reader, name string, offset int64, tsNs int64) (chunk *filer_pb.FileChunk, err error)

@@ -46,6 +46,7 @@ type RaftServer struct {
 
 type StateMachine struct {
 	raft.StateMachine
+
 	topo *topology.Topology
 }
 
@@ -57,6 +58,7 @@ func (s StateMachine) Save() ([]byte, error) {
 		TopologyId:  s.topo.GetTopologyId(),
 	}
 	glog.V(1).Infof("Save raft state %+v", state)
+
 	return json.Marshal(state)
 }
 
@@ -72,10 +74,11 @@ func (s StateMachine) Recovery(data []byte) error {
 		s.topo.SetTopologyId(state.TopologyId)
 		glog.V(0).Infof("Recovered TopologyId: %s", state.TopologyId)
 	}
+
 	return nil
 }
 
-func (s *StateMachine) Apply(l *hashicorpRaft.Log) interface{} {
+func (s *StateMachine) Apply(l *hashicorpRaft.Log) any {
 	before := s.topo.GetMaxVolumeId()
 	state := topology.MaxVolumeIdCommand{}
 	err := json.Unmarshal(l.Data, &state)
@@ -93,6 +96,7 @@ func (s *StateMachine) Apply(l *hashicorpRaft.Log) interface{} {
 	}
 
 	glog.V(1).Infoln("max volume id", before, "==>", s.topo.GetMaxVolumeId())
+
 	return nil
 }
 
@@ -111,6 +115,7 @@ func (s *StateMachine) Restore(r io.ReadCloser) error {
 	if err := s.Recovery(b); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -147,6 +152,7 @@ func NewRaftServer(option *RaftServerOption) (*RaftServer, error) {
 	s.raftServer, err = raft.NewServer(string(s.serverAddr), s.dataDir, transporter, stateMachine, option.Topo, s.serverAddr.ToGrpcAddress())
 	if err != nil {
 		glog.V(0).Infoln(err)
+
 		return nil, err
 	}
 	heartbeatInterval := time.Duration(float64(option.HeartbeatInterval) * (rand.Float64()*0.25 + 1))
@@ -170,6 +176,7 @@ func NewRaftServer(option *RaftServerOption) (*RaftServer, error) {
 		if existingPeer, found := s.peers[existsPeerName]; !found {
 			if err := s.raftServer.RemovePeer(existsPeerName); err != nil {
 				glog.V(0).Infoln(err)
+
 				return nil, err
 			} else {
 				glog.V(0).Infof("removing old peer: %s", existingPeer)
@@ -196,11 +203,11 @@ func (s *RaftServer) Peers() (members []string) {
 			members = append(members, string(p.ID))
 		}
 	}
+
 	return
 }
 
 func (s *RaftServer) DoJoinCommand() {
-
 	glog.V(0).Infoln("Initializing new cluster")
 
 	if _, err := s.raftServer.Do(&raft.DefaultJoinCommand{
@@ -209,5 +216,4 @@ func (s *RaftServer) DoJoinCommand() {
 	}); err != nil {
 		glog.Errorf("fail to send join command: %v", err)
 	}
-
 }

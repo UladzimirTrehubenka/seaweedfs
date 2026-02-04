@@ -32,6 +32,7 @@ func (h *S3TablesHandler) createDirectory(ctx context.Context, client filer_pb.S
 			},
 		},
 	})
+
 	return err
 }
 
@@ -48,7 +49,7 @@ func (h *S3TablesHandler) setExtendedAttribute(ctx context.Context, client filer
 		return err
 	}
 
-	entry := resp.Entry
+	entry := resp.GetEntry()
 
 	// Update the extended attributes
 	if entry.Extended == nil {
@@ -61,6 +62,7 @@ func (h *S3TablesHandler) setExtendedAttribute(ctx context.Context, client filer
 		Directory: dir,
 		Entry:     entry,
 	})
+
 	return err
 }
 
@@ -79,7 +81,7 @@ func (h *S3TablesHandler) getExtendedAttribute(ctx context.Context, client filer
 		return nil, fmt.Errorf("%w: %s", ErrAttributeNotFound, key)
 	}
 
-	data, ok := resp.Entry.Extended[key]
+	data, ok := resp.GetEntry().GetExtended()[key]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrAttributeNotFound, key)
 	}
@@ -100,11 +102,11 @@ func (h *S3TablesHandler) deleteExtendedAttribute(ctx context.Context, client fi
 		return err
 	}
 
-	entry := resp.Entry
+	entry := resp.GetEntry()
 
 	// Remove the extended attribute
 	if entry.Extended != nil {
-		delete(entry.Extended, key)
+		delete(entry.GetExtended(), key)
 	}
 
 	// Save the updated entry
@@ -112,6 +114,7 @@ func (h *S3TablesHandler) deleteExtendedAttribute(ctx context.Context, client fi
 		Directory: dir,
 		Entry:     entry,
 	})
+
 	return err
 }
 
@@ -125,6 +128,7 @@ func (h *S3TablesHandler) deleteDirectory(ctx context.Context, client filer_pb.S
 		IsRecursive:          true,
 		IgnoreRecursiveError: true,
 	})
+
 	return err
 }
 
@@ -135,5 +139,6 @@ func (h *S3TablesHandler) entryExists(ctx context.Context, client filer_pb.Seawe
 		Directory: dir,
 		Name:      name,
 	})
+
 	return err == nil
 }

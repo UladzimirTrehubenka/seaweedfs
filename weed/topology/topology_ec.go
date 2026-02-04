@@ -20,12 +20,12 @@ func (t *Topology) SyncDataNodeEcShards(shardInfos []*master_pb.VolumeEcShardInf
 	for _, shardInfo := range shardInfos {
 		// Create EcVolumeInfo directly with optimized format
 		ecVolumeInfo := &erasure_coding.EcVolumeInfo{
-			VolumeId:    needle.VolumeId(shardInfo.Id),
-			Collection:  shardInfo.Collection,
+			VolumeId:    needle.VolumeId(shardInfo.GetId()),
+			Collection:  shardInfo.GetCollection(),
 			ShardsInfo:  erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(shardInfo),
-			DiskType:    shardInfo.DiskType,
-			DiskId:      shardInfo.DiskId,
-			ExpireAtSec: shardInfo.ExpireAtSec,
+			DiskType:    shardInfo.GetDiskType(),
+			DiskId:      shardInfo.GetDiskId(),
+			ExpireAtSec: shardInfo.GetExpireAtSec(),
 		}
 
 		shards = append(shards, ecVolumeInfo)
@@ -38,6 +38,7 @@ func (t *Topology) SyncDataNodeEcShards(shardInfos []*master_pb.VolumeEcShardInf
 	for _, v := range deletedShards {
 		t.UnRegisterEcShards(v, dn)
 	}
+
 	return
 }
 
@@ -47,12 +48,12 @@ func (t *Topology) IncrementalSyncDataNodeEcShards(newEcShards, deletedEcShards 
 	for _, shardInfo := range newEcShards {
 		// Create EcVolumeInfo directly with optimized format
 		ecVolumeInfo := &erasure_coding.EcVolumeInfo{
-			VolumeId:    needle.VolumeId(shardInfo.Id),
-			Collection:  shardInfo.Collection,
+			VolumeId:    needle.VolumeId(shardInfo.GetId()),
+			Collection:  shardInfo.GetCollection(),
 			ShardsInfo:  erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(shardInfo),
-			DiskType:    shardInfo.DiskType,
-			DiskId:      shardInfo.DiskId,
-			ExpireAtSec: shardInfo.ExpireAtSec,
+			DiskType:    shardInfo.GetDiskType(),
+			DiskId:      shardInfo.GetDiskId(),
+			ExpireAtSec: shardInfo.GetExpireAtSec(),
 		}
 
 		newShards = append(newShards, ecVolumeInfo)
@@ -60,12 +61,12 @@ func (t *Topology) IncrementalSyncDataNodeEcShards(newEcShards, deletedEcShards 
 	for _, shardInfo := range deletedEcShards {
 		// Create EcVolumeInfo directly with optimized format
 		ecVolumeInfo := &erasure_coding.EcVolumeInfo{
-			VolumeId:    needle.VolumeId(shardInfo.Id),
-			Collection:  shardInfo.Collection,
+			VolumeId:    needle.VolumeId(shardInfo.GetId()),
+			Collection:  shardInfo.GetCollection(),
 			ShardsInfo:  erasure_coding.ShardsInfoFromVolumeEcShardInformationMessage(shardInfo),
-			DiskType:    shardInfo.DiskType,
-			DiskId:      shardInfo.DiskId,
-			ExpireAtSec: shardInfo.ExpireAtSec,
+			DiskType:    shardInfo.GetDiskType(),
+			DiskId:      shardInfo.GetDiskId(),
+			ExpireAtSec: shardInfo.GetExpireAtSec(),
 		}
 
 		deletedShards = append(deletedShards, ecVolumeInfo)
@@ -99,6 +100,7 @@ func (loc *EcShardLocations) AddShard(shardId erasure_coding.ShardId, dn *DataNo
 		}
 	}
 	loc.Locations[shardId] = append(dataNodes, dn)
+
 	return true
 }
 
@@ -118,11 +120,11 @@ func (loc *EcShardLocations) DeleteShard(shardId erasure_coding.ShardId, dn *Dat
 		return false
 	}
 	loc.Locations[shardId] = append(dataNodes[:foundIndex], dataNodes[foundIndex+1:]...)
+
 	return true
 }
 
 func (t *Topology) RegisterEcShards(ecvi *erasure_coding.EcVolumeInfo, dn *DataNode) {
-
 	t.ecShardMapLock.Lock()
 	defer t.ecShardMapLock.Unlock()
 
@@ -174,7 +176,7 @@ func (t *Topology) ListEcServersByCollection(collection string) (dataNodes []pb.
 		}
 	}
 
-	for k, _ := range dateNodeMap {
+	for k := range dateNodeMap {
 		dataNodes = append(dataNodes, k)
 	}
 

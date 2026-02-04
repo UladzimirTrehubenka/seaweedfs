@@ -16,6 +16,7 @@ var (
 
 type MemChunk struct {
 	sync.RWMutex
+
 	buf             []byte
 	usage           *ChunkWrittenIntervalList
 	chunkSize       int64
@@ -25,6 +26,7 @@ type MemChunk struct {
 
 func NewMemChunk(logicChunkIndex LogicChunkIndex, chunkSize int64) *MemChunk {
 	atomic.AddInt64(&memChunkCounter, 1)
+
 	return &MemChunk{
 		logicChunkIndex: logicChunkIndex,
 		chunkSize:       chunkSize,

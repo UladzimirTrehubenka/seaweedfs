@@ -349,7 +349,7 @@ func TestCreatePolicyFromLegacyIdentityMultipleActions(t *testing.T) {
 			assert.NotNil(t, policy)
 
 			// Check statement count
-			assert.Equal(t, tc.expectedStatements, len(policy.Statement),
+			assert.Len(t, policy.Statement, tc.expectedStatements,
 				"Expected %d statement(s), got %d", tc.expectedStatements, len(policy.Statement))
 
 			if tc.expectedStatements > 0 {

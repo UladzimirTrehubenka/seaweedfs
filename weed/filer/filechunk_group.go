@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 
@@ -34,10 +35,7 @@ func NewChunkGroup(lookupFn wdclient.LookupFileIdFunctionType, chunkCache chunk_
 		concurrentReaders = 128 // Cap to prevent excessive goroutine fan-out
 	}
 	// ReaderCache limit should be at least concurrentReaders to allow parallel prefetching
-	readerCacheLimit := concurrentReaders * 2
-	if readerCacheLimit < 32 {
-		readerCacheLimit = 32
-	}
+	readerCacheLimit := max(concurrentReaders*2, 32)
 	group := &ChunkGroup{
 		lookupFn:          lookupFn,
 		sections:          make(map[SectionIndex]*FileChunkSection),
@@ -46,6 +44,7 @@ func NewChunkGroup(lookupFn wdclient.LookupFileIdFunctionType, chunkCache chunk_
 	}
 
 	err := group.SetChunks(chunks)
+
 	return group, err
 }
 
@@ -53,22 +52,18 @@ func NewChunkGroup(lookupFn wdclient.LookupFileIdFunctionType, chunkCache chunk_
 // This is derived from concurrentReaders to keep the network pipeline full.
 func (group *ChunkGroup) GetPrefetchCount() int {
 	// Prefetch at least 1, and scale with concurrency (roughly 1/4 of concurrent readers)
-	prefetch := group.concurrentReaders / 4
-	if prefetch < 1 {
-		prefetch = 1
-	}
-	if prefetch > 8 {
-		prefetch = 8 // Cap at 8 to avoid excessive memory usage
-	}
+	prefetch := min(max(group.concurrentReaders/4, 1),
+		// Cap at 8 to avoid excessive memory usage
+		8)
+
 	return prefetch
 }
 
 func (group *ChunkGroup) AddChunk(chunk *filer_pb.FileChunk) error {
-
 	group.sectionsLock.Lock()
 	defer group.sectionsLock.Unlock()
 
-	sectionIndexStart, sectionIndexStop := SectionIndex(chunk.Offset/SectionSize), SectionIndex((chunk.Offset+int64(chunk.Size))/SectionSize)
+	sectionIndexStart, sectionIndexStop := SectionIndex(chunk.GetOffset()/SectionSize), SectionIndex((chunk.GetOffset()+int64(chunk.GetSize()))/SectionSize)
 	for si := sectionIndexStart; si < sectionIndexStop+1; si++ {
 		section, found := group.sections[si]
 		if !found {
@@ -77,6 +72,7 @@ func (group *ChunkGroup) AddChunk(chunk *filer_pb.FileChunk) error {
 		}
 		section.addChunk(chunk)
 	}
+
 	return nil
 }
 
@@ -114,6 +110,7 @@ func (group *ChunkGroup) readDataAtSequential(ctx context.Context, fileSize int6
 				buff[i-offset] = 0
 			}
 			n = int(int64(n) + rangeStop - rangeStart)
+
 			continue
 		}
 		xn, xTsNs, xErr := section.readDataAt(ctx, group, fileSize, buff[rangeStart-offset:rangeStop-offset], rangeStart)
@@ -123,6 +120,7 @@ func (group *ChunkGroup) readDataAtSequential(ctx context.Context, fileSize int6
 		n += xn
 		tsNs = max(tsNs, xTsNs)
 	}
+
 	return
 }
 
@@ -139,17 +137,14 @@ func (group *ChunkGroup) readDataAtParallel(ctx context.Context, fileSize int64,
 	numSections := int(sectionIndexStop - sectionIndexStart + 1)
 
 	// Limit concurrency to the smaller of concurrentReaders and numSections
-	maxConcurrent := group.concurrentReaders
-	if numSections < maxConcurrent {
-		maxConcurrent = numSections
-	}
+	maxConcurrent := min(numSections, group.concurrentReaders)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(maxConcurrent)
 
 	results := make([]sectionReadResult, numSections)
 
-	for i := 0; i < numSections; i++ {
+	for i := range numSections {
 		si := sectionIndexStart + SectionIndex(i)
 		idx := i
 
@@ -171,6 +166,7 @@ func (group *ChunkGroup) readDataAtParallel(ctx context.Context, fileSize int64,
 				tsNs:         0,
 				err:          nil,
 			}
+
 			continue
 		}
 
@@ -187,9 +183,10 @@ func (group *ChunkGroup) readDataAtParallel(ctx context.Context, fileSize int64,
 				tsNs:         xTsNs,
 				err:          xErr,
 			}
-			if xErr != nil && xErr != io.EOF {
+			if xErr != nil && !errors.Is(xErr, io.EOF) {
 				return xErr
 			}
+
 			return nil
 		})
 	}
@@ -202,7 +199,7 @@ func (group *ChunkGroup) readDataAtParallel(ctx context.Context, fileSize int64,
 		n += result.n
 		tsNs = max(tsNs, result.tsNs)
 		// Collect first non-EOF error from results as fallback
-		if result.err != nil && result.err != io.EOF && err == nil {
+		if result.err != nil && !errors.Is(result.err, io.EOF) && err == nil {
 			err = result.err
 		}
 	}
@@ -212,7 +209,7 @@ func (group *ChunkGroup) readDataAtParallel(ctx context.Context, fileSize int64,
 		err = groupErr
 	}
 
-	return
+	return n, tsNs, err
 }
 
 func (group *ChunkGroup) SetChunks(chunks []*filer_pb.FileChunk) error {
@@ -221,9 +218,9 @@ func (group *ChunkGroup) SetChunks(chunks []*filer_pb.FileChunk) error {
 
 	var dataChunks []*filer_pb.FileChunk
 	for _, chunk := range chunks {
-
-		if !chunk.IsChunkManifest {
+		if !chunk.GetIsChunkManifest() {
 			dataChunks = append(dataChunks, chunk)
+
 			continue
 		}
 
@@ -238,7 +235,7 @@ func (group *ChunkGroup) SetChunks(chunks []*filer_pb.FileChunk) error {
 	sections := make(map[SectionIndex]*FileChunkSection)
 
 	for _, chunk := range dataChunks {
-		sectionIndexStart, sectionIndexStop := SectionIndex(chunk.Offset/SectionSize), SectionIndex((chunk.Offset+int64(chunk.Size))/SectionSize)
+		sectionIndexStart, sectionIndexStop := SectionIndex(chunk.GetOffset()/SectionSize), SectionIndex((chunk.GetOffset()+int64(chunk.GetSize()))/SectionSize)
 		for si := sectionIndexStart; si < sectionIndexStop+1; si++ {
 			section, found := sections[si]
 			if !found {
@@ -250,6 +247,7 @@ func (group *ChunkGroup) SetChunks(chunks []*filer_pb.FileChunk) error {
 	}
 
 	group.sections = sections
+
 	return nil
 }
 
@@ -268,7 +266,6 @@ func (group *ChunkGroup) SearchChunks(ctx context.Context, offset, fileSize int6
 }
 
 func (group *ChunkGroup) doSearchChunks(ctx context.Context, offset, fileSize int64, whence uint32) (found bool, out int64) {
-
 	sectionIndex, maxSectionIndex := SectionIndex(offset/SectionSize), SectionIndex(fileSize/SectionSize)
 	if whence == SEEK_DATA {
 		for si := sectionIndex; si < maxSectionIndex+1; si++ {
@@ -280,8 +277,10 @@ func (group *ChunkGroup) doSearchChunks(ctx context.Context, offset, fileSize in
 			if sectionStart == -1 {
 				continue
 			}
+
 			return true, sectionStart
 		}
+
 		return false, 0
 	} else {
 		// whence == SEEK_HOLE
@@ -294,8 +293,10 @@ func (group *ChunkGroup) doSearchChunks(ctx context.Context, offset, fileSize in
 			if holeStart%SectionSize == 0 {
 				continue
 			}
+
 			return true, holeStart
 		}
+
 		return true, fileSize
 	}
 }

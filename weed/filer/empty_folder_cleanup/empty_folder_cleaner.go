@@ -2,6 +2,7 @@ package empty_folder_cleanup
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,7 @@ func NewEmptyFolderCleaner(filer FilerOperations, lockRing *lock_manager.LockRin
 	}
 	go efc.cacheEvictionLoop()
 	go efc.cleanupProcessor()
+
 	return efc
 }
 
@@ -94,6 +96,7 @@ func (efc *EmptyFolderCleaner) SetEnabled(enabled bool) {
 func (efc *EmptyFolderCleaner) IsEnabled() bool {
 	efc.mu.RLock()
 	defer efc.mu.RUnlock()
+
 	return efc.enabled
 }
 
@@ -103,6 +106,7 @@ func (efc *EmptyFolderCleaner) ownsFolder(folder string) bool {
 	if len(servers) <= 1 {
 		return true // Single filer case
 	}
+
 	return efc.hashKeyToServer(folder, servers) == efc.host
 }
 
@@ -116,6 +120,7 @@ func (efc *EmptyFolderCleaner) hashKeyToServer(key string, servers []pb.ServerAd
 		x = -x
 	}
 	x = x % int64(len(servers))
+
 	return servers[x]
 }
 
@@ -131,6 +136,7 @@ func (efc *EmptyFolderCleaner) OnDeleteEvent(directory string, entryName string,
 	// Check if we own this folder
 	if !efc.ownsFolder(directory) {
 		glog.V(4).Infof("EmptyFolderCleaner: not owner of %s, skipping", directory)
+
 		return
 	}
 
@@ -158,6 +164,7 @@ func (efc *EmptyFolderCleaner) OnDeleteEvent(directory string, entryName string,
 	// Only add to cleanup queue if roughCount suggests folder might be empty
 	if state.roughCount > 0 {
 		glog.V(3).Infof("EmptyFolderCleaner: skipping queue for %s, roughCount=%d", directory, state.roughCount)
+
 		return
 	}
 
@@ -252,12 +259,14 @@ func (efc *EmptyFolderCleaner) executeCleanup(folder string) {
 		if state.roughCount > 0 {
 			glog.V(3).Infof("EmptyFolderCleaner: skipping %s, cached count=%d", folder, state.roughCount)
 			efc.mu.Unlock()
+
 			return
 		}
 		// If there was an add after our delete, skip
 		if !state.lastAddTime.IsZero() && state.lastAddTime.After(state.lastDelTime) {
 			glog.V(3).Infof("EmptyFolderCleaner: skipping %s, add happened after delete", folder)
 			efc.mu.Unlock()
+
 			return
 		}
 	}
@@ -266,6 +275,7 @@ func (efc *EmptyFolderCleaner) executeCleanup(folder string) {
 	// Re-check ownership (topology might have changed)
 	if !efc.ownsFolder(folder) {
 		glog.V(3).Infof("EmptyFolderCleaner: no longer owner of %s, skipping", folder)
+
 		return
 	}
 
@@ -286,10 +296,11 @@ func (efc *EmptyFolderCleaner) executeCleanup(folder string) {
 		// Not cached, check filer
 		attrs, err := efc.filer.GetEntryAttributes(ctx, util.FullPath(folder))
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return
 			}
 			glog.V(2).Infof("EmptyFolderCleaner: error getting attributes for %s: %v", folder, err)
+
 			return
 		}
 
@@ -306,6 +317,7 @@ func (efc *EmptyFolderCleaner) executeCleanup(folder string) {
 
 	if !isImplicit {
 		glog.V(4).Infof("EmptyFolderCleaner: folder %s is not marked as implicit, skipping", folder)
+
 		return
 	}
 
@@ -313,6 +325,7 @@ func (efc *EmptyFolderCleaner) executeCleanup(folder string) {
 	count, err := efc.countItems(ctx, folder)
 	if err != nil {
 		glog.V(2).Infof("EmptyFolderCleaner: error counting items in %s: %v", folder, err)
+
 		return
 	}
 
@@ -327,6 +340,7 @@ func (efc *EmptyFolderCleaner) executeCleanup(folder string) {
 
 	if count > 0 {
 		glog.V(3).Infof("EmptyFolderCleaner: folder %s has %d items, not empty", folder, count)
+
 		return
 	}
 
@@ -334,6 +348,7 @@ func (efc *EmptyFolderCleaner) executeCleanup(folder string) {
 	glog.V(2).Infof("EmptyFolderCleaner: deleting empty folder %s", folder)
 	if err := efc.deleteFolder(ctx, folder); err != nil {
 		glog.V(2).Infof("EmptyFolderCleaner: failed to delete empty folder %s: %v", folder, err)
+
 		return
 	}
 
@@ -376,6 +391,7 @@ func isUnderPath(child, parent string) bool {
 	if len(child) == len(parent) {
 		return true
 	}
+
 	return child[len(parent)] == '/'
 }
 
@@ -398,6 +414,7 @@ func isUnderBucketPath(directory, bucketPath string) bool {
 	// For /buckets (depth 1), we need at least /buckets/mybucket/folder (depth 3)
 	bucketPathDepth := strings.Count(bucketPath, "/")
 	directoryDepth := strings.Count(directory, "/")
+
 	return directoryDepth >= bucketPathDepth+2
 }
 
@@ -474,5 +491,6 @@ func (efc *EmptyFolderCleaner) GetCachedFolderCount(folder string) (int, bool) {
 	if state, exists := efc.folderCounts[folder]; exists {
 		return state.roughCount, true
 	}
+
 	return 0, false
 }

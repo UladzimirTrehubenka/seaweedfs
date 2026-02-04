@@ -3,6 +3,7 @@ package s3tables
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
@@ -26,7 +27,7 @@ var (
 // ARN parsing functions
 
 // parseBucketNameFromARN extracts bucket name from table bucket ARN
-// ARN format: arn:aws:s3tables:{region}:{account}:bucket/{bucket-name}
+// format: arn:aws:s3tables:{region}:{account}:bucket/{bucket-name}
 func parseBucketNameFromARN(arn string) (string, error) {
 	matches := bucketARNPattern.FindStringSubmatch(arn)
 	if len(matches) != 2 {
@@ -36,6 +37,7 @@ func parseBucketNameFromARN(arn string) (string, error) {
 	if !isValidBucketName(bucketName) {
 		return "", fmt.Errorf("invalid bucket name in ARN: %s", bucketName)
 	}
+
 	return bucketName, nil
 }
 
@@ -45,7 +47,7 @@ func ParseBucketNameFromARN(arn string) (string, error) {
 }
 
 // parseTableFromARN extracts bucket name, namespace, and table name from ARN
-// ARN format: arn:aws:s3tables:{region}:{account}:bucket/{bucket-name}/table/{namespace}/{table-name}
+// format: arn:aws:s3tables:{region}:{account}:bucket/{bucket-name}/table/{namespace}/{table-name}
 func parseTableFromARN(arn string) (bucketName, namespace, tableName string, err error) {
 	// Updated regex to align with namespace validation (single-segment)
 	matches := tableARNPattern.FindStringSubmatch(arn)
@@ -56,24 +58,25 @@ func parseTableFromARN(arn string) (bucketName, namespace, tableName string, err
 	// Validate bucket name
 	bucketName = matches[1]
 	if err := validateBucketName(bucketName); err != nil {
-		return "", "", "", fmt.Errorf("invalid bucket name in ARN: %v", err)
+		return "", "", "", fmt.Errorf("invalid bucket name in ARN: %w", err)
 	}
 
 	// Namespace is already constrained by the regex; validate it directly.
 	namespace = matches[2]
 	_, err = validateNamespace([]string{namespace})
 	if err != nil {
-		return "", "", "", fmt.Errorf("invalid namespace in ARN: %v", err)
+		return "", "", "", fmt.Errorf("invalid namespace in ARN: %w", err)
 	}
 
 	// URL decode and validate the table name from the ARN path component
 	tableNameUnescaped, err := url.PathUnescape(matches[3])
 	if err != nil {
-		return "", "", "", fmt.Errorf("invalid table name encoding in ARN: %v", err)
+		return "", "", "", fmt.Errorf("invalid table name encoding in ARN: %w", err)
 	}
 	if _, err := validateTableName(tableNameUnescaped); err != nil {
-		return "", "", "", fmt.Errorf("invalid table name in ARN: %v", err)
+		return "", "", "", fmt.Errorf("invalid table name in ARN: %w", err)
 	}
+
 	return bucketName, namespace, tableNameUnescaped, nil
 }
 
@@ -132,30 +135,31 @@ type tableMetadataInternal struct {
 // Reserved prefixes/suffixes are rejected.
 func validateBucketName(name string) error {
 	if name == "" {
-		return fmt.Errorf("bucket name is required")
+		return errors.New("bucket name is required")
 	}
 
 	if len(name) < 3 || len(name) > 63 {
-		return fmt.Errorf("bucket name must be between 3 and 63 characters")
+		return errors.New("bucket name must be between 3 and 63 characters")
 	}
 
 	// Must start and end with a letter or digit
 	start := name[0]
 	end := name[len(name)-1]
 	if !((start >= 'a' && start <= 'z') || (start >= '0' && start <= '9')) {
-		return fmt.Errorf("bucket name must start with a letter or digit")
+		return errors.New("bucket name must start with a letter or digit")
 	}
 	if !((end >= 'a' && end <= 'z') || (end >= '0' && end <= '9')) {
-		return fmt.Errorf("bucket name must end with a letter or digit")
+		return errors.New("bucket name must end with a letter or digit")
 	}
 
 	// Allowed characters: a-z, 0-9, -
-	for i := 0; i < len(name); i++ {
+	for i := range len(name) {
 		ch := name[i]
 		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' {
 			continue
 		}
-		return fmt.Errorf("bucket name can only contain lowercase letters, numbers, and hyphens")
+
+		return errors.New("bucket name can only contain lowercase letters, numbers, and hyphens")
 	}
 
 	// Reserved prefixes
@@ -186,7 +190,7 @@ func ValidateBucketName(name string) error {
 // If region is empty, the ARN will omit the region field.
 func BuildBucketARN(region, accountID, bucketName string) (string, error) {
 	if bucketName == "" {
-		return "", fmt.Errorf("bucket name is required")
+		return "", errors.New("bucket name is required")
 	}
 	if err := validateBucketName(bucketName); err != nil {
 		return "", err
@@ -194,26 +198,27 @@ func BuildBucketARN(region, accountID, bucketName string) (string, error) {
 	if accountID == "" {
 		accountID = DefaultAccountID
 	}
-	return buildARN(region, accountID, fmt.Sprintf("bucket/%s", bucketName)), nil
+
+	return buildARN(region, accountID, "bucket/"+bucketName), nil
 }
 
 // BuildTableARN builds a table ARN with the provided region and account ID.
 func BuildTableARN(region, accountID, bucketName, namespace, tableName string) (string, error) {
 	if bucketName == "" {
-		return "", fmt.Errorf("bucket name is required")
+		return "", errors.New("bucket name is required")
 	}
 	if err := validateBucketName(bucketName); err != nil {
 		return "", err
 	}
 	if namespace == "" {
-		return "", fmt.Errorf("namespace is required")
+		return "", errors.New("namespace is required")
 	}
 	normalizedNamespace, err := validateNamespace([]string{namespace})
 	if err != nil {
 		return "", err
 	}
 	if tableName == "" {
-		return "", fmt.Errorf("table name is required")
+		return "", errors.New("table name is required")
 	}
 	normalizedTable, err := validateTableName(tableName)
 	if err != nil {
@@ -222,6 +227,7 @@ func BuildTableARN(region, accountID, bucketName, namespace, tableName string) (
 	if accountID == "" {
 		accountID = DefaultAccountID
 	}
+
 	return buildARN(region, accountID, fmt.Sprintf("bucket/%s/table/%s/%s", bucketName, normalizedNamespace, normalizedTable)), nil
 }
 
@@ -236,18 +242,19 @@ func ValidateTags(tags map[string]string) error {
 	}
 	for k, v := range tags {
 		if len(k) > 128 {
-			return fmt.Errorf("validate tags: tag key longer than 128")
+			return errors.New("validate tags: tag key longer than 128")
 		}
 		if !tagPattern.MatchString(k) {
 			return fmt.Errorf("validate tags key %s error, incorrect key", k)
 		}
 		if len(v) > 256 {
-			return fmt.Errorf("validate tags: tag value longer than 256")
+			return errors.New("validate tags: tag value longer than 256")
 		}
 		if !tagPattern.MatchString(v) {
 			return fmt.Errorf("validate tags value %s error, incorrect value", v)
 		}
 	}
+
 	return nil
 }
 
@@ -264,6 +271,7 @@ func generateVersionToken() string {
 		// Fallback to timestamp if crypto/rand fails
 		return fmt.Sprintf("%x", time.Now().UnixNano())
 	}
+
 	return hex.EncodeToString(b)
 }
 
@@ -271,38 +279,39 @@ func generateVersionToken() string {
 func splitPath(p string) (dir, name string) {
 	dir = path.Dir(p)
 	name = path.Base(p)
+
 	return
 }
 
 // validateNamespace validates that the namespace provided is supported (single-level)
 func validateNamespace(namespace []string) (string, error) {
 	if len(namespace) == 0 {
-		return "", fmt.Errorf("namespace is required")
+		return "", errors.New("namespace is required")
 	}
 	if len(namespace) > 1 {
-		return "", fmt.Errorf("multi-level namespaces are not supported")
+		return "", errors.New("multi-level namespaces are not supported")
 	}
 	name := namespace[0]
 	if len(name) < 1 || len(name) > 255 {
-		return "", fmt.Errorf("namespace name must be between 1 and 255 characters")
+		return "", errors.New("namespace name must be between 1 and 255 characters")
 	}
 
 	// Prevent path traversal and multi-segment paths
 	if name == "." || name == ".." {
-		return "", fmt.Errorf("namespace name cannot be '.' or '..'")
+		return "", errors.New("namespace name cannot be '.' or '..'")
 	}
 	if strings.Contains(name, "/") {
-		return "", fmt.Errorf("namespace name cannot contain '/'")
+		return "", errors.New("namespace name cannot contain '/'")
 	}
 
 	// Must start and end with a letter or digit
 	start := name[0]
 	end := name[len(name)-1]
 	if !((start >= 'a' && start <= 'z') || (start >= '0' && start <= '9')) {
-		return "", fmt.Errorf("namespace name must start with a letter or digit")
+		return "", errors.New("namespace name must start with a letter or digit")
 	}
 	if !((end >= 'a' && end <= 'z') || (end >= '0' && end <= '9')) {
-		return "", fmt.Errorf("namespace name must end with a letter or digit")
+		return "", errors.New("namespace name must end with a letter or digit")
 	}
 
 	// Allowed characters: a-z, 0-9, _
@@ -310,12 +319,13 @@ func validateNamespace(namespace []string) (string, error) {
 		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' {
 			continue
 		}
-		return "", fmt.Errorf("invalid namespace name: only 'a-z', '0-9', and '_' are allowed")
+
+		return "", errors.New("invalid namespace name: only 'a-z', '0-9', and '_' are allowed")
 	}
 
 	// Reserved prefix
 	if strings.HasPrefix(name, "aws") {
-		return "", fmt.Errorf("namespace name cannot start with reserved prefix 'aws'")
+		return "", errors.New("namespace name cannot start with reserved prefix 'aws'")
 	}
 
 	return name, nil
@@ -329,16 +339,16 @@ func ValidateNamespace(namespace []string) (string, error) {
 // validateTableName validates a table name
 func validateTableName(name string) (string, error) {
 	if len(name) < 1 || len(name) > 255 {
-		return "", fmt.Errorf("table name must be between 1 and 255 characters")
+		return "", errors.New("table name must be between 1 and 255 characters")
 	}
 	if name == "." || name == ".." || strings.Contains(name, "/") {
-		return "", fmt.Errorf("invalid table name: cannot be '.', '..' or contain '/'")
+		return "", errors.New("invalid table name: cannot be '.', '..' or contain '/'")
 	}
 
 	// First character must be a letter or digit
 	start := name[0]
 	if !((start >= 'a' && start <= 'z') || (start >= '0' && start <= '9')) {
-		return "", fmt.Errorf("table name must start with a letter or digit")
+		return "", errors.New("table name must start with a letter or digit")
 	}
 
 	// Allowed characters: a-z, 0-9, _
@@ -346,8 +356,10 @@ func validateTableName(name string) (string, error) {
 		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' {
 			continue
 		}
-		return "", fmt.Errorf("invalid table name: only 'a-z', '0-9', and '_' are allowed")
+
+		return "", errors.New("invalid table name: only 'a-z', '0-9', and '_' are allowed")
 	}
+
 	return name, nil
 }
 
@@ -361,5 +373,6 @@ func flattenNamespace(namespace []string) string {
 	if len(namespace) == 0 {
 		return ""
 	}
+
 	return strings.Join(namespace, ".")
 }

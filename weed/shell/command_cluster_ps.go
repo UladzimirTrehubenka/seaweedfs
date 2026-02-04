@@ -41,7 +41,6 @@ func (c *commandClusterPs) HasTag(CommandTag) bool {
 }
 
 func (c *commandClusterPs) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	clusterPsCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	if err = clusterPsCommand.Parse(args); err != nil {
 		return nil
@@ -60,11 +59,12 @@ func (c *commandClusterPs) Do(args []string, commandEnv *CommandEnv, writer io.W
 			return err
 		}
 
-		filerNodes = resp.ClusterNodes
+		filerNodes = resp.GetClusterNodes()
+
 		return err
 	})
 	if err != nil {
-		return
+		return err
 	}
 
 	// get the list of message queue brokers
@@ -77,22 +77,23 @@ func (c *commandClusterPs) Do(args []string, commandEnv *CommandEnv, writer io.W
 			return err
 		}
 
-		mqBrokerNodes = resp.ClusterNodes
+		mqBrokerNodes = resp.GetClusterNodes()
+
 		return err
 	})
 	if err != nil {
-		return
+		return err
 	}
 
 	if len(mqBrokerNodes) > 0 {
 		fmt.Fprintf(writer, "* message queue brokers %d\n", len(mqBrokerNodes))
 		for _, node := range mqBrokerNodes {
-			fmt.Fprintf(writer, "  * %s (%v)\n", node.Address, node.Version)
-			if node.DataCenter != "" {
-				fmt.Fprintf(writer, "    DataCenter: %v\n", node.DataCenter)
+			fmt.Fprintf(writer, "  * %s (%v)\n", node.GetAddress(), node.GetVersion())
+			if node.GetDataCenter() != "" {
+				fmt.Fprintf(writer, "    DataCenter: %v\n", node.GetDataCenter())
 			}
-			if node.Rack != "" {
-				fmt.Fprintf(writer, "    Rack: %v\n", node.Rack)
+			if node.GetRack() != "" {
+				fmt.Fprintf(writer, "    Rack: %v\n", node.GetRack())
 			}
 		}
 	}
@@ -100,40 +101,42 @@ func (c *commandClusterPs) Do(args []string, commandEnv *CommandEnv, writer io.W
 	filerSignatures := make(map[*master_pb.ListClusterNodesResponse_ClusterNode]int32)
 	fmt.Fprintf(writer, "* filers %d\n", len(filerNodes))
 	for _, node := range filerNodes {
-		fmt.Fprintf(writer, "  * %s (%v) %v\n", node.Address, node.Version, time.Unix(0, node.CreatedAtNs).UTC())
-		if node.DataCenter != "" {
-			fmt.Fprintf(writer, "    DataCenter: %v\n", node.DataCenter)
+		fmt.Fprintf(writer, "  * %s (%v) %v\n", node.GetAddress(), node.GetVersion(), time.Unix(0, node.GetCreatedAtNs()).UTC())
+		if node.GetDataCenter() != "" {
+			fmt.Fprintf(writer, "    DataCenter: %v\n", node.GetDataCenter())
 		}
-		if node.Rack != "" {
-			fmt.Fprintf(writer, "    Rack: %v\n", node.Rack)
+		if node.GetRack() != "" {
+			fmt.Fprintf(writer, "    Rack: %v\n", node.GetRack())
 		}
-		pb.WithFilerClient(false, 0, pb.ServerAddress(node.Address), commandEnv.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+		pb.WithFilerClient(false, 0, pb.ServerAddress(node.GetAddress()), commandEnv.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 			if err == nil {
-				if resp.FilerGroup != "" {
-					fmt.Fprintf(writer, "    filer group: %s\n", resp.FilerGroup)
+				if resp.GetFilerGroup() != "" {
+					fmt.Fprintf(writer, "    filer group: %s\n", resp.GetFilerGroup())
 				}
-				fmt.Fprintf(writer, "    signature: %d\n", resp.Signature)
-				filerSignatures[node] = resp.Signature
+				fmt.Fprintf(writer, "    signature: %d\n", resp.GetSignature())
+				filerSignatures[node] = resp.GetSignature()
 			} else {
 				fmt.Fprintf(writer, "    failed to connect: %v\n", err)
 			}
+
 			return err
 		})
 	}
 	for _, node := range filerNodes {
-		pb.WithFilerClient(false, 0, pb.ServerAddress(node.Address), commandEnv.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-			fmt.Fprintf(writer, "* filer %s metadata sync time\n", node.Address)
+		pb.WithFilerClient(false, 0, pb.ServerAddress(node.GetAddress()), commandEnv.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+			fmt.Fprintf(writer, "* filer %s metadata sync time\n", node.GetAddress())
 			selfSignature := filerSignatures[node]
 			for peer, peerSignature := range filerSignatures {
 				if selfSignature == peerSignature {
 					continue
 				}
-				if resp, err := client.KvGet(context.Background(), &filer_pb.KvGetRequest{Key: filer.GetPeerMetaOffsetKey(peerSignature)}); err == nil && len(resp.Value) == 8 {
-					lastTsNs := int64(util.BytesToUint64(resp.Value))
-					fmt.Fprintf(writer, "    %s: %v\n", peer.Address, time.Unix(0, lastTsNs).UTC())
+				if resp, err := client.KvGet(context.Background(), &filer_pb.KvGetRequest{Key: filer.GetPeerMetaOffsetKey(peerSignature)}); err == nil && len(resp.GetValue()) == 8 {
+					lastTsNs := int64(util.BytesToUint64(resp.GetValue()))
+					fmt.Fprintf(writer, "    %s: %v\n", peer.GetAddress(), time.Unix(0, lastTsNs).UTC())
 				}
 			}
+
 			return nil
 		})
 	}
@@ -144,25 +147,26 @@ func (c *commandClusterPs) Do(args []string, commandEnv *CommandEnv, writer io.W
 	if err != nil {
 		return err
 	}
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
 				volumeServers = append(volumeServers, pb.NewServerAddressFromDataNode(dn))
 			}
 		}
 	}
 
 	fmt.Fprintf(writer, "* volume servers %d\n", len(volumeServers))
-	for _, dc := range t.DataCenterInfos {
-		fmt.Fprintf(writer, "  * data center: %s\n", dc.Id)
-		for _, r := range dc.RackInfos {
-			fmt.Fprintf(writer, "    * rack: %s\n", r.Id)
-			for _, dn := range r.DataNodeInfos {
+	for _, dc := range t.GetDataCenterInfos() {
+		fmt.Fprintf(writer, "  * data center: %s\n", dc.GetId())
+		for _, r := range dc.GetRackInfos() {
+			fmt.Fprintf(writer, "    * rack: %s\n", r.GetId())
+			for _, dn := range r.GetDataNodeInfos() {
 				pb.WithVolumeServerClient(false, pb.NewServerAddressFromDataNode(dn), commandEnv.option.GrpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
 					resp, err := client.VolumeServerStatus(context.Background(), &volume_server_pb.VolumeServerStatusRequest{})
 					if err == nil {
-						fmt.Fprintf(writer, "      * %s (%v)\n", dn.Id, resp.Version)
+						fmt.Fprintf(writer, "      * %s (%v)\n", dn.GetId(), resp.GetVersion())
 					}
+
 					return err
 				})
 			}

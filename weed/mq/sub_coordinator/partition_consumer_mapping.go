@@ -115,6 +115,7 @@ func doBalanceSticky(partitions []*pub_balancer.PartitionSlotToBroker, consumerI
 					if consumerInstanceIdsIndex >= len(consumerInstances) {
 						consumerInstanceIdsIndex = 0
 					}
+
 					break
 				} else {
 					consumerInstanceIdsIndex++

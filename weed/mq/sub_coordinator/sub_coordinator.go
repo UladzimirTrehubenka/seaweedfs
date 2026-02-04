@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer_client"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
@@ -41,6 +42,7 @@ func (c *SubCoordinator) GetTopicConsumerGroups(topic *schema_pb.Topic, createIf
 			tcg, _ = c.TopicSubscribers.Get(topicName)
 		}
 	}
+
 	return tcg
 }
 func (c *SubCoordinator) RemoveTopic(topic *schema_pb.Topic) {
@@ -49,52 +51,54 @@ func (c *SubCoordinator) RemoveTopic(topic *schema_pb.Topic) {
 }
 
 func toTopicName(topic *schema_pb.Topic) string {
-	topicName := topic.Namespace + "." + topic.Name
+	topicName := topic.GetNamespace() + "." + topic.GetName()
+
 	return topicName
 }
 
 func (c *SubCoordinator) AddSubscriber(initMessage *mq_pb.SubscriberToSubCoordinatorRequest_InitMessage) (*ConsumerGroup, *ConsumerGroupInstance, error) {
-	tcg := c.GetTopicConsumerGroups(initMessage.Topic, true)
-	cg, _ := tcg.ConsumerGroups.Get(initMessage.ConsumerGroup)
+	tcg := c.GetTopicConsumerGroups(initMessage.GetTopic(), true)
+	cg, _ := tcg.ConsumerGroups.Get(initMessage.GetConsumerGroup())
 	if cg == nil {
-		cg = NewConsumerGroup(initMessage.Topic, initMessage.RebalanceSeconds, c.FilerClientAccessor)
+		cg = NewConsumerGroup(initMessage.GetTopic(), initMessage.GetRebalanceSeconds(), c.FilerClientAccessor)
 		if cg != nil {
-			tcg.ConsumerGroups.SetIfAbsent(initMessage.ConsumerGroup, cg)
+			tcg.ConsumerGroups.SetIfAbsent(initMessage.GetConsumerGroup(), cg)
 		}
-		cg, _ = tcg.ConsumerGroups.Get(initMessage.ConsumerGroup)
+		cg, _ = tcg.ConsumerGroups.Get(initMessage.GetConsumerGroup())
 	}
 	if cg == nil {
-		return nil, nil, fmt.Errorf("fail to create consumer group %s: topic %s not found", initMessage.ConsumerGroup, initMessage.Topic)
+		return nil, nil, fmt.Errorf("fail to create consumer group %s: topic %s not found", initMessage.GetConsumerGroup(), initMessage.GetTopic())
 	}
-	cgi, _ := cg.ConsumerGroupInstances.Get(initMessage.ConsumerGroupInstanceId)
+	cgi, _ := cg.ConsumerGroupInstances.Get(initMessage.GetConsumerGroupInstanceId())
 	if cgi == nil {
-		cgi = NewConsumerGroupInstance(initMessage.ConsumerGroupInstanceId, initMessage.MaxPartitionCount)
-		if !cg.ConsumerGroupInstances.SetIfAbsent(initMessage.ConsumerGroupInstanceId, cgi) {
-			cgi, _ = cg.ConsumerGroupInstances.Get(initMessage.ConsumerGroupInstanceId)
+		cgi = NewConsumerGroupInstance(initMessage.GetConsumerGroupInstanceId(), initMessage.GetMaxPartitionCount())
+		if !cg.ConsumerGroupInstances.SetIfAbsent(initMessage.GetConsumerGroupInstanceId(), cgi) {
+			cgi, _ = cg.ConsumerGroupInstances.Get(initMessage.GetConsumerGroupInstanceId())
 		}
 	}
-	cgi.MaxPartitionCount = initMessage.MaxPartitionCount
+	cgi.MaxPartitionCount = initMessage.GetMaxPartitionCount()
 	cg.Market.AddConsumerInstance(cgi)
+
 	return cg, cgi, nil
 }
 
 func (c *SubCoordinator) RemoveSubscriber(initMessage *mq_pb.SubscriberToSubCoordinatorRequest_InitMessage) {
-	tcg := c.GetTopicConsumerGroups(initMessage.Topic, false)
+	tcg := c.GetTopicConsumerGroups(initMessage.GetTopic(), false)
 	if tcg == nil {
 		return
 	}
-	cg, _ := tcg.ConsumerGroups.Get(initMessage.ConsumerGroup)
+	cg, _ := tcg.ConsumerGroups.Get(initMessage.GetConsumerGroup())
 	if cg == nil {
 		return
 	}
-	cg.ConsumerGroupInstances.Remove(initMessage.ConsumerGroupInstanceId)
-	cg.Market.RemoveConsumerInstance(ConsumerGroupInstanceId(initMessage.ConsumerGroupInstanceId))
+	cg.ConsumerGroupInstances.Remove(initMessage.GetConsumerGroupInstanceId())
+	cg.Market.RemoveConsumerInstance(ConsumerGroupInstanceId(initMessage.GetConsumerGroupInstanceId()))
 	if cg.ConsumerGroupInstances.Count() == 0 {
-		tcg.ConsumerGroups.Remove(initMessage.ConsumerGroup)
+		tcg.ConsumerGroups.Remove(initMessage.GetConsumerGroup())
 		cg.Shutdown()
 	}
 	if tcg.ConsumerGroups.Count() == 0 {
-		c.RemoveTopic(initMessage.Topic)
+		c.RemoveTopic(initMessage.GetTopic())
 	}
 }
 

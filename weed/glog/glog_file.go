@@ -70,7 +70,7 @@ func init() {
 	}
 
 	// Sanitize userName since it may contain filepath separators on Windows.
-	userName = strings.Replace(userName, `\`, "_", -1)
+	userName = strings.ReplaceAll(userName, `\`, "_")
 }
 
 // shortHostname returns its argument, truncating at the first period.
@@ -79,6 +79,7 @@ func shortHostname(hostname string) string {
 	if i := strings.Index(hostname, "."); i >= 0 {
 		return hostname[:i]
 	}
+
 	return hostname
 }
 
@@ -97,6 +98,7 @@ func logName(tag string, t time.Time) (name, link string) {
 		t.Minute(),
 		t.Second(),
 		pid)
+
 	return name, program + "." + tag
 }
 
@@ -124,7 +126,6 @@ func create(tag string, t time.Time) (f *os.File, filename string, err error) {
 	logPrefix := prefix(tag)
 	var lastErr error
 	for _, dir := range logDirs {
-
 		// remove old logs
 		entries, _ := os.ReadDir(dir)
 		var previousLogs []string
@@ -150,9 +151,11 @@ func create(tag string, t time.Time) (f *os.File, filename string, err error) {
 			symlink := filepath.Join(dir, link)
 			os.Remove(symlink)        // ignore err
 			os.Symlink(name, symlink) // ignore err
+
 			return f, fname, nil
 		}
 		lastErr = err
 	}
+
 	return nil, "", fmt.Errorf("log: cannot create log: %w", lastErr)
 }

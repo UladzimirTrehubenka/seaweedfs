@@ -10,6 +10,7 @@ import (
 // handlePutToFilerError logs an error and returns the standard putToFiler error format
 func handlePutToFilerError(operation string, err error, errorCode s3err.ErrorCode) (string, s3err.ErrorCode, string) {
 	glog.Errorf("Failed to %s: %v", operation, err)
+
 	return "", errorCode, ""
 }
 
@@ -19,19 +20,21 @@ func handlePutToFilerInternalError(operation string, err error) (string, s3err.E
 }
 
 // handleMultipartError logs an error and returns the standard multipart error format
-func handleMultipartError(operation string, err error, errorCode s3err.ErrorCode) (interface{}, s3err.ErrorCode) {
+func handleMultipartError(operation string, err error, errorCode s3err.ErrorCode) (any, s3err.ErrorCode) {
 	glog.Errorf("Failed to %s: %v", operation, err)
+
 	return nil, errorCode
 }
 
 // handleMultipartInternalError is a convenience wrapper for internal errors in multipart operations
-func handleMultipartInternalError(operation string, err error) (interface{}, s3err.ErrorCode) {
+func handleMultipartInternalError(operation string, err error) (any, s3err.ErrorCode) {
 	return handleMultipartError(operation, err, s3err.ErrInternalError)
 }
 
 // logErrorAndReturn logs an error with operation context and returns the specified error code
 func logErrorAndReturn(operation string, err error, errorCode s3err.ErrorCode) s3err.ErrorCode {
 	glog.Errorf("Failed to %s: %v", operation, err)
+
 	return errorCode
 }
 
@@ -45,6 +48,7 @@ func logInternalError(operation string, err error) s3err.ErrorCode {
 // handleSSEError handles common SSE-related errors with appropriate context
 func handleSSEError(sseType string, operation string, err error, errorCode s3err.ErrorCode) (string, s3err.ErrorCode, string) {
 	glog.Errorf("Failed to %s for %s: %v", operation, sseType, err)
+
 	return "", errorCode, ""
 }
 

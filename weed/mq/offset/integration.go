@@ -1,6 +1,7 @@
 package offset
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -43,7 +44,6 @@ func (integration *SMQOffsetIntegration) PublishRecord(
 	key []byte,
 	value *schema_pb.RecordValue,
 ) (*mq_agent_pb.PublishRecordResponse, error) {
-
 	// Assign offset for this record
 	result := integration.offsetAssigner.AssignSingleOffset(namespace, topicName, partition)
 	if result.Error != nil {
@@ -72,7 +72,6 @@ func (integration *SMQOffsetIntegration) PublishRecordBatch(
 	partition *schema_pb.Partition,
 	records []PublishRecordRequest,
 ) (*mq_agent_pb.PublishRecordResponse, error) {
-
 	if len(records) == 0 {
 		return &mq_agent_pb.PublishRecordResponse{
 			Error: "Empty record batch",
@@ -108,7 +107,6 @@ func (integration *SMQOffsetIntegration) CreateSubscription(
 	offsetType schema_pb.OffsetType,
 	startOffset int64,
 ) (*OffsetSubscription, error) {
-
 	return integration.offsetSubscriber.CreateSubscription(
 		subscriptionID,
 		namespace, topicName,
@@ -123,9 +121,8 @@ func (integration *SMQOffsetIntegration) SubscribeRecords(
 	subscription *OffsetSubscription,
 	maxRecords int64,
 ) ([]*mq_agent_pb.SubscribeRecordResponse, error) {
-
 	if !subscription.IsActive {
-		return nil, fmt.Errorf("subscription is not active")
+		return nil, errors.New("subscription is not active")
 	}
 
 	// Get the range of offsets to read
@@ -143,11 +140,11 @@ func (integration *SMQOffsetIntegration) SubscribeRecords(
 	// For now, return mock responses with offset information
 	responses := make([]*mq_agent_pb.SubscribeRecordResponse, offsetRange.Count)
 
-	for i := int64(0); i < offsetRange.Count; i++ {
+	for i := range int64(offsetRange.Count) {
 		offset := offsetRange.StartOffset + i
 
 		responses[i] = &mq_agent_pb.SubscribeRecordResponse{
-			Key:           []byte(fmt.Sprintf("key-%d", offset)),
+			Key:           fmt.Appendf(nil, "key-%d", offset),
 			Value:         &schema_pb.RecordValue{}, // Mock value
 			TsNs:          offset * 1000000,         // Mock timestamp based on offset
 			Offset:        offset,
@@ -173,7 +170,6 @@ func (integration *SMQOffsetIntegration) SeekSubscription(
 	subscriptionID string,
 	offset int64,
 ) error {
-
 	subscription, err := integration.offsetSubscriber.GetSubscription(subscriptionID)
 	if err != nil {
 		return fmt.Errorf("subscription not found: %w", err)
@@ -203,7 +199,6 @@ func (integration *SMQOffsetIntegration) ValidateOffsetRange(
 	partition *schema_pb.Partition,
 	startOffset, endOffset int64,
 ) error {
-
 	return integration.offsetSeeker.ValidateOffsetRange(namespace, topicName, partition, startOffset, endOffset)
 }
 
@@ -267,7 +262,6 @@ func (integration *SMQOffsetIntegration) GetOffsetInfo(
 	partition *schema_pb.Partition,
 	offset int64,
 ) (*OffsetInfo, error) {
-
 	hwm, err := integration.GetHighWaterMark(namespace, topicName, partition)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get high water mark: %w", err)

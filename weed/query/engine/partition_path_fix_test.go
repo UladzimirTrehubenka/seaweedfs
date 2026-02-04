@@ -21,7 +21,7 @@ func TestPartitionPathHandling(t *testing.T) {
 
 		partitions, err := engine.discoverTopicPartitions("test", "user_events")
 		assert.NoError(t, err, "Should discover partitions without error")
-		assert.Equal(t, 2, len(partitions), "Should return 2 partitions")
+		assert.Len(t, partitions, 2, "Should return 2 partitions")
 		assert.Contains(t, partitions[0], "/topics/test/user_events/", "Should contain absolute path")
 	})
 
@@ -34,8 +34,8 @@ func TestPartitionPathHandling(t *testing.T) {
 
 		partitions, err := engine.discoverTopicPartitions("test", "user_events")
 		assert.NoError(t, err, "Should discover partitions without error")
-		assert.Equal(t, 2, len(partitions), "Should return 2 partitions")
-		assert.True(t, !strings.HasPrefix(partitions[0], "/topics/"), "Should be relative path")
+		assert.Len(t, partitions, 2, "Should return 2 partitions")
+		assert.False(t, strings.HasPrefix(partitions[0], "/topics/"), "Should be relative path")
 	})
 
 	t.Run("Partition path building logic works correctly", func(t *testing.T) {

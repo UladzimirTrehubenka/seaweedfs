@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,7 +34,6 @@ func (c *commandS3BucketQuota) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3BucketQuota) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	bucketName := bucketCommand.String("name", "", "bucket name")
 	operationName := bucketCommand.String("op", "set", "operation name [set|get|remove|enable|disable]")
@@ -43,43 +43,43 @@ func (c *commandS3BucketQuota) Do(args []string, commandEnv *CommandEnv, writer 
 	}
 
 	if *bucketName == "" {
-		return fmt.Errorf("empty bucket name")
+		return errors.New("empty bucket name")
 	}
 
 	err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		ctx := context.Background()
 
 		resp, err := client.GetFilerConfiguration(ctx, &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
 			return fmt.Errorf("get filer configuration: %w", err)
 		}
-		filerBucketsPath := resp.DirBuckets
+		filerBucketsPath := resp.GetDirBuckets()
 
 		lookupResp, err := client.LookupDirectoryEntry(ctx, &filer_pb.LookupDirectoryEntryRequest{
 			Directory: filerBucketsPath,
 			Name:      *bucketName,
 		})
 		if err != nil {
-			return fmt.Errorf("did not find bucket %s: %v", *bucketName, err)
+			return fmt.Errorf("did not find bucket %s: %w", *bucketName, err)
 		}
-		bucketEntry := lookupResp.Entry
+		bucketEntry := lookupResp.GetEntry()
 
 		switch *operationName {
 		case "set":
 			bucketEntry.Quota = *sizeMB * 1024 * 1024
 		case "get":
-			fmt.Fprintf(writer, "bucket quota: %dMiB \n", bucketEntry.Quota/1024/1024)
+			fmt.Fprintf(writer, "bucket quota: %dMiB \n", bucketEntry.GetQuota()/1024/1024)
+
 			return nil
 		case "remove":
 			bucketEntry.Quota = 0
 		case "enable":
-			if bucketEntry.Quota < 0 {
-				bucketEntry.Quota = -bucketEntry.Quota
+			if bucketEntry.GetQuota() < 0 {
+				bucketEntry.Quota = -bucketEntry.GetQuota()
 			}
 		case "disable":
-			if bucketEntry.Quota > 0 {
-				bucketEntry.Quota = -bucketEntry.Quota
+			if bucketEntry.GetQuota() > 0 {
+				bucketEntry.Quota = -bucketEntry.GetQuota()
 			}
 		}
 
@@ -93,9 +93,7 @@ func (c *commandS3BucketQuota) Do(args []string, commandEnv *CommandEnv, writer 
 		println("updated quota for bucket", *bucketName)
 
 		return nil
-
 	})
 
 	return err
-
 }

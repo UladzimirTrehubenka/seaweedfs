@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	flatbuffers "github.com/google/flatbuffers/go"
-	"github.com/seaweedfs/seaweedfs/weed/pb/message_fbs"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/message_fbs"
 )
 
 func TestMessageSerde(t *testing.T) {
@@ -57,5 +58,4 @@ func TestMessageSerde(t *testing.T) {
 
 	assert.Equal(t, int32(0), m.SeqDelta())
 	assert.Equal(t, int32(0), m.TsMsDelta())
-
 }

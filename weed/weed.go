@@ -18,6 +18,7 @@ import (
 	flag "github.com/seaweedfs/seaweedfs/weed/util/fla9"
 
 	"github.com/getsentry/sentry-go"
+
 	"github.com/seaweedfs/seaweedfs/weed/command"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
@@ -83,6 +84,7 @@ func main() {
 				cmd.Flag.PrintDefaults()
 			}
 		}
+
 		return
 	}
 	if args[0] != command.GetFuseCommandName() {
@@ -103,6 +105,7 @@ func main() {
 				setExitStatus(1)
 			}
 			exit()
+
 			return
 		}
 	}
@@ -134,7 +137,7 @@ var helpTemplate = `{{if .Runnable}}Usage: weed {{.UsageLine}}
 `
 
 // tmpl executes the given template text on data, writing the result to w.
-func tmpl(w io.Writer, text string, data interface{}) {
+func tmpl(w io.Writer, text string, data any) {
 	t := template.New("top")
 	t.Funcs(template.FuncMap{"trim": strings.TrimSpace, "capitalize": capitalize})
 	template.Must(t.Parse(text))
@@ -148,6 +151,7 @@ func capitalize(s string) string {
 		return s
 	}
 	r, n := utf8.DecodeRuneInString(s)
+
 	return string(unicode.ToTitle(r)) + s[n:]
 }
 
@@ -207,6 +211,6 @@ func exit() {
 	os.Exit(exitStatus)
 }
 
-func debug(params ...interface{}) {
+func debug(params ...any) {
 	glog.V(4).Infoln(params...)
 }

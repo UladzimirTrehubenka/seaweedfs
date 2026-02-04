@@ -17,6 +17,7 @@ func GenCipherKey() CipherKey {
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		glog.Fatalf("random key gen: %v", err)
 	}
+
 	return CipherKey(key)
 }
 
@@ -56,5 +57,6 @@ func Decrypt(ciphertext []byte, key CipherKey) ([]byte, error) {
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+
 	return gcm.Open(nil, nonce, ciphertext, nil)
 }

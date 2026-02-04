@@ -25,7 +25,7 @@ func (s3a *S3ApiServer) executeUnifiedCopyStrategy(entry *filer_pb.Entry, r *htt
 	s3a.applyCopyBucketDefaultEncryption(state, dstBucket)
 
 	// Determine copy strategy
-	strategy, err := DetermineUnifiedCopyStrategy(state, entry.Extended, r)
+	strategy, err := DetermineUnifiedCopyStrategy(state, entry.GetExtended(), r)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -42,6 +42,7 @@ func (s3a *S3ApiServer) executeUnifiedCopyStrategy(entry *filer_pb.Entry, r *htt
 	switch strategy {
 	case CopyStrategyDirect:
 		chunks, err := s3a.copyChunks(entry, dstPath)
+
 		return chunks, nil, err
 
 	case CopyStrategyKeyRotation:
@@ -118,16 +119,18 @@ func (s3a *S3ApiServer) executeEncryptCopy(entry *filer_pb.Entry, r *http.Reques
 	if state.DstSSEKMS {
 		// Use existing SSE-KMS copy logic - metadata is now generated internally
 		chunks, dstMetadata, err := s3a.copyChunksWithSSEKMS(entry, r, dstBucket, dstPath)
+
 		return chunks, dstMetadata, err
 	}
 
 	if state.DstSSES3 {
 		// Use chunk-by-chunk copy for SSE-S3 encryption (consistent with SSE-C and SSE-KMS)
 		glog.V(2).Infof("Plain→SSE-S3 copy: using unified multipart encrypt copy")
+
 		return s3a.copyMultipartCrossEncryption(entry, r, state, dstBucket, dstPath)
 	}
 
-	return nil, nil, fmt.Errorf("unknown target encryption type")
+	return nil, nil, errors.New("unknown target encryption type")
 }
 
 // executeDecryptCopy handles encrypted → plain copies
@@ -135,10 +138,11 @@ func (s3a *S3ApiServer) executeDecryptCopy(entry *filer_pb.Entry, r *http.Reques
 	// Use unified multipart-aware decrypt copy for all encryption types (consistent chunk-by-chunk)
 	if state.SrcSSEC || state.SrcSSEKMS || state.SrcSSES3 {
 		glog.V(2).Infof("Encrypted→Plain copy: using unified multipart decrypt copy")
+
 		return s3a.copyMultipartCrossEncryption(entry, r, state, "", dstPath)
 	}
 
-	return nil, nil, fmt.Errorf("unknown source encryption type")
+	return nil, nil, errors.New("unknown source encryption type")
 }
 
 // executeReencryptCopy handles encrypted → encrypted copies with different keys/methods
@@ -151,12 +155,14 @@ func (s3a *S3ApiServer) executeReencryptCopy(entry *filer_pb.Entry, r *http.Requ
 	if state.SrcSSEKMS && state.DstSSEKMS {
 		// Use existing SSE-KMS copy logic - metadata is now generated internally
 		chunks, dstMetadata, err := s3a.copyChunksWithSSEKMS(entry, r, dstBucket, dstPath)
+
 		return chunks, dstMetadata, err
 	}
 
 	// All other cross-encryption scenarios use unified multipart copy
 	// This includes: SSE-C↔SSE-KMS, SSE-C↔SSE-S3, SSE-KMS↔SSE-S3, SSE-S3↔SSE-S3
 	glog.V(2).Infof("Cross-encryption copy: using unified multipart copy")
+
 	return s3a.copyMultipartCrossEncryption(entry, r, state, dstBucket, dstPath)
 }
 
@@ -165,7 +171,7 @@ func (s3a *S3ApiServer) applyCopyBucketDefaultEncryption(state *EncryptionState,
 	if !state.IsTargetEncrypted() {
 		bucketMetadata, err := s3a.getBucketMetadata(dstBucket)
 		if err == nil && bucketMetadata != nil && bucketMetadata.Encryption != nil {
-			switch bucketMetadata.Encryption.SseAlgorithm {
+			switch bucketMetadata.Encryption.GetSseAlgorithm() {
 			case "aws:kms":
 				state.DstSSEKMS = true
 			case "AES256":

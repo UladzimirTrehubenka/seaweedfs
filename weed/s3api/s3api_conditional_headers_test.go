@@ -472,7 +472,7 @@ func TestConditionalHeadersForReads(t *testing.T) {
 // Helper function to create a GET request for testing
 func createTestGetRequest(bucket, object string) *http.Request {
 	return &http.Request{
-		Method: "GET",
+		Method: http.MethodGet,
 		Header: make(http.Header),
 		URL: &url.URL{
 			Path: fmt.Sprintf("/%s/%s", bucket, object),
@@ -760,7 +760,7 @@ func TestConditionalHeadersIntegration(t *testing.T) {
 
 // createTestPutRequest creates a test HTTP PUT request
 func createTestPutRequest(bucket, object, content string) *http.Request {
-	req, _ := http.NewRequest("PUT", "/"+bucket+object, bytes.NewReader([]byte(content)))
+	req, _ := http.NewRequest(http.MethodPut, "/"+bucket+object, bytes.NewReader([]byte(content)))
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	// Set up mux vars to simulate the bucket and object extraction
@@ -792,6 +792,7 @@ func (m *MockEntryGetter) getEntry(parentDirectoryPath, entryName string) (*file
 	if m.mockEntry != nil {
 		return m.mockEntry, nil
 	}
+
 	return nil, filer_pb.ErrNotFound
 }
 
@@ -833,7 +834,7 @@ func TestConditionalHeadersMultipartUpload(t *testing.T) {
 
 		// Create a mock CompleteMultipartUpload request with If-None-Match: *
 		req := &http.Request{
-			Method: "POST",
+			Method: http.MethodPost,
 			Header: make(http.Header),
 			URL: &url.URL{
 				RawQuery: "uploadId=test-upload-id",
@@ -853,7 +854,7 @@ func TestConditionalHeadersMultipartUpload(t *testing.T) {
 		getter := createMockEntryGetter(nil) // No existing object
 
 		req := &http.Request{
-			Method: "POST",
+			Method: http.MethodPost,
 			Header: make(http.Header),
 			URL: &url.URL{
 				RawQuery: "uploadId=test-upload-id",
@@ -873,7 +874,7 @@ func TestConditionalHeadersMultipartUpload(t *testing.T) {
 		getter := createMockEntryGetter(existingObject)
 
 		req := &http.Request{
-			Method: "POST",
+			Method: http.MethodPost,
 			Header: make(http.Header),
 			URL: &url.URL{
 				RawQuery: "uploadId=test-upload-id",
@@ -893,7 +894,7 @@ func TestConditionalHeadersMultipartUpload(t *testing.T) {
 		getter := createMockEntryGetter(nil) // No existing object
 
 		req := &http.Request{
-			Method: "POST",
+			Method: http.MethodPost,
 			Header: make(http.Header),
 			URL: &url.URL{
 				RawQuery: "uploadId=test-upload-id",
@@ -913,7 +914,7 @@ func TestConditionalHeadersMultipartUpload(t *testing.T) {
 		getter := createMockEntryGetter(existingObject)
 
 		req := &http.Request{
-			Method: "POST",
+			Method: http.MethodPost,
 			Header: make(http.Header),
 			URL: &url.URL{
 				RawQuery: "uploadId=test-upload-id",

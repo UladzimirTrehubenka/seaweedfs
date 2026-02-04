@@ -8,8 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 )
@@ -26,13 +27,13 @@ func ParseFileId(fid string) (vid string, key_cookie string, err error) {
 	if commaIndex <= 0 {
 		return "", "", errors.New("Wrong fid format.")
 	}
+
 	return fid[:commaIndex], fid[commaIndex+1:], nil
 }
 
 // DeleteFileIds batch deletes a list of fileIds
 // Returns individual results for each file ID. Check result.Error for per-file failures.
 func DeleteFileIds(masterFn GetMasterFn, usePublicUrl bool, grpcDialOption grpc.DialOption, fileIds []string) []*volume_server_pb.DeleteResult {
-
 	lookupFunc := func(vids []string) (results map[string]*LookupResult, err error) {
 		results, err = LookupVolumeIds(masterFn, grpcDialOption, vids)
 		if err == nil && usePublicUrl {
@@ -42,15 +43,14 @@ func DeleteFileIds(masterFn GetMasterFn, usePublicUrl bool, grpcDialOption grpc.
 				}
 			}
 		}
+
 		return
 	}
 
 	return DeleteFileIdsWithLookupVolumeId(grpcDialOption, fileIds, lookupFunc)
-
 }
 
 func DeleteFileIdsWithLookupVolumeId(grpcDialOption grpc.DialOption, fileIds []string, lookupFunc func(vid []string) (map[string]*LookupResult, error)) []*volume_server_pb.DeleteResult {
-
 	var ret []*volume_server_pb.DeleteResult
 
 	vid_to_fileIds := make(map[string][]string)
@@ -63,6 +63,7 @@ func DeleteFileIdsWithLookupVolumeId(grpcDialOption grpc.DialOption, fileIds []s
 				Status: http.StatusBadRequest,
 				Error:  err.Error()},
 			)
+
 			continue
 		}
 		if _, ok := vid_to_fileIds[vid]; !ok {
@@ -84,6 +85,7 @@ func DeleteFileIdsWithLookupVolumeId(grpcDialOption grpc.DialOption, fileIds []s
 				})
 			}
 		}
+
 		return ret
 	}
 
@@ -98,6 +100,7 @@ func DeleteFileIdsWithLookupVolumeId(grpcDialOption grpc.DialOption, fileIds []s
 					Error:  result.Error},
 				)
 			}
+
 			continue
 		}
 		for _, location := range result.Locations {
@@ -118,7 +121,6 @@ func DeleteFileIdsWithLookupVolumeId(grpcDialOption grpc.DialOption, fileIds []s
 			defer wg.Done()
 
 			resultChan <- DeleteFileIdsAtOneVolumeServer(server, grpcDialOption, fidList, false)
-
 		}(server, fidList)
 	}
 	wg.Wait()
@@ -134,11 +136,9 @@ func DeleteFileIdsWithLookupVolumeId(grpcDialOption grpc.DialOption, fileIds []s
 // DeleteFileIdsAtOneVolumeServer deletes a list of files that is on one volume server via gRpc
 // Returns individual results for each file ID. Check result.Error for per-file failures.
 func DeleteFileIdsAtOneVolumeServer(volumeServer pb.ServerAddress, grpcDialOption grpc.DialOption, fileIds []string, includeCookie bool) []*volume_server_pb.DeleteResult {
-
 	var ret []*volume_server_pb.DeleteResult
 
 	err := WithVolumeServerClient(false, volumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
-
 		req := &volume_server_pb.BatchDeleteRequest{
 			FileIds:         fileIds,
 			SkipCookieCheck: !includeCookie,
@@ -152,7 +152,7 @@ func DeleteFileIdsAtOneVolumeServer(volumeServer pb.ServerAddress, grpcDialOptio
 			return err
 		}
 
-		ret = append(ret, resp.Results...)
+		ret = append(ret, resp.GetResults()...)
 
 		return nil
 	})
@@ -170,5 +170,4 @@ func DeleteFileIdsAtOneVolumeServer(volumeServer pb.ServerAddress, grpcDialOptio
 	}
 
 	return ret
-
 }

@@ -1,6 +1,7 @@
 package erasure_coding
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,18 +21,19 @@ var (
 		if n != types.SizeSize {
 			return fmt.Errorf("sorted needle written %d bytes, expecting %d", n, types.SizeSize)
 		}
+
 		return nil
 	}
 )
 
 func (ev *EcVolume) DeleteNeedleFromEcx(needleId types.NeedleId) (err error) {
-
 	_, _, err = SearchNeedleFromSortedIndex(ev.ecxFile, ev.ecxFileSize, needleId, MarkNeedleDeleted)
 
 	if err != nil {
-		if err == NotFoundError {
+		if errors.Is(err, NotFoundError) {
 			return nil
 		}
+
 		return err
 	}
 
@@ -49,7 +51,6 @@ func (ev *EcVolume) DeleteNeedleFromEcx(needleId types.NeedleId) (err error) {
 }
 
 func RebuildEcxFile(baseFileName string) error {
-
 	if !util.FileExists(baseFileName + ".ecj") {
 		return nil
 	}
@@ -83,11 +84,11 @@ func RebuildEcxFile(baseFileName string) error {
 
 		_, _, err = SearchNeedleFromSortedIndex(ecxFile, ecxFileSize, needleId, MarkNeedleDeleted)
 
-		if err != nil && err != NotFoundError {
+		if err != nil && !errors.Is(err, NotFoundError) {
 			ecxFile.Close()
+
 			return err
 		}
-
 	}
 
 	ecxFile.Close()

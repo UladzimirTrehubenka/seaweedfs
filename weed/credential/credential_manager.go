@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/grpc"
 )
 
 // FilerAddressSetter is an interface for credential stores that need a dynamic filer address
@@ -31,6 +32,7 @@ func NewCredentialManager(storeName CredentialStoreTypeName, configuration util.
 	for _, s := range Stores {
 		if s.GetName() == storeName {
 			store = s
+
 			break
 		}
 	}
@@ -42,7 +44,7 @@ func NewCredentialManager(storeName CredentialStoreTypeName, configuration util.
 
 	// Initialize the store
 	if err := store.Initialize(configuration, prefix); err != nil {
-		return nil, fmt.Errorf("failed to initialize credential store '%s': %v", storeName, err)
+		return nil, fmt.Errorf("failed to initialize credential store '%s': %w", storeName, err)
 	}
 
 	return &CredentialManager{
@@ -71,6 +73,7 @@ func (cm *CredentialManager) GetStoreName() string {
 	if cm.store != nil {
 		return string(cm.store.GetName())
 	}
+
 	return ""
 }
 
@@ -177,6 +180,7 @@ func getAvailableStores() string {
 	for _, store := range Stores {
 		storeNames = append(storeNames, string(store.GetName()))
 	}
+
 	return strings.Join(storeNames, ", ")
 }
 
@@ -189,6 +193,7 @@ func GetAvailableStores() []CredentialStoreTypeName {
 	if storeNames == nil {
 		return []CredentialStoreTypeName{}
 	}
+
 	return storeNames
 }
 

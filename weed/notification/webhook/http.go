@@ -48,7 +48,7 @@ func (h *httpClient) sendMessage(message *webhookMessage) error {
 func (h *httpClient) sendMessageWithRetry(message *webhookMessage, depth int) error {
 	// Prevent infinite recursion
 	if depth > maxWebhookRetryDepth {
-		return fmt.Errorf("webhook max retry depth exceeded")
+		return errors.New("webhook max retry depth exceeded")
 	}
 
 	// Serialize the protobuf message to JSON for HTTP payload
@@ -57,7 +57,7 @@ func (h *httpClient) sendMessageWithRetry(message *webhookMessage, depth int) er
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"key":        message.Key,
 		"event_type": message.EventType,
 		"message":    json.RawMessage(notificationData),
@@ -104,6 +104,7 @@ func (h *httpClient) sendMessageWithRetry(message *webhookMessage, depth int) er
 		if usingCachedURL && depth == 0 {
 			glog.V(1).Infof("Webhook request to cached URL %s failed, clearing cache and retrying with original endpoint", targetURL)
 			h.setFinalURL("")
+
 			return h.sendMessageWithRetry(message, depth+1)
 		}
 
@@ -148,12 +149,14 @@ func (h *httpClient) sendMessageWithRetry(message *webhookMessage, depth int) er
 
 		glog.V(1).Infof("Webhook request to cached URL %s returned error %d, clearing cache and retrying with original endpoint", targetURL, resp.StatusCode)
 		h.setFinalURL("")
+
 		return h.sendMessageWithRetry(message, depth+1)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Drain and close response body before returning error to enable connection reuse
 		util_http.CloseResponse(resp)
+
 		return fmt.Errorf("webhook returned status code: %d", resp.StatusCode)
 	}
 

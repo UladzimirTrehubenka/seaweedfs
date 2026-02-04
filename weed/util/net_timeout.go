@@ -13,6 +13,7 @@ import (
 // parameters. On Accept, it will wrap the net.Conn with our own Conn for us.
 type Listener struct {
 	net.Listener
+
 	Timeout time.Duration
 }
 
@@ -26,6 +27,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 		Conn:    c,
 		Timeout: l.Timeout,
 	}
+
 	return tc, nil
 }
 
@@ -34,6 +36,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 // only times out when there's no activity in either direction.
 type Conn struct {
 	net.Conn
+
 	Timeout  time.Duration
 	isClosed bool
 }
@@ -42,8 +45,9 @@ type Conn struct {
 // This implements "no activity timeout" - any activity keeps the connection alive.
 func (c *Conn) extendDeadline() error {
 	if c.Timeout > 0 {
-		return c.Conn.SetDeadline(time.Now().Add(c.Timeout))
+		return c.SetDeadline(time.Now().Add(c.Timeout))
 	}
+
 	return nil
 }
 
@@ -56,6 +60,7 @@ func (c *Conn) Read(b []byte) (count int, e error) {
 	if e == nil {
 		stats.BytesIn(int64(count))
 	}
+
 	return
 }
 
@@ -68,6 +73,7 @@ func (c *Conn) Write(b []byte) (count int, e error) {
 	if e == nil {
 		stats.BytesOut(int64(count))
 	}
+
 	return
 }
 
@@ -79,6 +85,7 @@ func (c *Conn) Close() error {
 			c.isClosed = true
 		}
 	}
+
 	return err
 }
 
@@ -111,6 +118,7 @@ func NewIpAndLocalListeners(host string, port int, timeout time.Duration) (ipLis
 		listener, err = net.Listen("tcp", JoinHostPort("localhost", port))
 		if err != nil {
 			glog.V(0).Infof("skip starting on %s:%d: %v", host, port, err)
+
 			return ipListener, nil, nil
 		}
 

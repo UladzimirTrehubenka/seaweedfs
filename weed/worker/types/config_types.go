@@ -9,14 +9,14 @@ import (
 
 // WorkerConfig represents the configuration for a worker
 type WorkerConfig struct {
-	AdminServer         string                 `json:"admin_server"`
-	Capabilities        []TaskType             `json:"capabilities"`
-	MaxConcurrent       int                    `json:"max_concurrent"`
-	HeartbeatInterval   time.Duration          `json:"heartbeat_interval"`
-	TaskRequestInterval time.Duration          `json:"task_request_interval"`
-	BaseWorkingDir      string                 `json:"base_working_dir,omitempty"`
-	CustomParameters    map[string]interface{} `json:"custom_parameters,omitempty"`
-	GrpcDialOption      grpc.DialOption        `json:"-"` // Not serializable, for runtime use only
+	AdminServer         string          `json:"admin_server"`
+	Capabilities        []TaskType      `json:"capabilities"`
+	MaxConcurrent       int             `json:"max_concurrent"`
+	HeartbeatInterval   time.Duration   `json:"heartbeat_interval"`
+	TaskRequestInterval time.Duration   `json:"task_request_interval"`
+	BaseWorkingDir      string          `json:"base_working_dir,omitempty"`
+	CustomParameters    map[string]any  `json:"custom_parameters,omitempty"`
+	GrpcDialOption      grpc.DialOption `json:"-"` // Not serializable, for runtime use only
 }
 
 // MaintenanceConfig represents the configuration for the maintenance system
@@ -33,7 +33,7 @@ type MaintenanceConfig struct {
 // This is now dynamic - task configurations are stored by task type
 type MaintenancePolicy struct {
 	// Task-specific configurations indexed by task type
-	TaskConfigs map[TaskType]interface{} `json:"task_configs"`
+	TaskConfigs map[TaskType]any `json:"task_configs"`
 
 	// Global maintenance settings
 	GlobalSettings *GlobalMaintenanceSettings `json:"global_settings"`
@@ -126,6 +126,7 @@ func GetDefaultCapabilities() []TaskType {
 	// Return a copy to prevent modification
 	result := make([]TaskType, len(defaultCapabilities))
 	copy(result, defaultCapabilities)
+
 	return result
 }
 
@@ -158,7 +159,7 @@ func DefaultWorkerConfig() *WorkerConfig {
 // NewMaintenancePolicy creates a new dynamic maintenance policy
 func NewMaintenancePolicy() *MaintenancePolicy {
 	return &MaintenancePolicy{
-		TaskConfigs: make(map[TaskType]interface{}),
+		TaskConfigs: make(map[TaskType]any),
 		GlobalSettings: &GlobalMaintenanceSettings{
 			DefaultMaxConcurrent:    2,
 			MaintenanceEnabled:      true,
@@ -173,18 +174,19 @@ func NewMaintenancePolicy() *MaintenancePolicy {
 }
 
 // SetTaskConfig sets the configuration for a specific task type
-func (p *MaintenancePolicy) SetTaskConfig(taskType TaskType, config interface{}) {
+func (p *MaintenancePolicy) SetTaskConfig(taskType TaskType, config any) {
 	if p.TaskConfigs == nil {
-		p.TaskConfigs = make(map[TaskType]interface{})
+		p.TaskConfigs = make(map[TaskType]any)
 	}
 	p.TaskConfigs[taskType] = config
 }
 
 // GetTaskConfig returns the configuration for a specific task type
-func (p *MaintenancePolicy) GetTaskConfig(taskType TaskType) interface{} {
+func (p *MaintenancePolicy) GetTaskConfig(taskType TaskType) any {
 	if p.TaskConfigs == nil {
 		return nil
 	}
+
 	return p.TaskConfigs[taskType]
 }
 
@@ -200,7 +202,7 @@ func (p *MaintenancePolicy) IsTaskEnabled(taskType TaskType) bool {
 	}
 
 	// Try to get enabled field from config using type assertion
-	if configMap, ok := config.(map[string]interface{}); ok {
+	if configMap, ok := config.(map[string]any); ok {
 		if enabled, exists := configMap["enabled"]; exists {
 			if enabledBool, ok := enabled.(bool); ok {
 				return enabledBool
@@ -220,7 +222,7 @@ func (p *MaintenancePolicy) GetMaxConcurrent(taskType TaskType) int {
 	}
 
 	// Try to get max_concurrent field from config
-	if configMap, ok := config.(map[string]interface{}); ok {
+	if configMap, ok := config.(map[string]any); ok {
 		if maxConcurrent, exists := configMap["max_concurrent"]; exists {
 			if maxConcurrentInt, ok := maxConcurrent.(int); ok {
 				return maxConcurrentInt
@@ -242,7 +244,7 @@ func (p *MaintenancePolicy) GetScanInterval(taskType TaskType) time.Duration {
 	}
 
 	// Try to get scan_interval field from config
-	if configMap, ok := config.(map[string]interface{}); ok {
+	if configMap, ok := config.(map[string]any); ok {
 		if scanInterval, exists := configMap["scan_interval"]; exists {
 			if scanIntervalDuration, ok := scanInterval.(time.Duration); ok {
 				return scanIntervalDuration
@@ -268,5 +270,6 @@ func (p *MaintenancePolicy) GetAllTaskTypes() []TaskType {
 	for taskType := range p.TaskConfigs {
 		taskTypes = append(taskTypes, taskType)
 	}
+
 	return taskTypes
 }

@@ -1,6 +1,7 @@
 package credential
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 )
@@ -14,15 +15,17 @@ func ValidatePolicyName(name string) error {
 	if !PolicyNamePattern.MatchString(name) {
 		return fmt.Errorf("invalid policy name: %s", name)
 	}
+
 	return nil
 }
 
 func ValidateServiceAccountId(id string) error {
 	if id == "" {
-		return fmt.Errorf("service account ID cannot be empty")
+		return errors.New("service account ID cannot be empty")
 	}
 	if !ServiceAccountIdPattern.MatchString(id) {
 		return fmt.Errorf("invalid service account ID: %s (expected format sa:<user>:<uuid>)", id)
 	}
+
 	return nil
 }

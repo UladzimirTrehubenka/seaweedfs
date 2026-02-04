@@ -49,7 +49,7 @@ There are multiple cases after finding the name for greater or equal node
     // merge into next node. Avoid too many nodes if adding data in reverse order.
     if nextNode is not nil and nextNode has capacity
     delete nextNode.Key
-    nextNode.Key = name
+    = name
     nextNode.batch.add name
     insert nodeNode.Key
     return
@@ -60,14 +60,13 @@ There are multiple cases after finding the name for greater or equal node
     return
 */
 func (nl *NameList) WriteName(name string) error {
-
 	lookupKey := []byte(name)
 	prevNode, nextNode, found, err := nl.skipList.FindGreaterOrEqual(lookupKey)
 	if err != nil {
 		return err
 	}
 	// case 1: the name already exists as one leading key in the batch
-	if found && bytes.Compare(nextNode.Key, lookupKey) == 0 {
+	if found && bytes.Equal(nextNode.GetKey(), lookupKey) {
 		return nil
 	}
 
@@ -79,14 +78,14 @@ func (nl *NameList) WriteName(name string) error {
 	}
 
 	if nextNode != nil && prevNode == nil {
-		prevNode, err = nl.skipList.LoadElement(nextNode.Prev)
+		prevNode, err = nl.skipList.LoadElement(nextNode.GetPrev())
 		if err != nil {
 			return err
 		}
 	}
 
 	if prevNode != nil {
-		prevNameBatch := LoadNameBatch(prevNode.Value)
+		prevNameBatch := LoadNameBatch(prevNode.GetValue())
 		// case 2.1
 		if prevNameBatch.ContainsName(name) {
 			return nil
@@ -95,6 +94,7 @@ func (nl *NameList) WriteName(name string) error {
 		// case 2.2
 		if len(prevNameBatch.names) < nl.batchSize {
 			prevNameBatch.WriteName(name)
+
 			return nl.skipList.ChangeValue(prevNode, prevNameBatch.ToBytes())
 		}
 
@@ -129,21 +129,22 @@ func (nl *NameList) WriteName(name string) error {
 				}
 			}
 		}
-		return nil
 
+		return nil
 	}
 
 	// case 2.4
 	if nextNode != nil {
-		nextNameBatch := LoadNameBatch(nextNode.Value)
+		nextNameBatch := LoadNameBatch(nextNode.GetValue())
 		if len(nextNameBatch.names) < nl.batchSize {
-			if _, err := nl.skipList.DeleteByKey(nextNode.Key); err != nil {
+			if _, err := nl.skipList.DeleteByKey(nextNode.GetKey()); err != nil {
 				return err
 			}
 			nextNameBatch.WriteName(name)
 			if _, err := nl.skipList.InsertByKey([]byte(nextNameBatch.key), 0, nextNameBatch.ToBytes()); err != nil {
 				return err
 			}
+
 			return nil
 		}
 	}
@@ -211,10 +212,10 @@ func (nl *NameList) DeleteName(name string) error {
 	// case 1
 	var nextNameBatch *NameBatch
 	if nextNode != nil {
-		nextNameBatch = LoadNameBatch(nextNode.Value)
+		nextNameBatch = LoadNameBatch(nextNode.GetValue())
 	}
-	if found && bytes.Compare(nextNode.Key, lookupKey) == 0 {
-		if _, err := nl.skipList.DeleteByKey(nextNode.Key); err != nil {
+	if found && bytes.Equal(nextNode.GetKey(), lookupKey) {
+		if _, err := nl.skipList.DeleteByKey(nextNode.GetKey()); err != nil {
 			return err
 		}
 		nextNameBatch.DeleteName(name)
@@ -223,6 +224,7 @@ func (nl *NameList) DeleteName(name string) error {
 				return err
 			}
 		}
+
 		return nil
 	}
 
@@ -234,7 +236,7 @@ func (nl *NameList) DeleteName(name string) error {
 	}
 
 	if nextNode != nil && prevNode == nil {
-		prevNode, err = nl.skipList.LoadElement(nextNode.Prev)
+		prevNode, err = nl.skipList.LoadElement(nextNode.GetPrev())
 		if err != nil {
 			return err
 		}
@@ -245,7 +247,7 @@ func (nl *NameList) DeleteName(name string) error {
 		// case 2.1
 		return nil
 	}
-	prevNameBatch := LoadNameBatch(prevNode.Value)
+	prevNameBatch := LoadNameBatch(prevNode.GetValue())
 	if !prevNameBatch.ContainsName(name) {
 		// case 2.2
 		return nil
@@ -254,19 +256,21 @@ func (nl *NameList) DeleteName(name string) error {
 	// case 3
 	prevNameBatch.DeleteName(name)
 	if len(prevNameBatch.names) == 0 {
-		if _, err := nl.skipList.DeleteByKey(prevNode.Key); err != nil {
+		if _, err := nl.skipList.DeleteByKey(prevNode.GetKey()); err != nil {
 			return err
 		}
+
 		return nil
 	}
 	if nextNameBatch != nil && len(nextNameBatch.names)+len(prevNameBatch.names) < nl.batchSize {
 		// case 3.1 merge nextNode and prevNode
-		if _, err := nl.skipList.DeleteByKey(nextNode.Key); err != nil {
+		if _, err := nl.skipList.DeleteByKey(nextNode.GetKey()); err != nil {
 			return err
 		}
 		for nextName := range nextNameBatch.names {
 			prevNameBatch.WriteName(nextName)
 		}
+
 		return nl.skipList.ChangeValue(prevNode, prevNameBatch.ToBytes())
 	} else {
 		// case 3.2 update prevNode
@@ -280,7 +284,7 @@ func (nl *NameList) ListNames(startFrom string, visitNamesFn func(name string) b
 	if err != nil {
 		return err
 	}
-	if found && bytes.Compare(nextNode.Key, lookupKey) == 0 {
+	if found && bytes.Equal(nextNode.GetKey(), lookupKey) {
 		prevNode = nil
 	}
 	if !found {
@@ -291,18 +295,18 @@ func (nl *NameList) ListNames(startFrom string, visitNamesFn func(name string) b
 	}
 
 	if prevNode != nil {
-		prevNameBatch := LoadNameBatch(prevNode.Value)
+		prevNameBatch := LoadNameBatch(prevNode.GetValue())
 		if !prevNameBatch.ListNames(startFrom, visitNamesFn) {
 			return nil
 		}
 	}
 
 	for nextNode != nil {
-		nextNameBatch := LoadNameBatch(nextNode.Value)
+		nextNameBatch := LoadNameBatch(nextNode.GetValue())
 		if !nextNameBatch.ListNames(startFrom, visitNamesFn) {
 			return nil
 		}
-		nextNode, err = nl.skipList.LoadElement(nextNode.Next[0])
+		nextNode, err = nl.skipList.LoadElement(nextNode.GetNext()[0])
 		if err != nil {
 			return err
 		}
@@ -312,7 +316,6 @@ func (nl *NameList) ListNames(startFrom string, visitNamesFn func(name string) b
 }
 
 func (nl *NameList) RemoteAllListElement() error {
-
 	t := nl.skipList
 
 	nodeRef := t.StartLevels[0]
@@ -327,8 +330,8 @@ func (nl *NameList) RemoteAllListElement() error {
 		if err := t.DeleteElement(node); err != nil {
 			return err
 		}
-		nodeRef = node.Next[0]
+		nodeRef = node.GetNext()[0]
 	}
-	return nil
 
+	return nil
 }

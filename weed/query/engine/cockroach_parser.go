@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,7 +22,7 @@ func (p *CockroachSQLParser) ParseSQL(sql string) (Statement, error) {
 	// Parse using CockroachDB's parser
 	stmts, err := parser.Parse(sql)
 	if err != nil {
-		return nil, fmt.Errorf("CockroachDB parser error: %v", err)
+		return nil, fmt.Errorf("CockroachDB parser error: %w", err)
 	}
 
 	if len(stmts) != 1 {
@@ -55,7 +56,7 @@ func (p *CockroachSQLParser) convertSelectStatement(crdbSelect *tree.Select) (*S
 	for _, expr := range selectClause.Exprs {
 		seaweedExpr, err := p.convertSelectExpr(expr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert select expression: %v", err)
+			return nil, fmt.Errorf("failed to convert select expression: %w", err)
 		}
 		seaweedSelect.SelectExprs = append(seaweedSelect.SelectExprs, seaweedExpr)
 	}
@@ -65,7 +66,7 @@ func (p *CockroachSQLParser) convertSelectStatement(crdbSelect *tree.Select) (*S
 		for _, fromExpr := range selectClause.From.Tables {
 			seaweedTableExpr, err := p.convertFromExpr(fromExpr)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert FROM clause: %v", err)
+				return nil, fmt.Errorf("failed to convert FROM clause: %w", err)
 			}
 			seaweedSelect.From = append(seaweedSelect.From, seaweedTableExpr)
 		}
@@ -75,7 +76,7 @@ func (p *CockroachSQLParser) convertSelectStatement(crdbSelect *tree.Select) (*S
 	if selectClause.Where != nil {
 		whereExpr, err := p.convertExpr(selectClause.Where.Expr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert WHERE clause: %v", err)
+			return nil, fmt.Errorf("failed to convert WHERE clause: %w", err)
 		}
 		seaweedSelect.Where = &WhereClause{
 			Expr: whereExpr,
@@ -90,7 +91,7 @@ func (p *CockroachSQLParser) convertSelectStatement(crdbSelect *tree.Select) (*S
 		if crdbSelect.Limit.Count != nil {
 			countExpr, err := p.convertExpr(crdbSelect.Limit.Count)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert LIMIT clause: %v", err)
+				return nil, fmt.Errorf("failed to convert LIMIT clause: %w", err)
 			}
 			limitClause.Rowcount = countExpr
 		}
@@ -99,7 +100,7 @@ func (p *CockroachSQLParser) convertSelectStatement(crdbSelect *tree.Select) (*S
 		if crdbSelect.Limit.Offset != nil {
 			offsetExpr, err := p.convertExpr(crdbSelect.Limit.Offset)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert OFFSET clause: %v", err)
+				return nil, fmt.Errorf("failed to convert OFFSET clause: %w", err)
 			}
 			limitClause.Offset = offsetExpr
 		}
@@ -123,7 +124,7 @@ func (p *CockroachSQLParser) convertSelectExpr(expr tree.SelectExpr) (SelectExpr
 	// Convert the main expression
 	convertedExpr, err := p.convertExpr(expr.Expr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert expression: %v", err)
+		return nil, fmt.Errorf("failed to convert expression: %w", err)
 	}
 	seaweedExpr.Expr = convertedExpr
 
@@ -153,7 +154,7 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 			} else {
 				convertedArg, err := p.convertExpr(arg)
 				if err != nil {
-					return nil, fmt.Errorf("failed to convert function argument: %v", err)
+					return nil, fmt.Errorf("failed to convert function argument: %w", err)
 				}
 				seaweedFunc.Exprs = append(seaweedFunc.Exprs, &AliasedExpr{Expr: convertedArg})
 			}
@@ -170,14 +171,14 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		// Convert left operand
 		left, err := p.convertExpr(e.Left)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert left operand: %v", err)
+			return nil, fmt.Errorf("failed to convert left operand: %w", err)
 		}
 		seaweedArith.Left = left
 
 		// Convert right operand
 		right, err := p.convertExpr(e.Right)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert right operand: %v", err)
+			return nil, fmt.Errorf("failed to convert right operand: %w", err)
 		}
 		seaweedArith.Right = right
 
@@ -192,14 +193,14 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		// Convert left operand
 		left, err := p.convertExpr(e.Left)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert comparison left operand: %v", err)
+			return nil, fmt.Errorf("failed to convert comparison left operand: %w", err)
 		}
 		seaweedComp.Left = left
 
 		// Convert right operand
 		right, err := p.convertExpr(e.Right)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert comparison right operand: %v", err)
+			return nil, fmt.Errorf("failed to convert comparison right operand: %w", err)
 		}
 		seaweedComp.Right = right
 
@@ -237,12 +238,13 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		// AND expression
 		left, err := p.convertExpr(e.Left)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert AND left operand: %v", err)
+			return nil, fmt.Errorf("failed to convert AND left operand: %w", err)
 		}
 		right, err := p.convertExpr(e.Right)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert AND right operand: %v", err)
+			return nil, fmt.Errorf("failed to convert AND right operand: %w", err)
 		}
+
 		return &AndExpr{
 			Left:  left,
 			Right: right,
@@ -252,12 +254,13 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		// OR expression
 		left, err := p.convertExpr(e.Left)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert OR left operand: %v", err)
+			return nil, fmt.Errorf("failed to convert OR left operand: %w", err)
 		}
 		right, err := p.convertExpr(e.Right)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert OR right operand: %v", err)
+			return nil, fmt.Errorf("failed to convert OR right operand: %w", err)
 		}
+
 		return &OrExpr{
 			Left:  left,
 			Right: right,
@@ -269,10 +272,11 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		for _, tupleExpr := range e.Exprs {
 			convertedExpr, err := p.convertExpr(tupleExpr)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert tuple element: %v", err)
+				return nil, fmt.Errorf("failed to convert tuple element: %w", err)
 			}
 			tupleValues = append(tupleValues, convertedExpr)
 		}
+
 		return tupleValues, nil
 
 	case *tree.CastExpr:
@@ -285,7 +289,8 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 					Value: string(strVal.RawString()),
 				}, nil
 			}
-			return nil, fmt.Errorf("invalid INTERVAL expression: expected string literal")
+
+			return nil, errors.New("invalid INTERVAL expression: expected string literal")
 		}
 		// For non-interval casts, just convert the inner expression
 		return p.convertExpr(e.Expr)
@@ -299,21 +304,21 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		// Convert the left operand (the expression being tested)
 		left, err := p.convertExpr(e.Left)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert BETWEEN left operand: %v", err)
+			return nil, fmt.Errorf("failed to convert BETWEEN left operand: %w", err)
 		}
 		seaweedBetween.Left = left
 
 		// Convert the FROM operand (lower bound)
 		from, err := p.convertExpr(e.From)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert BETWEEN from operand: %v", err)
+			return nil, fmt.Errorf("failed to convert BETWEEN from operand: %w", err)
 		}
 		seaweedBetween.From = from
 
 		// Convert the TO operand (upper bound)
 		to, err := p.convertExpr(e.To)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert BETWEEN to operand: %v", err)
+			return nil, fmt.Errorf("failed to convert BETWEEN to operand: %w", err)
 		}
 		seaweedBetween.To = to
 
@@ -323,7 +328,7 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		// Handle IS NULL expressions: column IS NULL
 		expr, err := p.convertExpr(e.Expr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert IS NULL expression: %v", err)
+			return nil, fmt.Errorf("failed to convert IS NULL expression: %w", err)
 		}
 
 		return &IsNullExpr{
@@ -334,7 +339,7 @@ func (p *CockroachSQLParser) convertExpr(expr tree.Expr) (ExprNode, error) {
 		// Handle IS NOT NULL expressions: column IS NOT NULL
 		expr, err := p.convertExpr(e.Expr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert IS NOT NULL expression: %v", err)
+			return nil, fmt.Errorf("failed to convert IS NOT NULL expression: %w", err)
 		}
 
 		return &IsNotNullExpr{
@@ -404,5 +409,6 @@ func (p *CockroachSQLParser) isIntervalCast(castExpr *tree.CastExpr) bool {
 			return true
 		}
 	}
+
 	return false
 }

@@ -64,10 +64,10 @@ type SeaweedMQHandler struct {
 // ConnectionContext holds connection-specific information for requests
 // This is a local copy to avoid circular dependency with protocol package
 type ConnectionContext struct {
-	ClientID      string      // Kafka client ID from request headers
-	ConsumerGroup string      // Consumer group (set by JoinGroup)
-	MemberID      string      // Consumer group member ID (set by JoinGroup)
-	BrokerClient  interface{} // Per-connection broker client (*BrokerClient)
+	ClientID      string // Kafka client ID from request headers
+	ConsumerGroup string // Consumer group (set by JoinGroup)
+	MemberID      string // Consumer group member ID (set by JoinGroup)
+	BrokerClient  any    // Per-connection broker client (*BrokerClient)
 }
 
 // ProtocolHandler interface for accessing Handler's connection context

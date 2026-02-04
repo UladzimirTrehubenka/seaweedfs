@@ -46,7 +46,6 @@ func (c *commandRemoteUncache) HasTag(CommandTag) bool {
 }
 
 func (c *commandRemoteUncache) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	remoteUncacheCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 
 	dir := remoteUncacheCommand.String("dir", "", "a directory in filer")
@@ -62,7 +61,7 @@ func (c *commandRemoteUncache) Do(args []string, commandEnv *CommandEnv, writer 
 	}
 	if *dir != "" {
 		var localMountedDir string
-		for k := range mappings.Mappings {
+		for k := range mappings.GetMappings() {
 			if strings.HasPrefix(*dir, k) {
 				localMountedDir = k
 			}
@@ -70,6 +69,7 @@ func (c *commandRemoteUncache) Do(args []string, commandEnv *CommandEnv, writer 
 		if localMountedDir == "" {
 			jsonPrintln(writer, mappings)
 			fmt.Fprintf(writer, "%s is not mounted\n", *dir)
+
 			return nil
 		}
 
@@ -77,10 +77,11 @@ func (c *commandRemoteUncache) Do(args []string, commandEnv *CommandEnv, writer 
 		if err = c.uncacheContentData(commandEnv, writer, util.FullPath(*dir), fileFiler); err != nil {
 			return fmt.Errorf("uncache content data: %w", err)
 		}
+
 		return nil
 	}
 
-	for key, _ := range mappings.Mappings {
+	for key := range mappings.GetMappings() {
 		if err := c.uncacheContentData(commandEnv, writer, util.FullPath(key), fileFiler); err != nil {
 			return err
 		}
@@ -90,9 +91,7 @@ func (c *commandRemoteUncache) Do(args []string, commandEnv *CommandEnv, writer 
 }
 
 func (c *commandRemoteUncache) uncacheContentData(commandEnv *CommandEnv, writer io.Writer, dirToCache util.FullPath, fileFilter *FileFilter) error {
-
 	return recursivelyTraverseDirectory(commandEnv, dirToCache, func(dir util.FullPath, entry *filer_pb.Entry) bool {
-
 		if !mayHaveCachedToLocal(entry) {
 			return true // true means recursive traversal should continue
 		}
@@ -101,24 +100,26 @@ func (c *commandRemoteUncache) uncacheContentData(commandEnv *CommandEnv, writer
 			return true
 		}
 
-		if entry.RemoteEntry.LastLocalSyncTsNs/1e9 < entry.Attributes.Mtime {
+		if entry.GetRemoteEntry().GetLastLocalSyncTsNs()/1e9 < entry.GetAttributes().GetMtime() {
 			return true // should not uncache an entry that is not synchronized with remote
 		}
 
 		entry.RemoteEntry.LastLocalSyncTsNs = 0
 		entry.Chunks = nil
 
-		fmt.Fprintf(writer, "Uncache %+v ... ", dir.Child(entry.Name))
+		fmt.Fprintf(writer, "Uncache %+v ... ", dir.Child(entry.GetName()))
 
 		err := commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 			_, updateErr := client.UpdateEntry(context.Background(), &filer_pb.UpdateEntryRequest{
 				Directory: string(dir),
 				Entry:     entry,
 			})
+
 			return updateErr
 		})
 		if err != nil {
-			fmt.Fprintf(writer, "uncache %+v: %v\n", dir.Child(entry.Name), err)
+			fmt.Fprintf(writer, "uncache %+v: %v\n", dir.Child(entry.GetName()), err)
+
 			return false
 		}
 		fmt.Fprintf(writer, "Done\n")
@@ -144,39 +145,41 @@ func newFileFilter(remoteMountCommand *flag.FlagSet) (ff *FileFilter) {
 	ff.maxSize = remoteMountCommand.Int64("maxSize", -1, "maximum file size in bytes")
 	ff.minAge = remoteMountCommand.Int64("minAge", -1, "minimum file age in seconds")
 	ff.maxAge = remoteMountCommand.Int64("maxAge", -1, "maximum file age in seconds")
+
 	return
 }
 
 func (ff *FileFilter) matches(entry *filer_pb.Entry) bool {
 	if *ff.include != "" {
-		if ok, _ := filepath.Match(*ff.include, entry.Name); !ok {
+		if ok, _ := filepath.Match(*ff.include, entry.GetName()); !ok {
 			return false
 		}
 	}
 	if *ff.exclude != "" {
-		if ok, _ := filepath.Match(*ff.exclude, entry.Name); ok {
+		if ok, _ := filepath.Match(*ff.exclude, entry.GetName()); ok {
 			return false
 		}
 	}
 	if *ff.minSize != -1 {
-		if int64(entry.Attributes.FileSize) < *ff.minSize {
+		if int64(entry.GetAttributes().GetFileSize()) < *ff.minSize {
 			return false
 		}
 	}
 	if *ff.maxSize != -1 {
-		if int64(entry.Attributes.FileSize) > *ff.maxSize {
+		if int64(entry.GetAttributes().GetFileSize()) > *ff.maxSize {
 			return false
 		}
 	}
 	if *ff.minAge != -1 {
-		if entry.Attributes.Crtime+*ff.minAge > time.Now().Unix() {
+		if entry.GetAttributes().GetCrtime()+*ff.minAge > time.Now().Unix() {
 			return false
 		}
 	}
 	if *ff.maxAge != -1 {
-		if entry.Attributes.Crtime+*ff.maxAge < time.Now().Unix() {
+		if entry.GetAttributes().GetCrtime()+*ff.maxAge < time.Now().Unix() {
 			return false
 		}
 	}
+
 	return true
 }

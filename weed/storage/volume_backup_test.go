@@ -3,25 +3,23 @@ package storage
 import "testing"
 
 func TestBinarySearch(t *testing.T) {
-	var testInput []int
-	testInput = []int{-1, 0, 3, 5, 9, 12}
+	var testInput = []int{-1, 0, 3, 5, 9, 12}
 
-	if 3 != binarySearchForLargerThanTarget(testInput, 4) {
+	if binarySearchForLargerThanTarget(testInput, 4) != 3 {
 		t.Errorf("failed to find target %d", 4)
 	}
-	if 3 != binarySearchForLargerThanTarget(testInput, 3) {
+	if binarySearchForLargerThanTarget(testInput, 3) != 3 {
 		t.Errorf("failed to find target %d", 3)
 	}
-	if 6 != binarySearchForLargerThanTarget(testInput, 12) {
+	if binarySearchForLargerThanTarget(testInput, 12) != 6 {
 		t.Errorf("failed to find target %d", 12)
 	}
-	if 1 != binarySearchForLargerThanTarget(testInput, -1) {
+	if binarySearchForLargerThanTarget(testInput, -1) != 1 {
 		t.Errorf("failed to find target %d", -1)
 	}
-	if 0 != binarySearchForLargerThanTarget(testInput, -2) {
+	if binarySearchForLargerThanTarget(testInput, -2) != 0 {
 		t.Errorf("failed to find target %d", -2)
 	}
-
 }
 
 func binarySearchForLargerThanTarget(nums []int, target int) int {
@@ -35,5 +33,6 @@ func binarySearchForLargerThanTarget(nums []int, target int) int {
 			h = m
 		}
 	}
+
 	return l
 }

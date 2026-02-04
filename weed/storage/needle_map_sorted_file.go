@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"os"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -11,6 +12,7 @@ import (
 
 type SortedFileNeedleMap struct {
 	baseNeedleMapper
+
 	baseFileName string
 	dbFile       *os.File
 	dbFileSize   int64
@@ -36,9 +38,11 @@ func NewSortedFileNeedleMap(indexBaseFileName string, indexFile *os.File) (m *So
 	mm, indexLoadError := newNeedleMapMetricFromIndexFile(indexFile)
 	if indexLoadError != nil {
 		_ = m.dbFile.Close()
+
 		return nil, indexLoadError
 	}
 	m.mapMetric = *mm
+
 	return
 }
 
@@ -53,6 +57,7 @@ func isSortedFileFresh(dbFileName string, indexFile *os.File) bool {
 	indexStat, indexStatErr := indexFile.Stat()
 	if dbStatErr != nil || indexStatErr != nil {
 		glog.V(0).Infof("Can not stat file: %v and %v", dbStatErr, indexStatErr)
+
 		return false
 	}
 
@@ -62,8 +67,8 @@ func isSortedFileFresh(dbFileName string, indexFile *os.File) bool {
 func (m *SortedFileNeedleMap) Get(key NeedleId) (element *needle_map.NeedleValue, ok bool) {
 	offset, size, err := erasure_coding.SearchNeedleFromSortedIndex(m.dbFile, m.dbFileSize, key, nil)
 	ok = err == nil
-	return &needle_map.NeedleValue{Key: key, Offset: offset, Size: size}, ok
 
+	return &needle_map.NeedleValue{Key: key, Offset: offset, Size: size}, ok
 }
 
 func (m *SortedFileNeedleMap) Put(key NeedleId, offset Offset, size Size) error {
@@ -71,13 +76,13 @@ func (m *SortedFileNeedleMap) Put(key NeedleId, offset Offset, size Size) error 
 }
 
 func (m *SortedFileNeedleMap) Delete(key NeedleId, offset Offset) error {
-
 	_, size, err := erasure_coding.SearchNeedleFromSortedIndex(m.dbFile, m.dbFileSize, key, nil)
 
 	if err != nil {
-		if err == erasure_coding.NotFoundError {
+		if errors.Is(err, erasure_coding.NotFoundError) {
 			return nil
 		}
+
 		return err
 	}
 
@@ -109,5 +114,6 @@ func (m *SortedFileNeedleMap) Close() {
 func (m *SortedFileNeedleMap) Destroy() error {
 	m.Close()
 	os.Remove(m.indexFile.Name())
+
 	return os.Remove(m.baseFileName + ".sdx")
 }

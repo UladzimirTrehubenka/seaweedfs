@@ -20,18 +20,21 @@ func (e *SQLEngine) formatAggregationResult(spec AggregationSpec, result Aggrega
 		if result.Min != nil {
 			return e.convertRawValueToSQL(result.Min)
 		}
+
 		return sqltypes.NULL
 	case "MAX":
 		if result.Max != nil {
 			return e.convertRawValueToSQL(result.Max)
 		}
+
 		return sqltypes.NULL
 	}
+
 	return sqltypes.NULL
 }
 
 // convertRawValueToSQL converts a raw Go value to a SQL value
-func (e *SQLEngine) convertRawValueToSQL(value interface{}) sqltypes.Value {
+func (e *SQLEngine) convertRawValueToSQL(value any) sqltypes.Value {
 	switch v := value.(type) {
 	case int32:
 		return sqltypes.NewInt32(v)
@@ -47,14 +50,16 @@ func (e *SQLEngine) convertRawValueToSQL(value interface{}) sqltypes.Value {
 		if v {
 			return sqltypes.NewVarChar("1")
 		}
+
 		return sqltypes.NewVarChar("0")
 	}
+
 	return sqltypes.NULL
 }
 
 // extractRawValue extracts the raw Go value from a schema_pb.Value
-func (e *SQLEngine) extractRawValue(value *schema_pb.Value) interface{} {
-	switch v := value.Kind.(type) {
+func (e *SQLEngine) extractRawValue(value *schema_pb.Value) any {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_Int32Value:
 		return v.Int32Value
 	case *schema_pb.Value_Int64Value:
@@ -70,6 +75,7 @@ func (e *SQLEngine) extractRawValue(value *schema_pb.Value) interface{} {
 	case *schema_pb.Value_BytesValue:
 		return string(v.BytesValue) // Convert bytes to string for comparison
 	}
+
 	return nil
 }
 
@@ -96,6 +102,7 @@ func (e *SQLEngine) compareValues(value1 *schema_pb.Value, value2 *schema_pb.Val
 			} else if v1 > v2 {
 				return 1
 			}
+
 			return 0
 		}
 	case int64:
@@ -105,6 +112,7 @@ func (e *SQLEngine) compareValues(value1 *schema_pb.Value, value2 *schema_pb.Val
 			} else if v1 > v2 {
 				return 1
 			}
+
 			return 0
 		}
 	case float32:
@@ -114,6 +122,7 @@ func (e *SQLEngine) compareValues(value1 *schema_pb.Value, value2 *schema_pb.Val
 			} else if v1 > v2 {
 				return 1
 			}
+
 			return 0
 		}
 	case float64:
@@ -123,6 +132,7 @@ func (e *SQLEngine) compareValues(value1 *schema_pb.Value, value2 *schema_pb.Val
 			} else if v1 > v2 {
 				return 1
 			}
+
 			return 0
 		}
 	case string:
@@ -132,6 +142,7 @@ func (e *SQLEngine) compareValues(value1 *schema_pb.Value, value2 *schema_pb.Val
 			} else if v1 > v2 {
 				return 1
 			}
+
 			return 0
 		}
 	case bool:
@@ -141,14 +152,16 @@ func (e *SQLEngine) compareValues(value1 *schema_pb.Value, value2 *schema_pb.Val
 			} else if v1 && !v2 {
 				return 1
 			}
+
 			return -1
 		}
 	}
+
 	return 0
 }
 
 // convertRawValueToSchemaValue converts raw Go values back to schema_pb.Value for comparison
-func (e *SQLEngine) convertRawValueToSchemaValue(rawValue interface{}) *schema_pb.Value {
+func (e *SQLEngine) convertRawValueToSchemaValue(rawValue any) *schema_pb.Value {
 	switch v := rawValue.(type) {
 	case int32:
 		return &schema_pb.Value{Kind: &schema_pb.Value_Int32Value{Int32Value: v}}
@@ -171,7 +184,7 @@ func (e *SQLEngine) convertRawValueToSchemaValue(rawValue interface{}) *schema_p
 }
 
 // convertJSONValueToSchemaValue converts JSON values to schema_pb.Value
-func (e *SQLEngine) convertJSONValueToSchemaValue(jsonValue interface{}) *schema_pb.Value {
+func (e *SQLEngine) convertJSONValueToSchemaValue(jsonValue any) *schema_pb.Value {
 	switch v := jsonValue.(type) {
 	case string:
 		return &schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: v}}
@@ -180,6 +193,7 @@ func (e *SQLEngine) convertJSONValueToSchemaValue(jsonValue interface{}) *schema
 		if v == float64(int64(v)) {
 			return &schema_pb.Value{Kind: &schema_pb.Value_Int64Value{Int64Value: int64(v)}}
 		}
+
 		return &schema_pb.Value{Kind: &schema_pb.Value_DoubleValue{DoubleValue: v}}
 	case bool:
 		return &schema_pb.Value{Kind: &schema_pb.Value_BoolValue{BoolValue: v}}
@@ -200,18 +214,22 @@ func (e *SQLEngine) isNullValue(value *schema_pb.Value) bool {
 
 // convertToNumber converts a schema_pb.Value to a float64 for numeric operations
 func (e *SQLEngine) convertToNumber(value *schema_pb.Value) *float64 {
-	switch v := value.Kind.(type) {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_Int32Value:
 		result := float64(v.Int32Value)
+
 		return &result
 	case *schema_pb.Value_Int64Value:
 		result := float64(v.Int64Value)
+
 		return &result
 	case *schema_pb.Value_FloatValue:
 		result := float64(v.FloatValue)
+
 		return &result
 	case *schema_pb.Value_DoubleValue:
 		return &v.DoubleValue
 	}
+
 	return nil
 }

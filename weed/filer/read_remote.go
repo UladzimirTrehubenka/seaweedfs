@@ -9,21 +9,22 @@ import (
 )
 
 func (entry *Entry) IsInRemoteOnly() bool {
-	return len(entry.GetChunks()) == 0 && entry.Remote != nil && entry.Remote.RemoteSize > 0
+	return len(entry.GetChunks()) == 0 && entry.Remote != nil && entry.Remote.GetRemoteSize() > 0
 }
 
 func MapFullPathToRemoteStorageLocation(localMountedDir util.FullPath, remoteMountedLocation *remote_pb.RemoteStorageLocation, fp util.FullPath) *remote_pb.RemoteStorageLocation {
 	remoteLocation := &remote_pb.RemoteStorageLocation{
-		Name:   remoteMountedLocation.Name,
-		Bucket: remoteMountedLocation.Bucket,
-		Path:   remoteMountedLocation.Path,
+		Name:   remoteMountedLocation.GetName(),
+		Bucket: remoteMountedLocation.GetBucket(),
+		Path:   remoteMountedLocation.GetPath(),
 	}
-	remoteLocation.Path = string(util.FullPath(remoteLocation.Path).Child(string(fp)[len(localMountedDir):]))
+	remoteLocation.Path = string(util.FullPath(remoteLocation.GetPath()).Child(string(fp)[len(localMountedDir):]))
+
 	return remoteLocation
 }
 
 func MapRemoteStorageLocationPathToFullPath(localMountedDir util.FullPath, remoteMountedLocation *remote_pb.RemoteStorageLocation, remoteLocationPath string) (fp util.FullPath) {
-	return localMountedDir.Child(remoteLocationPath[len(remoteMountedLocation.Path):])
+	return localMountedDir.Child(remoteLocationPath[len(remoteMountedLocation.GetPath()):])
 }
 
 // CacheRemoteObjectToLocalCluster caches a remote object to the local cluster.
@@ -34,12 +35,14 @@ func CacheRemoteObjectToLocalCluster(filerClient filer_pb.FilerClient, remoteCon
 	err := filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		resp, cacheErr := client.CacheRemoteObjectToLocalCluster(context.Background(), &filer_pb.CacheRemoteObjectToLocalClusterRequest{
 			Directory: string(parent),
-			Name:      entry.Name,
+			Name:      entry.GetName(),
 		})
 		if cacheErr == nil && resp != nil {
-			cachedEntry = resp.Entry
+			cachedEntry = resp.GetEntry()
 		}
+
 		return cacheErr
 	})
+
 	return cachedEntry, err
 }

@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -26,7 +27,7 @@ func (b *MessageQueueBroker) PublishFollowMe(stream mq_pb.SeaweedMessaging_Publi
 	}
 	initMessage := req.GetInit()
 	if initMessage == nil {
-		return fmt.Errorf("missing init message")
+		return errors.New("missing init message")
 	}
 
 	// create an in-memory queue of buffered messages
@@ -40,56 +41,58 @@ func (b *MessageQueueBroker) PublishFollowMe(stream mq_pb.SeaweedMessaging_Publi
 		// receive a message
 		req, err = stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
+
 				break
 			}
-			glog.V(0).Infof("topic %v partition %v publish stream error: %v", initMessage.Topic, initMessage.Partition, err)
+			glog.V(0).Infof("topic %v partition %v publish stream error: %v", initMessage.GetTopic(), initMessage.GetPartition(), err)
+
 			break
 		}
 
 		// Process the received message
 		if dataMessage := req.GetData(); dataMessage != nil {
-
 			// TODO: change this to DataMessage
 			// log the message
 			if addErr := logBuffer.AddToBuffer(dataMessage); addErr != nil {
 				err = fmt.Errorf("failed to add message to log buffer: %w", addErr)
 				glog.Errorf("Failed to add message to log buffer: %v", addErr)
+
 				break
 			}
 
 			// send back the ack
 			if err := stream.Send(&mq_pb.PublishFollowMeResponse{
-				AckTsNs: dataMessage.TsNs,
+				AckTsNs: dataMessage.GetTsNs(),
 			}); err != nil {
 				glog.Errorf("Error sending response %v: %v", dataMessage, err)
 			}
 			// println("ack", string(dataMessage.Key), dataMessage.TsNs)
 		} else if closeMessage := req.GetClose(); closeMessage != nil {
-			glog.V(0).Infof("topic %v partition %v publish stream closed: %v", initMessage.Topic, initMessage.Partition, closeMessage)
+			glog.V(0).Infof("topic %v partition %v publish stream closed: %v", initMessage.GetTopic(), initMessage.GetPartition(), closeMessage)
+
 			break
 		} else if flushMessage := req.GetFlush(); flushMessage != nil {
-			glog.V(0).Infof("topic %v partition %v publish stream flushed: %v", initMessage.Topic, initMessage.Partition, flushMessage)
+			glog.V(0).Infof("topic %v partition %v publish stream flushed: %v", initMessage.GetTopic(), initMessage.GetPartition(), flushMessage)
 
-			lastFlushTsNs = flushMessage.TsNs
+			lastFlushTsNs = flushMessage.GetTsNs()
 
 			// drop already flushed messages
 			for mem, found := inMemoryBuffers.PeekHead(); found; mem, found = inMemoryBuffers.PeekHead() {
-				if mem.stopTime.UnixNano() <= flushMessage.TsNs {
+				if mem.stopTime.UnixNano() <= flushMessage.GetTsNs() {
 					inMemoryBuffers.Dequeue()
 					// println("dropping flushed messages: ", mem.startTime.UnixNano(), mem.stopTime.UnixNano(), len(mem.buf))
 				} else {
 					break
 				}
 			}
-
 		} else {
 			glog.Errorf("unknown message: %v", req)
 		}
 	}
 
-	t, p := topic.FromPbTopic(initMessage.Topic), topic.FromPbPartition(initMessage.Partition)
+	t, p := topic.FromPbTopic(initMessage.GetTopic()), topic.FromPbPartition(initMessage.GetPartition())
 
 	logBuffer.ShutdownLogBuffer()
 	// wait until all messages are sent to inMemoryBuffers
@@ -110,6 +113,7 @@ func (b *MessageQueueBroker) PublishFollowMe(stream mq_pb.SeaweedMessaging_Publi
 
 		if stopTime.UnixNano() <= lastFlushTsNs {
 			glog.V(0).Infof("dropping remaining data at %v %v", t, p)
+
 			continue
 		}
 
@@ -148,5 +152,6 @@ func (b *MessageQueueBroker) buildFollowerLogBuffer(inMemoryBuffers *buffered_qu
 			glog.V(0).Infof("queue up %d~%d size %d", startTime.UnixNano(), stopTime.UnixNano(), len(buf))
 		}, nil, func() {
 		})
+
 	return lb
 }

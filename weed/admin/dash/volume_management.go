@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
@@ -38,29 +39,29 @@ func (s *AdminServer) GetClusterVolumes(page int, pageSize int, sortBy string, s
 		}
 
 		// Cache the topology info for reuse
-		cachedTopologyInfo = resp.TopologyInfo
+		cachedTopologyInfo = resp.GetTopologyInfo()
 
-		if resp.TopologyInfo != nil {
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
-						for _, diskInfo := range node.DiskInfos {
+		if resp.GetTopologyInfo() != nil {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
+						for _, diskInfo := range node.GetDiskInfos() {
 							// Process regular volumes
-							for _, volInfo := range diskInfo.VolumeInfos {
+							for _, volInfo := range diskInfo.GetVolumeInfos() {
 								volume := VolumeWithTopology{
 									VolumeInformationMessage: volInfo,
-									Server:                   node.Id,
-									DataCenter:               dc.Id,
-									Rack:                     rack.Id,
+									Server:                   node.GetId(),
+									DataCenter:               dc.GetId(),
+									Rack:                     rack.GetId(),
 								}
 								volumes = append(volumes, volume)
-								totalSize += int64(volInfo.Size)
+								totalSize += int64(volInfo.GetSize())
 							}
 
 							// Process EC shards in the same loop
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
 								// Add all shard sizes for this EC volume
-								for _, shardSize := range ecShardInfo.ShardSizes {
+								for _, shardSize := range ecShardInfo.GetShardSizes() {
 									totalSize += shardSize
 								}
 							}
@@ -93,14 +94,14 @@ func (s *AdminServer) GetClusterVolumes(page int, pageSize int, sortBy string, s
 		// Filter EC shard sizes by collection using already processed data
 		// This reuses the topology traversal done above (lines 43-71) to avoid a second pass
 		if cachedTopologyInfo != nil {
-			for _, dc := range cachedTopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
-						for _, diskInfo := range node.DiskInfos {
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
-								if matchesCollection(ecShardInfo.Collection, collection) {
+			for _, dc := range cachedTopologyInfo.GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
+						for _, diskInfo := range node.GetDiskInfos() {
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+								if matchesCollection(ecShardInfo.GetCollection(), collection) {
 									// Add all shard sizes for this EC volume
-									for _, shardSize := range ecShardInfo.ShardSizes {
+									for _, shardSize := range ecShardInfo.GetShardSizes() {
 										filteredEcTotalSize += shardSize
 									}
 								}
@@ -141,7 +142,7 @@ func (s *AdminServer) GetClusterVolumes(page int, pageSize int, sortBy string, s
 		}
 		collectionMap[collectionName] = true
 
-		versionMap[fmt.Sprintf("%d", volume.Version)] = true
+		versionMap[strconv.FormatUint(uint64(volume.Version), 10)] = true
 	}
 	dataCenterCount := len(dataCenterMap)
 	rackCount := len(rackMap)
@@ -159,7 +160,8 @@ func (s *AdminServer) GetClusterVolumes(page int, pageSize int, sortBy string, s
 		if err != nil {
 			return err
 		}
-		volumeSizeLimit = uint64(resp.VolumeSizeLimitMB) * 1024 * 1024 // Convert MB to bytes
+		volumeSizeLimit = uint64(resp.GetVolumeSizeLimitMB()) * 1024 * 1024 // Convert MB to bytes
+
 		return nil
 	})
 	if err != nil {
@@ -199,18 +201,21 @@ func (s *AdminServer) GetClusterVolumes(page int, pageSize int, sortBy string, s
 	if dataCenterCount == 1 {
 		for dc := range dataCenterMap {
 			singleDataCenter = dc
+
 			break
 		}
 	}
 	if rackCount == 1 {
 		for rack := range rackMap {
 			singleRack = rack
+
 			break
 		}
 	}
 	if diskTypeCount == 1 {
 		for diskType := range diskTypeMap {
 			singleDiskType = diskType
+
 			break
 		}
 	} else {
@@ -223,12 +228,14 @@ func (s *AdminServer) GetClusterVolumes(page int, pageSize int, sortBy string, s
 	if collectionCount == 1 {
 		for collection := range collectionMap {
 			singleCollection = collection
+
 			break
 		}
 	}
 	if versionCount == 1 {
 		for version := range versionMap {
 			singleVersion = "v" + version
+
 			break
 		}
 	} else {
@@ -304,6 +311,7 @@ func (s *AdminServer) sortVolumes(volumes []VolumeWithTopology, sortBy string, s
 		if sortOrder == "desc" {
 			return !less
 		}
+
 		return less
 	})
 }
@@ -322,27 +330,27 @@ func (s *AdminServer) GetVolumeDetails(volumeID int, server string) (*VolumeDeta
 			return err
 		}
 
-		if resp.TopologyInfo != nil {
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
-						for _, diskInfo := range node.DiskInfos {
-							for _, volInfo := range diskInfo.VolumeInfos {
-								if int(volInfo.Id) == volumeID {
-									diskType := volInfo.DiskType
+		if resp.GetTopologyInfo() != nil {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
+						for _, diskInfo := range node.GetDiskInfos() {
+							for _, volInfo := range diskInfo.GetVolumeInfos() {
+								if int(volInfo.GetId()) == volumeID {
+									diskType := volInfo.GetDiskType()
 									if diskType == "" {
 										diskType = "hdd"
 									}
 
 									volume := VolumeWithTopology{
 										VolumeInformationMessage: volInfo,
-										Server:                   node.Id,
-										DataCenter:               dc.Id,
-										Rack:                     rack.Id,
+										Server:                   node.GetId(),
+										DataCenter:               dc.GetId(),
+										Rack:                     rack.GetId(),
 									}
 
 									// If this is the requested server, it's the primary volume
-									if node.Id == server {
+									if node.GetId() == server {
 										primaryVolume = volume
 										found = true
 									} else {
@@ -356,6 +364,7 @@ func (s *AdminServer) GetVolumeDetails(volumeID int, server string) (*VolumeDeta
 				}
 			}
 		}
+
 		return nil
 	})
 
@@ -373,7 +382,8 @@ func (s *AdminServer) GetVolumeDetails(volumeID int, server string) (*VolumeDeta
 		if err != nil {
 			return err
 		}
-		volumeSizeLimit = uint64(resp.VolumeSizeLimitMB) * 1024 * 1024 // Convert MB to bytes
+		volumeSizeLimit = uint64(resp.GetVolumeSizeLimitMB()) * 1024 * 1024 // Convert MB to bytes
+
 		return nil
 	})
 
@@ -397,6 +407,7 @@ func (s *AdminServer) VacuumVolume(volumeID int, server string) error {
 	if volumeID < 0 || uint64(volumeID) > math.MaxUint32 {
 		return fmt.Errorf("volume ID out of range: %d", volumeID)
 	}
+
 	return s.WithMasterClient(func(client master_pb.SeaweedClient) error {
 		_, err := client.VacuumVolume(context.Background(), &master_pb.VacuumVolumeRequest{
 			// lgtm[go/incorrect-integer-conversion]
@@ -405,6 +416,7 @@ func (s *AdminServer) VacuumVolume(volumeID int, server string) error {
 			GarbageThreshold: 0.0001, // A very low threshold to ensure all garbage is collected
 			Collection:       "",     // Empty for all collections
 		})
+
 		return err
 	})
 }
@@ -421,7 +433,7 @@ func (s *AdminServer) GetClusterVolumeServers() (*ClusterVolumeServersData, erro
 		}
 
 		// Get volume size limit from response, default to 30GB if not set
-		volumeSizeLimitMB := resp.VolumeSizeLimitMb
+		volumeSizeLimitMB := resp.GetVolumeSizeLimitMb()
 		if volumeSizeLimitMB == 0 {
 			volumeSizeLimitMB = 30000 // default to 30000MB (30GB)
 		}
@@ -429,17 +441,17 @@ func (s *AdminServer) GetClusterVolumeServers() (*ClusterVolumeServersData, erro
 		// Build basic topology from the VolumeList response (replaces GetClusterTopology call)
 		volumeServerMap = make(map[string]*VolumeServer)
 
-		if resp.TopologyInfo != nil {
+		if resp.GetTopologyInfo() != nil {
 			// Process topology to build basic volume server info (similar to cluster_topology.go logic)
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
 						// Initialize volume server if not exists
-						if volumeServerMap[node.Id] == nil {
-							volumeServerMap[node.Id] = &VolumeServer{
-								Address:        node.Id,
-								DataCenter:     dc.Id,
-								Rack:           rack.Id,
+						if volumeServerMap[node.GetId()] == nil {
+							volumeServerMap[node.GetId()] = &VolumeServer{
+								Address:        node.GetId(),
+								DataCenter:     dc.GetId(),
+								Rack:           rack.GetId(),
 								Volumes:        0,
 								DiskUsage:      0,
 								DiskCapacity:   0,
@@ -448,7 +460,7 @@ func (s *AdminServer) GetClusterVolumeServers() (*ClusterVolumeServersData, erro
 								EcShardDetails: []VolumeServerEcInfo{},
 							}
 						}
-						vs := volumeServerMap[node.Id]
+						vs := volumeServerMap[node.GetId()]
 
 						// Process EC shard information for this server at volume server level (not per-disk)
 						ecVolumeMap := make(map[uint32]*VolumeServerEcInfo)
@@ -456,18 +468,18 @@ func (s *AdminServer) GetClusterVolumeServers() (*ClusterVolumeServersData, erro
 						ecShardAccumulator := make(map[uint32][]*master_pb.VolumeEcShardInformationMessage)
 
 						// Process disk information
-						for _, diskInfo := range node.DiskInfos {
-							vs.DiskCapacity += int64(diskInfo.MaxVolumeCount) * int64(volumeSizeLimitMB) * 1024 * 1024 // Use actual volume size limit
+						for _, diskInfo := range node.GetDiskInfos() {
+							vs.DiskCapacity += int64(diskInfo.GetMaxVolumeCount()) * int64(volumeSizeLimitMB) * 1024 * 1024 // Use actual volume size limit
 
 							// Count regular volumes and calculate disk usage
-							for _, volInfo := range diskInfo.VolumeInfos {
+							for _, volInfo := range diskInfo.GetVolumeInfos() {
 								vs.Volumes++
-								vs.DiskUsage += int64(volInfo.Size)
+								vs.DiskUsage += int64(volInfo.GetSize())
 							}
 
 							// Accumulate EC shard information across all disks for this volume server
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
-								volumeId := ecShardInfo.Id
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+								volumeId := ecShardInfo.GetId()
 								ecShardAccumulator[volumeId] = append(ecShardAccumulator[volumeId], ecShardInfo)
 							}
 						}
@@ -481,7 +493,7 @@ func (s *AdminServer) GetClusterVolumeServers() (*ClusterVolumeServersData, erro
 							// Initialize EC volume info
 							ecInfo := &VolumeServerEcInfo{
 								VolumeID:     volumeId,
-								Collection:   ecShardInfos[0].Collection,
+								Collection:   ecShardInfos[0].GetCollection(),
 								ShardCount:   0,
 								EcIndexBits:  0,
 								ShardNumbers: []int{},

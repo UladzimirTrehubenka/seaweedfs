@@ -30,6 +30,7 @@ func NewErrorWaitGroup(maxConcurrency int) *ErrorWaitGroup {
 		// no concurrency = one task at the time
 		maxConcurrency = 1
 	}
+
 	return &ErrorWaitGroup{
 		maxConcurrency: maxConcurrency,
 		wg:             &sync.WaitGroup{},
@@ -51,6 +52,7 @@ func (ewg *ErrorWaitGroup) Add(f ErrorWaitGroupTask) {
 	if ewg.maxConcurrency <= 1 {
 		// keep run order deterministic when parallelization is off
 		ewg.errors = append(ewg.errors, f())
+
 		return
 	}
 
@@ -69,7 +71,7 @@ func (ewg *ErrorWaitGroup) Add(f ErrorWaitGroupTask) {
 }
 
 // AddErrorf adds an error to an ErrorWaitGroupTask result, without queueing any goroutines.
-func (ewg *ErrorWaitGroup) AddErrorf(format string, a ...interface{}) {
+func (ewg *ErrorWaitGroup) AddErrorf(format string, a ...any) {
 	ewg.errorsMu.Lock()
 	ewg.errors = append(ewg.errors, fmt.Errorf(format, a...))
 	ewg.errorsMu.Unlock()
@@ -78,5 +80,6 @@ func (ewg *ErrorWaitGroup) AddErrorf(format string, a ...interface{}) {
 // Wait sleeps until all ErrorWaitGroupTasks are completed, then returns errors for them.
 func (ewg *ErrorWaitGroup) Wait() error {
 	ewg.wg.Wait()
+
 	return errors.Join(ewg.errors...)
 }

@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,6 +109,7 @@ func GenerateOrLoadWorkerID(workingDir string) (string, error) {
 		workerID := strings.TrimSpace(string(data))
 		if workerID != "" {
 			glog.Infof("Loaded existing worker ID from %s: %s", idFilePath, workerID)
+
 			return workerID, nil
 		}
 	}
@@ -142,7 +145,7 @@ func GenerateOrLoadWorkerID(workingDir string) (string, error) {
 		glog.Infof("Generated fallback worker ID: %s", workerID)
 	} else {
 		// Use random hex for uniqueness
-		randomHex := fmt.Sprintf("%x", randomBytes)
+		randomHex := hex.EncodeToString(randomBytes)
 		workerID = fmt.Sprintf("w-%s-%s", shortHostname, randomHex)
 		glog.Infof("Generated new worker ID: %s", workerID)
 	}
@@ -190,6 +193,7 @@ func NewWorker(config *types.WorkerConfig) (*Worker, error) {
 
 	glog.V(1).Infof("Worker created with %d registered task types", len(registry.GetAll()))
 	go worker.managerLoop()
+
 	return worker, nil
 }
 
@@ -206,6 +210,7 @@ out:
 			w.handleStart(cmd)
 		case ActionStop:
 			w.handleStop(cmd)
+
 			break out
 		case ActionGetStatus:
 			respCh := cmd.data.(statusResponse)
@@ -238,7 +243,7 @@ out:
 		case ActionSetTask:
 			currentLoad := len(w.state.currentTasks)
 			if currentLoad >= w.config.MaxConcurrent {
-				cmd.resp <- fmt.Errorf("worker is at capacity")
+				cmd.resp <- errors.New("worker is at capacity")
 			}
 			task := cmd.data.(*types.TaskInput)
 			w.state.currentTasks[task.ID] = task
@@ -282,7 +287,6 @@ out:
 			} else {
 				glog.Warningf("Cannot cancel task %s: task not found", taskID)
 			}
-
 		}
 	}
 }
@@ -294,6 +298,7 @@ func (w *Worker) getTaskLoad() int {
 		data:   respCh,
 		resp:   nil,
 	}
+
 	return <-respCh
 }
 
@@ -307,12 +312,14 @@ func (w *Worker) setTask(task *types.TaskInput) error {
 	if err := <-resp; err != nil {
 		glog.Errorf("TASK REJECTED: Worker %s at capacity (%d/%d) - rejecting task %s",
 			w.id, w.getTaskLoad(), w.config.MaxConcurrent, task.ID)
+
 		return err
 	}
 	newLoad := w.getTaskLoad()
 
 	glog.Infof("TASK ACCEPTED: Worker %s accepted task %s - current load: %d/%d",
 		w.id, task.ID, newLoad, w.config.MaxConcurrent)
+
 	return nil
 }
 
@@ -321,6 +328,7 @@ func (w *Worker) removeTask(task *types.TaskInput) int {
 		action: ActionRemoveTask,
 		data:   task.ID,
 	}
+
 	return w.getTaskLoad()
 }
 
@@ -330,6 +338,7 @@ func (w *Worker) getAdmin() AdminClient {
 		action: ActionGetAdmin,
 		data:   respCh,
 	}
+
 	return <-respCh
 }
 
@@ -339,6 +348,7 @@ func (w *Worker) getStopChan() chan struct{} {
 		action: ActionGetStopChan,
 		data:   respCh,
 	}
+
 	return <-respCh
 }
 
@@ -348,6 +358,7 @@ func (w *Worker) getHbTick() *time.Ticker {
 		action: ActionGetHbTick,
 		data:   respCh,
 	}
+
 	return <-respCh
 }
 
@@ -357,6 +368,7 @@ func (w *Worker) getReqTick() *time.Ticker {
 		action: ActionGetReqTick,
 		data:   respCh,
 	}
+
 	return <-respCh
 }
 
@@ -365,6 +377,7 @@ func (w *Worker) setHbTick(tick *time.Ticker) *time.Ticker {
 		action: ActionSetHbTick,
 		data:   tick,
 	}
+
 	return w.getHbTick()
 }
 
@@ -373,6 +386,7 @@ func (w *Worker) setReqTick(tick *time.Ticker) *time.Ticker {
 		action: ActionSetReqTick,
 		data:   tick,
 	}
+
 	return w.getReqTick()
 }
 
@@ -382,6 +396,7 @@ func (w *Worker) getStartTime() time.Time {
 		action: ActionGetStartTime,
 		data:   respCh,
 	}
+
 	return <-respCh
 }
 func (w *Worker) getCompletedTasks() int {
@@ -390,6 +405,7 @@ func (w *Worker) getCompletedTasks() int {
 		action: ActionGetCompletedTasks,
 		data:   respCh,
 	}
+
 	return <-respCh
 }
 func (w *Worker) getFailedTasks() int {
@@ -398,6 +414,7 @@ func (w *Worker) getFailedTasks() int {
 		action: ActionGetFailedTasks,
 		data:   respCh,
 	}
+
 	return <-respCh
 }
 
@@ -423,6 +440,7 @@ func (w *Worker) Start() error {
 		action: ActionStart,
 		resp:   resp,
 	}
+
 	return <-resp
 }
 
@@ -430,12 +448,14 @@ func (w *Worker) Start() error {
 func (w *Worker) handleStart(cmd workerCommand) {
 	glog.Infof("Worker %s handleStart called", w.id)
 	if w.state.running {
-		cmd.resp <- fmt.Errorf("worker is already running")
+		cmd.resp <- errors.New("worker is already running")
+
 		return
 	}
 
 	if w.state.adminClient == nil {
-		cmd.resp <- fmt.Errorf("admin client is not set")
+		cmd.resp <- errors.New("admin client is not set")
+
 		return
 	}
 
@@ -500,6 +520,7 @@ out:
 		select {
 		case <-timeout.C:
 			glog.Warningf("Worker %s stopping with %d tasks still running", w.id, w.getTaskLoad())
+
 			break out
 		case <-time.After(100 * time.Millisecond):
 		}
@@ -512,6 +533,7 @@ out:
 		}
 	}
 	glog.Infof("Worker %s stopped", w.id)
+
 	return nil
 }
 
@@ -519,6 +541,7 @@ out:
 func (w *Worker) handleStop(cmd workerCommand) {
 	if !w.state.running {
 		cmd.resp <- nil
+
 		return
 	}
 
@@ -554,6 +577,7 @@ func (w *Worker) GetStatus() types.WorkerStatus {
 		data:   respCh,
 		resp:   nil,
 	}
+
 	return <-respCh
 }
 
@@ -628,6 +652,7 @@ func (w *Worker) executeTask(task *types.TaskInput) {
 	if task.TypedParams == nil {
 		w.completeTask(task.ID, false, "task has no typed parameters - task was not properly planned")
 		glog.Errorf("Worker %s rejecting task %s: no typed parameters", w.id, task.ID)
+
 		return
 	}
 
@@ -665,6 +690,7 @@ func (w *Worker) executeTask(task *types.TaskInput) {
 		for taskType := range allFactories {
 			glog.Errorf("Supported task type: %v", taskType)
 		}
+
 		return
 	}
 
@@ -672,6 +698,7 @@ func (w *Worker) executeTask(task *types.TaskInput) {
 	if err != nil {
 		w.completeTask(task.ID, false, fmt.Sprintf("failed to create task for %s: %v", task.Type, err))
 		glog.Errorf("Worker %s failed to create task %s type %v: %v", w.id, task.ID, task.Type, err)
+
 		return
 	}
 
@@ -791,6 +818,7 @@ func (w *Worker) requestTasks() {
 	if currentLoad >= w.config.MaxConcurrent {
 		glog.V(3).Infof("TASK REQUEST SKIPPED: Worker %s at capacity (%d/%d)",
 			w.id, currentLoad, w.config.MaxConcurrent)
+
 		return // Already at capacity
 	}
 
@@ -801,6 +829,7 @@ func (w *Worker) requestTasks() {
 		task, err := w.getAdmin().RequestTask(w.id, w.config.Capabilities)
 		if err != nil {
 			glog.V(2).Infof("TASK REQUEST FAILED: Worker %s failed to request task: %v", w.id, err)
+
 			return
 		}
 
@@ -850,6 +879,7 @@ func (w *Worker) connectionMonitorLoop() {
 		select {
 		case <-stopChan:
 			glog.V(1).Infof("CONNECTION MONITOR STOPPING: Worker %s connection monitor loop stopping", w.id)
+
 			return
 		case <-ticker.C:
 			// Monitor connection status and log changes
@@ -880,7 +910,6 @@ func (w *Worker) GetConfig() *types.WorkerConfig {
 
 // GetPerformanceMetrics returns performance metrics
 func (w *Worker) GetPerformanceMetrics() *types.WorkerPerformance {
-
 	uptime := time.Since(w.getStartTime())
 	var successRate float64
 	totalTasks := w.getCompletedTasks() + w.getFailedTasks()
@@ -909,6 +938,7 @@ func (w *Worker) messageProcessingLoop() {
 	grpcClient, ok := w.getAdmin().(*GrpcAdminClient)
 	if !ok {
 		glog.Warningf("MESSAGE LOOP UNAVAILABLE: Worker %s admin client is not gRPC client, message processing not available", w.id)
+
 		return
 	}
 
@@ -919,6 +949,7 @@ func (w *Worker) messageProcessingLoop() {
 		select {
 		case <-stopChan:
 			glog.Infof("MESSAGE LOOP STOPPING: Worker %s message processing loop stopping", w.id)
+
 			return
 		case message := <-incomingChan:
 			if message != nil {
@@ -933,9 +964,9 @@ func (w *Worker) messageProcessingLoop() {
 
 // processAdminMessage processes different types of admin messages
 func (w *Worker) processAdminMessage(message *worker_pb.AdminMessage) {
-	glog.V(4).Infof("ADMIN MESSAGE RECEIVED: Worker %s received admin message: %T", w.id, message.Message)
+	glog.V(4).Infof("ADMIN MESSAGE RECEIVED: Worker %s received admin message: %T", w.id, message.GetMessage())
 
-	switch msg := message.Message.(type) {
+	switch msg := message.GetMessage().(type) {
 	case *worker_pb.AdminMessage_RegistrationResponse:
 		glog.V(2).Infof("REGISTRATION RESPONSE: Worker %s received registration response", w.id)
 		w.handleRegistrationResponse(msg.RegistrationResponse)
@@ -943,47 +974,48 @@ func (w *Worker) processAdminMessage(message *worker_pb.AdminMessage) {
 		glog.V(3).Infof("HEARTBEAT RESPONSE: Worker %s received heartbeat response", w.id)
 		w.handleHeartbeatResponse(msg.HeartbeatResponse)
 	case *worker_pb.AdminMessage_TaskLogRequest:
-		glog.V(1).Infof("TASK LOG REQUEST: Worker %s received task log request for task %s", w.id, msg.TaskLogRequest.TaskId)
+		glog.V(1).Infof("TASK LOG REQUEST: Worker %s received task log request for task %s", w.id, msg.TaskLogRequest.GetTaskId())
 		w.handleTaskLogRequest(msg.TaskLogRequest)
 	case *worker_pb.AdminMessage_TaskAssignment:
 		taskAssign := msg.TaskAssignment
-		if taskAssign.TaskId == "" {
+		if taskAssign.GetTaskId() == "" {
 			glog.V(1).Infof("Worker %s received empty task assignment, going to sleep", w.id)
+
 			return
 		}
 		glog.V(1).Infof("Worker %s received direct task assignment %s (type: %s, volume: %d)",
-			w.id, taskAssign.TaskId, taskAssign.TaskType, taskAssign.Params.VolumeId)
+			w.id, taskAssign.GetTaskId(), taskAssign.GetTaskType(), taskAssign.GetParams().GetVolumeId())
 
 		// Convert to task and handle it
 		task := &types.TaskInput{
-			ID:          taskAssign.TaskId,
-			Type:        types.TaskType(taskAssign.TaskType),
+			ID:          taskAssign.GetTaskId(),
+			Type:        types.TaskType(taskAssign.GetTaskType()),
 			Status:      types.TaskStatusAssigned,
-			VolumeID:    taskAssign.Params.VolumeId,
-			Server:      getServerFromParams(taskAssign.Params),
-			Collection:  taskAssign.Params.Collection,
-			Priority:    types.TaskPriority(taskAssign.Priority),
-			CreatedAt:   time.Unix(taskAssign.CreatedTime, 0),
-			TypedParams: taskAssign.Params,
+			VolumeID:    taskAssign.GetParams().GetVolumeId(),
+			Server:      getServerFromParams(taskAssign.GetParams()),
+			Collection:  taskAssign.GetParams().GetCollection(),
+			Priority:    types.TaskPriority(taskAssign.GetPriority()),
+			CreatedAt:   time.Unix(taskAssign.GetCreatedTime(), 0),
+			TypedParams: taskAssign.GetParams(),
 		}
 
 		if err := w.HandleTask(task); err != nil {
 			glog.Errorf("DIRECT TASK ASSIGNMENT FAILED: Worker %s failed to handle direct task assignment %s: %v", w.id, task.ID, err)
 		}
 	case *worker_pb.AdminMessage_TaskCancellation:
-		glog.Infof("TASK CANCELLATION: Worker %s received task cancellation for task %s", w.id, msg.TaskCancellation.TaskId)
+		glog.Infof("TASK CANCELLATION: Worker %s received task cancellation for task %s", w.id, msg.TaskCancellation.GetTaskId())
 		w.handleTaskCancellation(msg.TaskCancellation)
 	case *worker_pb.AdminMessage_AdminShutdown:
 		glog.Infof("ADMIN SHUTDOWN: Worker %s received admin shutdown message", w.id)
 		w.handleAdminShutdown(msg.AdminShutdown)
 	default:
-		glog.V(1).Infof("UNKNOWN MESSAGE: Worker %s received unknown admin message type: %T", w.id, message.Message)
+		glog.V(1).Infof("UNKNOWN MESSAGE: Worker %s received unknown admin message type: %T", w.id, message.GetMessage())
 	}
 }
 
 // handleTaskLogRequest processes task log requests from admin server
 func (w *Worker) handleTaskLogRequest(request *worker_pb.TaskLogRequest) {
-	glog.V(1).Infof("Worker %s handling task log request for task %s", w.id, request.TaskId)
+	glog.V(1).Infof("Worker %s handling task log request for task %s", w.id, request.GetTaskId())
 
 	// Use the task log handler to process the request
 	response := w.taskLogHandler.HandleLogRequest(request)
@@ -1000,33 +1032,34 @@ func (w *Worker) handleTaskLogRequest(request *worker_pb.TaskLogRequest) {
 	grpcClient, ok := w.getAdmin().(*GrpcAdminClient)
 	if !ok {
 		glog.Errorf("Cannot send task log response: admin client is not gRPC client")
+
 		return
 	}
 
 	select {
 	case grpcClient.outgoing <- responseMsg:
-		glog.V(1).Infof("Task log response sent for task %s", request.TaskId)
+		glog.V(1).Infof("Task log response sent for task %s", request.GetTaskId())
 	case <-time.After(5 * time.Second):
-		glog.Errorf("Failed to send task log response for task %s: timeout", request.TaskId)
+		glog.Errorf("Failed to send task log response for task %s: timeout", request.GetTaskId())
 	}
 }
 
 // handleTaskCancellation processes task cancellation requests
 func (w *Worker) handleTaskCancellation(cancellation *worker_pb.TaskCancellation) {
-	glog.Infof("Worker %s received task cancellation for task %s", w.id, cancellation.TaskId)
+	glog.Infof("Worker %s received task cancellation for task %s", w.id, cancellation.GetTaskId())
 
 	w.cmds <- workerCommand{
 		action: ActionCancelTask,
-		data:   cancellation.TaskId,
+		data:   cancellation.GetTaskId(),
 		resp:   nil,
 	}
 }
 
 // handleAdminShutdown processes admin shutdown notifications
 func (w *Worker) handleAdminShutdown(shutdown *worker_pb.AdminShutdown) {
-	glog.Infof("Worker %s received admin shutdown notification: %s", w.id, shutdown.Reason)
+	glog.Infof("Worker %s received admin shutdown notification: %s", w.id, shutdown.GetReason())
 
-	gracefulSeconds := shutdown.GracefulShutdownSeconds
+	gracefulSeconds := shutdown.GetGracefulShutdownSeconds()
 	if gracefulSeconds > 0 {
 		glog.Infof("Graceful shutdown in %d seconds", gracefulSeconds)
 		time.AfterFunc(time.Duration(gracefulSeconds)*time.Second, func() {
@@ -1040,9 +1073,9 @@ func (w *Worker) handleAdminShutdown(shutdown *worker_pb.AdminShutdown) {
 
 // handleRegistrationResponse processes registration response from admin server
 func (w *Worker) handleRegistrationResponse(response *worker_pb.RegistrationResponse) {
-	glog.V(2).Infof("Worker %s processed registration response: success=%v", w.id, response.Success)
-	if !response.Success {
-		glog.Warningf("Worker %s registration failed: %s", w.id, response.Message)
+	glog.V(2).Infof("Worker %s processed registration response: success=%v", w.id, response.GetSuccess())
+	if !response.GetSuccess() {
+		glog.Warningf("Worker %s registration failed: %s", w.id, response.GetMessage())
 	}
 	// Registration responses are typically handled by the gRPC client during connection setup
 	// No additional action needed here

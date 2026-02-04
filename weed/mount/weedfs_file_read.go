@@ -3,6 +3,7 @@ package mount
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -63,6 +64,7 @@ func (wfs *WFS) Read(cancel <-chan struct{}, in *fuse.ReadIn, buff []byte) (fuse
 	totalRead, err := readDataByFileHandleWithContext(ctx, buff, fh, offset)
 	if err != nil {
 		glog.Warningf("file handle read %s %d: %v", fh.FullPath(), totalRead, err)
+
 		return nil, fuse.EIO
 	}
 
@@ -70,16 +72,15 @@ func (wfs *WFS) Read(cancel <-chan struct{}, in *fuse.ReadIn, buff []byte) (fuse
 		// print(".")
 		mirrorData := make([]byte, totalRead)
 		fh.mirrorFile.ReadAt(mirrorData, offset)
-		if bytes.Compare(mirrorData, buff[:totalRead]) != 0 {
-
+		if !bytes.Equal(mirrorData, buff[:totalRead]) {
 			againBuff := make([]byte, len(buff))
 			againRead, _ := readDataByFileHandleWithContext(ctx, againBuff, fh, offset)
-			againCorrect := bytes.Compare(mirrorData, againBuff[:againRead]) == 0
-			againSame := bytes.Compare(buff[:totalRead], againBuff[:againRead]) == 0
+			againCorrect := bytes.Equal(mirrorData, againBuff[:againRead])
+			againSame := bytes.Equal(buff[:totalRead], againBuff[:againRead])
 
 			fmt.Printf("\ncompare %v [%d,%d) size:%d againSame:%v againCorrect:%v\n", fh.mirrorFile.Name(), offset, offset+totalRead, totalRead, againSame, againCorrect)
-			//fmt.Printf("read mirrow data: %v\n", mirrorData)
-			//fmt.Printf("read actual data: %v\n", againBuff[:totalRead])
+			// fmt.Printf("read mirrow data: %v\n", mirrorData)
+			// fmt.Printf("read actual data: %v\n", againBuff[:totalRead])
 		}
 	}
 
@@ -93,13 +94,14 @@ func readDataByFileHandle(buff []byte, fhIn *FileHandle, offset int64) (int64, e
 	defer fhIn.unlockForRead(offset, size)
 
 	n, tsNs, err := fhIn.readFromChunks(buff, offset)
-	if err == nil || err == io.EOF {
+	if err == nil || errors.Is(err, io.EOF) {
 		maxStop := fhIn.readFromDirtyPages(buff, offset, tsNs)
 		n = max(maxStop-offset, n)
 	}
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
+
 	return n, err
 }
 
@@ -110,12 +112,13 @@ func readDataByFileHandleWithContext(ctx context.Context, buff []byte, fhIn *Fil
 	defer fhIn.unlockForRead(offset, size)
 
 	n, tsNs, err := fhIn.readFromChunksWithContext(ctx, buff, offset)
-	if err == nil || err == io.EOF {
+	if err == nil || errors.Is(err, io.EOF) {
 		maxStop := fhIn.readFromDirtyPages(buff, offset, tsNs)
 		n = max(maxStop-offset, n)
 	}
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
+
 	return n, err
 }

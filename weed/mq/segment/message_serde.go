@@ -2,6 +2,7 @@ package segment
 
 import (
 	flatbuffers "github.com/google/flatbuffers/go"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/message_fbs"
 )
 
@@ -23,7 +24,6 @@ func NewMessageBatchBuilder(b *flatbuffers.Builder,
 	producerEpoch int32,
 	segmentId int32,
 	flags int32) *MessageBatchBuilder {
-
 	b.Reset()
 
 	return &MessageBatchBuilder{
@@ -50,7 +50,7 @@ func (builder *MessageBatchBuilder) AddMessage(segmentSeq int64, tsMs int64, pro
 		names = append(names, builder.b.CreateString(k))
 		values = append(values, builder.b.CreateByteVector(v))
 	}
-	for i, _ := range names {
+	for i := range names {
 		message_fbs.NameValueStart(builder.b)
 		message_fbs.NameValueAddName(builder.b, names[i])
 		message_fbs.NameValueAddValue(builder.b, values[i])
@@ -77,7 +77,6 @@ func (builder *MessageBatchBuilder) AddMessage(segmentSeq int64, tsMs int64, pro
 	messageOffset := message_fbs.MessageEnd(builder.b)
 
 	builder.messageOffsets = append(builder.messageOffsets, messageOffset)
-
 }
 
 func (builder *MessageBatchBuilder) BuildMessageBatch() {

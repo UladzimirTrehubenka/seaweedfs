@@ -1,22 +1,25 @@
 package filer
 
 import (
+	"errors"
 	"fmt"
+
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 func ReadMountMappings(grpcDialOption grpc.DialOption, filerAddress pb.ServerAddress) (mappings *remote_pb.RemoteStorageMapping, readErr error) {
 	var oldContent []byte
 	if readErr = pb.WithFilerClient(false, 0, filerAddress, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		oldContent, readErr = ReadInsideFiler(client, DirectoryEtcRemote, REMOTE_STORAGE_MOUNT_FILE)
+
 		return readErr
 	}); readErr != nil {
-		if readErr != filer_pb.ErrNotFound {
+		if !errors.Is(readErr, filer_pb.ErrNotFound) {
 			return nil, fmt.Errorf("read existing mapping: %w", readErr)
 		}
 		oldContent = nil
@@ -30,15 +33,15 @@ func ReadMountMappings(grpcDialOption grpc.DialOption, filerAddress pb.ServerAdd
 }
 
 func InsertMountMapping(filerClient filer_pb.FilerClient, dir string, remoteStorageLocation *remote_pb.RemoteStorageLocation) (err error) {
-
 	// read current mapping
 	var oldContent, newContent []byte
 	err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		oldContent, err = ReadInsideFiler(client, DirectoryEtcRemote, REMOTE_STORAGE_MOUNT_FILE)
+
 		return err
 	})
 	if err != nil {
-		if err != filer_pb.ErrNotFound {
+		if !errors.Is(err, filer_pb.ErrNotFound) {
 			return fmt.Errorf("read existing mapping: %w", err)
 		}
 	}
@@ -46,7 +49,7 @@ func InsertMountMapping(filerClient filer_pb.FilerClient, dir string, remoteStor
 	// add new mapping
 	newContent, err = addRemoteStorageMapping(oldContent, dir, remoteStorageLocation)
 	if err != nil {
-		return fmt.Errorf("add mapping %s~%s: %v", dir, remoteStorageLocation, err)
+		return fmt.Errorf("add mapping %s~%s: %w", dir, remoteStorageLocation, err)
 	}
 
 	// save back
@@ -61,15 +64,15 @@ func InsertMountMapping(filerClient filer_pb.FilerClient, dir string, remoteStor
 }
 
 func DeleteMountMapping(filerClient filer_pb.FilerClient, dir string) (err error) {
-
 	// read current mapping
 	var oldContent, newContent []byte
 	err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		oldContent, err = ReadInsideFiler(client, DirectoryEtcRemote, REMOTE_STORAGE_MOUNT_FILE)
+
 		return err
 	})
 	if err != nil {
-		if err != filer_pb.ErrNotFound {
+		if !errors.Is(err, filer_pb.ErrNotFound) {
 			return fmt.Errorf("read existing mapping: %w", err)
 		}
 	}
@@ -77,7 +80,7 @@ func DeleteMountMapping(filerClient filer_pb.FilerClient, dir string) (err error
 	// add new mapping
 	newContent, err = removeRemoteStorageMapping(oldContent, dir)
 	if err != nil {
-		return fmt.Errorf("delete mount %s: %v", dir, err)
+		return fmt.Errorf("delete mount %s: %w", dir, err)
 	}
 
 	// save back
@@ -114,7 +117,7 @@ func removeRemoteStorageMapping(oldContent []byte, dir string) (newContent []byt
 	}
 
 	// set the new mapping
-	delete(mappings.Mappings, dir)
+	delete(mappings.GetMappings(), dir)
 
 	if newContent, err = proto.Marshal(mappings); err != nil {
 		return oldContent, fmt.Errorf("marshal mappings: %w", err)

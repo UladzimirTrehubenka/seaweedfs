@@ -69,21 +69,23 @@ func MapBrokerErrorToKafka(brokerErrorCode int32) int16 {
 // HandleBrokerResponse processes a broker response and returns appropriate error information
 // Returns (kafkaErrorCode, errorMessage, error) where error is non-nil for system errors
 func HandleBrokerResponse(resp *mq_pb.PublishMessageResponse) (int16, string, error) {
-	if resp.Error == "" && resp.ErrorCode == 0 {
+	if resp.GetError() == "" && resp.GetErrorCode() == 0 {
 		// No error
 		return kafkaErrorCodeNone, "", nil
 	}
 
 	// Use structured error code if available, otherwise fall back to string parsing
-	if resp.ErrorCode != 0 {
-		kafkaErrorCode := MapBrokerErrorToKafka(resp.ErrorCode)
-		return kafkaErrorCode, resp.Error, nil
+	if resp.GetErrorCode() != 0 {
+		kafkaErrorCode := MapBrokerErrorToKafka(resp.GetErrorCode())
+
+		return kafkaErrorCode, resp.GetError(), nil
 	}
 
 	// Fallback: parse string error for backward compatibility
 	// This handles cases where older brokers might not set ErrorCode
-	kafkaErrorCode := parseStringErrorToKafkaCode(resp.Error)
-	return kafkaErrorCode, resp.Error, nil
+	kafkaErrorCode := parseStringErrorToKafkaCode(resp.GetError())
+
+	return kafkaErrorCode, resp.GetError(), nil
 }
 
 // parseStringErrorToKafkaCode provides backward compatibility for string-based error parsing
@@ -120,5 +122,6 @@ func containsAny(text string, substrings ...string) bool {
 			return true
 		}
 	}
+
 	return false
 }

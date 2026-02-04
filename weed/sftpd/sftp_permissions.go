@@ -1,9 +1,11 @@
 package sftpd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -53,9 +55,9 @@ type EntryAttributes struct {
 // Returns:
 //   - nil if permission is granted, error otherwise
 func (fs *SftpServer) CheckFilePermission(path string, perm string) error {
-
 	if fs.user == nil {
 		glog.V(0).Infof("permission denied. No user associated with the SftpServer.")
+
 		return os.ErrPermission
 	}
 
@@ -65,21 +67,22 @@ func (fs *SftpServer) CheckFilePermission(path string, perm string) error {
 	if err != nil {
 		// If the path doesn't exist and we're checking for create/write/mkdir permission,
 		// check permissions on the parent directory instead
-		if err == os.ErrNotExist {
+		if errors.Is(err, os.ErrNotExist) {
 			parentPath := filepath.Dir(path)
 			// Check if user can write to the parent directory
 			return fs.CheckFilePermission(parentPath, perm)
 		}
+
 		return fmt.Errorf("failed to get entry for path %s: %w", path, err)
 	}
 
 	// Rest of the function remains the same...
 	// Handle symlinks by resolving them
-	if entry.Attributes.GetSymlinkTarget() != "" {
+	if entry.GetAttributes().GetSymlinkTarget() != "" {
 		// Get the actual entry for the resolved path
-		entry, err = fs.getEntry(entry.Attributes.GetSymlinkTarget())
+		entry, err = fs.getEntry(entry.GetAttributes().GetSymlinkTarget())
 		if err != nil {
-			return fmt.Errorf("failed to get entry for resolved path %s: %w", entry.Attributes.SymlinkTarget, err)
+			return fmt.Errorf("failed to get entry for resolved path %s: %w", entry.GetAttributes().GetSymlinkTarget(), err)
 		}
 	}
 
@@ -91,26 +94,27 @@ func (fs *SftpServer) CheckFilePermission(path string, perm string) error {
 	// Check if path is within user's home directory and has explicit permissions
 	if isPathInHomeDirectory(fs.user, path) {
 		// Check if user has explicit permissions for this path
-		if HasExplicitPermission(fs.user, path, perm, entry.IsDirectory) {
+		if HasExplicitPermission(fs.user, path, perm, entry.GetIsDirectory()) {
 			return nil
 		}
 	} else {
 		// For paths outside home directory or without explicit home permissions,
 		// check UNIX-style perms first
-		isOwner := fs.user.Uid == entry.Attributes.Uid
-		isGroup := fs.user.Gid == entry.Attributes.Gid
-		mode := os.FileMode(entry.Attributes.FileMode)
+		isOwner := fs.user.Uid == entry.GetAttributes().GetUid()
+		isGroup := fs.user.Gid == entry.GetAttributes().GetGid()
+		mode := os.FileMode(entry.GetAttributes().GetFileMode())
 
-		if HasUnixPermission(isOwner, isGroup, mode, entry.IsDirectory, perm) {
+		if HasUnixPermission(isOwner, isGroup, mode, entry.GetIsDirectory(), perm) {
 			return nil
 		}
 
 		// Then check explicit ACLs
-		if HasExplicitPermission(fs.user, path, perm, entry.IsDirectory) {
+		if HasExplicitPermission(fs.user, path, perm, entry.GetIsDirectory()) {
 			return nil
 		}
 	}
 	glog.V(0).Infof("permission denied for user %s on path %s for permission %s", fs.user.Username, path, perm)
+
 	return os.ErrPermission
 }
 
@@ -160,6 +164,7 @@ func HasUnixPermission(isOwner, isGroup bool, fileMode os.FileMode, isDirectory 
 		if isDirectory {
 			return hasRead && hasExec
 		}
+
 		return hasRead
 	case PermDelete:
 		return hasWrite
@@ -172,6 +177,7 @@ func HasUnixPermission(isOwner, isGroup bool, fileMode os.FileMode, isDirectory 
 	case PermAll, PermAdmin:
 		return hasRead && hasWrite && hasExec
 	}
+
 	return false
 }
 
@@ -229,10 +235,5 @@ func HasExplicitPermission(user *user.User, filepath, requiredPerm string, isDir
 
 // Helper function to check if a string is in a slice
 func containsString(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, s)
 }

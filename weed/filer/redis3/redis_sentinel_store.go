@@ -6,6 +6,7 @@ import (
 	"github.com/go-redsync/redsync/v4"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
@@ -45,5 +46,6 @@ func (store *Redis3SentinelStore) initialize(addresses []string, masterName stri
 		WriteTimeout:    time.Second * 5,
 	})
 	store.redsync = redsync.New(goredis.NewPool(store.Client))
+
 	return
 }

@@ -1,7 +1,7 @@
 package broker
 
 import (
-	"fmt"
+	"errors"
 	"io"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -17,7 +17,7 @@ func (b *MessageQueueBroker) SubscribeFollowMe(stream mq_pb.SeaweedMessaging_Sub
 	}
 	initMessage := req.GetInit()
 	if initMessage == nil {
-		return fmt.Errorf("missing init message")
+		return errors.New("missing init message")
 	}
 
 	// create an in-memory offset
@@ -28,30 +28,33 @@ func (b *MessageQueueBroker) SubscribeFollowMe(stream mq_pb.SeaweedMessaging_Sub
 		// receive a message
 		req, err = stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
+
 				break
 			}
-			glog.V(0).Infof("topic %v partition %v subscribe stream error: %v", initMessage.Topic, initMessage.Partition, err)
+			glog.V(0).Infof("topic %v partition %v subscribe stream error: %v", initMessage.GetTopic(), initMessage.GetPartition(), err)
+
 			break
 		}
 
 		// Process the received message
 		if ackMessage := req.GetAck(); ackMessage != nil {
-			lastOffset = ackMessage.TsNs
+			lastOffset = ackMessage.GetTsNs()
 			// println("sub follower got offset", lastOffset)
 		} else if closeMessage := req.GetClose(); closeMessage != nil {
-			glog.V(0).Infof("topic %v partition %v subscribe stream closed: %v", initMessage.Topic, initMessage.Partition, closeMessage)
+			glog.V(0).Infof("topic %v partition %v subscribe stream closed: %v", initMessage.GetTopic(), initMessage.GetPartition(), closeMessage)
+
 			return nil
 		} else {
 			glog.Errorf("unknown message: %v", req)
 		}
 	}
 
-	t, p := topic.FromPbTopic(initMessage.Topic), topic.FromPbPartition(initMessage.Partition)
+	t, p := topic.FromPbTopic(initMessage.GetTopic()), topic.FromPbPartition(initMessage.GetPartition())
 
 	if lastOffset > 0 {
-		err = b.saveConsumerGroupOffset(t, p, initMessage.ConsumerGroup, lastOffset)
+		err = b.saveConsumerGroupOffset(t, p, initMessage.GetConsumerGroup(), lastOffset)
 	}
 
 	glog.V(0).Infof("shut down follower for %v offset %d", initMessage, lastOffset)
@@ -60,14 +63,15 @@ func (b *MessageQueueBroker) SubscribeFollowMe(stream mq_pb.SeaweedMessaging_Sub
 }
 
 func (b *MessageQueueBroker) readConsumerGroupOffset(initMessage *mq_pb.SubscribeMessageRequest_InitMessage) (offset int64, err error) {
-	t, p := topic.FromPbTopic(initMessage.Topic), topic.FromPbPartition(initMessage.PartitionOffset.Partition)
+	t, p := topic.FromPbTopic(initMessage.GetTopic()), topic.FromPbPartition(initMessage.GetPartitionOffset().GetPartition())
 
 	// Use the offset manager's consumer group storage
-	return b.offsetManager.LoadConsumerGroupOffset(t, p, initMessage.ConsumerGroup)
+	return b.offsetManager.LoadConsumerGroupOffset(t, p, initMessage.GetConsumerGroup())
 }
 
 func (b *MessageQueueBroker) saveConsumerGroupOffset(t topic.Topic, p topic.Partition, consumerGroup string, offset int64) error {
 	// Use the offset manager's consumer group storage
 	glog.V(0).Infof("saving topic %s partition %v consumer group %s offset %d", t, p, consumerGroup, offset)
+
 	return b.offsetManager.SaveConsumerGroupOffset(t, p, consumerGroup, offset)
 }

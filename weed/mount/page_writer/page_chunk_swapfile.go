@@ -27,12 +27,13 @@ type SwapFile struct {
 
 type SwapFileChunk struct {
 	sync.RWMutex
+
 	swapfile         *SwapFile
 	usage            *ChunkWrittenIntervalList
 	logicChunkIndex  LogicChunkIndex
 	actualChunkIndex ActualChunkIndex
 	activityScore    *ActivityScore
-	//memChunk         *MemChunk
+	// memChunk         *MemChunk
 }
 
 func NewSwapFile(dir string, chunkSize int64) *SwapFile {
@@ -62,12 +63,14 @@ func (sf *SwapFile) NewSwapFileChunk(logicChunkIndex LogicChunkIndex) (tc *SwapF
 		if os.IsNotExist(err) {
 			if mkdirErr := os.MkdirAll(sf.dir, 0700); mkdirErr != nil {
 				glog.Errorf("create/recreate swap directory %s: %v", sf.dir, mkdirErr)
+
 				return nil
 			}
 			sf.file, err = os.CreateTemp(sf.dir, "")
 		}
 		if err != nil {
 			glog.Errorf("create swap file in %s: %v", sf.dir, err)
+
 			return nil
 		}
 	}
@@ -97,7 +100,6 @@ func (sf *SwapFile) NewSwapFileChunk(logicChunkIndex LogicChunkIndex) (tc *SwapF
 }
 
 func (sc *SwapFileChunk) FreeResource() {
-
 	sc.Lock()
 	defer sc.Unlock()
 
@@ -122,7 +124,7 @@ func (sc *SwapFileChunk) WriteDataAt(src []byte, offset int64, tsNs int64) (n in
 	if err != nil {
 		glog.Errorf("failed to write swap file %s: %v", sc.swapfile.file.Name(), err)
 	}
-	//sc.memChunk.WriteDataAt(src, offset, tsNs)
+	// sc.memChunk.WriteDataAt(src, offset, tsNs)
 	sc.activityScore.MarkWrite()
 
 	return
@@ -134,8 +136,8 @@ func (sc *SwapFileChunk) ReadDataAt(p []byte, off int64, tsNs int64) (maxStop in
 
 	// println(sc.logicChunkIndex, "|", tsNs, "read at", off, len(p), sc.actualChunkIndex)
 
-	//memCopy := make([]byte, len(p))
-	//copy(memCopy, p)
+	// memCopy := make([]byte, len(p))
+	// copy(memCopy, p)
 
 	chunkStartOffset := int64(sc.logicChunkIndex) * sc.swapfile.chunkSize
 	for t := sc.usage.head.next; t != sc.usage.tail; t = t.next {
@@ -148,6 +150,7 @@ func (sc *SwapFileChunk) ReadDataAt(p []byte, off int64, tsNs int64) (maxStop in
 					err = nil
 				}
 				glog.Errorf("failed to reading swap file %s: %v", sc.swapfile.file.Name(), err)
+
 				break
 			}
 			maxStop = max(maxStop, logicStop)
@@ -157,19 +160,20 @@ func (sc *SwapFileChunk) ReadDataAt(p []byte, off int64, tsNs int64) (maxStop in
 			}
 		}
 	}
-	//sc.memChunk.ReadDataAt(memCopy, off, tsNs)
-	//if bytes.Compare(memCopy, p) != 0 {
+	// sc.memChunk.ReadDataAt(memCopy, off, tsNs)
+	// if bytes.Compare(memCopy, p) != 0 {
 	//	println("read wrong data from swap file", off, sc.logicChunkIndex)
 	//}
 
 	sc.activityScore.MarkRead()
 
-	return
+	return maxStop
 }
 
 func (sc *SwapFileChunk) IsComplete() bool {
 	sc.RLock()
 	defer sc.RUnlock()
+
 	return sc.usage.IsComplete(sc.swapfile.chunkSize)
 }
 
@@ -180,6 +184,7 @@ func (sc *SwapFileChunk) ActivityScore() int64 {
 func (sc *SwapFileChunk) WrittenSize() int64 {
 	sc.RLock()
 	defer sc.RUnlock()
+
 	return sc.usage.WrittenSize()
 }
 
@@ -210,5 +215,4 @@ func (sc *SwapFileChunk) SaveContent(saveFn SaveToStorageFunc) {
 		}
 		mem.Free(data)
 	}
-
 }

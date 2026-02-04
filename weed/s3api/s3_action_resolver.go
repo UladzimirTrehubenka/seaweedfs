@@ -129,11 +129,13 @@ func resolveFromQueryParameters(query url.Values, method string, hasObject bool)
 			if hasObject {
 				return s3_constants.S3_ACTION_GET_OBJECT_ACL
 			}
+
 			return s3_constants.S3_ACTION_GET_BUCKET_ACL
 		case http.MethodPut:
 			if hasObject {
 				return s3_constants.S3_ACTION_PUT_OBJECT_ACL
 			}
+
 			return s3_constants.S3_ACTION_PUT_BUCKET_ACL
 		}
 	}
@@ -145,16 +147,19 @@ func resolveFromQueryParameters(query url.Values, method string, hasObject bool)
 			if hasObject {
 				return s3_constants.S3_ACTION_GET_OBJECT_TAGGING
 			}
+
 			return s3_constants.S3_ACTION_GET_BUCKET_TAGGING
 		case http.MethodPut:
 			if hasObject {
 				return s3_constants.S3_ACTION_PUT_OBJECT_TAGGING
 			}
+
 			return s3_constants.S3_ACTION_PUT_BUCKET_TAGGING
 		case http.MethodDelete:
 			if hasObject {
 				return s3_constants.S3_ACTION_DELETE_OBJECT_TAGGING
 			}
+
 			return s3_constants.S3_ACTION_DELETE_BUCKET_TAGGING
 		}
 	}

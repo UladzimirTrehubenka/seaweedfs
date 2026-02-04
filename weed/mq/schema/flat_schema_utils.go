@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,25 +26,25 @@ func SplitFlatSchemaToKeyValue(flatSchema *schema_pb.RecordType, keyColumns []st
 	var valueFields []*schema_pb.Field
 
 	// Split fields based on key columns
-	for _, field := range flatSchema.Fields {
-		if keyColumnSet[field.Name] {
+	for _, field := range flatSchema.GetFields() {
+		if keyColumnSet[field.GetName()] {
 			// Create key field with reindexed field index
 			keyField := &schema_pb.Field{
-				Name:       field.Name,
+				Name:       field.GetName(),
 				FieldIndex: int32(len(keyFields)),
-				Type:       field.Type,
-				IsRepeated: field.IsRepeated,
-				IsRequired: field.IsRequired,
+				Type:       field.GetType(),
+				IsRepeated: field.GetIsRepeated(),
+				IsRequired: field.GetIsRequired(),
 			}
 			keyFields = append(keyFields, keyField)
 		} else {
 			// Create value field with reindexed field index
 			valueField := &schema_pb.Field{
-				Name:       field.Name,
+				Name:       field.GetName(),
 				FieldIndex: int32(len(valueFields)),
-				Type:       field.Type,
-				IsRepeated: field.IsRepeated,
-				IsRequired: field.IsRequired,
+				Type:       field.GetType(),
+				IsRepeated: field.GetIsRepeated(),
+				IsRequired: field.GetIsRequired(),
 			}
 			valueFields = append(valueFields, valueField)
 		}
@@ -55,8 +56,9 @@ func SplitFlatSchemaToKeyValue(flatSchema *schema_pb.RecordType, keyColumns []st
 		for _, col := range keyColumns {
 			found := false
 			for _, field := range keyFields {
-				if field.Name == col {
+				if field.GetName() == col {
 					found = true
+
 					break
 				}
 			}
@@ -90,38 +92,35 @@ func CombineFlatSchemaFromKeyValue(keySchema *schema_pb.RecordType, valueSchema 
 
 	// Add key fields first
 	if keySchema != nil {
-		for _, field := range keySchema.Fields {
+		for _, field := range keySchema.GetFields() {
 			combinedField := &schema_pb.Field{
-				Name:       field.Name,
+				Name:       field.GetName(),
 				FieldIndex: int32(len(combinedFields)),
-				Type:       field.Type,
-				IsRepeated: field.IsRepeated,
-				IsRequired: field.IsRequired,
+				Type:       field.GetType(),
+				IsRepeated: field.GetIsRepeated(),
+				IsRequired: field.GetIsRequired(),
 			}
 			combinedFields = append(combinedFields, combinedField)
-			keyColumns = append(keyColumns, field.Name)
+			keyColumns = append(keyColumns, field.GetName())
 		}
 	}
 
 	// Add value fields
 	if valueSchema != nil {
-		for _, field := range valueSchema.Fields {
+		for _, field := range valueSchema.GetFields() {
 			// Check for name conflicts
-			fieldName := field.Name
-			for _, keyCol := range keyColumns {
-				if fieldName == keyCol {
-					// This shouldn't happen in well-formed schemas, but handle gracefully
-					fieldName = "value_" + fieldName
-					break
-				}
+			fieldName := field.GetName()
+			if slices.Contains(keyColumns, fieldName) {
+				// This shouldn't happen in well-formed schemas, but handle gracefully
+				fieldName = "value_" + fieldName
 			}
 
 			combinedField := &schema_pb.Field{
 				Name:       fieldName,
 				FieldIndex: int32(len(combinedFields)),
-				Type:       field.Type,
-				IsRepeated: field.IsRepeated,
-				IsRequired: field.IsRequired,
+				Type:       field.GetType(),
+				IsRepeated: field.GetIsRepeated(),
+				IsRequired: field.GetIsRequired(),
 			}
 			combinedFields = append(combinedFields, combinedField)
 		}
@@ -144,27 +143,27 @@ func ExtractKeyColumnsFromCombinedSchema(combinedSchema *schema_pb.RecordType) (
 	var flatFields []*schema_pb.Field
 	var keyColumns_ []string
 
-	for _, field := range combinedSchema.Fields {
-		if strings.HasPrefix(field.Name, "key_") {
+	for _, field := range combinedSchema.GetFields() {
+		if after, ok := strings.CutPrefix(field.GetName(), "key_"); ok {
 			// This is a key field - remove the prefix
-			originalName := strings.TrimPrefix(field.Name, "key_")
+			originalName := after
 			flatField := &schema_pb.Field{
 				Name:       originalName,
 				FieldIndex: int32(len(flatFields)),
-				Type:       field.Type,
-				IsRepeated: field.IsRepeated,
-				IsRequired: field.IsRequired,
+				Type:       field.GetType(),
+				IsRepeated: field.GetIsRepeated(),
+				IsRequired: field.GetIsRequired(),
 			}
 			flatFields = append(flatFields, flatField)
 			keyColumns_ = append(keyColumns_, originalName)
 		} else {
 			// This is a value field
 			flatField := &schema_pb.Field{
-				Name:       field.Name,
+				Name:       field.GetName(),
 				FieldIndex: int32(len(flatFields)),
-				Type:       field.Type,
-				IsRepeated: field.IsRepeated,
-				IsRequired: field.IsRequired,
+				Type:       field.GetType(),
+				IsRepeated: field.GetIsRepeated(),
+				IsRequired: field.GetIsRequired(),
 			}
 			flatFields = append(flatFields, flatField)
 		}
@@ -187,8 +186,8 @@ func ValidateKeyColumns(schema *schema_pb.RecordType, keyColumns []string) error
 	}
 
 	fieldNames := make(map[string]bool)
-	for _, field := range schema.Fields {
-		fieldNames[field.Name] = true
+	for _, field := range schema.GetFields() {
+		fieldNames[field.GetName()] = true
 	}
 
 	var missingColumns []string

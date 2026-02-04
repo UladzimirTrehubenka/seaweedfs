@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/seaweedfs/raft"
+
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -90,6 +91,7 @@ func (locks *AdminLocks) isLocked(lockName string) (clientName string, message s
 		return "", "", false
 	}
 	glog.V(4).Infof("isLocked %v: %v", adminLock.lastClient, adminLock.lastMessage)
+
 	return adminLock.lastClient, adminLock.lastMessage, adminLock.accessLockTime.Add(LockDuration).After(time.Now())
 }
 
@@ -100,6 +102,7 @@ func (locks *AdminLocks) isValidToken(lockName string, ts time.Time, token int64
 	if !found {
 		return false
 	}
+
 	return adminLock.accessLockTime.Equal(ts) && adminLock.accessSecret == token
 }
 
@@ -113,6 +116,7 @@ func (locks *AdminLocks) generateToken(lockName string, clientName string) (ts t
 	}
 	locks.locks[lockName] = lock
 	stats.MasterAdminLock.WithLabelValues(clientName).Set(1)
+
 	return lock.accessLockTime, lock.accessSecret
 }
 
@@ -130,28 +134,31 @@ func (ms *MasterServer) LeaseAdminToken(ctx context.Context, req *master_pb.Leas
 		return resp, raft.NotLeaderError
 	}
 
-	if lastClient, lastMessage, isLocked := ms.adminLocks.isLocked(req.LockName); isLocked {
+	if lastClient, lastMessage, isLocked := ms.adminLocks.isLocked(req.GetLockName()); isLocked {
 		glog.V(4).Infof("LeaseAdminToken %v", lastClient)
-		if req.PreviousToken != 0 && ms.adminLocks.isValidToken(req.LockName, time.Unix(0, req.PreviousLockTime), req.PreviousToken) {
+		if req.GetPreviousToken() != 0 && ms.adminLocks.isValidToken(req.GetLockName(), time.Unix(0, req.GetPreviousLockTime()), req.GetPreviousToken()) {
 			// for renew
-			ts, token := ms.adminLocks.generateToken(req.LockName, req.ClientName)
+			ts, token := ms.adminLocks.generateToken(req.GetLockName(), req.GetClientName())
 			resp.Token, resp.LockTsNs = token, ts.UnixNano()
+
 			return resp, nil
 		}
 		// refuse since still locked
 		return resp, fmt.Errorf("already locked by %v: %v", lastClient, lastMessage)
 	}
 	// for fresh lease request
-	ts, token := ms.adminLocks.generateToken(req.LockName, req.ClientName)
+	ts, token := ms.adminLocks.generateToken(req.GetLockName(), req.GetClientName())
 	resp.Token, resp.LockTsNs = token, ts.UnixNano()
+
 	return resp, nil
 }
 
 func (ms *MasterServer) ReleaseAdminToken(ctx context.Context, req *master_pb.ReleaseAdminTokenRequest) (*master_pb.ReleaseAdminTokenResponse, error) {
 	resp := &master_pb.ReleaseAdminTokenResponse{}
-	if ms.adminLocks.isValidToken(req.LockName, time.Unix(0, req.PreviousLockTime), req.PreviousToken) {
-		ms.adminLocks.deleteLock(req.LockName)
+	if ms.adminLocks.isValidToken(req.GetLockName(), time.Unix(0, req.GetPreviousLockTime()), req.GetPreviousToken()) {
+		ms.adminLocks.deleteLock(req.GetLockName())
 	}
+
 	return resp, nil
 }
 
@@ -159,36 +166,40 @@ func (ms *MasterServer) Ping(ctx context.Context, req *master_pb.PingRequest) (r
 	resp = &master_pb.PingResponse{
 		StartTimeNs: time.Now().UnixNano(),
 	}
-	if req.TargetType == cluster.FilerType {
-		pingErr = pb.WithFilerClient(false, 0, pb.ServerAddress(req.Target), ms.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+	if req.GetTargetType() == cluster.FilerType {
+		pingErr = pb.WithFilerClient(false, 0, pb.ServerAddress(req.GetTarget()), ms.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			pingResp, err := client.Ping(ctx, &filer_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
-	if req.TargetType == cluster.VolumeServerType {
-		pingErr = pb.WithVolumeServerClient(false, pb.ServerAddress(req.Target), ms.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
+	if req.GetTargetType() == cluster.VolumeServerType {
+		pingErr = pb.WithVolumeServerClient(false, pb.ServerAddress(req.GetTarget()), ms.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
 			pingResp, err := client.Ping(ctx, &volume_server_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
-	if req.TargetType == cluster.MasterType {
-		pingErr = pb.WithMasterClient(false, pb.ServerAddress(req.Target), ms.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
+	if req.GetTargetType() == cluster.MasterType {
+		pingErr = pb.WithMasterClient(false, pb.ServerAddress(req.GetTarget()), ms.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 			pingResp, err := client.Ping(ctx, &master_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
 	if pingErr != nil {
-		pingErr = fmt.Errorf("ping %s %s: %v", req.TargetType, req.Target, pingErr)
+		pingErr = fmt.Errorf("ping %s %s: %w", req.GetTargetType(), req.GetTarget(), pingErr)
 	}
 	resp.StopTimeNs = time.Now().UnixNano()
-	return
+
+	return resp, pingErr
 }

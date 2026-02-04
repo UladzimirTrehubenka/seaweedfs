@@ -35,7 +35,6 @@ var (
 )
 
 func runScaffold(cmd *Command, args []string) bool {
-
 	content := ""
 	switch *config {
 	case "filer":
@@ -55,6 +54,7 @@ func runScaffold(cmd *Command, args []string) bool {
 	}
 	if content == "" {
 		println("need a valid -config option")
+
 		return false
 	}
 
@@ -63,5 +63,6 @@ func runScaffold(cmd *Command, args []string) bool {
 	} else {
 		fmt.Println(content)
 	}
+
 	return true
 }

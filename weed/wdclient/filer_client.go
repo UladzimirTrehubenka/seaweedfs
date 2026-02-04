@@ -2,6 +2,7 @@ package wdclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -40,6 +41,7 @@ type filerHealth struct {
 // Can discover additional filers from master server when configured with filer group
 type FilerClient struct {
 	*vidMapClient
+
 	filerAddresses     []pb.ServerAddress
 	filerAddressesMu   sync.RWMutex   // Protects filerAddresses and filerHealth
 	filerIndex         int32          // atomic: current filer index for round-robin
@@ -215,6 +217,7 @@ func (fc *FilerClient) GetAllFilers() []pb.ServerAddress {
 	// Return a copy to avoid concurrent modification
 	filers := make([]pb.ServerAddress, len(fc.filerAddresses))
 	copy(filers, fc.filerAddresses)
+
 	return filers
 }
 
@@ -228,6 +231,7 @@ func (fc *FilerClient) SetCurrentFiler(addr pb.ServerAddress) {
 	for i, filer := range fc.filerAddresses {
 		if filer == addr {
 			atomic.StoreInt32(&fc.filerIndex, int32(i))
+
 			return
 		}
 	}
@@ -246,6 +250,7 @@ func (fc *FilerClient) ShouldSkipUnhealthyFiler(addr pb.ServerAddress) bool {
 			if i < len(fc.filerHealth) {
 				return fc.shouldSkipUnhealthyFilerWithHealth(fc.filerHealth[i])
 			}
+
 			return false
 		}
 	}
@@ -264,6 +269,7 @@ func (fc *FilerClient) RecordFilerSuccess(addr pb.ServerAddress) {
 			if i < len(fc.filerHealth) {
 				fc.recordFilerSuccessWithHealth(fc.filerHealth[i])
 			}
+
 			return
 		}
 	}
@@ -280,6 +286,7 @@ func (fc *FilerClient) RecordFilerFailure(addr pb.ServerAddress) {
 			if i < len(fc.filerHealth) {
 				fc.recordFilerFailureWithHealth(fc.filerHealth[i])
 			}
+
 			return
 		}
 	}
@@ -316,6 +323,7 @@ func (fc *FilerClient) discoverFilers() {
 			fc.refreshFilerList()
 		case <-fc.stopDiscovery:
 			glog.V(0).Infof("FilerClient: stopping filer discovery for group '%s'", fc.filerGroup)
+
 			return
 		}
 	}
@@ -331,6 +339,7 @@ func (fc *FilerClient) refreshFilerList() {
 	currentMaster := fc.masterClient.GetMaster(context.Background())
 	if currentMaster == "" {
 		glog.V(1).Infof("FilerClient: no master available for filer discovery")
+
 		return
 	}
 
@@ -339,14 +348,15 @@ func (fc *FilerClient) refreshFilerList() {
 
 	if len(updates) == 0 {
 		glog.V(2).Infof("FilerClient: no filers found in group '%s'", fc.filerGroup)
+
 		return
 	}
 
 	// Build new filer address list
 	discoveredFilers := make(map[pb.ServerAddress]bool)
 	for _, update := range updates {
-		if update.Address != "" {
-			discoveredFilers[pb.ServerAddress(update.Address)] = true
+		if update.GetAddress() != "" {
+			discoveredFilers[pb.ServerAddress(update.GetAddress())] = true
 		}
 	}
 
@@ -410,6 +420,7 @@ func (fc *FilerClient) GetLookupFileIdFunction() LookupFileIdFunctionType {
 			if err != nil {
 				return nil, fmt.Errorf("volume %s not found for fileId %s: %w", volumeIdStr, fileId, err)
 			}
+
 			return nil, fmt.Errorf("volume %s not found for fileId %s", volumeIdStr, fileId)
 		}
 
@@ -436,6 +447,7 @@ func (fc *FilerClient) GetLookupFileIdFunction() LookupFileIdFunctionType {
 		rand.Shuffle(len(otherDcUrls), func(i, j int) { otherDcUrls[i], otherDcUrls[j] = otherDcUrls[j], otherDcUrls[i] })
 		// Prefer same data center
 		fullUrls = append(sameDcUrls, otherDcUrls...)
+
 		return fullUrls, nil
 	}
 }
@@ -466,12 +478,14 @@ func isRetryableGrpcError(err error) bool {
 			// Aborted during read-only volume lookups is likely transient
 			// (e.g., filer restarting), but log for visibility
 			glog.V(1).Infof("Treating Aborted as retryable for volume lookup: %v", err)
+
 			return true
 		}
 	}
 
 	// Fallback to string matching for non-gRPC errors (e.g., network errors)
 	errStr := err.Error()
+
 	return strings.Contains(errStr, "transport") ||
 		strings.Contains(errStr, "connection") ||
 		strings.Contains(errStr, "timeout") ||
@@ -510,10 +524,12 @@ func (fc *FilerClient) shouldSkipUnhealthyFiler(index int32) bool {
 	fc.filerAddressesMu.RLock()
 	if index >= int32(len(fc.filerHealth)) {
 		fc.filerAddressesMu.RUnlock()
+
 		return true // Invalid index - skip
 	}
 	health := fc.filerHealth[index]
 	fc.filerAddressesMu.RUnlock()
+
 	return fc.shouldSkipUnhealthyFilerWithHealth(health)
 }
 
@@ -527,6 +543,7 @@ func (fc *FilerClient) recordFilerSuccess(index int32) {
 	fc.filerAddressesMu.RLock()
 	if index >= int32(len(fc.filerHealth)) {
 		fc.filerAddressesMu.RUnlock()
+
 		return // Invalid index
 	}
 	health := fc.filerHealth[index]
@@ -545,6 +562,7 @@ func (fc *FilerClient) recordFilerFailure(index int32) {
 	fc.filerAddressesMu.RLock()
 	if index >= int32(len(fc.filerHealth)) {
 		fc.filerAddressesMu.RUnlock()
+
 		return // Invalid index
 	}
 	health := fc.filerHealth[index]
@@ -567,7 +585,7 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 	waitTime := fc.initialRetryWait
 	maxRetries := fc.maxRetries
 
-	for retry := 0; retry < maxRetries; retry++ {
+	for retry := range maxRetries {
 		// Try all filer addresses with round-robin starting from current index
 		// Skip known-unhealthy filers (circuit breaker pattern)
 		i := atomic.LoadInt32(&fc.filerIndex)
@@ -577,12 +595,13 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 		n := int32(len(fc.filerAddresses))
 		fc.filerAddressesMu.RUnlock()
 
-		for x := int32(0); x < n; x++ {
+		for x := range n {
 			// Get current filer address and health with read lock
 			fc.filerAddressesMu.RLock()
 			if len(fc.filerAddresses) == 0 {
 				fc.filerAddressesMu.RUnlock()
-				lastErr = fmt.Errorf("no filers available")
+				lastErr = errors.New("no filers available")
+
 				break
 			}
 			if i >= int32(len(fc.filerAddresses)) {
@@ -603,6 +622,7 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 				if i >= n {
 					i = 0
 				}
+
 				continue
 			}
 
@@ -622,15 +642,15 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 					}
 
 					// Process each volume in the response
-					for vid, locs := range resp.LocationsMap {
+					for vid, locs := range resp.GetLocationsMap() {
 						// Convert locations from protobuf to internal format
 						var locations []Location
-						for _, loc := range locs.Locations {
+						for _, loc := range locs.GetLocations() {
 							locations = append(locations, Location{
-								Url:        loc.Url,
-								PublicUrl:  loc.PublicUrl,
-								DataCenter: loc.DataCenter,
-								GrpcPort:   int(loc.GrpcPort),
+								Url:        loc.GetUrl(),
+								PublicUrl:  loc.GetPublicUrl(),
+								DataCenter: loc.GetDataCenter(),
+								GrpcPort:   int(loc.GetGrpcPort()),
 							})
 						}
 
@@ -647,7 +667,7 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 					// Check for volumes that weren't in the response at all
 					// This could indicate a problem with the filer
 					for _, vid := range volumeIds {
-						if _, found := resp.LocationsMap[vid]; !found {
+						if _, found := resp.GetLocationsMap()[vid]; !found {
 							glog.V(1).Infof("FilerClient: volume %s missing from filer response", vid)
 						}
 					}
@@ -664,6 +684,7 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 				if i >= n {
 					i = 0
 				}
+
 				continue
 			}
 
@@ -671,6 +692,7 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 			atomic.StoreInt32(&fc.filerIndex, i)
 			fc.recordFilerSuccessWithHealth(health)
 			glog.V(3).Infof("FilerClient: looked up %d volumes on %s, found %d", len(volumeIds), filerAddress, len(result))
+
 			return result, nil
 		}
 
@@ -694,5 +716,6 @@ func (p *filerVolumeProvider) LookupVolumeIds(ctx context.Context, volumeIds []s
 	fc.filerAddressesMu.RLock()
 	totalFilers := len(fc.filerAddresses)
 	fc.filerAddressesMu.RUnlock()
+
 	return nil, fmt.Errorf("all %d filer(s) failed after %d attempts, last error: %w", totalFilers, maxRetries, lastErr)
 }

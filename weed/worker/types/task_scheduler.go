@@ -28,5 +28,5 @@ type PolicyConfigurableScheduler interface {
 	TaskScheduler
 
 	// ConfigureFromPolicy configures the scheduler based on the maintenance policy
-	ConfigureFromPolicy(policy interface{})
+	ConfigureFromPolicy(policy any)
 }

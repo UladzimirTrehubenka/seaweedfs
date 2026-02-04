@@ -31,6 +31,7 @@ func (t *Tagging) ToTags() map[string]string {
 	for _, tag := range t.TagSet.Tag {
 		output[tag.Key] = tag.Value
 	}
+
 	return output
 }
 
@@ -47,6 +48,7 @@ func FromTags(tags map[string]string) (t *Tagging) {
 			return tagArr[i].Key < tagArr[j].Key
 		})
 	}
+
 	return
 }
 
@@ -74,6 +76,7 @@ func parseTagsHeader(tags string) (map[string]string, error) {
 			parsedTags[decodedKey] = ""
 		}
 	}
+
 	return parsedTags, nil
 }
 

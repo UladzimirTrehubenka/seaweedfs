@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -31,6 +32,7 @@ func (fs *FilerServer) tusHandler(w http.ResponseWriter, r *http.Request) {
 		tusVersion := r.Header.Get("Tus-Resumable")
 		if tusVersion != TusVersion {
 			http.Error(w, "Unsupported TUS version", http.StatusPreconditionFailed)
+
 			return
 		}
 	}
@@ -42,8 +44,8 @@ func (fs *FilerServer) tusHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this is an upload location (contains upload ID after {tusPrefix}/.uploads/)
 	uploadsPrefix := tusPrefix + "/.uploads/"
-	if strings.HasPrefix(reqPath, uploadsPrefix) {
-		uploadID := strings.TrimPrefix(reqPath, uploadsPrefix)
+	if after, ok := strings.CutPrefix(reqPath, uploadsPrefix); ok {
+		uploadID := after
 		uploadID = strings.Split(uploadID, "/")[0] // Get just the ID, not any trailing path
 
 		switch r.Method {
@@ -56,6 +58,7 @@ func (fs *FilerServer) tusHandler(w http.ResponseWriter, r *http.Request) {
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
+
 		return
 	}
 
@@ -86,15 +89,18 @@ func (fs *FilerServer) tusCreateHandler(w http.ResponseWriter, r *http.Request) 
 	uploadLengthStr := r.Header.Get("Upload-Length")
 	if uploadLengthStr == "" {
 		http.Error(w, "Upload-Length header required", http.StatusBadRequest)
+
 		return
 	}
 	uploadLength, err := strconv.ParseInt(uploadLengthStr, 10, 64)
 	if err != nil || uploadLength < 0 {
 		http.Error(w, "Invalid Upload-Length", http.StatusBadRequest)
+
 		return
 	}
 	if uploadLength > TusMaxSize {
 		http.Error(w, "Upload-Length exceeds maximum", http.StatusRequestEntityTooLarge)
+
 		return
 	}
 
@@ -108,6 +114,7 @@ func (fs *FilerServer) tusCreateHandler(w http.ResponseWriter, r *http.Request) 
 	targetPath := strings.TrimPrefix(r.URL.Path, tusPrefix)
 	if targetPath == "" || targetPath == "/" {
 		http.Error(w, "Target path required", http.StatusBadRequest)
+
 		return
 	}
 
@@ -119,6 +126,7 @@ func (fs *FilerServer) tusCreateHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		glog.Errorf("Failed to create TUS session: %v", err)
 		http.Error(w, "Failed to create upload", http.StatusInternalServerError)
+
 		return
 	}
 
@@ -134,6 +142,7 @@ func (fs *FilerServer) tusCreateHandler(w http.ResponseWriter, r *http.Request) 
 		if r.ContentLength < 0 {
 			fs.deleteTusSession(ctx, uploadID)
 			http.Error(w, "Content-Length header required for creation-with-upload", http.StatusBadRequest)
+
 			return
 		}
 		if r.ContentLength > 0 {
@@ -144,10 +153,12 @@ func (fs *FilerServer) tusCreateHandler(w http.ResponseWriter, r *http.Request) 
 				fs.deleteTusSession(ctx, uploadID)
 				if errors.Is(uploadErr, ErrContentTooLarge) {
 					http.Error(w, "Content-Length exceeds declared upload size", http.StatusRequestEntityTooLarge)
+
 					return
 				}
 				glog.Errorf("Failed to write initial TUS data: %v", uploadErr)
 				http.Error(w, "Failed to write data", http.StatusInternalServerError)
+
 				return
 			}
 
@@ -161,11 +172,13 @@ func (fs *FilerServer) tusCreateHandler(w http.ResponseWriter, r *http.Request) 
 				if err != nil {
 					glog.Errorf("Failed to get updated TUS session: %v", err)
 					http.Error(w, "Failed to complete upload", http.StatusInternalServerError)
+
 					return
 				}
 				if err := fs.completeTusUpload(ctx, session); err != nil {
 					glog.Errorf("Failed to complete TUS upload: %v", err)
 					http.Error(w, "Failed to complete upload", http.StatusInternalServerError)
+
 					return
 				}
 			}
@@ -184,6 +197,7 @@ func (fs *FilerServer) tusHeadHandler(w http.ResponseWriter, r *http.Request, up
 	session, err := fs.getTusSession(ctx, uploadID)
 	if err != nil {
 		http.Error(w, "Upload not found", http.StatusNotFound)
+
 		return
 	}
 
@@ -201,6 +215,7 @@ func (fs *FilerServer) tusPatchHandler(w http.ResponseWriter, r *http.Request, u
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/offset+octet-stream" {
 		http.Error(w, "Content-Type must be application/offset+octet-stream", http.StatusUnsupportedMediaType)
+
 		return
 	}
 
@@ -208,6 +223,7 @@ func (fs *FilerServer) tusPatchHandler(w http.ResponseWriter, r *http.Request, u
 	session, err := fs.getTusSession(ctx, uploadID)
 	if err != nil {
 		http.Error(w, "Upload not found", http.StatusNotFound)
+
 		return
 	}
 
@@ -215,23 +231,27 @@ func (fs *FilerServer) tusPatchHandler(w http.ResponseWriter, r *http.Request, u
 	uploadOffsetStr := r.Header.Get("Upload-Offset")
 	if uploadOffsetStr == "" {
 		http.Error(w, "Upload-Offset header required", http.StatusBadRequest)
+
 		return
 	}
 	uploadOffset, err := strconv.ParseInt(uploadOffsetStr, 10, 64)
 	if err != nil || uploadOffset < 0 {
 		http.Error(w, "Invalid Upload-Offset", http.StatusBadRequest)
+
 		return
 	}
 
 	// Check offset matches current position
 	if uploadOffset != session.Offset {
 		http.Error(w, fmt.Sprintf("Offset mismatch: expected %d, got %d", session.Offset, uploadOffset), http.StatusConflict)
+
 		return
 	}
 
 	// TUS requires Content-Length header for PATCH requests
 	if r.ContentLength < 0 {
 		http.Error(w, "Content-Length header required", http.StatusBadRequest)
+
 		return
 	}
 
@@ -240,10 +260,12 @@ func (fs *FilerServer) tusPatchHandler(w http.ResponseWriter, r *http.Request, u
 	if err != nil {
 		if errors.Is(err, ErrContentTooLarge) {
 			http.Error(w, "Content-Length exceeds remaining upload size", http.StatusRequestEntityTooLarge)
+
 			return
 		}
 		glog.Errorf("Failed to write TUS data: %v", err)
 		http.Error(w, "Failed to write data", http.StatusInternalServerError)
+
 		return
 	}
 
@@ -256,12 +278,14 @@ func (fs *FilerServer) tusPatchHandler(w http.ResponseWriter, r *http.Request, u
 		if err != nil {
 			glog.Errorf("Failed to get updated TUS session: %v", err)
 			http.Error(w, "Failed to complete upload", http.StatusInternalServerError)
+
 			return
 		}
 
 		if err := fs.completeTusUpload(ctx, session); err != nil {
 			glog.Errorf("Failed to complete TUS upload: %v", err)
 			http.Error(w, "Failed to complete upload", http.StatusInternalServerError)
+
 			return
 		}
 	}
@@ -277,6 +301,7 @@ func (fs *FilerServer) tusDeleteHandler(w http.ResponseWriter, r *http.Request, 
 	if err := fs.deleteTusSession(ctx, uploadID); err != nil {
 		glog.Errorf("Failed to delete TUS session: %v", err)
 		http.Error(w, "Failed to delete upload", http.StatusInternalServerError)
+
 		return
 	}
 
@@ -290,7 +315,7 @@ func (fs *FilerServer) tusDeleteHandler(w http.ResponseWriter, r *http.Request, 
 const tusChunkSize = 4 * 1024 * 1024 // 4MB
 
 // ErrContentTooLarge is returned when Content-Length exceeds remaining upload space
-var ErrContentTooLarge = fmt.Errorf("content length exceeds remaining upload size")
+var ErrContentTooLarge = errors.New("content length exceeds remaining upload size")
 
 // tusWriteData uploads data to volume servers in streaming chunks and updates session
 // It reads data in fixed-size sub-chunks to avoid buffering large TUS chunks entirely in memory
@@ -315,13 +340,10 @@ func (fs *FilerServer) tusWriteData(ctx context.Context, session *TusSession, of
 	}
 
 	// Read first bytes for MIME type detection
-	sniffSize := int64(512)
-	if contentLength < sniffSize {
-		sniffSize = contentLength
-	}
+	sniffSize := min(contentLength, int64(512))
 	sniffBuf := make([]byte, sniffSize)
 	sniffN, sniffErr := io.ReadFull(reader, sniffBuf)
-	if sniffErr != nil && sniffErr != io.EOF && sniffErr != io.ErrUnexpectedEOF {
+	if sniffErr != nil && sniffErr != io.EOF && !errors.Is(sniffErr, io.ErrUnexpectedEOF) {
 		return 0, fmt.Errorf("read data for mime detection: %w", sniffErr)
 	}
 	if sniffN == 0 {
@@ -354,14 +376,12 @@ func (fs *FilerServer) tusWriteData(ctx context.Context, session *TusSession, of
 
 	for totalWritten < contentLength {
 		// Read up to tusChunkSize bytes
-		readSize := int64(tusChunkSize)
-		if contentLength-totalWritten < readSize {
-			readSize = contentLength - totalWritten
-		}
+		readSize := min(contentLength-totalWritten, int64(tusChunkSize))
 
 		n, readErr := io.ReadFull(dataReader, chunkBuf[:readSize])
-		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		if readErr != nil && readErr != io.EOF && !errors.Is(readErr, io.ErrUnexpectedEOF) {
 			uploadErr = fmt.Errorf("read chunk data: %w", readErr)
+
 			break
 		}
 		if n == 0 {
@@ -374,6 +394,7 @@ func (fs *FilerServer) tusWriteData(ctx context.Context, session *TusSession, of
 		fileId, urlLocation, auth, assignErr := fs.assignNewFileInfo(ctx, so)
 		if assignErr != nil {
 			uploadErr = fmt.Errorf("assign volume: %w", assignErr)
+
 			break
 		}
 
@@ -389,6 +410,7 @@ func (fs *FilerServer) tusWriteData(ctx context.Context, session *TusSession, of
 		})
 		if uploadResultErr != nil {
 			uploadErr = fmt.Errorf("upload data: %w", uploadResultErr)
+
 			break
 		}
 
@@ -406,6 +428,7 @@ func (fs *FilerServer) tusWriteData(ctx context.Context, session *TusSession, of
 				{FileId: fileId},
 			})
 			uploadErr = fmt.Errorf("update session: %w", saveErr)
+
 			break
 		}
 
@@ -425,6 +448,7 @@ func (fs *FilerServer) tusWriteData(ctx context.Context, session *TusSession, of
 			}
 			fs.filer.DeleteChunks(ctx, util.FullPath(session.TargetPath), chunksToDelete)
 		}
+
 		return 0, uploadErr
 	}
 
@@ -439,8 +463,8 @@ func parseTusMetadata(header string) map[string]string {
 		return metadata
 	}
 
-	pairs := strings.Split(header, ",")
-	for _, pair := range pairs {
+	pairs := strings.SplitSeq(header, ",")
+	for pair := range pairs {
 		pair = strings.TrimSpace(pair)
 		parts := strings.SplitN(pair, " ", 2)
 		if len(parts) != 2 {
@@ -452,6 +476,7 @@ func parseTusMetadata(header string) map[string]string {
 		value, err := base64.StdEncoding.DecodeString(encodedValue)
 		if err != nil {
 			glog.V(1).Infof("Failed to decode TUS metadata value for key %s: %v", key, err)
+
 			continue
 		}
 		metadata[key] = string(value)

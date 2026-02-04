@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -50,7 +51,6 @@ func (c *commandS3BucketLock) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3BucketLock) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	bucketName := bucketCommand.String("name", "", "bucket name")
 	enableLock := bucketCommand.Bool("enable", false, "enable Object Lock on the bucket (irreversible)")
@@ -59,16 +59,15 @@ func (c *commandS3BucketLock) Do(args []string, commandEnv *CommandEnv, writer i
 	}
 
 	if *bucketName == "" {
-		return fmt.Errorf("empty bucket name")
+		return errors.New("empty bucket name")
 	}
 
 	err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
 			return fmt.Errorf("get filer configuration: %w", err)
 		}
-		filerBucketsPath := resp.DirBuckets
+		filerBucketsPath := resp.GetDirBuckets()
 
 		// Look up the bucket entry
 		lookupResp, err := client.LookupDirectoryEntry(context.Background(), &filer_pb.LookupDirectoryEntryRequest{
@@ -79,16 +78,16 @@ func (c *commandS3BucketLock) Do(args []string, commandEnv *CommandEnv, writer i
 			return fmt.Errorf("lookup bucket %s: %w", *bucketName, err)
 		}
 
-		entry := lookupResp.Entry
+		entry := lookupResp.GetEntry()
 
 		// Check current Object Lock status
 		currentLockEnabled := false
 		currentVersioningEnabled := false
 		if entry.Extended != nil {
-			if lockStatus, ok := entry.Extended[s3_constants.ExtObjectLockEnabledKey]; ok {
+			if lockStatus, ok := entry.GetExtended()[s3_constants.ExtObjectLockEnabledKey]; ok {
 				currentLockEnabled = string(lockStatus) == s3_constants.ObjectLockEnabled
 			}
-			if versioningStatus, ok := entry.Extended[s3_constants.ExtVersioningKey]; ok {
+			if versioningStatus, ok := entry.GetExtended()[s3_constants.ExtVersioningKey]; ok {
 				currentVersioningEnabled = string(versioningStatus) == s3_constants.VersioningEnabled
 			}
 		}
@@ -97,6 +96,7 @@ func (c *commandS3BucketLock) Do(args []string, commandEnv *CommandEnv, writer i
 		if *enableLock {
 			if currentLockEnabled {
 				fmt.Fprintf(writer, "Object Lock is already enabled on bucket %s\n", *bucketName)
+
 				return nil
 			}
 
@@ -124,6 +124,7 @@ func (c *commandS3BucketLock) Do(args []string, commandEnv *CommandEnv, writer i
 
 			fmt.Fprintf(writer, "Object Lock enabled successfully.\n")
 			fmt.Fprintf(writer, "WARNING: This action is irreversible. Object Lock cannot be disabled.\n")
+
 			return nil
 		}
 

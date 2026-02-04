@@ -2,6 +2,7 @@ package redis_lua
 
 import (
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
@@ -19,7 +20,6 @@ func (store *RedisLuaClusterStore) GetName() string {
 }
 
 func (store *RedisLuaClusterStore) Initialize(configuration util.Configuration, prefix string) (err error) {
-
 	configuration.SetDefault(prefix+"useReadOnly", false)
 	configuration.SetDefault(prefix+"routeByLatency", false)
 
@@ -44,5 +44,6 @@ func (store *RedisLuaClusterStore) initialize(addresses []string, username strin
 	})
 	store.keyPrefix = keyPrefix
 	store.loadSuperLargeDirectories(superLargeDirectories)
+
 	return
 }

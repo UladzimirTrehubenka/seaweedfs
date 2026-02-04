@@ -62,6 +62,7 @@ type MasterOption struct {
 
 type MasterServer struct {
 	master_pb.UnimplementedSeaweedServer
+
 	option *MasterOption
 	guard  *security.Guard
 
@@ -90,7 +91,6 @@ type MasterServer struct {
 }
 
 func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.ServerAddress) *MasterServer {
-
 	v := util.GetViper()
 	signingKey := v.GetString("jwt.signing.key")
 	v.SetDefault("jwt.signing.expires_after_seconds", 10)
@@ -251,13 +251,16 @@ func (ms *MasterServer) ensureTopologyId() {
 	for {
 		if !ms.Topo.IsLeader() {
 			glog.V(1).Infof("lost leadership while sending barrier command for topologyId")
+
 			return
 		}
 		if _, err := ms.Topo.RaftServer.Do(topology.NewMaxVolumeIdCommand(ms.Topo.GetMaxVolumeId(), ms.Topo.GetTopologyId())); err != nil {
 			glog.Errorf("failed to sync raft for topologyId: %v, retrying in 1s", err)
 			time.Sleep(time.Second)
+
 			continue
 		}
+
 		break
 	}
 	glog.V(1).Infof("ensureTopologyId: barrier command completed")
@@ -273,6 +276,7 @@ func (ms *MasterServer) ensureTopologyId() {
 		return ms.Topo.IsLeader()
 	}, func(topologyId string) error {
 		_, err := ms.Topo.RaftServer.Do(topology.NewMaxVolumeIdCommand(ms.Topo.GetMaxVolumeId(), topologyId))
+
 		return err
 	})
 }
@@ -281,6 +285,7 @@ func (ms *MasterServer) proxyToLeader(f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if ms.Topo.IsLeader() {
 			f(w, r)
+
 			return
 		}
 
@@ -289,6 +294,7 @@ func (ms *MasterServer) proxyToLeader(f http.HandlerFunc) http.HandlerFunc {
 		raftServerLeader := leaderAddr.ToHttpAddress()
 		if raftServerLeader == "" {
 			f(w, r)
+
 			return
 		}
 
@@ -298,7 +304,8 @@ func (ms *MasterServer) proxyToLeader(f http.HandlerFunc) http.HandlerFunc {
 		targetUrl, err := url.Parse(scheme + "://" + raftServerLeader)
 		if err != nil {
 			writeJsonError(w, r, http.StatusInternalServerError,
-				fmt.Errorf("Leader URL %s://%s Parse Error: %v", scheme, raftServerLeader, err))
+				fmt.Errorf("Leader URL %s://%s Parse Error: %w", scheme, raftServerLeader, err))
+
 			return
 		}
 
@@ -352,7 +359,7 @@ func (ms *MasterServer) startAdminScripts() {
 					continue
 				}
 				for _, line := range scriptLines {
-					for _, c := range strings.Split(line, ";") {
+					for c := range strings.SplitSeq(line, ";") {
 						processEachCmd(reg, c, commandEnv)
 					}
 				}
@@ -376,6 +383,7 @@ func processEachCmd(reg *regexp.Regexp, line string, commandEnv *shell.CommandEn
 		if c.Name() == cmd {
 			if c.HasTag(shell.ResourceHeavy) {
 				glog.Warningf("%s is resource heavy and should not run on master", cmd)
+
 				continue
 			}
 			glog.V(0).Infof("executing: %s %v", cmd, args)
@@ -405,6 +413,7 @@ func (ms *MasterServer) createSequencer(option *MasterOption) sequence.Sequencer
 	default:
 		seq = sequence.NewMemorySequencer()
 	}
+
 	return seq
 }
 
@@ -412,17 +421,17 @@ func (ms *MasterServer) OnPeerUpdate(update *master_pb.ClusterNodeUpdate, startF
 	ms.Topo.RaftServerAccessLock.RLock()
 	defer ms.Topo.RaftServerAccessLock.RUnlock()
 
-	if update.NodeType != cluster.MasterType || ms.Topo.HashicorpRaft == nil {
+	if update.GetNodeType() != cluster.MasterType || ms.Topo.HashicorpRaft == nil {
 		return
 	}
 	glog.V(4).Infof("OnPeerUpdate: %+v", update)
 
-	peerAddress := pb.ServerAddress(update.Address)
+	peerAddress := pb.ServerAddress(update.GetAddress())
 	peerName := string(peerAddress)
 	if ms.Topo.HashicorpRaft.State() != hashicorpRaft.Leader {
 		return
 	}
-	if update.IsAdd {
+	if update.GetIsAdd() {
 		raftServerFound := false
 		for _, server := range ms.Topo.HashicorpRaft.GetConfiguration().Configuration().Servers {
 			if string(server.ID) == peerName {
@@ -446,14 +455,17 @@ func (ms *MasterServer) OnPeerUpdate(update *master_pb.ClusterNodeUpdate, startF
 						Id:    peerName,
 						Force: false,
 					})
+
 					return err
 				}); err != nil {
 					glog.Warningf("failed removing old raft server: %v", err)
+
 					return err
 				}
 			} else {
 				glog.V(0).Infof("master %s successfully responded to ping", peerName)
 			}
+
 			return nil
 		})
 	}

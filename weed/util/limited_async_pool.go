@@ -9,14 +9,14 @@ import (
 )
 
 type Future interface {
-	Await() interface{}
+	Await() any
 }
 
 type future struct {
-	await func(ctx context.Context) interface{}
+	await func(ctx context.Context) any
 }
 
-func (f future) Await() interface{} {
+func (f future) Await() any {
 	return f.await(context.Background())
 }
 
@@ -34,14 +34,14 @@ func NewLimitedAsyncExecutor(limit int) *LimitedAsyncExecutor {
 	}
 }
 
-func (ae *LimitedAsyncExecutor) Execute(job func() interface{}) {
-	var result interface{}
+func (ae *LimitedAsyncExecutor) Execute(job func() any) {
+	var result any
 	c := make(chan struct{})
 	ae.executor.Execute(func() {
 		defer close(c)
 		result = job()
 	})
-	f := future{await: func(ctx context.Context) interface{} {
+	f := future{await: func(ctx context.Context) any {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -62,5 +62,6 @@ func (ae *LimitedAsyncExecutor) NextFuture() Future {
 	}
 	f := ae.futureList.Remove(ae.futureList.Front())
 	ae.futureListCond.L.Unlock()
+
 	return f.(Future)
 }

@@ -4,19 +4,21 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func init() {
@@ -90,23 +92,24 @@ func (store *MongodbStore) connection(uri string, poolSize uint64, ssl bool, ssl
 	err = store.indexUnique(c)
 
 	store.connect = client
+
 	return err
 }
 
 func configureTLS(caFile, certFile, keyFile string, insecure bool) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return nil, fmt.Errorf("could not load client key pair: %s", err)
+		return nil, fmt.Errorf("could not load client key pair: %w", err)
 	}
 
 	caCert, err := os.ReadFile(caFile)
 	if err != nil {
-		return nil, fmt.Errorf("could not read CA certificate: %s", err)
+		return nil, fmt.Errorf("could not read CA certificate: %w", err)
 	}
 
 	caCertPool := x509.NewCertPool()
 	if !caCertPool.AppendCertsFromPEM(caCert) {
-		return nil, fmt.Errorf("failed to append CA certificate")
+		return nil, errors.New("failed to append CA certificate")
 	}
 
 	tlsConfig := &tls.Config{
@@ -120,6 +123,7 @@ func configureTLS(caFile, certFile, keyFile string, insecure bool) (*tls.Config,
 
 func (store *MongodbStore) createIndex(c *mongo.Collection, index mongo.IndexModel, opts *options.CreateIndexesOptions) error {
 	_, err := c.Indexes().CreateOne(context.Background(), index, opts)
+
 	return err
 }
 
@@ -156,7 +160,7 @@ func (store *MongodbStore) InsertEntry(ctx context.Context, entry *filer.Entry) 
 }
 
 func (store *MongodbStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-	dir, name := entry.FullPath.DirAndName()
+	dir, name := entry.DirAndName()
 
 	// Validate directory and name to prevent potential injection
 	// Note: BSON library already provides type safety, but we validate for defense in depth
@@ -166,7 +170,7 @@ func (store *MongodbStore) UpdateEntry(ctx context.Context, entry *filer.Entry) 
 
 	meta, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encode %s: %s", entry.FullPath, err)
+		return fmt.Errorf("encode %s: %w", entry.FullPath, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -185,7 +189,7 @@ func (store *MongodbStore) UpdateEntry(ctx context.Context, entry *filer.Entry) 
 	_, err = c.UpdateOne(ctx, filter, update, opts)
 
 	if err != nil {
-		return fmt.Errorf("UpdateEntry %s: %v", entry.FullPath, err)
+		return fmt.Errorf("UpdateEntry %s: %w", entry.FullPath, err)
 	}
 
 	return nil
@@ -207,8 +211,9 @@ func (store *MongodbStore) FindEntry(ctx context.Context, fullpath util.FullPath
 	// Safe: Using BSON type-safe builders (bson.M) + validated inputs (null byte check above)
 	var where = bson.M{"directory": dir, "name": name}
 	err = store.connect.Database(store.database).Collection(store.collectionName).FindOne(ctx, where).Decode(&data)
-	if err != mongo.ErrNoDocuments && err != nil {
+	if !errors.Is(err, mongo.ErrNoDocuments) && err != nil {
 		glog.ErrorfCtx(ctx, "find %s: %v", fullpath, err)
+
 		return nil, filer_pb.ErrNotFound
 	}
 
@@ -222,7 +227,7 @@ func (store *MongodbStore) FindEntry(ctx context.Context, fullpath util.FullPath
 
 	err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData(data.Meta))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
@@ -241,7 +246,7 @@ func (store *MongodbStore) DeleteEntry(ctx context.Context, fullpath util.FullPa
 	where := bson.M{"directory": dir, "name": name}
 	_, err := store.connect.Database(store.database).Collection(store.collectionName).DeleteMany(ctx, where)
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -258,7 +263,7 @@ func (store *MongodbStore) DeleteFolderChildren(ctx context.Context, fullpath ut
 	where := bson.M{"directory": fullpath}
 	_, err := store.connect.Database(store.database).Collection(store.collectionName).DeleteMany(ctx, where)
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -267,7 +272,7 @@ func (store *MongodbStore) DeleteFolderChildren(ctx context.Context, fullpath ut
 func (store *MongodbStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, prefix string, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
 	// Validate inputs to prevent potential injection
 	if strings.ContainsAny(string(dirPath), "\x00") || strings.ContainsAny(startFileName, "\x00") || strings.ContainsAny(prefix, "\x00") {
-		return "", fmt.Errorf("invalid path contains null bytes")
+		return "", errors.New("invalid path contains null bytes")
 	}
 
 	// lgtm[go/sql-injection]
@@ -316,12 +321,14 @@ func (store *MongodbStore) ListDirectoryPrefixedEntries(ctx context.Context, dir
 		if decodeErr := entry.DecodeAttributesAndChunks(util.MaybeDecompressData(data.Meta)); decodeErr != nil {
 			err = decodeErr
 			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
+
 			break
 		}
 
 		resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 		if resEachEntryFuncErr != nil {
 			err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 			break
 		}
 

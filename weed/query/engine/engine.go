@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/mq/schema"
@@ -22,7 +26,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/query/sqltypes"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
-	"google.golang.org/protobuf/proto"
 )
 
 // SQL Function Name Constants
@@ -178,7 +181,7 @@ type TableExpr interface {
 }
 
 type AliasedTableExpr struct {
-	Expr interface{}
+	Expr any
 }
 
 func (a *AliasedTableExpr) isTableExpr() {}
@@ -328,10 +331,11 @@ func ParseSQL(sql string) (Statement, error) {
 	if strings.HasPrefix(sqlUpper, "USE ") {
 		parts := strings.Fields(sql)
 		if len(parts) < 2 {
-			return nil, fmt.Errorf("USE statement requires a database name")
+			return nil, errors.New("USE statement requires a database name")
 		}
 		// Parse the database name properly, handling quoted identifiers
 		dbName := parseIdentifier(strings.Join(parts[1:], " "))
+
 		return &UseStatement{Database: dbName}, nil
 	}
 
@@ -339,7 +343,7 @@ func ParseSQL(sql string) (Statement, error) {
 	if strings.HasPrefix(sqlUpper, "DESCRIBE ") || strings.HasPrefix(sqlUpper, "DESC ") {
 		parts := strings.Fields(sql)
 		if len(parts) < 2 {
-			return nil, fmt.Errorf("DESCRIBE/DESC statement requires a table name")
+			return nil, errors.New("DESCRIBE/DESC statement requires a table name")
 		}
 
 		var tableName string
@@ -368,6 +372,7 @@ func ParseSQL(sql string) (Statement, error) {
 				for i := 1; i < len(rawTableName); i++ {
 					if rawTableName[i] == quoteChar {
 						closingIndex = i
+
 						break
 					}
 				}
@@ -398,6 +403,7 @@ func ParseSQL(sql string) (Statement, error) {
 		if database != "" {
 			stmt.OnTable.Qualifier = stringValue(database)
 		}
+
 		return stmt, nil
 	}
 
@@ -417,17 +423,19 @@ func ParseSQL(sql string) (Statement, error) {
 					dbName := parseIdentifier(partsOriginal[i+1])
 					stmt.Schema = dbName                    // Set the Schema field for the test
 					stmt.OnTable.Name = stringValue(dbName) // Keep for compatibility
+
 					break
 				}
 			}
 		}
+
 		return stmt, nil
 	}
 	if strings.HasPrefix(sqlUpper, "SHOW COLUMNS FROM") {
 		// Parse "SHOW COLUMNS FROM table" or "SHOW COLUMNS FROM database.table"
 		parts := strings.Fields(sql)
 		if len(parts) < 4 {
-			return nil, fmt.Errorf("SHOW COLUMNS FROM statement requires a table name")
+			return nil, errors.New("SHOW COLUMNS FROM statement requires a table name")
 		}
 
 		// Get the raw table name (before parsing identifiers)
@@ -450,6 +458,7 @@ func ParseSQL(sql string) (Statement, error) {
 				for i := 1; i < len(rawTableName); i++ {
 					if rawTableName[i] == quoteChar {
 						closingIndex = i
+
 						break
 					}
 				}
@@ -480,17 +489,19 @@ func ParseSQL(sql string) (Statement, error) {
 		if database != "" {
 			stmt.OnTable.Qualifier = stringValue(database)
 		}
+
 		return stmt, nil
 	}
 
 	// Use CockroachDB parser for SELECT statements
 	if strings.HasPrefix(sqlUpper, "SELECT") {
 		parser := NewCockroachSQLParser()
+
 		return parser.ParseSQL(sql)
 	}
 
 	return nil, UnsupportedFeatureError{
-		Feature: fmt.Sprintf("statement type: %s", strings.Fields(sqlUpper)[0]),
+		Feature: "statement type: " + strings.Fields(sqlUpper)[0],
 		Reason:  "statement parsing not implemented",
 	}
 }
@@ -501,6 +512,7 @@ type debugModeKey struct{}
 // isDebugMode checks if we're in debug/explain mode
 func isDebugMode(ctx context.Context) bool {
 	debug, ok := ctx.Value(debugModeKey{}).(bool)
+
 	return ok && debug
 }
 
@@ -573,6 +585,7 @@ func (e *SQLEngine) ExecuteSQL(ctx context.Context, sql string) (*QueryResult, e
 	if strings.HasPrefix(sqlUpper, "EXPLAIN") {
 		// Extract the actual query after EXPLAIN
 		actualSQL := strings.TrimSpace(sqlTrimmed[7:]) // Remove "EXPLAIN"
+
 		return e.executeExplain(ctx, actualSQL, startTime)
 	}
 
@@ -580,7 +593,7 @@ func (e *SQLEngine) ExecuteSQL(ctx context.Context, sql string) (*QueryResult, e
 	stmt, err := ParseSQL(sql)
 	if err != nil {
 		return &QueryResult{
-			Error: fmt.Errorf("SQL parse error: %v", err),
+			Error: fmt.Errorf("SQL parse error: %w", err),
 		}, err
 	}
 
@@ -596,6 +609,7 @@ func (e *SQLEngine) ExecuteSQL(ctx context.Context, sql string) (*QueryResult, e
 		return e.executeSelectStatement(ctx, stmt)
 	default:
 		err := fmt.Errorf("unsupported SQL statement type: %T", stmt)
+
 		return &QueryResult{Error: err}, err
 	}
 }
@@ -609,7 +623,7 @@ func (e *SQLEngine) executeExplain(ctx context.Context, actualSQL string, startT
 	stmt, err := ParseSQL(actualSQL)
 	if err != nil {
 		return &QueryResult{
-			Error: fmt.Errorf("SQL parse error in EXPLAIN query: %v", err),
+			Error: fmt.Errorf("SQL parse error in EXPLAIN query: %w", err),
 		}, err
 	}
 
@@ -618,7 +632,7 @@ func (e *SQLEngine) executeExplain(ctx context.Context, actualSQL string, startT
 		QueryType:         strings.ToUpper(strings.Fields(actualSQL)[0]),
 		DataSources:       []string{},
 		OptimizationsUsed: []string{},
-		Details:           make(map[string]interface{}),
+		Details:           make(map[string]any),
 	}
 
 	var result *QueryResult
@@ -636,6 +650,7 @@ func (e *SQLEngine) executeExplain(ctx context.Context, actualSQL string, startT
 		result, err = e.executeShowStatementWithDescribe(ctx, stmt)
 	default:
 		err := fmt.Errorf("EXPLAIN not supported for statement type: %T", stmt)
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -768,7 +783,7 @@ func (e *SQLEngine) formatFileSourceDetails(lines []string, node *FileSourceNode
 	if len(node.Operations) > 0 {
 		lines = append(lines, fmt.Sprintf("%s└── Operations: %s", prefix, strings.Join(node.Operations, " + ")))
 	} else if len(node.Predicates) == 0 {
-		lines = append(lines, fmt.Sprintf("%s└── Operation: full_scan", prefix))
+		lines = append(lines, prefix+"└── Operation: full_scan")
 	}
 
 	return lines
@@ -820,9 +835,9 @@ func (e *SQLEngine) buildHierarchicalPlan(plan *QueryExecutionPlan, err error) [
 		lines = append(lines, "├── Aggregations")
 		for i, agg := range plan.Aggregations {
 			if i == len(plan.Aggregations)-1 {
-				lines = append(lines, fmt.Sprintf("│   └── %s", agg))
+				lines = append(lines, "│   └── "+agg)
 			} else {
-				lines = append(lines, fmt.Sprintf("│   ├── %s", agg))
+				lines = append(lines, "│   ├── "+agg)
 			}
 		}
 	}
@@ -911,7 +926,7 @@ func (e *SQLEngine) buildHierarchicalPlan(plan *QueryExecutionPlan, err error) [
 			if plan.TotalRowsProcessed == 0 {
 				// Use the actual scan method from Details instead of hardcoding
 				if scanMethod, exists := plan.Details["scan_method"].(string); exists {
-					stats = append(stats, fmt.Sprintf("Scan Method: %s", scanMethod))
+					stats = append(stats, "Scan Method: "+scanMethod)
 				} else {
 					stats = append(stats, "Scan Method: Metadata Only")
 				}
@@ -932,16 +947,16 @@ func (e *SQLEngine) buildHierarchicalPlan(plan *QueryExecutionPlan, err error) [
 			if hasMoreAfterStats {
 				// More sections after Statistics, so use │   prefix
 				if i == len(stats)-1 {
-					lines = append(lines, fmt.Sprintf("│   └── %s", stat))
+					lines = append(lines, "│   └── "+stat)
 				} else {
-					lines = append(lines, fmt.Sprintf("│   ├── %s", stat))
+					lines = append(lines, "│   ├── "+stat)
 				}
 			} else {
 				// This is the last main section, so use space prefix for final item
 				if i == len(stats)-1 {
-					lines = append(lines, fmt.Sprintf("    └── %s", stat))
+					lines = append(lines, "    └── "+stat)
 				} else {
-					lines = append(lines, fmt.Sprintf("    ├── %s", stat))
+					lines = append(lines, "    ├── "+stat)
 				}
 			}
 		}
@@ -1057,9 +1072,9 @@ func (e *SQLEngine) buildHierarchicalPlan(plan *QueryExecutionPlan, err error) [
 
 		for i, detail := range filteredDetails {
 			if i == len(filteredDetails)-1 {
-				lines = append(lines, fmt.Sprintf("│   └── %s", detail))
+				lines = append(lines, "│   └── "+detail)
 			} else {
-				lines = append(lines, fmt.Sprintf("│   ├── %s", detail))
+				lines = append(lines, "│   ├── "+detail)
 			}
 		}
 	}
@@ -1069,7 +1084,7 @@ func (e *SQLEngine) buildHierarchicalPlan(plan *QueryExecutionPlan, err error) [
 		lines = append(lines, "├── Performance")
 		lines = append(lines, fmt.Sprintf("│   └── Execution Time: %.3fms", plan.ExecutionTimeMs))
 		lines = append(lines, "└── Error")
-		lines = append(lines, fmt.Sprintf("    └── %s", err.Error()))
+		lines = append(lines, "    └── "+err.Error())
 	} else {
 		lines = append(lines, "└── Performance")
 		lines = append(lines, fmt.Sprintf("    └── Execution Time: %.3fms", plan.ExecutionTimeMs))
@@ -1113,7 +1128,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 			ScanType:    "hybrid_scan",
 			Description: fmt.Sprintf("Hybrid Scan (%s)", plan.ExecutionStrategy),
 			Predicates:  predicates,
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"note": "File details not available",
 			},
 		}
@@ -1134,7 +1149,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 				Predicates:       predicates,
 				Operations:       operations,
 				OptimizationHint: e.determineOptimizationHint(plan, "parquet"),
-				Details: map[string]interface{}{
+				Details: map[string]any{
 					"format": "parquet",
 				},
 			})
@@ -1151,7 +1166,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 				Predicates:       predicates,
 				Operations:       operations,
 				OptimizationHint: e.determineOptimizationHint(plan, "live_log"),
-				Details: map[string]interface{}{
+				Details: map[string]any{
 					"format": "log_entry",
 				},
 			})
@@ -1166,7 +1181,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 			Predicates:       predicates,
 			Operations:       []string{"memory_scan"},
 			OptimizationHint: "real_time",
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"messages":         plan.BrokerBufferMessages,
 				"buffer_start_idx": plan.BufferStartIndex,
 			},
@@ -1183,7 +1198,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 			Description: fmt.Sprintf("Parquet File Scan (%d files)", len(parquetNodes)),
 			Predicates:  predicates,
 			Children:    parquetNodes,
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"files_count": len(parquetNodes),
 				"pushdown":    "column_projection + predicate_filtering",
 			},
@@ -1197,7 +1212,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 			Description: fmt.Sprintf("Live Log Scan (%d files)", len(liveLogNodes)),
 			Predicates:  predicates,
 			Children:    liveLogNodes,
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"files_count": len(liveLogNodes),
 				"pushdown":    "predicate_filtering",
 			},
@@ -1211,7 +1226,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 			Description: "Real-time Buffer Scan",
 			Predicates:  predicates,
 			Children:    brokerBufferNodes,
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"real_time": true,
 			},
 		})
@@ -1225,7 +1240,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 			ScanType:    "hybrid_scan",
 			Description: fmt.Sprintf("Hybrid Scan (%s)", plan.ExecutionStrategy),
 			Predicates:  predicates,
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"note": "No source files discovered",
 			},
 		}
@@ -1237,7 +1252,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 			ScanType:    "hybrid_scan",
 			Description: fmt.Sprintf("Hybrid Scan (%s)", plan.ExecutionStrategy),
 			Predicates:  predicates,
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"note": "No file details available",
 			},
 		}
@@ -1253,7 +1268,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 		OperationType: "chronological_merge",
 		Description:   "Chronological Merge (time-ordered)",
 		Children:      scanNodes,
-		Details: map[string]interface{}{
+		Details: map[string]any{
 			"merge_strategy": "timestamp_based",
 			"sources_count":  len(scanNodes),
 		},
@@ -1264,6 +1279,7 @@ func (e *SQLEngine) buildExecutionTree(plan *QueryExecutionPlan, stmt *SelectSta
 func (e *SQLEngine) extractPredicateStrings(expr ExprNode) []string {
 	var predicates []string
 	e.extractPredicateStringsRecursive(expr, &predicates)
+
 	return predicates
 }
 
@@ -1273,9 +1289,9 @@ func (e *SQLEngine) extractPredicateStringsRecursive(expr ExprNode, predicates *
 		*predicates = append(*predicates, fmt.Sprintf("%s %s %s",
 			e.exprToString(exprType.Left), exprType.Operator, e.exprToString(exprType.Right)))
 	case *IsNullExpr:
-		*predicates = append(*predicates, fmt.Sprintf("%s IS NULL", e.exprToString(exprType.Expr)))
+		*predicates = append(*predicates, e.exprToString(exprType.Expr)+" IS NULL")
 	case *IsNotNullExpr:
-		*predicates = append(*predicates, fmt.Sprintf("%s IS NOT NULL", e.exprToString(exprType.Expr)))
+		*predicates = append(*predicates, e.exprToString(exprType.Expr)+" IS NOT NULL")
 	case *AndExpr:
 		e.extractPredicateStringsRecursive(exprType.Left, predicates)
 		e.extractPredicateStringsRecursive(exprType.Right, predicates)
@@ -1347,6 +1363,7 @@ func (e *SQLEngine) determineOptimizationHint(plan *QueryExecutionPlan, sourceTy
 		if sourceType == "parquet" {
 			return "statistics_only"
 		}
+
 		return "minimal_scan"
 	case "full_scan":
 		return "full_scan"
@@ -1359,12 +1376,7 @@ func (e *SQLEngine) determineOptimizationHint(plan *QueryExecutionPlan, sourceTy
 
 // Helper function to check if slice contains string
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 // collectLiveLogFileNames collects live log file names from a partition directory
@@ -1389,16 +1401,17 @@ func (e *SQLEngine) collectLiveLogFileNames(filerClient filer_pb.FilerClient, pa
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
+
 				return err
 			}
 
-			entry := resp.Entry
-			if entry != nil && !entry.IsDirectory {
+			entry := resp.GetEntry()
+			if entry != nil && !entry.GetIsDirectory() {
 				// Check if this is a log file (not a parquet file)
-				fileName := entry.Name
+				fileName := entry.GetName()
 				if !strings.HasSuffix(fileName, ".parquet") && !strings.HasSuffix(fileName, ".metadata") {
 					liveLogFiles = append(liveLogFiles, fileName)
 				}
@@ -1441,7 +1454,8 @@ func (e *SQLEngine) formatOptimization(opt string) string {
 func (e *SQLEngine) executeUseStatement(ctx context.Context, stmt *UseStatement) (*QueryResult, error) {
 	// Validate database name
 	if stmt.Database == "" {
-		err := fmt.Errorf("database name cannot be empty")
+		err := errors.New("database name cannot be empty")
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -1452,10 +1466,11 @@ func (e *SQLEngine) executeUseStatement(ctx context.Context, stmt *UseStatement)
 	result := &QueryResult{
 		Columns: []string{"message"},
 		Rows: [][]sqltypes.Value{
-			{sqltypes.MakeString([]byte(fmt.Sprintf("Database changed to: %s", stmt.Database)))},
+			{sqltypes.MakeString([]byte("Database changed to: " + stmt.Database))},
 		},
 		Error: nil,
 	}
+
 	return result, nil
 }
 
@@ -1466,13 +1481,16 @@ func (e *SQLEngine) executeDDLStatement(ctx context.Context, stmt *DDLStatement)
 	case CreateStr:
 		return e.createTable(ctx, stmt)
 	case AlterStr:
-		err := fmt.Errorf("ALTER TABLE is not supported")
+		err := errors.New("ALTER TABLE is not supported")
+
 		return &QueryResult{Error: err}, err
 	case DropStr:
-		err := fmt.Errorf("DROP TABLE is not supported")
+		err := errors.New("DROP TABLE is not supported")
+
 		return &QueryResult{Error: err}, err
 	default:
 		err := fmt.Errorf("unsupported DDL action: %s", stmt.Action)
+
 		return &QueryResult{Error: err}, err
 	}
 }
@@ -1481,7 +1499,7 @@ func (e *SQLEngine) executeDDLStatement(ctx context.Context, stmt *DDLStatement)
 func (e *SQLEngine) executeSelectStatementWithPlan(ctx context.Context, stmt *SelectStatement, plan *QueryExecutionPlan) (*QueryResult, error) {
 	// Initialize plan details once
 	if plan != nil && plan.Details == nil {
-		plan.Details = make(map[string]interface{})
+		plan.Details = make(map[string]any)
 	}
 	// Parse aggregations to populate plan
 	var aggregations []AggregationSpec
@@ -1600,6 +1618,7 @@ func (e *SQLEngine) executeSelectStatementWithPlan(ctx context.Context, stmt *Se
 						for _, spec := range aggregations {
 							if !e.canUseParquetStatsForAggregation(spec) {
 								canUseFastPath = false
+
 								break
 							}
 						}
@@ -1666,6 +1685,7 @@ func (e *SQLEngine) executeSelectStatementWithPlan(ctx context.Context, stmt *Se
 							for _, spec := range aggregations {
 								if !e.canUseParquetStatsForAggregation(spec) {
 									canUseFastPath = false
+
 									break
 								}
 							}
@@ -1703,13 +1723,7 @@ func (e *SQLEngine) executeSelectStatementWithPlan(ctx context.Context, stmt *Se
 		// Add WHERE clause information
 		if stmt.Where != nil {
 			// Only add predicate_pushdown if not already added
-			alreadyHasPredicate := false
-			for _, opt := range plan.OptimizationsUsed {
-				if opt == "predicate_pushdown" {
-					alreadyHasPredicate = true
-					break
-				}
-			}
+			alreadyHasPredicate := slices.Contains(plan.OptimizationsUsed, "predicate_pushdown")
 			if !alreadyHasPredicate {
 				plan.OptimizationsUsed = append(plan.OptimizationsUsed, "predicate_pushdown")
 			}
@@ -1743,7 +1757,8 @@ func (e *SQLEngine) executeSelectStatementWithPlan(ctx context.Context, stmt *Se
 func (e *SQLEngine) executeSelectStatement(ctx context.Context, stmt *SelectStatement) (*QueryResult, error) {
 	// Parse FROM clause to get table (topic) information
 	if len(stmt.From) != 1 {
-		err := fmt.Errorf("SELECT supports single table queries only")
+		err := errors.New("SELECT supports single table queries only")
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -1759,10 +1774,12 @@ func (e *SQLEngine) executeSelectStatement(ctx context.Context, stmt *SelectStat
 			}
 		default:
 			err := fmt.Errorf("unsupported table expression: %T", tableExpr)
+
 			return &QueryResult{Error: err}, err
 		}
 	default:
 		err := fmt.Errorf("unsupported FROM clause: %T", table)
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -1806,7 +1823,8 @@ func (e *SQLEngine) executeSelectStatement(ctx context.Context, stmt *SelectStat
 			}, nil
 		}
 		// Return error for other access issues (truly non-existent topics, etc.)
-		topicErr := fmt.Errorf("failed to access topic %s.%s: %v", database, tableName, err)
+		topicErr := fmt.Errorf("failed to access topic %s.%s: %w", database, tableName, err)
+
 		return &QueryResult{Error: topicErr}, topicErr
 	}
 
@@ -1870,10 +1888,12 @@ func (e *SQLEngine) executeSelectStatement(ctx context.Context, stmt *SelectStat
 				}
 			default:
 				err := fmt.Errorf("unsupported SELECT expression: %T", col)
+
 				return &QueryResult{Error: err}, err
 			}
 		default:
 			err := fmt.Errorf("unsupported SELECT expression: %T", expr)
+
 			return &QueryResult{Error: err}, err
 		}
 	}
@@ -1975,6 +1995,7 @@ func (e *SQLEngine) executeSelectStatement(ctx context.Context, stmt *SelectStat
 		} else {
 			// SELECT * only - let converter determine all columns (excludes system columns)
 			columns = nil
+
 			return hybridScanner.ConvertToSQLResult(results, columns), nil
 		}
 	}
@@ -2028,10 +2049,12 @@ func (e *SQLEngine) executeRegularSelectWithHybridScanner(ctx context.Context, h
 				}
 			default:
 				err := fmt.Errorf("unsupported SELECT expression: %T", col)
+
 				return &QueryResult{Error: err}, err
 			}
 		default:
 			err := fmt.Errorf("unsupported SELECT expression: %T", expr)
+
 			return &QueryResult{Error: err}, err
 		}
 	}
@@ -2139,13 +2162,7 @@ func (e *SQLEngine) executeRegularSelectWithHybridScanner(ctx context.Context, h
 			// Add broker_buffer to data sources if buffer was queried
 			if stats.BrokerBufferQueried {
 				// Check if broker_buffer is already in data sources
-				hasBrokerBuffer := false
-				for _, source := range plan.DataSources {
-					if source == "broker_buffer" {
-						hasBrokerBuffer = true
-						break
-					}
-				}
+				hasBrokerBuffer := slices.Contains(plan.DataSources, "broker_buffer")
 				if !hasBrokerBuffer {
 					plan.DataSources = append(plan.DataSources, "broker_buffer")
 				}
@@ -2167,6 +2184,7 @@ func (e *SQLEngine) executeRegularSelectWithHybridScanner(ctx context.Context, h
 		} else {
 			// SELECT * only - let converter determine all columns (excludes system columns)
 			columns = nil
+
 			return hybridScanner.ConvertToSQLResult(results, columns), nil
 		}
 	}
@@ -2180,7 +2198,8 @@ func (e *SQLEngine) executeRegularSelectWithHybridScanner(ctx context.Context, h
 func (e *SQLEngine) executeSelectStatementWithBrokerStats(ctx context.Context, stmt *SelectStatement, plan *QueryExecutionPlan) (*QueryResult, error) {
 	// Parse FROM clause to get table (topic) information
 	if len(stmt.From) != 1 {
-		err := fmt.Errorf("SELECT supports single table queries only")
+		err := errors.New("SELECT supports single table queries only")
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -2196,10 +2215,12 @@ func (e *SQLEngine) executeSelectStatementWithBrokerStats(ctx context.Context, s
 			}
 		default:
 			err := fmt.Errorf("unsupported table expression: %T", tableExpr)
+
 			return &QueryResult{Error: err}, err
 		}
 	default:
 		err := fmt.Errorf("unsupported FROM clause: %T", table)
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -2243,7 +2264,8 @@ func (e *SQLEngine) executeSelectStatementWithBrokerStats(ctx context.Context, s
 			}, nil
 		}
 		// Return error for other access issues (truly non-existent topics, etc.)
-		topicErr := fmt.Errorf("failed to access topic %s.%s: %v", database, tableName, err)
+		topicErr := fmt.Errorf("failed to access topic %s.%s: %w", database, tableName, err)
+
 		return &QueryResult{Error: topicErr}, topicErr
 	}
 
@@ -2300,10 +2322,12 @@ func (e *SQLEngine) executeSelectStatementWithBrokerStats(ctx context.Context, s
 				}
 			default:
 				err := fmt.Errorf("unsupported SELECT expression: %T", col)
+
 				return &QueryResult{Error: err}, err
 			}
 		default:
 			err := fmt.Errorf("unsupported SELECT expression: %T", expr)
+
 			return &QueryResult{Error: err}, err
 		}
 	}
@@ -2410,13 +2434,7 @@ func (e *SQLEngine) executeSelectStatementWithBrokerStats(ctx context.Context, s
 			// Add broker_buffer to data sources if buffer was queried
 			if stats.BrokerBufferQueried {
 				// Check if broker_buffer is already in data sources
-				hasBrokerBuffer := false
-				for _, source := range plan.DataSources {
-					if source == "broker_buffer" {
-						hasBrokerBuffer = true
-						break
-					}
-				}
+				hasBrokerBuffer := slices.Contains(plan.DataSources, "broker_buffer")
 				if !hasBrokerBuffer {
 					plan.DataSources = append(plan.DataSources, "broker_buffer")
 				}
@@ -2522,6 +2540,7 @@ func (e *SQLEngine) executeSelectStatementWithBrokerStats(ctx context.Context, s
 		} else {
 			// SELECT * only - let converter determine all columns (excludes system columns)
 			columns = nil
+
 			return hybridScanner.ConvertToSQLResult(results, columns), nil
 		}
 	}
@@ -2607,6 +2626,7 @@ func (e *SQLEngine) extractTimeFiltersWithValidationRecursive(expr ExprNode, sta
 	case *OrExpr:
 		// OR expressions are complex and not supported in fast path
 		*onlyTimePredicates = false
+
 		return
 	case *ParenExpr:
 		// Unwrap parentheses and continue
@@ -2731,6 +2751,7 @@ func getTimeFiltersFromPlan(plan *QueryExecutionPlan) (startTimeNs, stopTimeNs i
 			stopTimeNs = stopNs
 		}
 	}
+
 	return
 }
 
@@ -2756,6 +2777,7 @@ func pruneParquetFilesByTime(ctx context.Context, parquetStats []*ParquetFileSta
 		parquetStats[n] = fs
 		n++
 	}
+
 	return parquetStats[:n]
 }
 
@@ -2773,6 +2795,7 @@ func (e *SQLEngine) pruneParquetFilesByColumnStats(ctx context.Context, parquetS
 		parquetStats[n] = fs
 		n++
 	}
+
 	return parquetStats[:n]
 }
 
@@ -2798,7 +2821,7 @@ func (e *SQLEngine) canSkipFileByComparison(ctx context.Context, fileStats *Parq
 	// Extract column name and comparison value
 	var columnName string
 	var compareSchemaValue *schema_pb.Value
-	var operator string = expr.Operator
+	var operator = expr.Operator
 
 	// Determine which side is the column and which is the value
 	if colRef, ok := expr.Left.(*ColName); ok {
@@ -2834,6 +2857,7 @@ func (e *SQLEngine) canSkipFileByComparison(ctx context.Context, fileStats *Parq
 			if strings.EqualFold(colName, columnName) {
 				colStats = stats
 				exists = true
+
 				break
 			}
 		}
@@ -2992,7 +3016,7 @@ func (e *SQLEngine) getCurrentTableInfo(database string) (*TableInfo, error) {
 	// In practice, we'd need the table context from the current query
 	// For now, return nil to fallback to naming conventions
 	// TODO: Enhance architecture to pass table context through query execution
-	return nil, fmt.Errorf("table context not available in current architecture")
+	return nil, errors.New("table context not available in current architecture")
 }
 
 // getColumnName extracts column name from expression (handles ColName types)
@@ -3001,6 +3025,7 @@ func (e *SQLEngine) getColumnName(expr ExprNode) string {
 	case *ColName:
 		return exprType.Name.String()
 	}
+
 	return ""
 }
 
@@ -3113,6 +3138,7 @@ func (e *SQLEngine) buildPredicateWithContext(expr ExprNode, selectExprs []Selec
 		if err != nil {
 			return nil, err
 		}
+
 		return func(record *schema_pb.RecordValue) bool {
 			return leftPred(record) && rightPred(record)
 		}, nil
@@ -3125,6 +3151,7 @@ func (e *SQLEngine) buildPredicateWithContext(expr ExprNode, selectExprs []Selec
 		if err != nil {
 			return nil, err
 		}
+
 		return func(record *schema_pb.RecordValue) bool {
 			return leftPred(record) || rightPred(record)
 		}, nil
@@ -3136,7 +3163,7 @@ func (e *SQLEngine) buildPredicateWithContext(expr ExprNode, selectExprs []Selec
 // buildComparisonPredicateWithContext creates a predicate for comparison operations with alias support
 func (e *SQLEngine) buildComparisonPredicateWithContext(expr *ComparisonExpr, selectExprs []SelectExpr) (func(*schema_pb.RecordValue) bool, error) {
 	var columnName string
-	var compareValue interface{}
+	var compareValue any
 	var operator string
 
 	// Check if column is on the left side (normal case: column > value)
@@ -3151,10 +3178,9 @@ func (e *SQLEngine) buildComparisonPredicateWithContext(expr *ComparisonExpr, se
 		// Extract comparison value from right side
 		val, err := e.extractComparisonValue(expr.Right)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract right-side value: %v", err)
+			return nil, fmt.Errorf("failed to extract right-side value: %w", err)
 		}
 		compareValue = e.convertValueForTimestampColumn(columnName, val, expr.Right)
-
 	} else if colName, ok := expr.Right.(*ColName); ok {
 		// Column is on the right side (reversed case: value < column)
 		rawColumnName := colName.Name.String()
@@ -3169,10 +3195,9 @@ func (e *SQLEngine) buildComparisonPredicateWithContext(expr *ComparisonExpr, se
 		// Extract comparison value from left side
 		val, err := e.extractComparisonValue(expr.Left)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract left-side value: %v", err)
+			return nil, fmt.Errorf("failed to extract left-side value: %w", err)
 		}
 		compareValue = e.convertValueForTimestampColumn(columnName, val, expr.Left)
-
 	} else {
 		// Handle literal-only comparisons like 1 = 0, 'a' = 'b', etc.
 		leftVal, leftErr := e.extractComparisonValue(expr.Left)
@@ -3193,7 +3218,7 @@ func (e *SQLEngine) buildComparisonPredicateWithContext(expr *ComparisonExpr, se
 
 	// Return the predicate function
 	return func(record *schema_pb.RecordValue) bool {
-		fieldValue, exists := record.Fields[columnName]
+		fieldValue, exists := record.GetFields()[columnName]
 		if !exists {
 			return false // Column doesn't exist in record
 		}
@@ -3206,7 +3231,7 @@ func (e *SQLEngine) buildComparisonPredicateWithContext(expr *ComparisonExpr, se
 // buildBetweenPredicateWithContext creates a predicate for BETWEEN operations
 func (e *SQLEngine) buildBetweenPredicateWithContext(expr *BetweenExpr, selectExprs []SelectExpr) (func(*schema_pb.RecordValue) bool, error) {
 	var columnName string
-	var fromValue, toValue interface{}
+	var fromValue, toValue any
 
 	// Check if left side is a column name
 	if colName, ok := expr.Left.(*ColName); ok {
@@ -3219,14 +3244,14 @@ func (e *SQLEngine) buildBetweenPredicateWithContext(expr *BetweenExpr, selectEx
 		// Extract FROM value
 		fromVal, err := e.extractComparisonValue(expr.From)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract BETWEEN from value: %v", err)
+			return nil, fmt.Errorf("failed to extract BETWEEN from value: %w", err)
 		}
 		fromValue = e.convertValueForTimestampColumn(columnName, fromVal, expr.From)
 
 		// Extract TO value
 		toVal, err := e.extractComparisonValue(expr.To)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract BETWEEN to value: %v", err)
+			return nil, fmt.Errorf("failed to extract BETWEEN to value: %w", err)
 		}
 		toValue = e.convertValueForTimestampColumn(columnName, toVal, expr.To)
 	} else {
@@ -3235,7 +3260,7 @@ func (e *SQLEngine) buildBetweenPredicateWithContext(expr *BetweenExpr, selectEx
 
 	// Return the predicate function
 	return func(record *schema_pb.RecordValue) bool {
-		fieldValue, exists := record.Fields[columnName]
+		fieldValue, exists := record.GetFields()[columnName]
 		if !exists {
 			return false
 		}
@@ -3268,7 +3293,7 @@ func (e *SQLEngine) buildIsNullPredicateWithContext(expr *IsNullExpr, selectExpr
 		// Return the predicate function
 		return func(record *schema_pb.RecordValue) bool {
 			// Check if field exists and if it's null or missing
-			fieldValue, exists := record.Fields[columnName]
+			fieldValue, exists := record.GetFields()[columnName]
 			if !exists {
 				return true // Field doesn't exist = NULL
 			}
@@ -3294,7 +3319,7 @@ func (e *SQLEngine) buildIsNotNullPredicateWithContext(expr *IsNotNullExpr, sele
 		// Return the predicate function
 		return func(record *schema_pb.RecordValue) bool {
 			// Check if field exists and if it's not null
-			fieldValue, exists := record.Fields[columnName]
+			fieldValue, exists := record.GetFields()[columnName]
 			if !exists {
 				return false // Field doesn't exist = NULL, so NOT NULL is false
 			}
@@ -3319,7 +3344,7 @@ func (e *SQLEngine) isValueNull(value *schema_pb.Value) bool {
 	}
 
 	// For different value types, check if they represent null/empty values
-	switch kind := value.Kind.(type) {
+	switch kind := value.GetKind().(type) {
 	case *schema_pb.Value_StringValue:
 		// Empty string could be considered null depending on semantics
 		// For now, treat empty string as not null (SQL standard behavior)
@@ -3347,7 +3372,7 @@ func (e *SQLEngine) isValueNull(value *schema_pb.Value) bool {
 }
 
 // extractComparisonValue extracts the comparison value from a SQL expression
-func (e *SQLEngine) extractComparisonValue(expr ExprNode) (interface{}, error) {
+func (e *SQLEngine) extractComparisonValue(expr ExprNode) (any, error) {
 	switch val := expr.(type) {
 	case *SQLVal:
 		switch val.Type {
@@ -3356,6 +3381,7 @@ func (e *SQLEngine) extractComparisonValue(expr ExprNode) (interface{}, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			return intVal, nil
 		case StrVal:
 			return string(val.Val), nil
@@ -3364,6 +3390,7 @@ func (e *SQLEngine) extractComparisonValue(expr ExprNode) (interface{}, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			return floatVal, nil
 		default:
 			return nil, fmt.Errorf("unsupported SQL value type: %v", val.Type)
@@ -3380,10 +3407,11 @@ func (e *SQLEngine) extractComparisonValue(expr ExprNode) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return nanos, nil
 	case ValTuple:
 		// Handle IN expressions with multiple values: column IN (value1, value2, value3)
-		var inValues []interface{}
+		var inValues []any
 		for _, tupleVal := range val {
 			switch v := tupleVal.(type) {
 			case *SQLVal:
@@ -3405,6 +3433,7 @@ func (e *SQLEngine) extractComparisonValue(expr ExprNode) (interface{}, error) {
 				}
 			}
 		}
+
 		return inValues, nil
 	default:
 		return nil, fmt.Errorf("unsupported comparison value type: %T", expr)
@@ -3412,7 +3441,7 @@ func (e *SQLEngine) extractComparisonValue(expr ExprNode) (interface{}, error) {
 }
 
 // evaluateArithmeticExpressionForComparison evaluates an arithmetic expression for WHERE clause comparisons
-func (e *SQLEngine) evaluateArithmeticExpressionForComparison(expr *ArithmeticExpr) (interface{}, error) {
+func (e *SQLEngine) evaluateArithmeticExpressionForComparison(expr *ArithmeticExpr) (any, error) {
 	// Check if this is timestamp arithmetic with intervals
 	if e.isTimestampArithmetic(expr.Left, expr.Right) && (expr.Operator == "+" || expr.Operator == "-") {
 		// Evaluate timestamp arithmetic and return the result as nanoseconds
@@ -3423,7 +3452,7 @@ func (e *SQLEngine) evaluateArithmeticExpressionForComparison(expr *ArithmeticEx
 
 		// Extract the timestamp value as nanoseconds for comparison
 		if result.Kind != nil {
-			switch resultKind := result.Kind.(type) {
+			switch resultKind := result.GetKind().(type) {
 			case *schema_pb.Value_Int64Value:
 				return resultKind.Int64Value, nil
 			case *schema_pb.Value_StringValue:
@@ -3431,10 +3460,12 @@ func (e *SQLEngine) evaluateArithmeticExpressionForComparison(expr *ArithmeticEx
 				if timestamp, err := time.Parse("2006-01-02T15:04:05.000000000Z", resultKind.StringValue); err == nil {
 					return timestamp.UnixNano(), nil
 				}
+
 				return nil, fmt.Errorf("could not parse timestamp string: %s", resultKind.StringValue)
 			}
 		}
-		return nil, fmt.Errorf("invalid timestamp arithmetic result")
+
+		return nil, errors.New("invalid timestamp arithmetic result")
 	}
 
 	// For other arithmetic operations, we'd need to evaluate them differently
@@ -3443,7 +3474,7 @@ func (e *SQLEngine) evaluateArithmeticExpressionForComparison(expr *ArithmeticEx
 }
 
 // evaluateFunctionExpressionForComparison evaluates a function expression for WHERE clause comparisons
-func (e *SQLEngine) evaluateFunctionExpressionForComparison(expr *FuncExpr) (interface{}, error) {
+func (e *SQLEngine) evaluateFunctionExpressionForComparison(expr *FuncExpr) (any, error) {
 	funcName := strings.ToUpper(expr.Name.String())
 
 	switch funcName {
@@ -3454,12 +3485,13 @@ func (e *SQLEngine) evaluateFunctionExpressionForComparison(expr *FuncExpr) (int
 		}
 		// Return as nanoseconds for comparison
 		if result.Kind != nil {
-			if resultKind, ok := result.Kind.(*schema_pb.Value_TimestampValue); ok {
+			if resultKind, ok := result.GetKind().(*schema_pb.Value_TimestampValue); ok {
 				// Convert microseconds to nanoseconds
-				return resultKind.TimestampValue.TimestampMicros * 1000, nil
+				return resultKind.TimestampValue.GetTimestampMicros() * 1000, nil
 			}
 		}
-		return nil, fmt.Errorf("invalid NOW() result: expected TimestampValue, got %T", result.Kind)
+
+		return nil, fmt.Errorf("invalid NOW() result: expected TimestampValue, got %T", result.GetKind())
 
 	case "CURRENT_DATE":
 		result, err := e.CurrentDate()
@@ -3468,13 +3500,14 @@ func (e *SQLEngine) evaluateFunctionExpressionForComparison(expr *FuncExpr) (int
 		}
 		// Convert date to nanoseconds (start of day)
 		if result.Kind != nil {
-			if resultKind, ok := result.Kind.(*schema_pb.Value_StringValue); ok {
+			if resultKind, ok := result.GetKind().(*schema_pb.Value_StringValue); ok {
 				if date, err := time.Parse("2006-01-02", resultKind.StringValue); err == nil {
 					return date.UnixNano(), nil
 				}
 			}
 		}
-		return nil, fmt.Errorf("invalid CURRENT_DATE result")
+
+		return nil, errors.New("invalid CURRENT_DATE result")
 
 	case "CURRENT_TIME":
 		result, err := e.CurrentTime()
@@ -3484,11 +3517,12 @@ func (e *SQLEngine) evaluateFunctionExpressionForComparison(expr *FuncExpr) (int
 		// For time comparison, we might need special handling
 		// For now, just return the string value
 		if result.Kind != nil {
-			if resultKind, ok := result.Kind.(*schema_pb.Value_StringValue); ok {
+			if resultKind, ok := result.GetKind().(*schema_pb.Value_StringValue); ok {
 				return resultKind.StringValue, nil
 			}
 		}
-		return nil, fmt.Errorf("invalid CURRENT_TIME result")
+
+		return nil, errors.New("invalid CURRENT_TIME result")
 
 	default:
 		return nil, fmt.Errorf("unsupported function in WHERE clause: %s", funcName)
@@ -3496,7 +3530,7 @@ func (e *SQLEngine) evaluateFunctionExpressionForComparison(expr *FuncExpr) (int
 }
 
 // evaluateComparison performs the actual comparison
-func (e *SQLEngine) evaluateComparison(fieldValue *schema_pb.Value, operator string, compareValue interface{}) bool {
+func (e *SQLEngine) evaluateComparison(fieldValue *schema_pb.Value, operator string, compareValue any) bool {
 	// This is a simplified implementation
 	// A full implementation would handle type coercion and all comparison operators
 
@@ -3523,57 +3557,64 @@ func (e *SQLEngine) evaluateComparison(fieldValue *schema_pb.Value, operator str
 }
 
 // Helper functions for value comparison with proper type coercion
-func (e *SQLEngine) valuesEqual(fieldValue *schema_pb.Value, compareValue interface{}) bool {
+func (e *SQLEngine) valuesEqual(fieldValue *schema_pb.Value, compareValue any) bool {
 	// Handle string comparisons first
-	if strField, ok := fieldValue.Kind.(*schema_pb.Value_StringValue); ok {
+	if strField, ok := fieldValue.GetKind().(*schema_pb.Value_StringValue); ok {
 		if strVal, ok := compareValue.(string); ok {
 			return strField.StringValue == strVal
 		}
+
 		return false
 	}
 
 	// Handle boolean comparisons
-	if boolField, ok := fieldValue.Kind.(*schema_pb.Value_BoolValue); ok {
+	if boolField, ok := fieldValue.GetKind().(*schema_pb.Value_BoolValue); ok {
 		if boolVal, ok := compareValue.(bool); ok {
 			return boolField.BoolValue == boolVal
 		}
+
 		return false
 	}
 
 	// Handle logical type comparisons
-	if timestampField, ok := fieldValue.Kind.(*schema_pb.Value_TimestampValue); ok {
+	if timestampField, ok := fieldValue.GetKind().(*schema_pb.Value_TimestampValue); ok {
 		if timestampVal, ok := compareValue.(int64); ok {
-			return timestampField.TimestampValue.TimestampMicros == timestampVal
+			return timestampField.TimestampValue.GetTimestampMicros() == timestampVal
 		}
+
 		return false
 	}
 
-	if dateField, ok := fieldValue.Kind.(*schema_pb.Value_DateValue); ok {
+	if dateField, ok := fieldValue.GetKind().(*schema_pb.Value_DateValue); ok {
 		if dateVal, ok := compareValue.(int32); ok {
-			return dateField.DateValue.DaysSinceEpoch == dateVal
+			return dateField.DateValue.GetDaysSinceEpoch() == dateVal
 		}
+
 		return false
 	}
 
 	// Handle DecimalValue comparison (convert to string for comparison)
-	if decimalField, ok := fieldValue.Kind.(*schema_pb.Value_DecimalValue); ok {
+	if decimalField, ok := fieldValue.GetKind().(*schema_pb.Value_DecimalValue); ok {
 		if decimalStr, ok := compareValue.(string); ok {
 			// Convert decimal bytes back to string for comparison
 			decimalValue := e.decimalToString(decimalField.DecimalValue)
+
 			return decimalValue == decimalStr
 		}
+
 		return false
 	}
 
-	if timeField, ok := fieldValue.Kind.(*schema_pb.Value_TimeValue); ok {
+	if timeField, ok := fieldValue.GetKind().(*schema_pb.Value_TimeValue); ok {
 		if timeVal, ok := compareValue.(int64); ok {
-			return timeField.TimeValue.TimeMicros == timeVal
+			return timeField.TimeValue.GetTimeMicros() == timeVal
 		}
+
 		return false
 	}
 
 	// Handle direct int64 comparisons for timestamp precision (before float64 conversion)
-	if int64Field, ok := fieldValue.Kind.(*schema_pb.Value_Int64Value); ok {
+	if int64Field, ok := fieldValue.GetKind().(*schema_pb.Value_Int64Value); ok {
 		if int64Val, ok := compareValue.(int64); ok {
 			return int64Field.Int64Value == int64Val
 		}
@@ -3583,7 +3624,7 @@ func (e *SQLEngine) valuesEqual(fieldValue *schema_pb.Value, compareValue interf
 	}
 
 	// Handle direct int32 comparisons
-	if int32Field, ok := fieldValue.Kind.(*schema_pb.Value_Int32Value); ok {
+	if int32Field, ok := fieldValue.GetKind().(*schema_pb.Value_Int32Value); ok {
 		if int32Val, ok := compareValue.(int32); ok {
 			return int32Field.Int32Value == int32Val
 		}
@@ -3607,19 +3648,23 @@ func (e *SQLEngine) valuesEqual(fieldValue *schema_pb.Value, compareValue interf
 }
 
 // convertCompareValueToNumber converts compare values from SQL queries to float64
-func (e *SQLEngine) convertCompareValueToNumber(compareValue interface{}) *float64 {
+func (e *SQLEngine) convertCompareValueToNumber(compareValue any) *float64 {
 	switch v := compareValue.(type) {
 	case int:
 		result := float64(v)
+
 		return &result
 	case int32:
 		result := float64(v)
+
 		return &result
 	case int64:
 		result := float64(v)
+
 		return &result
 	case float32:
 		result := float64(v)
+
 		return &result
 	case float64:
 		return &v
@@ -3629,6 +3674,7 @@ func (e *SQLEngine) convertCompareValueToNumber(compareValue interface{}) *float
 			return &parsed
 		}
 	}
+
 	return nil
 }
 
@@ -3639,55 +3685,60 @@ func (e *SQLEngine) decimalToString(decimalValue *schema_pb.DecimalValue) string
 	}
 
 	// Convert bytes back to big.Int
-	intValue := new(big.Int).SetBytes(decimalValue.Value)
+	intValue := new(big.Int).SetBytes(decimalValue.GetValue())
 
 	// Convert to string with proper decimal placement
 	str := intValue.String()
 
 	// Handle decimal placement based on scale
-	scale := int(decimalValue.Scale)
+	scale := int(decimalValue.GetScale())
 	if scale > 0 && len(str) > scale {
 		// Insert decimal point
 		decimalPos := len(str) - scale
+
 		return str[:decimalPos] + "." + str[decimalPos:]
 	}
 
 	return str
 }
 
-func (e *SQLEngine) valueLessThan(fieldValue *schema_pb.Value, compareValue interface{}) bool {
+func (e *SQLEngine) valueLessThan(fieldValue *schema_pb.Value, compareValue any) bool {
 	// Handle string comparisons lexicographically
-	if strField, ok := fieldValue.Kind.(*schema_pb.Value_StringValue); ok {
+	if strField, ok := fieldValue.GetKind().(*schema_pb.Value_StringValue); ok {
 		if strVal, ok := compareValue.(string); ok {
 			return strField.StringValue < strVal
 		}
+
 		return false
 	}
 
 	// Handle logical type comparisons
-	if timestampField, ok := fieldValue.Kind.(*schema_pb.Value_TimestampValue); ok {
+	if timestampField, ok := fieldValue.GetKind().(*schema_pb.Value_TimestampValue); ok {
 		if timestampVal, ok := compareValue.(int64); ok {
-			return timestampField.TimestampValue.TimestampMicros < timestampVal
+			return timestampField.TimestampValue.GetTimestampMicros() < timestampVal
 		}
+
 		return false
 	}
 
-	if dateField, ok := fieldValue.Kind.(*schema_pb.Value_DateValue); ok {
+	if dateField, ok := fieldValue.GetKind().(*schema_pb.Value_DateValue); ok {
 		if dateVal, ok := compareValue.(int32); ok {
-			return dateField.DateValue.DaysSinceEpoch < dateVal
+			return dateField.DateValue.GetDaysSinceEpoch() < dateVal
 		}
+
 		return false
 	}
 
-	if timeField, ok := fieldValue.Kind.(*schema_pb.Value_TimeValue); ok {
+	if timeField, ok := fieldValue.GetKind().(*schema_pb.Value_TimeValue); ok {
 		if timeVal, ok := compareValue.(int64); ok {
-			return timeField.TimeValue.TimeMicros < timeVal
+			return timeField.TimeValue.GetTimeMicros() < timeVal
 		}
+
 		return false
 	}
 
 	// Handle direct int64 comparisons for timestamp precision (before float64 conversion)
-	if int64Field, ok := fieldValue.Kind.(*schema_pb.Value_Int64Value); ok {
+	if int64Field, ok := fieldValue.GetKind().(*schema_pb.Value_Int64Value); ok {
 		if int64Val, ok := compareValue.(int64); ok {
 			return int64Field.Int64Value < int64Val
 		}
@@ -3697,7 +3748,7 @@ func (e *SQLEngine) valueLessThan(fieldValue *schema_pb.Value, compareValue inte
 	}
 
 	// Handle direct int32 comparisons
-	if int32Field, ok := fieldValue.Kind.(*schema_pb.Value_Int32Value); ok {
+	if int32Field, ok := fieldValue.GetKind().(*schema_pb.Value_Int32Value); ok {
 		if int32Val, ok := compareValue.(int32); ok {
 			return int32Field.Int32Value < int32Val
 		}
@@ -3720,39 +3771,43 @@ func (e *SQLEngine) valueLessThan(fieldValue *schema_pb.Value, compareValue inte
 	return false
 }
 
-func (e *SQLEngine) valueGreaterThan(fieldValue *schema_pb.Value, compareValue interface{}) bool {
+func (e *SQLEngine) valueGreaterThan(fieldValue *schema_pb.Value, compareValue any) bool {
 	// Handle string comparisons lexicographically
-	if strField, ok := fieldValue.Kind.(*schema_pb.Value_StringValue); ok {
+	if strField, ok := fieldValue.GetKind().(*schema_pb.Value_StringValue); ok {
 		if strVal, ok := compareValue.(string); ok {
 			return strField.StringValue > strVal
 		}
+
 		return false
 	}
 
 	// Handle logical type comparisons
-	if timestampField, ok := fieldValue.Kind.(*schema_pb.Value_TimestampValue); ok {
+	if timestampField, ok := fieldValue.GetKind().(*schema_pb.Value_TimestampValue); ok {
 		if timestampVal, ok := compareValue.(int64); ok {
-			return timestampField.TimestampValue.TimestampMicros > timestampVal
+			return timestampField.TimestampValue.GetTimestampMicros() > timestampVal
 		}
+
 		return false
 	}
 
-	if dateField, ok := fieldValue.Kind.(*schema_pb.Value_DateValue); ok {
+	if dateField, ok := fieldValue.GetKind().(*schema_pb.Value_DateValue); ok {
 		if dateVal, ok := compareValue.(int32); ok {
-			return dateField.DateValue.DaysSinceEpoch > dateVal
+			return dateField.DateValue.GetDaysSinceEpoch() > dateVal
 		}
+
 		return false
 	}
 
-	if timeField, ok := fieldValue.Kind.(*schema_pb.Value_TimeValue); ok {
+	if timeField, ok := fieldValue.GetKind().(*schema_pb.Value_TimeValue); ok {
 		if timeVal, ok := compareValue.(int64); ok {
-			return timeField.TimeValue.TimeMicros > timeVal
+			return timeField.TimeValue.GetTimeMicros() > timeVal
 		}
+
 		return false
 	}
 
 	// Handle direct int64 comparisons for timestamp precision (before float64 conversion)
-	if int64Field, ok := fieldValue.Kind.(*schema_pb.Value_Int64Value); ok {
+	if int64Field, ok := fieldValue.GetKind().(*schema_pb.Value_Int64Value); ok {
 		if int64Val, ok := compareValue.(int64); ok {
 			return int64Field.Int64Value > int64Val
 		}
@@ -3762,7 +3817,7 @@ func (e *SQLEngine) valueGreaterThan(fieldValue *schema_pb.Value, compareValue i
 	}
 
 	// Handle direct int32 comparisons
-	if int32Field, ok := fieldValue.Kind.(*schema_pb.Value_Int32Value); ok {
+	if int32Field, ok := fieldValue.GetKind().(*schema_pb.Value_Int32Value); ok {
 		if int32Val, ok := compareValue.(int32); ok {
 			return int32Field.Int32Value > int32Val
 		}
@@ -3786,9 +3841,9 @@ func (e *SQLEngine) valueGreaterThan(fieldValue *schema_pb.Value, compareValue i
 }
 
 // valueLike implements SQL LIKE pattern matching with % and _ wildcards
-func (e *SQLEngine) valueLike(fieldValue *schema_pb.Value, compareValue interface{}) bool {
+func (e *SQLEngine) valueLike(fieldValue *schema_pb.Value, compareValue any) bool {
 	// Only support LIKE for string values
-	stringVal, ok := fieldValue.Kind.(*schema_pb.Value_StringValue)
+	stringVal, ok := fieldValue.GetKind().(*schema_pb.Value_StringValue)
 	if !ok {
 		return false
 	}
@@ -3814,10 +3869,10 @@ func (e *SQLEngine) valueLike(fieldValue *schema_pb.Value, compareValue interfac
 }
 
 // valueIn implements SQL IN operator for checking if value exists in a list
-func (e *SQLEngine) valueIn(fieldValue *schema_pb.Value, compareValue interface{}) bool {
+func (e *SQLEngine) valueIn(fieldValue *schema_pb.Value, compareValue any) bool {
 	// For now, handle simple case where compareValue is a slice of values
 	// In a full implementation, this would handle SQL IN expressions properly
-	values, ok := compareValue.([]interface{})
+	values, ok := compareValue.([]any)
 	if !ok {
 		return false
 	}
@@ -3880,7 +3935,7 @@ func (e *SQLEngine) showTables(ctx context.Context, dbName string) (*QueryResult
 }
 
 // compareLiteralValues compares two literal values with the given operator
-func (e *SQLEngine) compareLiteralValues(left, right interface{}, operator string) bool {
+func (e *SQLEngine) compareLiteralValues(left, right any, operator string) bool {
 	switch operator {
 	case "=", "==":
 		return e.literalValuesEqual(left, right)
@@ -3901,15 +3956,16 @@ func (e *SQLEngine) compareLiteralValues(left, right interface{}, operator strin
 }
 
 // literalValuesEqual checks if two literal values are equal
-func (e *SQLEngine) literalValuesEqual(left, right interface{}) bool {
+func (e *SQLEngine) literalValuesEqual(left, right any) bool {
 	// Convert both to strings for comparison
 	leftStr := fmt.Sprintf("%v", left)
 	rightStr := fmt.Sprintf("%v", right)
+
 	return leftStr == rightStr
 }
 
 // compareLiteralNumber compares two values as numbers
-func (e *SQLEngine) compareLiteralNumber(left, right interface{}) int {
+func (e *SQLEngine) compareLiteralNumber(left, right any) int {
 	leftNum, leftOk := e.convertToFloat64(left)
 	rightNum, rightOk := e.convertToFloat64(right)
 
@@ -3936,7 +3992,7 @@ func (e *SQLEngine) compareLiteralNumber(left, right interface{}) int {
 }
 
 // convertToFloat64 attempts to convert a value to float64
-func (e *SQLEngine) convertToFloat64(value interface{}) (float64, bool) {
+func (e *SQLEngine) convertToFloat64(value any) (float64, bool) {
 	switch v := value.(type) {
 	case int64:
 		return float64(v), true
@@ -3952,6 +4008,7 @@ func (e *SQLEngine) convertToFloat64(value interface{}) (float64, bool) {
 		if num, err := strconv.ParseFloat(v, 64); err == nil {
 			return num, true
 		}
+
 		return 0, false
 	default:
 		return 0, false
@@ -3978,7 +4035,8 @@ func (e *SQLEngine) createTable(ctx context.Context, stmt *DDLStatement) (*Query
 	// Parse column definitions from CREATE TABLE
 	// Assumption: stmt.TableSpec contains column definitions
 	if stmt.TableSpec == nil || len(stmt.TableSpec.Columns) == 0 {
-		err := fmt.Errorf("CREATE TABLE requires column definitions")
+		err := errors.New("CREATE TABLE requires column definitions")
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -4049,7 +4107,6 @@ func (builder *ExecutionPlanBuilder) BuildAggregationPlan(
 	strategy AggregationStrategy,
 	dataSources *TopicDataSources,
 ) *QueryExecutionPlan {
-
 	plan := &QueryExecutionPlan{
 		QueryType:           "SELECT",
 		ExecutionStrategy:   builder.determineExecutionStrategy(stmt, strategy),
@@ -4059,7 +4116,7 @@ func (builder *ExecutionPlanBuilder) BuildAggregationPlan(
 		LiveLogFilesScanned: builder.countLiveLogFiles(dataSources),
 		OptimizationsUsed:   builder.buildOptimizationsList(stmt, strategy, dataSources),
 		Aggregations:        builder.buildAggregationsList(aggregations),
-		Details:             make(map[string]interface{}),
+		Details:             make(map[string]any),
 	}
 
 	// Set row counts based on strategy
@@ -4129,6 +4186,7 @@ func (builder *ExecutionPlanBuilder) countParquetFiles(dataSources *TopicDataSou
 	for _, fileStats := range dataSources.ParquetFiles {
 		count += len(fileStats)
 	}
+
 	return count
 }
 
@@ -4155,13 +4213,7 @@ func (builder *ExecutionPlanBuilder) buildOptimizationsList(stmt *SelectStatemen
 
 	if stmt.Where != nil {
 		// Check if "predicate_pushdown" is already in the list
-		found := false
-		for _, opt := range optimizations {
-			if opt == "predicate_pushdown" {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(optimizations, "predicate_pushdown")
 		if !found {
 			optimizations = append(optimizations, "predicate_pushdown")
 		}
@@ -4176,6 +4228,7 @@ func (builder *ExecutionPlanBuilder) buildAggregationsList(aggregations []Aggreg
 	for i, spec := range aggregations {
 		aggList[i] = fmt.Sprintf("%s(%s)", spec.Function, spec.Column)
 	}
+
 	return aggList
 }
 
@@ -4191,7 +4244,7 @@ func (e *SQLEngine) parseAggregationFunction(funcExpr *FuncExpr, aliasExpr *Alia
 	switch funcName {
 	case FuncCOUNT:
 		if len(funcExpr.Exprs) != 1 {
-			return nil, fmt.Errorf("COUNT function expects exactly 1 argument")
+			return nil, errors.New("COUNT function expects exactly 1 argument")
 		}
 
 		switch arg := funcExpr.Exprs[0].(type) {
@@ -4203,7 +4256,7 @@ func (e *SQLEngine) parseAggregationFunction(funcExpr *FuncExpr, aliasExpr *Alia
 				spec.Column = colName.Name.String()
 				spec.Alias = fmt.Sprintf("COUNT(%s)", spec.Column)
 			} else {
-				return nil, fmt.Errorf("COUNT argument must be a column name or *")
+				return nil, errors.New("COUNT argument must be a column name or *")
 			}
 		default:
 			return nil, fmt.Errorf("unsupported COUNT argument: %T", arg)
@@ -4239,36 +4292,37 @@ func (e *SQLEngine) parseAggregationFunction(funcExpr *FuncExpr, aliasExpr *Alia
 }
 
 // computeLiveLogMinMax scans live log files to find MIN/MAX values for a specific column
-func (e *SQLEngine) computeLiveLogMinMax(partitionPath string, columnName string, parquetSourceFiles map[string]bool) (interface{}, interface{}, error) {
+func (e *SQLEngine) computeLiveLogMinMax(partitionPath string, columnName string, parquetSourceFiles map[string]bool) (any, any, error) {
 	if e.catalog.brokerClient == nil {
-		return nil, nil, fmt.Errorf("no broker client available")
+		return nil, nil, errors.New("no broker client available")
 	}
 
 	filerClient, err := e.catalog.brokerClient.GetFilerClient()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get filer client: %v", err)
+		return nil, nil, fmt.Errorf("failed to get filer client: %w", err)
 	}
 
-	var minValue, maxValue interface{}
+	var minValue, maxValue any
 	var minSchemaValue, maxSchemaValue *schema_pb.Value
 
 	// Process each live log file
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(partitionPath), "", func(entry *filer_pb.Entry, isLast bool) error {
 		// Skip parquet files and directories
-		if entry.IsDirectory || strings.HasSuffix(entry.Name, ".parquet") {
+		if entry.GetIsDirectory() || strings.HasSuffix(entry.GetName(), ".parquet") {
 			return nil
 		}
 		// Skip files that have been converted to parquet (deduplication)
-		if parquetSourceFiles[entry.Name] {
+		if parquetSourceFiles[entry.GetName()] {
 			return nil
 		}
 
-		filePath := partitionPath + "/" + entry.Name
+		filePath := partitionPath + "/" + entry.GetName()
 
 		// Scan this log file for MIN/MAX values
 		fileMin, fileMax, err := e.computeFileMinMax(filerClient, filePath, columnName)
 		if err != nil {
 			fmt.Printf("Warning: failed to compute min/max for file %s: %v\n", filePath, err)
+
 			return nil // Continue with other files
 		}
 
@@ -4291,7 +4345,7 @@ func (e *SQLEngine) computeLiveLogMinMax(partitionPath string, columnName string
 	})
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to process partition directory %s: %v", partitionPath, err)
+		return nil, nil, fmt.Errorf("failed to process partition directory %s: %w", partitionPath, err)
 	}
 
 	return minValue, maxValue, nil
@@ -4314,15 +4368,15 @@ func (e *SQLEngine) computeFileMinMax(filerClient filer_pb.FilerClient, filePath
 			// Handle system columns
 			switch strings.ToLower(columnName) {
 			case SW_COLUMN_NAME_TIMESTAMP:
-				columnValue = &schema_pb.Value{Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.TsNs}}
+				columnValue = &schema_pb.Value{Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.GetTsNs()}}
 			case SW_COLUMN_NAME_KEY:
-				columnValue = &schema_pb.Value{Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Key}}
+				columnValue = &schema_pb.Value{Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetKey()}}
 			case SW_COLUMN_NAME_SOURCE:
 				columnValue = &schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: "live_log"}}
 			}
 		} else {
 			// Handle regular data columns
-			if value, exists := recordValue.Fields[columnName]; exists {
+			if value, exists := recordValue.GetFields()[columnName]; exists {
 				columnValue = value
 			}
 		}
@@ -4360,14 +4414,15 @@ func (e *SQLEngine) eachLogEntryInFile(filerClient filer_pb.FilerClient, filePat
 	// Get file entry
 	var fileEntry *filer_pb.Entry
 	err := filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(dirPath), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if entry.Name == fileName {
+		if entry.GetName() == fileName {
 			fileEntry = entry
 		}
+
 		return nil
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to find file %s: %v", filePath, err)
+		return fmt.Errorf("failed to find file %s: %w", filePath, err)
 	}
 
 	if fileEntry == nil {
@@ -4389,6 +4444,7 @@ func (e *SQLEngine) eachLogEntryInFile(filerClient filer_pb.FilerClient, filePat
 			logEntry := &filer_pb.LogEntry{}
 			if err := proto.Unmarshal(entryData, logEntry); err != nil {
 				pos += 4 + int(size)
+
 				continue // Skip corrupted entries
 			}
 
@@ -4399,12 +4455,13 @@ func (e *SQLEngine) eachLogEntryInFile(filerClient filer_pb.FilerClient, filePat
 
 			pos += 4 + int(size)
 		}
+
 		return nil
 	}
 
 	// Read file chunks and process them (pattern from countRowsInLogFile)
 	fileSize := filer.FileSize(fileEntry)
-	visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, fileEntry.Chunks, 0, int64(fileSize))
+	visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, fileEntry.GetChunks(), 0, int64(fileSize))
 	chunkViews := filer.ViewFromVisibleIntervals(visibleIntervals, 0, int64(fileSize))
 
 	for x := chunkViews.Front(); x != nil; x = x.Next {
@@ -4412,6 +4469,7 @@ func (e *SQLEngine) eachLogEntryInFile(filerClient filer_pb.FilerClient, filePat
 		urlStrings, err := lookupFileIdFn(context.Background(), chunk.FileId)
 		if err != nil {
 			fmt.Printf("Warning: failed to lookup chunk %s: %v\n", chunk.FileId, err)
+
 			continue
 		}
 
@@ -4424,6 +4482,7 @@ func (e *SQLEngine) eachLogEntryInFile(filerClient filer_pb.FilerClient, filePat
 		data, _, err := util_http.Get(urlStrings[0])
 		if err != nil {
 			fmt.Printf("Warning: failed to read chunk %s from %s: %v\n", chunk.FileId, urlStrings[0], err)
+
 			continue
 		}
 
@@ -4440,7 +4499,7 @@ func (e *SQLEngine) eachLogEntryInFile(filerClient filer_pb.FilerClient, filePat
 func (e *SQLEngine) convertLogEntryToRecordValue(logEntry *filer_pb.LogEntry) (*schema_pb.RecordValue, string, error) {
 	// Try to unmarshal as RecordValue first (schematized data)
 	recordValue := &schema_pb.RecordValue{}
-	err := proto.Unmarshal(logEntry.Data, recordValue)
+	err := proto.Unmarshal(logEntry.GetData(), recordValue)
 	if err == nil {
 		// Successfully unmarshaled as RecordValue (valid protobuf)
 		// Initialize Fields map if nil
@@ -4450,10 +4509,10 @@ func (e *SQLEngine) convertLogEntryToRecordValue(logEntry *filer_pb.LogEntry) (*
 
 		// Add system columns from LogEntry
 		recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{
-			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.TsNs},
+			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.GetTsNs()},
 		}
 		recordValue.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{
-			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Key},
+			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetKey()},
 		}
 
 		return recordValue, "live_log", nil
@@ -4489,8 +4548,8 @@ func (e *SQLEngine) extractParquetSourceFiles(fileStats []*ParquetFileStats) map
 
 		// For now, we'll use filename-based deduplication as a fallback
 		// Extract timestamp from parquet filename (YYYY-MM-DD-HH-MM-SS.parquet)
-		if strings.HasSuffix(fileStat.FileName, ".parquet") {
-			timeStr := strings.TrimSuffix(fileStat.FileName, ".parquet")
+		if before, ok := strings.CutSuffix(fileStat.FileName, ".parquet"); ok {
+			timeStr := before
 			// Mark this timestamp range as covered by parquet
 			sourceFiles[timeStr] = true
 		}
@@ -4536,35 +4595,40 @@ func (e *SQLEngine) countLiveLogRowsExcludingParquetSources(ctx context.Context,
 
 	totalRows := int64(0)
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(partitionPath), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if entry.IsDirectory || strings.HasSuffix(entry.Name, ".parquet") {
+		if entry.GetIsDirectory() || strings.HasSuffix(entry.GetName(), ".parquet") {
 			return nil // Skip directories and parquet files
 		}
 
 		// Skip files that have been converted to parquet
-		if actualSourceFiles[entry.Name] {
+		if actualSourceFiles[entry.GetName()] {
 			if debugEnabled {
-				fmt.Printf("Skipping %s (already converted to parquet)\n", entry.Name)
+				fmt.Printf("Skipping %s (already converted to parquet)\n", entry.GetName())
 			}
+
 			return nil
 		}
 
 		// Skip files that are duplicated due to log buffer metadata
-		if logBufferDuplicates[entry.Name] {
+		if logBufferDuplicates[entry.GetName()] {
 			if debugEnabled {
-				fmt.Printf("Skipping %s (duplicate log buffer data)\n", entry.Name)
+				fmt.Printf("Skipping %s (duplicate log buffer data)\n", entry.GetName())
 			}
+
 			return nil
 		}
 
 		// Count rows in live log file
 		rowCount, err := e.countRowsInLogFile(filerClient, partitionPath, entry)
 		if err != nil {
-			fmt.Printf("Warning: failed to count rows in %s/%s: %v\n", partitionPath, entry.Name, err)
+			fmt.Printf("Warning: failed to count rows in %s/%s: %v\n", partitionPath, entry.GetName(), err)
+
 			return nil // Continue with other files
 		}
 		totalRows += rowCount
+
 		return nil
 	})
+
 	return totalRows, err
 }
 
@@ -4578,14 +4642,14 @@ func (e *SQLEngine) getParquetSourceFilesFromMetadata(partitionPath string) (map
 	sourceFiles := make(map[string]bool)
 
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(partitionPath), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if entry.IsDirectory || !strings.HasSuffix(entry.Name, ".parquet") {
+		if entry.GetIsDirectory() || !strings.HasSuffix(entry.GetName(), ".parquet") {
 			return nil
 		}
 
 		// Read source files from Extended metadata
-		if entry.Extended != nil && entry.Extended["sources"] != nil {
+		if entry.Extended != nil && entry.GetExtended()["sources"] != nil {
 			var sources []string
-			if err := json.Unmarshal(entry.Extended["sources"], &sources); err == nil {
+			if err := json.Unmarshal(entry.GetExtended()["sources"], &sources); err == nil {
 				for _, source := range sources {
 					sourceFiles[source] = true
 				}
@@ -4605,7 +4669,7 @@ func (e *SQLEngine) getLogBufferStartFromFile(entry *filer_pb.Entry) (*LogBuffer
 	}
 
 	// Only support binary buffer_start format
-	if startData, exists := entry.Extended["buffer_start"]; exists {
+	if startData, exists := entry.GetExtended()["buffer_start"]; exists {
 		if len(startData) == 8 {
 			startIndex := int64(binary.BigEndian.Uint64(startData))
 			if startIndex > 0 {
@@ -4640,7 +4704,7 @@ func (e *SQLEngine) buildLogBufferDeduplicationMap(ctx context.Context, partitio
 	duplicateFiles := make(map[string]bool)
 
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(partitionPath), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if entry.IsDirectory || strings.HasSuffix(entry.Name, ".parquet") {
+		if entry.GetIsDirectory() || strings.HasSuffix(entry.GetName(), ".parquet") {
 			return nil // Skip directories and parquet files
 		}
 
@@ -4669,14 +4733,15 @@ func (e *SQLEngine) buildLogBufferDeduplicationMap(ctx context.Context, partitio
 				isDuplicate = true
 				if debugEnabled {
 					fmt.Printf("Marking %s as duplicate (buffer range [%d-%d] overlaps with [%d-%d])\n",
-						entry.Name, fileRange.start, fileRange.end, processedRange.start, processedRange.end)
+						entry.GetName(), fileRange.start, fileRange.end, processedRange.start, processedRange.end)
 				}
+
 				break
 			}
 		}
 
 		if isDuplicate {
-			duplicateFiles[entry.Name] = true
+			duplicateFiles[entry.GetName()] = true
 		} else {
 			// Add this range to processed ranges
 			processedRanges = append(processedRanges, fileRange)
@@ -4711,24 +4776,27 @@ func (e *SQLEngine) countRowsInLogFile(filerClient filer_pb.FilerClient, partiti
 			logEntry := &filer_pb.LogEntry{}
 			if err := proto.Unmarshal(entryData, logEntry); err != nil {
 				pos += 4 + int(size)
+
 				continue // Skip corrupted entries
 			}
 
 			// Skip control messages (publisher control, empty key, or no data)
 			if isControlLogEntry(logEntry) {
 				pos += 4 + int(size)
+
 				continue
 			}
 
 			rowCount++
 			pos += 4 + int(size)
 		}
+
 		return nil
 	}
 
 	// Read file chunks and process them (pattern from read_log_from_disk.go)
 	fileSize := filer.FileSize(entry)
-	visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, entry.Chunks, 0, int64(fileSize))
+	visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, entry.GetChunks(), 0, int64(fileSize))
 	chunkViews := filer.ViewFromVisibleIntervals(visibleIntervals, 0, int64(fileSize))
 
 	for x := chunkViews.Front(); x != nil; x = x.Next {
@@ -4736,6 +4804,7 @@ func (e *SQLEngine) countRowsInLogFile(filerClient filer_pb.FilerClient, partiti
 		urlStrings, err := lookupFileIdFn(context.Background(), chunk.FileId)
 		if err != nil {
 			fmt.Printf("Warning: failed to lookup chunk %s: %v\n", chunk.FileId, err)
+
 			continue
 		}
 
@@ -4748,6 +4817,7 @@ func (e *SQLEngine) countRowsInLogFile(filerClient filer_pb.FilerClient, partiti
 		data, _, err := util_http.Get(urlStrings[0])
 		if err != nil {
 			fmt.Printf("Warning: failed to read chunk %s from %s: %v\n", chunk.FileId, urlStrings[0], err)
+
 			continue
 		}
 
@@ -4767,19 +4837,19 @@ func (e *SQLEngine) countRowsInLogFile(filerClient filer_pb.FilerClient, partiti
 // - Entries with no data
 func isControlLogEntry(logEntry *filer_pb.LogEntry) bool {
 	// No data: control or placeholder
-	if len(logEntry.Data) == 0 {
+	if len(logEntry.GetData()) == 0 {
 		return true
 	}
 
 	// Empty keys are treated as control entries (consistent with subscriber filtering)
-	if len(logEntry.Key) == 0 {
+	if len(logEntry.GetKey()) == 0 {
 		return true
 	}
 
 	// Check if the payload is a DataMessage carrying a control signal
 	dataMessage := &mq_pb.DataMessage{}
-	if err := proto.Unmarshal(logEntry.Data, dataMessage); err == nil {
-		if dataMessage.Ctrl != nil {
+	if err := proto.Unmarshal(logEntry.GetData(), dataMessage); err == nil {
+		if dataMessage.GetCtrl() != nil {
 			return true
 		}
 	}
@@ -4911,6 +4981,7 @@ func (e *SQLEngine) findColumnValue(result HybridScanResult, columnName string) 
 		// For timestamp column, format as proper timestamp instead of raw nanoseconds
 		timestamp := time.Unix(result.Timestamp/1e9, result.Timestamp%1e9)
 		timestampStr := timestamp.UTC().Format("2006-01-02T15:04:05.000000000Z")
+
 		return &schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: timestampStr}}
 	case SW_COLUMN_NAME_KEY:
 		return &schema_pb.Value{Kind: &schema_pb.Value_BytesValue{BytesValue: result.Key}}
@@ -4939,7 +5010,7 @@ func (e *SQLEngine) discoverAndRegisterTopic(ctx context.Context, database, tabl
 	// First, check if topic exists by trying to get its schema from the broker/filer
 	recordType, _, _, err := e.catalog.brokerClient.GetTopicSchema(ctx, database, tableName)
 	if err != nil {
-		return fmt.Errorf("topic %s.%s not found or no schema available: %v", database, tableName, err)
+		return fmt.Errorf("topic %s.%s not found or no schema available: %w", database, tableName, err)
 	}
 
 	// Create a schema object from the discovered record type
@@ -4953,7 +5024,7 @@ func (e *SQLEngine) discoverAndRegisterTopic(ctx context.Context, database, tabl
 	// Register the topic in the SQL catalog
 	err = e.catalog.RegisterTopic(database, tableName, mqSchema)
 	if err != nil {
-		return fmt.Errorf("failed to register discovered topic %s.%s: %v", database, tableName, err)
+		return fmt.Errorf("failed to register discovered topic %s.%s: %w", database, tableName, err)
 	}
 
 	// Note: This is a discovery operation, not query execution, so it's okay to always log
@@ -4964,6 +5035,7 @@ func (e *SQLEngine) discoverAndRegisterTopic(ctx context.Context, database, tabl
 func (e *SQLEngine) getArithmeticExpressionAlias(expr *ArithmeticExpr) string {
 	leftAlias := e.getExpressionAlias(expr.Left)
 	rightAlias := e.getExpressionAlias(expr.Right)
+
 	return leftAlias + expr.Operator + rightAlias
 }
 
@@ -4991,13 +5063,13 @@ func (e *SQLEngine) evaluateArithmeticExpression(expr *ArithmeticExpr, result Hy
 	// Get left operand value
 	leftValue, err := e.evaluateExpressionValue(expr.Left, result)
 	if err != nil {
-		return nil, fmt.Errorf("error evaluating left operand: %v", err)
+		return nil, fmt.Errorf("error evaluating left operand: %w", err)
 	}
 
 	// Get right operand value
 	rightValue, err := e.evaluateExpressionValue(expr.Right, result)
 	if err != nil {
-		return nil, fmt.Errorf("error evaluating right operand: %v", err)
+		return nil, fmt.Errorf("error evaluating right operand: %w", err)
 	}
 
 	// Handle string concatenation operator
@@ -5040,14 +5112,17 @@ func (e *SQLEngine) isTimestampArithmetic(left, right ExprNode) bool {
 func (e *SQLEngine) isTimestampFunction(expr ExprNode) bool {
 	if funcExpr, ok := expr.(*FuncExpr); ok {
 		funcName := strings.ToUpper(funcExpr.Name.String())
+
 		return funcName == "NOW" || funcName == "CURRENT_TIMESTAMP" || funcName == "CURRENT_DATE" || funcName == "CURRENT_TIME"
 	}
+
 	return false
 }
 
 // isIntervalExpression checks if an expression is an interval
 func (e *SQLEngine) isIntervalExpression(expr ExprNode) bool {
 	_, ok := expr.(*IntervalExpr)
+
 	return ok
 }
 
@@ -5063,6 +5138,7 @@ func (e *SQLEngine) evaluateExpressionValue(expr ExprNode, result HybridScanResu
 			(strings.HasPrefix(columnName, "\"") && strings.HasSuffix(columnName, "\"")) {
 			// This is a string literal that was incorrectly parsed as a column name
 			literal := strings.Trim(strings.Trim(columnName, "'"), "\"")
+
 			return &schema_pb.Value{Kind: &schema_pb.Value_StringValue{StringValue: literal}}, nil
 		}
 
@@ -5101,6 +5177,7 @@ func (e *SQLEngine) evaluateExpressionValue(expr ExprNode, result HybridScanResu
 		if value == nil {
 			return nil, nil
 		}
+
 		return value, nil
 	case *ArithmeticExpr:
 		return e.evaluateArithmeticExpression(exprType, result)
@@ -5125,6 +5202,7 @@ func (e *SQLEngine) evaluateExpressionValue(expr ExprNode, result HybridScanResu
 		if err != nil {
 			return nil, err
 		}
+
 		return &schema_pb.Value{
 			Kind: &schema_pb.Value_Int64Value{Int64Value: nanos},
 		}, nil
@@ -5405,7 +5483,8 @@ func (e *SQLEngine) getStringFunctionAlias(funcExpr *FuncExpr) string {
 			}
 		}
 	}
-	return fmt.Sprintf("%s(...)", funcName)
+
+	return funcName + "(...)"
 }
 
 // getDateTimeFunctionAlias generates an alias for datetime functions
@@ -5424,19 +5503,20 @@ func (e *SQLEngine) getDateTimeFunctionAlias(funcExpr *FuncExpr) string {
 		if aliasedExpr, ok := funcExpr.Exprs[0].(*AliasedExpr); ok {
 			if sqlVal, ok := aliasedExpr.Expr.(*SQLVal); ok && sqlVal.Type == StrVal {
 				datePart := strings.ToLower(string(sqlVal.Val))
-				return fmt.Sprintf("extract_%s", datePart)
+
+				return "extract_" + datePart
 			}
 		}
 		// Fallback to generic if we can't extract the date part
-		return fmt.Sprintf("%s(...)", funcName)
+		return funcName + "(...)"
 	}
 
 	// Handle other multi-argument functions like DATE_TRUNC
 	if len(funcExpr.Exprs) == 2 {
-		return fmt.Sprintf("%s(...)", funcName)
+		return funcName + "(...)"
 	}
 
-	return fmt.Sprintf("%s(...)", funcName)
+	return funcName + "(...)"
 }
 
 // extractBaseColumnsFromFunction extracts base columns needed by a string function
@@ -5454,6 +5534,7 @@ func (e *SQLEngine) getSQLValAlias(sqlVal *SQLVal) string {
 	case StrVal:
 		// Escape single quotes by replacing ' with '' (SQL standard escaping)
 		escapedVal := strings.ReplaceAll(string(sqlVal.Val), "'", "''")
+
 		return fmt.Sprintf("'%s'", escapedVal)
 	case IntVal:
 		return string(sqlVal.Val)
@@ -5479,10 +5560,10 @@ func (e *SQLEngine) evaluateStringFunction(funcExpr *FuncExpr, result HybridScan
 		var err error
 		argValue, err = e.evaluateExpressionValue(aliasedExpr.Expr, result)
 		if err != nil {
-			return nil, fmt.Errorf("error evaluating function argument: %v", err)
+			return nil, fmt.Errorf("error evaluating function argument: %w", err)
 		}
 	} else {
-		return nil, fmt.Errorf("unsupported function argument type")
+		return nil, errors.New("unsupported function argument type")
 	}
 
 	if argValue == nil {
@@ -5525,22 +5606,22 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 			var err error
 			datePartValue, err = e.evaluateExpressionValue(aliasedExpr.Expr, result)
 			if err != nil {
-				return nil, fmt.Errorf("error evaluating EXTRACT date part argument: %v", err)
+				return nil, fmt.Errorf("error evaluating EXTRACT date part argument: %w", err)
 			}
 		} else {
-			return nil, fmt.Errorf("unsupported EXTRACT date part argument type")
+			return nil, errors.New("unsupported EXTRACT date part argument type")
 		}
 
 		if datePartValue == nil {
-			return nil, fmt.Errorf("EXTRACT date part cannot be NULL")
+			return nil, errors.New("EXTRACT date part cannot be NULL")
 		}
 
 		// Convert date part to string
 		var datePart string
-		if stringVal, ok := datePartValue.Kind.(*schema_pb.Value_StringValue); ok {
+		if stringVal, ok := datePartValue.GetKind().(*schema_pb.Value_StringValue); ok {
 			datePart = strings.ToUpper(stringVal.StringValue)
 		} else {
-			return nil, fmt.Errorf("EXTRACT date part must be a string")
+			return nil, errors.New("EXTRACT date part must be a string")
 		}
 
 		// Get the second argument (value to extract from)
@@ -5549,10 +5630,10 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 			var err error
 			extractValue, err = e.evaluateExpressionValue(aliasedExpr.Expr, result)
 			if err != nil {
-				return nil, fmt.Errorf("error evaluating EXTRACT value argument: %v", err)
+				return nil, fmt.Errorf("error evaluating EXTRACT value argument: %w", err)
 			}
 		} else {
-			return nil, fmt.Errorf("unsupported EXTRACT value argument type")
+			return nil, errors.New("unsupported EXTRACT value argument type")
 		}
 
 		if extractValue == nil {
@@ -5574,22 +5655,22 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 			var err error
 			precisionValue, err = e.evaluateExpressionValue(aliasedExpr.Expr, result)
 			if err != nil {
-				return nil, fmt.Errorf("error evaluating DATE_TRUNC precision argument: %v", err)
+				return nil, fmt.Errorf("error evaluating DATE_TRUNC precision argument: %w", err)
 			}
 		} else {
-			return nil, fmt.Errorf("unsupported DATE_TRUNC precision argument type")
+			return nil, errors.New("unsupported DATE_TRUNC precision argument type")
 		}
 
 		if precisionValue == nil {
-			return nil, fmt.Errorf("DATE_TRUNC precision cannot be NULL")
+			return nil, errors.New("DATE_TRUNC precision cannot be NULL")
 		}
 
 		// Convert precision to string
 		var precision string
-		if stringVal, ok := precisionValue.Kind.(*schema_pb.Value_StringValue); ok {
+		if stringVal, ok := precisionValue.GetKind().(*schema_pb.Value_StringValue); ok {
 			precision = stringVal.StringValue
 		} else {
-			return nil, fmt.Errorf("DATE_TRUNC precision must be a string")
+			return nil, errors.New("DATE_TRUNC precision must be a string")
 		}
 
 		// Get the second argument (value to truncate)
@@ -5598,10 +5679,10 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 			var err error
 			truncateValue, err = e.evaluateExpressionValue(aliasedExpr.Expr, result)
 			if err != nil {
-				return nil, fmt.Errorf("error evaluating DATE_TRUNC value argument: %v", err)
+				return nil, fmt.Errorf("error evaluating DATE_TRUNC value argument: %w", err)
 			}
 		} else {
-			return nil, fmt.Errorf("unsupported DATE_TRUNC value argument type")
+			return nil, errors.New("unsupported DATE_TRUNC value argument type")
 		}
 
 		if truncateValue == nil {
@@ -5616,6 +5697,7 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 		if len(funcExpr.Exprs) != 0 {
 			return nil, fmt.Errorf("CURRENT_DATE function expects no arguments, got %d", len(funcExpr.Exprs))
 		}
+
 		return e.CurrentDate()
 
 	case FuncCURRENT_TIME:
@@ -5623,6 +5705,7 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 		if len(funcExpr.Exprs) != 0 {
 			return nil, fmt.Errorf("CURRENT_TIME function expects no arguments, got %d", len(funcExpr.Exprs))
 		}
+
 		return e.CurrentTime()
 
 	case FuncCURRENT_TIMESTAMP:
@@ -5630,6 +5713,7 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 		if len(funcExpr.Exprs) != 0 {
 			return nil, fmt.Errorf("CURRENT_TIMESTAMP function expects no arguments, got %d", len(funcExpr.Exprs))
 		}
+
 		return e.CurrentTimestamp()
 
 	case FuncNOW:
@@ -5637,6 +5721,7 @@ func (e *SQLEngine) evaluateDateTimeFunction(funcExpr *FuncExpr, result HybridSc
 		if len(funcExpr.Exprs) != 0 {
 			return nil, fmt.Errorf("NOW function expects no arguments, got %d", len(funcExpr.Exprs))
 		}
+
 		return e.Now()
 
 	// PostgreSQL uses EXTRACT(part FROM date) instead of convenience functions like YEAR(date)
@@ -5689,7 +5774,7 @@ func (e *SQLEngine) evaluateInterval(intervalValue string) (int64, error) {
 }
 
 // convertValueForTimestampColumn converts string timestamp values to nanoseconds for system timestamp columns
-func (e *SQLEngine) convertValueForTimestampColumn(columnName string, value interface{}, expr ExprNode) interface{} {
+func (e *SQLEngine) convertValueForTimestampColumn(columnName string, value any, expr ExprNode) any {
 	// Special handling for timestamp system columns
 	if columnName == SW_COLUMN_NAME_TIMESTAMP {
 		if _, ok := value.(string); ok {
@@ -5698,6 +5783,7 @@ func (e *SQLEngine) convertValueForTimestampColumn(columnName string, value inte
 			}
 		}
 	}
+
 	return value
 }
 
@@ -5709,23 +5795,23 @@ func (e *SQLEngine) evaluateTimestampArithmetic(left, right ExprNode, operator s
 
 	leftValue, err := e.evaluateExpressionValue(left, emptyResult)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate left operand: %v", err)
+		return nil, fmt.Errorf("failed to evaluate left operand: %w", err)
 	}
 
 	rightValue, err := e.evaluateExpressionValue(right, emptyResult)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate right operand: %v", err)
+		return nil, fmt.Errorf("failed to evaluate right operand: %w", err)
 	}
 
 	// Convert left operand (should be timestamp)
 	var leftTimestamp int64
 	if leftValue.Kind != nil {
-		switch leftKind := leftValue.Kind.(type) {
+		switch leftKind := leftValue.GetKind().(type) {
 		case *schema_pb.Value_Int64Value:
 			leftTimestamp = leftKind.Int64Value
 		case *schema_pb.Value_TimestampValue:
 			// Convert microseconds to nanoseconds
-			leftTimestamp = leftKind.TimestampValue.TimestampMicros * 1000
+			leftTimestamp = leftKind.TimestampValue.GetTimestampMicros() * 1000
 		case *schema_pb.Value_StringValue:
 			// Parse timestamp string
 			if ts, err := time.Parse(time.RFC3339, leftKind.StringValue); err == nil {
@@ -5739,20 +5825,20 @@ func (e *SQLEngine) evaluateTimestampArithmetic(left, right ExprNode, operator s
 			return nil, fmt.Errorf("left operand must be a timestamp, got: %T", leftKind)
 		}
 	} else {
-		return nil, fmt.Errorf("left operand value is nil")
+		return nil, errors.New("left operand value is nil")
 	}
 
 	// Convert right operand (should be interval in nanoseconds)
 	var intervalNanos int64
 	if rightValue.Kind != nil {
-		switch rightKind := rightValue.Kind.(type) {
+		switch rightKind := rightValue.GetKind().(type) {
 		case *schema_pb.Value_Int64Value:
 			intervalNanos = rightKind.Int64Value
 		default:
-			return nil, fmt.Errorf("right operand must be an interval duration")
+			return nil, errors.New("right operand must be an interval duration")
 		}
 	} else {
-		return nil, fmt.Errorf("right operand value is nil")
+		return nil, errors.New("right operand value is nil")
 	}
 
 	// Perform arithmetic
@@ -5804,7 +5890,7 @@ func (e *SQLEngine) evaluateColumnNameAsFunction(columnName string, result Hybri
 		// Nested function call - recursively evaluate it
 		argValue, err = e.evaluateColumnNameAsFunction(argString, result)
 		if err != nil {
-			return nil, fmt.Errorf("error evaluating nested function argument: %v", err)
+			return nil, fmt.Errorf("error evaluating nested function argument: %w", err)
 		}
 	} else {
 		// Column name or other expression

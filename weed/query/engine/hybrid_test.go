@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -37,6 +37,7 @@ func TestSQLEngine_HybridSelectBasic(t *testing.T) {
 		if column == SW_COLUMN_NAME_SOURCE {
 			hasSourceColumn = true
 			sourceColumnIndex = i
+
 			break
 		}
 	}
@@ -94,14 +95,16 @@ func TestSQLEngine_HybridSelectDifferentTables(t *testing.T) {
 	tables := []string{"user_events", "system_logs"}
 
 	for _, tableName := range tables {
-		result, err := engine.ExecuteSQL(context.Background(), fmt.Sprintf("SELECT *, _source FROM %s", tableName))
+		result, err := engine.ExecuteSQL(context.Background(), "SELECT *, _source FROM "+tableName)
 		if err != nil {
 			t.Errorf("Error querying hybrid table %s: %v", tableName, err)
+
 			continue
 		}
 
 		if result.Error != nil {
 			t.Errorf("Query error for hybrid table %s: %v", tableName, result.Error)
+
 			continue
 		}
 
@@ -114,13 +117,7 @@ func TestSQLEngine_HybridSelectDifferentTables(t *testing.T) {
 		}
 
 		// Check for _source column
-		hasSourceColumn := false
-		for _, column := range result.Columns {
-			if column == "_source" {
-				hasSourceColumn = true
-				break
-			}
-		}
+		hasSourceColumn := slices.Contains(result.Columns, "_source")
 
 		if !hasSourceColumn {
 			t.Logf("Table %s missing _source column - running in fallback mode", tableName)
@@ -283,6 +280,7 @@ func TestSQLEngine_HybridSelectWithTimeImplications(t *testing.T) {
 	for i, column := range result.Columns {
 		if column == "_source" {
 			sourceIndex = i
+
 			break
 		}
 	}

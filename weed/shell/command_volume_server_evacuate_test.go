@@ -18,5 +18,4 @@ func TestVolumeServerEvacuate(t *testing.T) {
 	if err := c.evacuateNormalVolumes(nil, volumeServer, true, false, os.Stdout); err != nil {
 		t.Errorf("evacuate: %v", err)
 	}
-
 }

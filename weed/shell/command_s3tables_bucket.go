@@ -79,16 +79,16 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		}
 	}
 	if count != 1 {
-		return fmt.Errorf("exactly one action must be specified")
+		return errors.New("exactly one action must be specified")
 	}
 
 	switch {
 	case *create:
 		if *name == "" {
-			return fmt.Errorf("-name is required")
+			return errors.New("-name is required")
 		}
 		if *account == "" {
-			return fmt.Errorf("-account is required")
+			return errors.New("-account is required")
 		}
 		if err := ensureNoS3BucketNameConflict(commandEnv, *name); err != nil {
 			return err
@@ -108,7 +108,7 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		fmt.Fprintf(writer, "ARN: %s\n", resp.ARN)
 	case *list:
 		if *account == "" {
-			return fmt.Errorf("-account is required")
+			return errors.New("-account is required")
 		}
 		req := &s3tables.ListTableBucketsRequest{Prefix: *prefix, ContinuationToken: *continuation, MaxBuckets: *limit}
 		var resp s3tables.ListTableBucketsResponse
@@ -117,6 +117,7 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		}
 		if len(resp.TableBuckets) == 0 {
 			fmt.Fprintln(writer, "No table buckets found")
+
 			return nil
 		}
 		for _, bucket := range resp.TableBuckets {
@@ -130,10 +131,10 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		}
 	case *get:
 		if *name == "" {
-			return fmt.Errorf("-name is required")
+			return errors.New("-name is required")
 		}
 		if *account == "" {
-			return fmt.Errorf("-account is required")
+			return errors.New("-account is required")
 		}
 		accountID := *account
 		arn, err := buildS3TablesBucketARN(*name, accountID)
@@ -151,10 +152,10 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		fmt.Fprintf(writer, "CreatedAt: %s\n", resp.CreatedAt.Format(timeFormat))
 	case *deleteBucket:
 		if *name == "" {
-			return fmt.Errorf("-name is required")
+			return errors.New("-name is required")
 		}
 		if *account == "" {
-			return fmt.Errorf("-account is required")
+			return errors.New("-account is required")
 		}
 		accountID := *account
 		arn, err := buildS3TablesBucketARN(*name, accountID)
@@ -168,13 +169,13 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		fmt.Fprintln(writer, "Deleted table bucket")
 	case *putPolicy:
 		if *name == "" {
-			return fmt.Errorf("-name is required")
+			return errors.New("-name is required")
 		}
 		if *account == "" {
-			return fmt.Errorf("-account is required")
+			return errors.New("-account is required")
 		}
 		if *policyFile == "" {
-			return fmt.Errorf("-file is required")
+			return errors.New("-file is required")
 		}
 		content, err := os.ReadFile(*policyFile)
 		if err != nil {
@@ -192,10 +193,10 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		fmt.Fprintln(writer, "Bucket policy updated")
 	case *getPolicy:
 		if *name == "" {
-			return fmt.Errorf("-name is required")
+			return errors.New("-name is required")
 		}
 		if *account == "" {
-			return fmt.Errorf("-account is required")
+			return errors.New("-account is required")
 		}
 		accountID := *account
 		arn, err := buildS3TablesBucketARN(*name, accountID)
@@ -210,10 +211,10 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		fmt.Fprintln(writer, resp.ResourcePolicy)
 	case *deletePolicy:
 		if *name == "" {
-			return fmt.Errorf("-name is required")
+			return errors.New("-name is required")
 		}
 		if *account == "" {
-			return fmt.Errorf("-account is required")
+			return errors.New("-account is required")
 		}
 		accountID := *account
 		arn, err := buildS3TablesBucketARN(*name, accountID)
@@ -226,6 +227,7 @@ func (c *commandS3TablesBucket) Do(args []string, commandEnv *CommandEnv, writer
 		}
 		fmt.Fprintln(writer, "Bucket policy deleted")
 	}
+
 	return nil
 }
 
@@ -235,7 +237,7 @@ func ensureNoS3BucketNameConflict(commandEnv *CommandEnv, bucketName string) err
 		if err != nil {
 			return fmt.Errorf("get filer configuration: %w", err)
 		}
-		filerBucketsPath := resp.DirBuckets
+		filerBucketsPath := resp.GetDirBuckets()
 		if filerBucketsPath == "" {
 			filerBucketsPath = s3_constants.DefaultBucketsPath
 		}
@@ -249,6 +251,7 @@ func ensureNoS3BucketNameConflict(commandEnv *CommandEnv, bucketName string) err
 		if errors.Is(err, filer_pb.ErrNotFound) {
 			return nil
 		}
+
 		return err
 	})
 }

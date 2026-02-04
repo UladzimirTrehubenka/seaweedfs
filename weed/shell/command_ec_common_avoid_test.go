@@ -41,7 +41,7 @@ func TestPickRackForShardType_AntiAffinityRacks(t *testing.T) {
 	antiAffinityRacks := map[string]bool{"rack0": true}
 
 	// Try multiple times to ensure randomness doesn't accidentally pass
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		picked, err := ecb.pickRackForShardType(racks, shardsPerRack, maxPerRack, rackToShardCount, antiAffinityRacks)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -233,12 +233,12 @@ func TestPickNodeForShardType_AntiAffinityNodes(t *testing.T) {
 	// Case 1: Avoid node0
 	antiAffinityNodes := map[string]bool{"node0:8080": true}
 
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		picked, err := ecb.pickNodeForShardType(ecNodes, shardsPerNode, maxPerNode, nodeToShardCount, antiAffinityNodes)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if picked.info.Id == "node0:8080" {
+		if picked.info.GetId() == "node0:8080" {
 			t.Errorf("picked avoided node node0")
 		}
 	}
@@ -311,8 +311,8 @@ func TestPickNodeForShardType_EdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if picked.info.Id != "node1:8080" {
-			t.Errorf("expected node1 (not at limit), got %v", picked.info.Id)
+		if picked.info.GetId() != "node1:8080" {
+			t.Errorf("expected node1 (not at limit), got %v", picked.info.GetId())
 		}
 	})
 }

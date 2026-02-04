@@ -1,6 +1,7 @@
 package balance
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -29,6 +30,7 @@ func NewTypedTask() types.TypedTaskInterface {
 	task := &TypedTask{
 		BaseTypedTask: base.NewBaseTypedTask(types.TaskTypeBalance),
 	}
+
 	return task
 }
 
@@ -42,28 +44,28 @@ func (t *TypedTask) ValidateTyped(params *worker_pb.TaskParams) error {
 	// Check that we have balance-specific parameters
 	balanceParams := params.GetBalanceParams()
 	if balanceParams == nil {
-		return fmt.Errorf("balance_params is required for balance task")
+		return errors.New("balance_params is required for balance task")
 	}
 
 	// Validate sources and targets
-	if len(params.Sources) == 0 {
-		return fmt.Errorf("at least one source is required for balance task")
+	if len(params.GetSources()) == 0 {
+		return errors.New("at least one source is required for balance task")
 	}
-	if len(params.Targets) == 0 {
-		return fmt.Errorf("at least one target is required for balance task")
+	if len(params.GetTargets()) == 0 {
+		return errors.New("at least one target is required for balance task")
 	}
 
 	// Validate that source and target have volume IDs
-	if params.Sources[0].VolumeId == 0 {
-		return fmt.Errorf("source volume_id is required for balance task")
+	if params.GetSources()[0].GetVolumeId() == 0 {
+		return errors.New("source volume_id is required for balance task")
 	}
-	if params.Targets[0].VolumeId == 0 {
-		return fmt.Errorf("target volume_id is required for balance task")
+	if params.GetTargets()[0].GetVolumeId() == 0 {
+		return errors.New("target volume_id is required for balance task")
 	}
 
 	// Validate timeout
-	if balanceParams.TimeoutSeconds <= 0 {
-		return fmt.Errorf("timeout_seconds must be greater than 0")
+	if balanceParams.GetTimeoutSeconds() <= 0 {
+		return errors.New("timeout_seconds must be greater than 0")
 	}
 
 	return nil
@@ -74,16 +76,17 @@ func (t *TypedTask) EstimateTimeTyped(params *worker_pb.TaskParams) time.Duratio
 	balanceParams := params.GetBalanceParams()
 	if balanceParams != nil {
 		// Use the timeout from parameters if specified
-		if balanceParams.TimeoutSeconds > 0 {
-			return time.Duration(balanceParams.TimeoutSeconds) * time.Second
+		if balanceParams.GetTimeoutSeconds() > 0 {
+			return time.Duration(balanceParams.GetTimeoutSeconds()) * time.Second
 		}
 	}
 
 	// Estimate based on volume size from sources (1 minute per GB)
-	if len(params.Sources) > 0 {
-		source := params.Sources[0]
-		if source.EstimatedSize > 0 {
-			gbSize := source.EstimatedSize / (1024 * 1024 * 1024)
+	if len(params.GetSources()) > 0 {
+		source := params.GetSources()[0]
+		if source.GetEstimatedSize() > 0 {
+			gbSize := source.GetEstimatedSize() / (1024 * 1024 * 1024)
+
 			return time.Duration(gbSize) * time.Minute
 		}
 	}
@@ -95,26 +98,26 @@ func (t *TypedTask) EstimateTimeTyped(params *worker_pb.TaskParams) time.Duratio
 // ExecuteTyped implements the balance operation with typed parameters
 func (t *TypedTask) ExecuteTyped(params *worker_pb.TaskParams) error {
 	// Extract basic parameters
-	t.volumeID = params.VolumeId
-	t.collection = params.Collection
+	t.volumeID = params.GetVolumeId()
+	t.collection = params.GetCollection()
 
 	// Ensure sources and targets are present (should be guaranteed by validation)
-	if len(params.Sources) == 0 {
-		return fmt.Errorf("at least one source is required for balance task (ExecuteTyped)")
+	if len(params.GetSources()) == 0 {
+		return errors.New("at least one source is required for balance task (ExecuteTyped)")
 	}
-	if len(params.Targets) == 0 {
-		return fmt.Errorf("at least one target is required for balance task (ExecuteTyped)")
+	if len(params.GetTargets()) == 0 {
+		return errors.New("at least one target is required for balance task (ExecuteTyped)")
 	}
 
 	// Extract source and target information
-	t.sourceServer = params.Sources[0].Node
-	t.estimatedSize = params.Sources[0].EstimatedSize
-	t.destNode = params.Targets[0].Node
+	t.sourceServer = params.GetSources()[0].GetNode()
+	t.estimatedSize = params.GetSources()[0].GetEstimatedSize()
+	t.destNode = params.GetTargets()[0].GetNode()
 	// Extract balance-specific parameters
 	balanceParams := params.GetBalanceParams()
 	if balanceParams != nil {
-		t.forceMove = balanceParams.ForceMove
-		t.timeoutSeconds = balanceParams.TimeoutSeconds
+		t.forceMove = balanceParams.GetForceMove()
+		t.timeoutSeconds = balanceParams.GetTimeoutSeconds()
 	}
 
 	glog.Infof("Starting typed balance task for volume %d: %s -> %s (collection: %s, size: %d bytes)",
@@ -148,6 +151,7 @@ func (t *TypedTask) ExecuteTyped(params *worker_pb.TaskParams) error {
 
 	glog.Infof("Typed balance task completed successfully for volume %d: %s -> %s",
 		t.volumeID, t.sourceServer, t.destNode)
+
 	return nil
 }
 

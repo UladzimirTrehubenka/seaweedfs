@@ -2,7 +2,7 @@ package dash
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
@@ -23,7 +23,7 @@ func (s *AdminServer) WithMasterClient(f func(client master_pb.SeaweedClient) er
 func (s *AdminServer) WithFilerClient(f func(client filer_pb.SeaweedFilerClient) error) error {
 	filerAddr := s.GetFilerAddress()
 	if filerAddr == "" {
-		return fmt.Errorf("no filer available")
+		return errors.New("no filer available")
 	}
 
 	return pb.WithGrpcFilerClient(false, 0, pb.ServerAddress(filerAddr), s.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
@@ -66,8 +66,8 @@ func (s *AdminServer) getDiscoveredFilers() []string {
 			return err
 		}
 
-		for _, node := range resp.ClusterNodes {
-			filers = append(filers, node.Address)
+		for _, node := range resp.GetClusterNodes() {
+			filers = append(filers, node.GetAddress())
 		}
 
 		return nil

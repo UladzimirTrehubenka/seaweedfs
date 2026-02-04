@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
-	"github.com/stretchr/testify/assert"
 )
 
 // mockAccountManager implements AccountManager for testing
@@ -18,6 +19,7 @@ func (m *mockAccountManager) GetAccountNameById(id string) string {
 	if name, exists := m.accounts[id]; exists {
 		return name
 	}
+
 	return ""
 }
 

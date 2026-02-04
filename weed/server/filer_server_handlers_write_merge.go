@@ -19,6 +19,7 @@ func (fs *FilerServer) maybeMergeChunks(ctx context.Context, so *operation.Stora
 	for _, chunk := range inputChunks {
 		if chunk.GetSseType() != 0 { // Any SSE type (SSE-C or SSE-KMS)
 			glog.V(3).InfofCtx(ctx, "Skipping chunk merge for SSE-encrypted chunks")
+
 			return inputChunks, nil
 		}
 	}
@@ -28,13 +29,13 @@ func (fs *FilerServer) maybeMergeChunks(ctx context.Context, so *operation.Stora
 	var smallChunk, sumChunk int
 	var minOffset int64 = math.MaxInt64
 	for _, chunk := range inputChunks {
-		if chunk.IsChunkManifest {
+		if chunk.GetIsChunkManifest() {
 			continue
 		}
-		if chunk.Size < uint64(chunkSize/2) {
+		if chunk.GetSize() < uint64(chunkSize/2) {
 			smallChunk++
-			if chunk.Offset < minOffset {
-				minOffset = chunk.Offset
+			if chunk.GetOffset() < minOffset {
+				minOffset = chunk.GetOffset()
 			}
 		}
 		sumChunk++
@@ -59,7 +60,7 @@ func (fs *FilerServer) mergeChunks(ctx context.Context, so *operation.StorageOpt
 
 	stats.FilerHandlerCounter.WithLabelValues(stats.ChunkMerge).Inc()
 	for _, chunk := range inputChunks {
-		if chunk.Offset < chunkOffset || chunk.IsChunkManifest {
+		if chunk.GetOffset() < chunkOffset || chunk.GetIsChunkManifest() {
 			mergedChunks = append(mergedChunks, chunk)
 		}
 	}
@@ -68,8 +69,10 @@ func (fs *FilerServer) mergeChunks(ctx context.Context, so *operation.StorageOpt
 	if err != nil {
 		glog.ErrorfCtx(ctx, "Failed to resolve old entry chunks when delete old entry chunks. new: %s, old: %s",
 			mergedChunks, inputChunks)
+
 		return mergedChunks, err
 	}
 	fs.filer.DeleteChunksNotRecursive(garbage)
+
 	return
 }

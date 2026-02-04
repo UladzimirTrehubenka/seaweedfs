@@ -39,10 +39,11 @@ func encryptionConfigToProto(config *s3_pb.EncryptionConfiguration) *s3_pb.Encry
 	if config == nil {
 		return nil
 	}
+
 	return &s3_pb.EncryptionConfiguration{
-		SseAlgorithm:     config.SseAlgorithm,
-		KmsKeyId:         config.KmsKeyId,
-		BucketKeyEnabled: config.BucketKeyEnabled,
+		SseAlgorithm:     config.GetSseAlgorithm(),
+		KmsKeyId:         config.GetKmsKeyId(),
+		BucketKeyEnabled: config.GetBucketKeyEnabled(),
 	}
 }
 
@@ -53,6 +54,7 @@ func encryptionConfigFromXML(xmlConfig *ServerSideEncryptionConfiguration) *s3_p
 	}
 
 	rule := xmlConfig.Rules[0] // AWS S3 supports only one rule
+
 	return &s3_pb.EncryptionConfiguration{
 		SseAlgorithm:     rule.ApplyServerSideEncryptionByDefault.SSEAlgorithm,
 		KmsKeyId:         rule.ApplyServerSideEncryptionByDefault.KMSMasterKeyID,
@@ -70,8 +72,8 @@ func encryptionConfigToXML(config *s3_pb.EncryptionConfiguration) *ServerSideEnc
 		Rules: []ServerSideEncryptionRule{
 			{
 				ApplyServerSideEncryptionByDefault: ApplyServerSideEncryptionByDefault{
-					SSEAlgorithm:   config.SseAlgorithm,
-					KMSMasterKeyID: config.KmsKeyId,
+					SSEAlgorithm:   config.GetSseAlgorithm(),
+					KMSMasterKeyID: config.GetKmsKeyId(),
 				},
 				BucketKeyEnabled: &config.BucketKeyEnabled,
 			},
@@ -94,9 +96,11 @@ func (s3a *S3ApiServer) GetBucketEncryptionHandler(w http.ResponseWriter, r *htt
 	if errCode != s3err.ErrNone {
 		if errCode == s3err.ErrNoSuchBucketEncryptionConfiguration {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucketEncryptionConfiguration)
+
 			return
 		}
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -104,6 +108,7 @@ func (s3a *S3ApiServer) GetBucketEncryptionHandler(w http.ResponseWriter, r *htt
 	response := encryptionConfigToXML(config)
 	if response == nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucketEncryptionConfiguration)
+
 		return
 	}
 
@@ -111,6 +116,7 @@ func (s3a *S3ApiServer) GetBucketEncryptionHandler(w http.ResponseWriter, r *htt
 	if err := xml.NewEncoder(w).Encode(response); err != nil {
 		glog.Errorf("Failed to encode bucket encryption response: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 }
@@ -124,6 +130,7 @@ func (s3a *S3ApiServer) PutBucketEncryptionHandler(w http.ResponseWriter, r *htt
 	if err != nil {
 		glog.Errorf("Failed to read request body: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
+
 		return
 	}
 	defer r.Body.Close()
@@ -132,12 +139,14 @@ func (s3a *S3ApiServer) PutBucketEncryptionHandler(w http.ResponseWriter, r *htt
 	if err := xml.Unmarshal(body, &xmlConfig); err != nil {
 		glog.Errorf("Failed to parse bucket encryption configuration: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
 	// Validate the configuration
 	if len(xmlConfig.Rules) == 0 {
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
@@ -147,6 +156,7 @@ func (s3a *S3ApiServer) PutBucketEncryptionHandler(w http.ResponseWriter, r *htt
 	if rule.ApplyServerSideEncryptionByDefault.SSEAlgorithm != EncryptionTypeAES256 &&
 		rule.ApplyServerSideEncryptionByDefault.SSEAlgorithm != EncryptionTypeKMS {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidEncryptionAlgorithm)
+
 		return
 	}
 
@@ -155,6 +165,7 @@ func (s3a *S3ApiServer) PutBucketEncryptionHandler(w http.ResponseWriter, r *htt
 		keyID := rule.ApplyServerSideEncryptionByDefault.KMSMasterKeyID
 		if keyID != "" && !isValidKMSKeyID(keyID) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrKMSKeyNotFound)
+
 			return
 		}
 	}
@@ -166,6 +177,7 @@ func (s3a *S3ApiServer) PutBucketEncryptionHandler(w http.ResponseWriter, r *htt
 	errCode := s3a.updateEncryptionConfiguration(bucket, encryptionConfig)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -179,6 +191,7 @@ func (s3a *S3ApiServer) DeleteBucketEncryptionHandler(w http.ResponseWriter, r *
 	errCode := s3a.removeEncryptionConfiguration(bucket)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -192,8 +205,10 @@ func (s3a *S3ApiServer) GetBucketEncryptionConfig(bucket string) (*s3_pb.Encrypt
 		if errCode == s3err.ErrNoSuchBucketEncryptionConfiguration {
 			return nil, ErrNoEncryptionConfig
 		}
-		return nil, fmt.Errorf("failed to get encryption configuration")
+
+		return nil, errors.New("failed to get encryption configuration")
 	}
+
 	return config, nil
 }
 
@@ -205,6 +220,7 @@ func (s3a *S3ApiServer) getEncryptionConfiguration(bucket string) (*s3_pb.Encryp
 	metadata, err := s3a.GetBucketMetadata(bucket)
 	if err != nil {
 		glog.Errorf("getEncryptionConfiguration: failed to get bucket metadata for bucket %s: %v", bucket, err)
+
 		return nil, s3err.ErrInternalError
 	}
 
@@ -223,6 +239,7 @@ func (s3a *S3ApiServer) updateEncryptionConfiguration(bucket string, encryptionC
 	err := s3a.UpdateBucketEncryption(bucket, encryptionConfig)
 	if err != nil {
 		glog.Errorf("updateEncryptionConfiguration: failed to update encryption config for bucket %s: %v", bucket, err)
+
 		return s3err.ErrInternalError
 	}
 
@@ -235,6 +252,7 @@ func (s3a *S3ApiServer) removeEncryptionConfiguration(bucket string) s3err.Error
 	metadata, err := s3a.GetBucketMetadata(bucket)
 	if err != nil {
 		glog.Errorf("removeEncryptionConfiguration: failed to get bucket metadata for bucket %s: %v", bucket, err)
+
 		return s3err.ErrInternalError
 	}
 
@@ -248,6 +266,7 @@ func (s3a *S3ApiServer) removeEncryptionConfiguration(bucket string) s3err.Error
 	err = s3a.ClearBucketEncryption(bucket)
 	if err != nil {
 		glog.Errorf("removeEncryptionConfiguration: failed to remove encryption config for bucket %s: %v", bucket, err)
+
 		return s3err.ErrInternalError
 	}
 
@@ -259,12 +278,14 @@ func (s3a *S3ApiServer) IsDefaultEncryptionEnabled(bucket string) bool {
 	config, err := s3a.GetBucketEncryptionConfig(bucket)
 	if err != nil {
 		glog.V(4).Infof("IsDefaultEncryptionEnabled: failed to get encryption config for bucket %s: %v", bucket, err)
+
 		return false
 	}
 	if config == nil {
 		return false
 	}
-	return config.SseAlgorithm != ""
+
+	return config.GetSseAlgorithm() != ""
 }
 
 // GetDefaultEncryptionHeaders returns the default encryption headers for a bucket
@@ -272,6 +293,7 @@ func (s3a *S3ApiServer) GetDefaultEncryptionHeaders(bucket string) map[string]st
 	config, err := s3a.GetBucketEncryptionConfig(bucket)
 	if err != nil {
 		glog.V(4).Infof("GetDefaultEncryptionHeaders: failed to get encryption config for bucket %s: %v", bucket, err)
+
 		return nil
 	}
 	if config == nil {
@@ -279,13 +301,13 @@ func (s3a *S3ApiServer) GetDefaultEncryptionHeaders(bucket string) map[string]st
 	}
 
 	headers := make(map[string]string)
-	headers[s3_constants.AmzServerSideEncryption] = config.SseAlgorithm
+	headers[s3_constants.AmzServerSideEncryption] = config.GetSseAlgorithm()
 
-	if config.SseAlgorithm == EncryptionTypeKMS && config.KmsKeyId != "" {
-		headers[s3_constants.AmzServerSideEncryptionAwsKmsKeyId] = config.KmsKeyId
+	if config.GetSseAlgorithm() == EncryptionTypeKMS && config.GetKmsKeyId() != "" {
+		headers[s3_constants.AmzServerSideEncryptionAwsKmsKeyId] = config.GetKmsKeyId()
 	}
 
-	if config.BucketKeyEnabled {
+	if config.GetBucketKeyEnabled() {
 		headers[s3_constants.AmzServerSideEncryptionBucketKeyEnabled] = "true"
 	}
 
@@ -294,20 +316,20 @@ func (s3a *S3ApiServer) GetDefaultEncryptionHeaders(bucket string) map[string]st
 
 // IsDefaultEncryptionEnabled checks if default encryption is enabled for a configuration
 func IsDefaultEncryptionEnabled(config *s3_pb.EncryptionConfiguration) bool {
-	return config != nil && config.SseAlgorithm != ""
+	return config != nil && config.GetSseAlgorithm() != ""
 }
 
 // GetDefaultEncryptionHeaders generates default encryption headers from configuration
 func GetDefaultEncryptionHeaders(config *s3_pb.EncryptionConfiguration) map[string]string {
-	if config == nil || config.SseAlgorithm == "" {
+	if config == nil || config.GetSseAlgorithm() == "" {
 		return nil
 	}
 
 	headers := make(map[string]string)
-	headers[s3_constants.AmzServerSideEncryption] = config.SseAlgorithm
+	headers[s3_constants.AmzServerSideEncryption] = config.GetSseAlgorithm()
 
-	if config.SseAlgorithm == "aws:kms" && config.KmsKeyId != "" {
-		headers[s3_constants.AmzServerSideEncryptionAwsKmsKeyId] = config.KmsKeyId
+	if config.GetSseAlgorithm() == "aws:kms" && config.GetKmsKeyId() != "" {
+		headers[s3_constants.AmzServerSideEncryptionAwsKmsKeyId] = config.GetKmsKeyId()
 	}
 
 	return headers
@@ -327,12 +349,12 @@ func encryptionConfigFromXMLBytes(xmlBytes []byte) (*s3_pb.EncryptionConfigurati
 
 	// Validate the configuration
 	if len(xmlConfig.Rules) == 0 {
-		return nil, fmt.Errorf("encryption configuration must have at least one rule")
+		return nil, errors.New("encryption configuration must have at least one rule")
 	}
 
 	rule := xmlConfig.Rules[0]
 	if rule.ApplyServerSideEncryptionByDefault.SSEAlgorithm == "" {
-		return nil, fmt.Errorf("encryption algorithm is required")
+		return nil, errors.New("encryption algorithm is required")
 	}
 
 	// Validate algorithm
@@ -346,15 +368,17 @@ func encryptionConfigFromXMLBytes(xmlBytes []byte) (*s3_pb.EncryptionConfigurati
 	}
 
 	config := encryptionConfigFromXML(&xmlConfig)
+
 	return config, nil
 }
 
 // encryptionConfigToXMLBytes converts encryption configuration to XML bytes
 func encryptionConfigToXMLBytes(config *s3_pb.EncryptionConfiguration) ([]byte, error) {
 	if config == nil {
-		return nil, fmt.Errorf("encryption configuration is nil")
+		return nil, errors.New("encryption configuration is nil")
 	}
 
 	xmlConfig := encryptionConfigToXML(config)
+
 	return xml.Marshal(xmlConfig)
 }

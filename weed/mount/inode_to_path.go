@@ -5,12 +5,14 @@ import (
 	"time"
 
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 type InodeToPath struct {
 	sync.RWMutex
+
 	nextInodeId     uint64
 	cacheMetaTtlSec time.Duration
 	inode2path      map[uint64]*InodeEntry
@@ -45,6 +47,7 @@ func (ie *InodeEntry) removeOnePath(p util.FullPath) bool {
 	for i, x := range ie.paths {
 		if x == p {
 			idx = i
+
 			break
 		}
 	}
@@ -55,6 +58,7 @@ func (ie *InodeEntry) removeOnePath(p util.FullPath) bool {
 		ie.paths[x] = ie.paths[x+1]
 	}
 	ie.paths = ie.paths[0 : len(ie.paths)-1]
+
 	return true
 }
 
@@ -83,8 +87,10 @@ func (i *InodeToPath) EnsurePath(path util.FullPath, isDirectory bool) bool {
 	}
 	if i.EnsurePath(util.FullPath(dir), true) {
 		i.Lookup(path, time.Now().Unix(), isDirectory, false, 0, false)
+
 		return true
 	}
+
 	return false
 }
 
@@ -138,6 +144,7 @@ func (i *InodeToPath) AllocateInode(path util.FullPath, unixTime int64) uint64 {
 	for _, found := i.inode2path[inode]; found; inode++ {
 		_, found = i.inode2path[inode]
 	}
+
 	return inode
 }
 
@@ -152,6 +159,7 @@ func (i *InodeToPath) GetInode(path util.FullPath) (uint64, bool) {
 		// glog.Fatalf("GetInode unknown inode for %s", path)
 		// this could be the parent for mount point
 	}
+
 	return inode, found
 }
 
@@ -162,6 +170,7 @@ func (i *InodeToPath) GetPath(inode uint64) (util.FullPath, fuse.Status) {
 	if !found || len(path.paths) == 0 {
 		return "", fuse.ENOENT
 	}
+
 	return path.paths[0], fuse.OK
 }
 
@@ -169,6 +178,7 @@ func (i *InodeToPath) HasPath(path util.FullPath) bool {
 	i.RLock()
 	defer i.RUnlock()
 	_, found := i.path2inode[path]
+
 	return found
 }
 
@@ -180,11 +190,13 @@ func (i *InodeToPath) MarkChildrenCached(fullpath util.FullPath) {
 		// https://github.com/seaweedfs/seaweedfs/issues/4968
 		// glog.Fatalf("MarkChildrenCached not found inode %v", fullpath)
 		glog.Warningf("MarkChildrenCached not found inode %v", fullpath)
+
 		return
 	}
 	path, found := i.inode2path[inode]
 	if !found {
 		glog.Warningf("MarkChildrenCached inode %d not found in inode2path for %v", inode, fullpath)
+
 		return
 	}
 	path.isChildrenCached = true
@@ -213,6 +225,7 @@ func (i *InodeToPath) IsChildrenCached(fullpath util.FullPath) bool {
 	if path.isChildrenCached {
 		return path.cachedExpiresTime.IsZero() || time.Now().Before(path.cachedExpiresTime)
 	}
+
 	return false
 }
 
@@ -223,6 +236,7 @@ func (i *InodeToPath) HasInode(inode uint64) bool {
 	i.RLock()
 	defer i.RUnlock()
 	_, found := i.inode2path[inode]
+
 	return found
 }
 
@@ -285,8 +299,10 @@ func (i *InodeToPath) RecordDirectoryUpdate(fullpath util.FullPath, now time.Tim
 	entry.updateCount++
 	if entry.updateCount >= threshold {
 		entry.needsRefresh = true
+
 		return true
 	}
+
 	return false
 }
 
@@ -301,6 +317,7 @@ func (i *InodeToPath) NeedsRefresh(fullpath util.FullPath) bool {
 	if !found || !entry.isDirectory {
 		return false
 	}
+
 	return entry.isChildrenCached && entry.needsRefresh
 }
 
@@ -342,6 +359,7 @@ func (i *InodeToPath) CollectEvictableDirs(now time.Time, idle time.Duration) []
 		entry.resetCacheState()
 		dirs = append(dirs, entry.paths...)
 	}
+
 	return dirs
 }
 
@@ -410,6 +428,7 @@ func (i *InodeToPath) MovePath(sourcePath, targetPath util.FullPath) (sourceInod
 	} else {
 		glog.Errorf("MovePath %s to %s: sourceInode %d not found", sourcePath, targetPath, sourceInode)
 	}
+
 	return
 }
 

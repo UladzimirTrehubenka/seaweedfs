@@ -1,5 +1,4 @@
 //go:build linux || darwin || freebsd
-// +build linux darwin freebsd
 
 package command
 
@@ -19,6 +18,8 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util/version"
 
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+	"google.golang.org/grpc/reflection"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mount"
 	"github.com/seaweedfs/seaweedfs/weed/mount/meta_cache"
@@ -28,14 +29,12 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/mount_pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"google.golang.org/grpc/reflection"
 
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 )
 
 func runMount(cmd *Command, args []string) bool {
-
 	if *mountOptions.debug {
 		go http.ListenAndServe(fmt.Sprintf(":%d", *mountOptions.debugPort), nil)
 	}
@@ -49,6 +48,7 @@ func runMount(cmd *Command, args []string) bool {
 	umask, umaskErr := strconv.ParseUint(*mountOptions.umaskString, 8, 64)
 	if umaskErr != nil {
 		fmt.Printf("can not parse umask %s", *mountOptions.umaskString)
+
 		return false
 	}
 
@@ -60,11 +60,11 @@ func runMount(cmd *Command, args []string) bool {
 }
 
 func RunMount(option *MountOptions, umask os.FileMode) bool {
-
 	// basic checks
 	chunkSizeLimitMB := *mountOptions.chunkSizeLimitMB
 	if chunkSizeLimitMB <= 0 {
 		fmt.Printf("Please specify a reasonable buffer size.\n")
+
 		return false
 	}
 
@@ -74,13 +74,14 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	var cipher bool
 	var err error
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		err = pb.WithOneOfGrpcFilerClients(false, filerAddresses, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 			if err != nil {
 				return fmt.Errorf("get filer grpc address %v configuration: %w", filerAddresses, err)
 			}
-			cipher = resp.Cipher
+			cipher = resp.GetCipher()
+
 			return nil
 		})
 		if err != nil {
@@ -91,6 +92,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	}
 	if err != nil {
 		glog.Errorf("failed to talk to filer %v: %v", filerAddresses, err)
+
 		return true
 	}
 
@@ -100,6 +102,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	dir := util.ResolvePath(*option.dir)
 	if dir == "" {
 		fmt.Printf("Please specify the mount directory via \"-dir\"")
+
 		return false
 	}
 
@@ -136,6 +139,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		fmt.Printf("mount point owner uid=%d gid=%d mode=%s\n", uid, gid, mountMode)
 	} else {
 		fmt.Printf("can not stat %s\n", dir)
+
 		return false
 	}
 
@@ -156,12 +160,14 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	uidGidMapper, err := meta_cache.NewUidGidMapper(*option.uidMap, *option.gidMap)
 	if err != nil {
 		fmt.Printf("failed to parse %s %s: %v\n", *option.uidMap, *option.gidMap, err)
+
 		return false
 	}
 
 	// Ensure target mount point availability
 	if isValid := checkMountPointAvailable(dir); !isValid {
 		glog.Fatalf("Target mount point is not available: %s, please check!", dir)
+
 		return true
 	}
 
@@ -278,6 +284,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	mountRootParent, mountDir := mountRootPath.DirAndName()
 	if err = filer_pb.Mkdir(context.Background(), seaweedFileSystem, mountRootParent, mountDir, nil); err != nil {
 		fmt.Printf("failed to create dir %s on filer %s: %v\n", mountRoot, filerAddresses, err)
+
 		return false
 	}
 
@@ -294,6 +301,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		err = syscall.Kill(mountOptions.fuseCommandPid, syscall.SIGTERM)
 		if err != nil {
 			fmt.Printf("failed to notify parent process: %v\n", err)
+
 			return false
 		}
 	}
@@ -306,6 +314,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	err = seaweedFileSystem.StartBackgroundTasks()
 	if err != nil {
 		fmt.Printf("failed to start background tasks: %v\n", err)
+
 		return false
 	}
 

@@ -1,5 +1,4 @@
 //go:build !freebsd
-// +build !freebsd
 
 package mount
 
@@ -23,12 +22,11 @@ const (
 // number of bytes. If the buffer is too small, return ERANGE,
 // with the required buffer size.
 func (wfs *WFS) GetXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr string, dest []byte) (size uint32, code fuse.Status) {
-
 	if wfs.option.DisableXAttr {
 		return 0, fuse.Status(syscall.ENOTSUP)
 	}
 
-	//validate attr name
+	// validate attr name
 	if len(attr) > MAX_XATTR_NAME_SIZE {
 		if runtime.GOOS == "darwin" {
 			return 0, fuse.EPERM
@@ -50,7 +48,7 @@ func (wfs *WFS) GetXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr str
 	if entry.Extended == nil {
 		return 0, fuse.ENOATTR
 	}
-	data, found := entry.Extended[XATTR_PREFIX+attr]
+	data, found := entry.GetExtended()[XATTR_PREFIX+attr]
 	if !found {
 		return 0, fuse.ENOATTR
 	}
@@ -78,7 +76,6 @@ func (wfs *WFS) GetXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr str
 //	       Perform a pure replace operation, which fails if the named
 //	       attribute does not already exist.
 func (wfs *WFS) SetXAttr(cancel <-chan struct{}, input *fuse.SetXAttrIn, attr string, data []byte) fuse.Status {
-
 	if wfs.option.DisableXAttr {
 		return fuse.Status(syscall.ENOTSUP)
 	}
@@ -87,7 +84,7 @@ func (wfs *WFS) SetXAttr(cancel <-chan struct{}, input *fuse.SetXAttrIn, attr st
 		return fuse.Status(syscall.ENOSPC)
 	}
 
-	//validate attr name
+	// validate attr name
 	if len(attr) > MAX_XATTR_NAME_SIZE {
 		if runtime.GOOS == "darwin" {
 			return fuse.EPERM
@@ -98,7 +95,7 @@ func (wfs *WFS) SetXAttr(cancel <-chan struct{}, input *fuse.SetXAttrIn, attr st
 	if len(attr) == 0 {
 		return fuse.EINVAL
 	}
-	//validate attr value
+	// validate attr value
 	if len(data) > MAX_XATTR_VALUE_SIZE {
 		if runtime.GOOS == "darwin" {
 			return fuse.Status(syscall.E2BIG)
@@ -122,12 +119,13 @@ func (wfs *WFS) SetXAttr(cancel <-chan struct{}, input *fuse.SetXAttrIn, attr st
 	if entry.Extended == nil {
 		entry.Extended = make(map[string][]byte)
 	}
-	oldData, _ := entry.Extended[XATTR_PREFIX+attr]
+	oldData := entry.GetExtended()[XATTR_PREFIX+attr]
 	switch input.Flags {
 	case sys.XATTR_CREATE:
 		if len(oldData) > 0 {
 			break
 		}
+
 		fallthrough
 	case sys.XATTR_REPLACE:
 		fallthrough
@@ -137,18 +135,17 @@ func (wfs *WFS) SetXAttr(cancel <-chan struct{}, input *fuse.SetXAttrIn, attr st
 
 	if fh != nil {
 		fh.dirtyMetadata = true
+
 		return fuse.OK
 	}
 
 	return wfs.saveEntry(path, entry)
-
 }
 
 // ListXAttr lists extended attributes as '\0' delimited byte
 // slice, and return the number of bytes. If the buffer is too
 // small, return ERANGE, with the required buffer size.
 func (wfs *WFS) ListXAttr(cancel <-chan struct{}, header *fuse.InHeader, dest []byte) (n uint32, code fuse.Status) {
-
 	if wfs.option.DisableXAttr {
 		return 0, fuse.Status(syscall.ENOTSUP)
 	}
@@ -165,7 +162,7 @@ func (wfs *WFS) ListXAttr(cancel <-chan struct{}, header *fuse.InHeader, dest []
 	}
 
 	var data []byte
-	for k := range entry.Extended {
+	for k := range entry.GetExtended() {
 		if strings.HasPrefix(k, XATTR_PREFIX) {
 			data = append(data, k[len(XATTR_PREFIX):]...)
 			data = append(data, 0)
@@ -182,7 +179,6 @@ func (wfs *WFS) ListXAttr(cancel <-chan struct{}, header *fuse.InHeader, dest []
 
 // RemoveXAttr removes an extended attribute.
 func (wfs *WFS) RemoveXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr string) fuse.Status {
-
 	if wfs.option.DisableXAttr {
 		return fuse.Status(syscall.ENOTSUP)
 	}
@@ -205,13 +201,13 @@ func (wfs *WFS) RemoveXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr 
 	if entry.Extended == nil {
 		return fuse.ENOATTR
 	}
-	_, found := entry.Extended[XATTR_PREFIX+attr]
+	_, found := entry.GetExtended()[XATTR_PREFIX+attr]
 
 	if !found {
 		return fuse.ENOATTR
 	}
 
-	delete(entry.Extended, XATTR_PREFIX+attr)
+	delete(entry.GetExtended(), XATTR_PREFIX+attr)
 
 	return wfs.saveEntry(path, entry)
 }

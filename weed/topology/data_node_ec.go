@@ -13,6 +13,7 @@ func (dn *DataNode) GetEcShards() (ret []*erasure_coding.EcVolumeInfo) {
 		ret = append(ret, disk.GetEcShards()...)
 	}
 	dn.RUnlock()
+
 	return ret
 }
 
@@ -27,7 +28,6 @@ func (dn *DataNode) UpdateEcShards(actualShards []*erasure_coding.EcVolumeInfo) 
 
 	// find out the newShards and deletedShards
 	for _, ecShards := range existingEcShards {
-
 		var newShardCount, deletedShardCount int
 		disk := dn.getOrCreateDisk(ecShards.DiskType)
 
@@ -55,7 +55,6 @@ func (dn *DataNode) UpdateEcShards(actualShards []*erasure_coding.EcVolumeInfo) 
 				ecShardCount: int64(newShardCount - deletedShardCount),
 			})
 		}
-
 	}
 
 	for _, ecShards := range actualShards {
@@ -76,7 +75,7 @@ func (dn *DataNode) UpdateEcShards(actualShards []*erasure_coding.EcVolumeInfo) 
 		dn.doUpdateEcShards(actualShards)
 	}
 
-	return
+	return newShards, deletedShards
 }
 
 func (dn *DataNode) HasEcShards(volumeId needle.VolumeId) (found bool) {
@@ -89,6 +88,7 @@ func (dn *DataNode) HasEcShards(volumeId needle.VolumeId) (found bool) {
 			return
 		}
 	}
+
 	return
 }
 
@@ -113,7 +113,6 @@ func (dn *DataNode) DeltaUpdateEcShards(newShards, deletedShards []*erasure_codi
 	for _, deletedShard := range deletedShards {
 		dn.DeleteEcShard(deletedShard)
 	}
-
 }
 
 func (dn *DataNode) AddOrUpdateEcShard(s *erasure_coding.EcVolumeInfo) {
@@ -127,7 +126,6 @@ func (dn *DataNode) DeleteEcShard(s *erasure_coding.EcVolumeInfo) {
 }
 
 func (dn *DataNode) HasVolumesById(volumeId needle.VolumeId) (hasVolumeId bool) {
-
 	dn.RLock()
 	defer dn.RUnlock()
 	for _, c := range dn.children {
@@ -136,6 +134,6 @@ func (dn *DataNode) HasVolumesById(volumeId needle.VolumeId) (hasVolumeId bool) 
 			return true
 		}
 	}
-	return false
 
+	return false
 }

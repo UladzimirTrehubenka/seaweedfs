@@ -1,6 +1,7 @@
 package sts
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -20,19 +21,20 @@ func NewProviderFactory() *ProviderFactory {
 // CreateProvider creates an identity provider from configuration
 func (f *ProviderFactory) CreateProvider(config *ProviderConfig) (providers.IdentityProvider, error) {
 	if config == nil {
-		return nil, fmt.Errorf(ErrConfigCannotBeNil)
+		return nil, errors.New(ErrConfigCannotBeNil)
 	}
 
 	if config.Name == "" {
-		return nil, fmt.Errorf(ErrProviderNameEmpty)
+		return nil, errors.New(ErrProviderNameEmpty)
 	}
 
 	if config.Type == "" {
-		return nil, fmt.Errorf(ErrProviderTypeEmpty)
+		return nil, errors.New(ErrProviderTypeEmpty)
 	}
 
 	if !config.Enabled {
 		glog.V(2).Infof("Provider %s is disabled, skipping", config.Name)
+
 		return nil, nil
 	}
 
@@ -71,30 +73,31 @@ func (f *ProviderFactory) createLDAPProvider(config *ProviderConfig) (providers.
 	if err := provider.Initialize(config.Config); err != nil {
 		return nil, fmt.Errorf("failed to initialize LDAP provider: %w", err)
 	}
+
 	return provider, nil
 }
 
 // createSAMLProvider creates a SAML provider from configuration
 func (f *ProviderFactory) createSAMLProvider(config *ProviderConfig) (providers.IdentityProvider, error) {
 	// TODO: Implement SAML provider when available
-	return nil, fmt.Errorf("SAML provider not implemented yet")
+	return nil, errors.New("SAML provider not implemented yet")
 }
 
 // convertToOIDCConfig converts generic config map to OIDC config struct
-func (f *ProviderFactory) convertToOIDCConfig(configMap map[string]interface{}) (*oidc.OIDCConfig, error) {
+func (f *ProviderFactory) convertToOIDCConfig(configMap map[string]any) (*oidc.OIDCConfig, error) {
 	config := &oidc.OIDCConfig{}
 
 	// Required fields
 	if issuer, ok := configMap[ConfigFieldIssuer].(string); ok {
 		config.Issuer = issuer
 	} else {
-		return nil, fmt.Errorf(ErrIssuerRequired)
+		return nil, errors.New(ErrIssuerRequired)
 	}
 
 	if clientID, ok := configMap[ConfigFieldClientID].(string); ok {
 		config.ClientID = clientID
 	} else {
-		return nil, fmt.Errorf(ErrClientIDRequired)
+		return nil, errors.New(ErrClientIDRequired)
 	}
 
 	// Optional fields
@@ -152,11 +155,11 @@ func (f *ProviderFactory) convertToOIDCConfig(configMap map[string]interface{}) 
 }
 
 // convertToStringSlice converts interface{} to []string
-func (f *ProviderFactory) convertToStringSlice(value interface{}) ([]string, error) {
+func (f *ProviderFactory) convertToStringSlice(value any) ([]string, error) {
 	switch v := value.(type) {
 	case []string:
 		return v, nil
-	case []interface{}:
+	case []any:
 		result := make([]string, len(v))
 		for i, item := range v {
 			if str, ok := item.(string); ok {
@@ -165,6 +168,7 @@ func (f *ProviderFactory) convertToStringSlice(value interface{}) ([]string, err
 				return nil, fmt.Errorf("non-string item in slice: %v", item)
 			}
 		}
+
 		return result, nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to []string", value)
@@ -172,11 +176,11 @@ func (f *ProviderFactory) convertToStringSlice(value interface{}) ([]string, err
 }
 
 // convertToStringMap converts interface{} to map[string]string
-func (f *ProviderFactory) convertToStringMap(value interface{}) (map[string]string, error) {
+func (f *ProviderFactory) convertToStringMap(value any) (map[string]string, error) {
 	switch v := value.(type) {
 	case map[string]string:
 		return v, nil
-	case map[string]interface{}:
+	case map[string]any:
 		result := make(map[string]string)
 		for key, val := range v {
 			if str, ok := val.(string); ok {
@@ -185,6 +189,7 @@ func (f *ProviderFactory) convertToStringMap(value interface{}) (map[string]stri
 				return nil, fmt.Errorf("non-string value for key %s: %v", key, val)
 			}
 		}
+
 		return result, nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to map[string]string", value)
@@ -198,6 +203,7 @@ func (f *ProviderFactory) LoadProvidersFromConfig(configs []*ProviderConfig) (ma
 	for _, config := range configs {
 		if config == nil {
 			glog.V(1).Infof("Skipping nil provider config")
+
 			continue
 		}
 
@@ -206,12 +212,14 @@ func (f *ProviderFactory) LoadProvidersFromConfig(configs []*ProviderConfig) (ma
 
 		if !config.Enabled {
 			glog.V(2).Infof("Provider %s is disabled, skipping", config.Name)
+
 			continue
 		}
 
 		provider, err := f.CreateProvider(config)
 		if err != nil {
 			glog.Errorf("Failed to create provider %s: %v", config.Name, err)
+
 			return nil, fmt.Errorf("failed to create provider %s: %w", config.Name, err)
 		}
 
@@ -222,30 +230,31 @@ func (f *ProviderFactory) LoadProvidersFromConfig(configs []*ProviderConfig) (ma
 	}
 
 	glog.V(1).Infof("Loaded %d identity providers from configuration", len(providersMap))
+
 	return providersMap, nil
 }
 
 // convertToRoleMapping converts interface{} to *providers.RoleMapping
-func (f *ProviderFactory) convertToRoleMapping(value interface{}) (*providers.RoleMapping, error) {
-	roleMappingMap, ok := value.(map[string]interface{})
+func (f *ProviderFactory) convertToRoleMapping(value any) (*providers.RoleMapping, error) {
+	roleMappingMap, ok := value.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("roleMapping must be an object")
+		return nil, errors.New("roleMapping must be an object")
 	}
 
 	roleMapping := &providers.RoleMapping{}
 
 	// Convert rules
 	if rulesInterface, ok := roleMappingMap["rules"]; ok {
-		rulesSlice, ok := rulesInterface.([]interface{})
+		rulesSlice, ok := rulesInterface.([]any)
 		if !ok {
-			return nil, fmt.Errorf("rules must be an array")
+			return nil, errors.New("rules must be an array")
 		}
 
 		rules := make([]providers.MappingRule, len(rulesSlice))
 		for i, ruleInterface := range rulesSlice {
-			ruleMap, ok := ruleInterface.(map[string]interface{})
+			ruleMap, ok := ruleInterface.(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf("rule must be an object")
+				return nil, errors.New("rule must be an object")
 			}
 
 			rule := providers.MappingRule{}
@@ -278,19 +287,19 @@ func (f *ProviderFactory) convertToRoleMapping(value interface{}) (*providers.Ro
 // ValidateProviderConfig validates a provider configuration
 func (f *ProviderFactory) ValidateProviderConfig(config *ProviderConfig) error {
 	if config == nil {
-		return fmt.Errorf("provider config cannot be nil")
+		return errors.New("provider config cannot be nil")
 	}
 
 	if config.Name == "" {
-		return fmt.Errorf("provider name cannot be empty")
+		return errors.New("provider name cannot be empty")
 	}
 
 	if config.Type == "" {
-		return fmt.Errorf("provider type cannot be empty")
+		return errors.New("provider type cannot be empty")
 	}
 
 	if config.Config == nil {
-		return fmt.Errorf("provider config cannot be nil")
+		return errors.New("provider config cannot be nil")
 	}
 
 	// Type-specific validation
@@ -307,7 +316,7 @@ func (f *ProviderFactory) ValidateProviderConfig(config *ProviderConfig) error {
 }
 
 // validateOIDCConfig validates OIDC provider configuration
-func (f *ProviderFactory) validateOIDCConfig(config map[string]interface{}) error {
+func (f *ProviderFactory) validateOIDCConfig(config map[string]any) error {
 	if _, ok := config[ConfigFieldIssuer]; !ok {
 		return fmt.Errorf("OIDC provider requires '%s' field", ConfigFieldIssuer)
 	}
@@ -320,18 +329,19 @@ func (f *ProviderFactory) validateOIDCConfig(config map[string]interface{}) erro
 }
 
 // validateLDAPConfig validates LDAP provider configuration
-func (f *ProviderFactory) validateLDAPConfig(config map[string]interface{}) error {
+func (f *ProviderFactory) validateLDAPConfig(config map[string]any) error {
 	if _, ok := config["server"]; !ok {
-		return fmt.Errorf("LDAP provider requires 'server' field")
+		return errors.New("LDAP provider requires 'server' field")
 	}
 	if _, ok := config["baseDN"]; !ok {
-		return fmt.Errorf("LDAP provider requires 'baseDN' field")
+		return errors.New("LDAP provider requires 'baseDN' field")
 	}
+
 	return nil
 }
 
 // validateSAMLConfig validates SAML provider configuration
-func (f *ProviderFactory) validateSAMLConfig(config map[string]interface{}) error {
+func (f *ProviderFactory) validateSAMLConfig(config map[string]any) error {
 	// TODO: Implement when SAML provider is available
 	return nil
 }

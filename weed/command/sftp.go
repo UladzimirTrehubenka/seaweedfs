@@ -111,11 +111,12 @@ func (sftpOpt *SftpOptions) startSftpServer() bool {
 		err := pb.WithGrpcFilerClient(false, 0, filerAddress, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 			if err != nil {
-				return fmt.Errorf("get filer %s configuration: %v", filerAddress, err)
+				return fmt.Errorf("get filer %s configuration: %w", filerAddress, err)
 			}
-			metricsAddress, metricsIntervalSec = resp.MetricsAddress, int(resp.MetricsIntervalSec)
-			filerGroup = resp.FilerGroup
+			metricsAddress, metricsIntervalSec = resp.GetMetricsAddress(), int(resp.GetMetricsIntervalSec())
+			filerGroup = resp.GetFilerGroup()
 			glog.V(0).Infof("SFTP read filer configuration, using filer at: %s", filerAddress)
+
 			return nil
 		})
 		if err != nil {
@@ -123,6 +124,7 @@ func (sftpOpt *SftpOptions) startSftpServer() bool {
 			time.Sleep(time.Second)
 		} else {
 			glog.V(0).Infof("Connected to filer %s grpc address %s", *sftpOpt.filer, filerAddress.ToGrpcAddress())
+
 			break
 		}
 	}

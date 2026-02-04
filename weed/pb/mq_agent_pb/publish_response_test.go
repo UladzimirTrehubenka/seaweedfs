@@ -28,14 +28,14 @@ func TestPublishRecordResponseSerialization(t *testing.T) {
 	}
 
 	// Verify all fields are preserved
-	if restored.AckSequence != original.AckSequence {
-		t.Errorf("AckSequence = %d, want %d", restored.AckSequence, original.AckSequence)
+	if restored.GetAckSequence() != original.GetAckSequence() {
+		t.Errorf("AckSequence = %d, want %d", restored.GetAckSequence(), original.GetAckSequence())
 	}
-	if restored.BaseOffset != original.BaseOffset {
-		t.Errorf("BaseOffset = %d, want %d", restored.BaseOffset, original.BaseOffset)
+	if restored.GetBaseOffset() != original.GetBaseOffset() {
+		t.Errorf("BaseOffset = %d, want %d", restored.GetBaseOffset(), original.GetBaseOffset())
 	}
-	if restored.LastOffset != original.LastOffset {
-		t.Errorf("LastOffset = %d, want %d", restored.LastOffset, original.LastOffset)
+	if restored.GetLastOffset() != original.GetLastOffset() {
+		t.Errorf("LastOffset = %d, want %d", restored.GetLastOffset(), original.GetLastOffset())
 	}
 }
 
@@ -63,14 +63,14 @@ func TestSubscribeRecordResponseSerialization(t *testing.T) {
 	}
 
 	// Verify all fields are preserved
-	if restored.TsNs != original.TsNs {
-		t.Errorf("TsNs = %d, want %d", restored.TsNs, original.TsNs)
+	if restored.GetTsNs() != original.GetTsNs() {
+		t.Errorf("TsNs = %d, want %d", restored.GetTsNs(), original.GetTsNs())
 	}
-	if restored.Offset != original.Offset {
-		t.Errorf("Offset = %d, want %d", restored.Offset, original.Offset)
+	if restored.GetOffset() != original.GetOffset() {
+		t.Errorf("Offset = %d, want %d", restored.GetOffset(), original.GetOffset())
 	}
-	if string(restored.Key) != string(original.Key) {
-		t.Errorf("Key = %s, want %s", string(restored.Key), string(original.Key))
+	if string(restored.GetKey()) != string(original.GetKey()) {
+		t.Errorf("Key = %s, want %s", string(restored.GetKey()), string(original.GetKey()))
 	}
 }
 
@@ -94,10 +94,10 @@ func TestPublishRecordResponseBackwardCompatibility(t *testing.T) {
 	}
 
 	// Offset fields should default to 0
-	if restored.BaseOffset != 0 {
-		t.Errorf("BaseOffset = %d, want 0", restored.BaseOffset)
+	if restored.GetBaseOffset() != 0 {
+		t.Errorf("BaseOffset = %d, want 0", restored.GetBaseOffset())
 	}
-	if restored.LastOffset != 0 {
-		t.Errorf("LastOffset = %d, want 0", restored.LastOffset)
+	if restored.GetLastOffset() != 0 {
+		t.Errorf("LastOffset = %d, want 0", restored.GetLastOffset())
 	}
 }

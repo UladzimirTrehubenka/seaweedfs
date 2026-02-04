@@ -112,6 +112,7 @@ func (iam *IdentityAccessManagement) newChunkedReader(req *http.Request) (io.Rea
 
 	if err != nil {
 		glog.V(3).Infof("error extracting checksum algorithm: %v", err)
+
 		return nil, s3err.ErrInvalidRequest
 	}
 
@@ -233,8 +234,8 @@ func (cs chunkState) String() string {
 		stateString = "verifyChecksum"
 	case eofChunk:
 		stateString = "eofChunk"
-
 	}
+
 	return stateString
 }
 
@@ -250,9 +251,10 @@ func (cr *s3ChunkedReader) Read(buf []byte) (n int, err error) {
 		case readChunkHeader:
 			cr.readS3ChunkHeader()
 			// If we're at the end of a chunk.
-			if cr.n == 0 && cr.err == io.EOF {
+			if cr.n == 0 && errors.Is(cr.err, io.EOF) {
 				cr.state = readChunkTrailer
 				cr.lastChunk = true
+
 				continue
 			}
 			if cr.err != nil {
@@ -268,8 +270,9 @@ func (cr *s3ChunkedReader) Read(buf []byte) (n int, err error) {
 				// The error returned by peekCRLF is the same as the one by readCRLF.
 				readCRLF(cr.reader)
 				cr.err = err
-			} else if err != nil && err != errMalformedEncoding {
+			} else if err != nil && !errors.Is(err, errMalformedEncoding) {
 				cr.err = err
+
 				return 0, errMalformedEncoding
 			} else { // equivalent to isTrailingChunk && err == errMalformedEncoding
 				// FIXME: 	The "right" structure of the last chunk as provided by the examples in the
@@ -310,6 +313,7 @@ func (cr *s3ChunkedReader) Read(buf []byte) (n int, err error) {
 			extractedCheckSumAlgorithm, extractedChecksum, err := parseChunkChecksum(cr.reader)
 			if err != nil {
 				cr.err = err
+
 				return 0, err
 			}
 
@@ -317,6 +321,7 @@ func (cr *s3ChunkedReader) Read(buf []byte) (n int, err error) {
 				errorMessage := fmt.Sprintf("checksum algorithm in trailer '%s' does not match the one advertised in the header '%s'", extractedCheckSumAlgorithm.String(), cr.checkSumAlgorithm)
 				glog.V(3).Info(errorMessage)
 				cr.err = errors.New(s3err.ErrMsgChecksumAlgorithmMismatch)
+
 				return 0, cr.err
 			}
 
@@ -326,6 +331,7 @@ func (cr *s3ChunkedReader) Read(buf []byte) (n int, err error) {
 			if string(extractedChecksum) != base64Checksum {
 				glog.V(3).Infof("payload checksum '%s' does not match provided checksum '%s'", base64Checksum, string(extractedChecksum))
 				cr.err = errors.New(s3err.ErrMsgPayloadChecksumMismatch)
+
 				return 0, cr.err
 			}
 
@@ -349,9 +355,10 @@ func (cr *s3ChunkedReader) Read(buf []byte) (n int, err error) {
 			n0, cr.err = cr.reader.Read(rbuf)
 			if cr.err != nil {
 				// We have lesser than chunk size advertised in chunkHeader, this is 'unexpected'.
-				if cr.err == io.EOF {
+				if errors.Is(cr.err, io.EOF) {
 					cr.err = io.ErrUnexpectedEOF
 				}
+
 				return 0, cr.err
 			}
 
@@ -391,6 +398,7 @@ func (cr *s3ChunkedReader) Read(buf []byte) (n int, err error) {
 				if !compareSignatureV4(cr.chunkSignature, newSignature) {
 					// Chunk signature doesn't match we return signature does not match.
 					cr.err = errors.New(s3err.ErrMsgChunkSignatureMismatch)
+
 					return 0, cr.err
 				}
 				// Newly calculated signature becomes the seed for the next chunk
@@ -438,6 +446,7 @@ func readCRLF(reader *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
+
 	return checkCRLF(buf)
 }
 
@@ -449,6 +458,7 @@ func peekCRLF(reader *bufio.Reader) error {
 	if err := checkCRLF(buf); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -456,6 +466,7 @@ func checkCRLF(buf []byte) error {
 	if len(buf) != 2 || buf[0] != '\r' || buf[1] != '\n' {
 		return errMalformedEncoding
 	}
+
 	return nil
 }
 
@@ -464,17 +475,19 @@ func readChunkLine(b *bufio.Reader) ([]byte, error) {
 	if err != nil {
 		// We always know when EOF is coming.
 		// If the caller asked for a line, there should be a line.
-		switch err {
-		case io.EOF:
+		switch {
+		case errors.Is(err, io.EOF):
 			err = io.ErrUnexpectedEOF
-		case bufio.ErrBufferFull:
+		case errors.Is(err, bufio.ErrBufferFull):
 			err = errLineTooLong
 		}
+
 		return nil, err
 	}
 	if len(buf) >= maxLineLength {
 		return nil, errLineTooLong
 	}
+
 	return trimTrailingWhitespace(buf), nil
 }
 
@@ -483,6 +496,7 @@ func trimTrailingWhitespace(b []byte) []byte {
 	for len(b) > 0 && isASCIISpace(b[len(b)-1]) {
 		b = b[:len(b)-1]
 	}
+
 	return b
 }
 
@@ -506,6 +520,7 @@ func parseS3ChunkExtension(buf []byte) ([]byte, []byte) {
 	if semi == -1 {
 		return buf, nil
 	}
+
 	return buf[:semi], parseChunkSignature(buf[semi:])
 }
 
@@ -544,6 +559,7 @@ func parseChunkChecksum(b *bufio.Reader) (ChecksumAlgorithm, []byte, error) {
 
 func parseChunkSignature(chunk []byte) []byte {
 	chunkSplits := bytes.SplitN(chunk, []byte("="), 2)
+
 	return chunkSplits[1] // Keep only the signature.
 }
 
@@ -565,6 +581,7 @@ func parseHexUint(v []byte) (n uint64, err error) {
 		n <<= 4
 		n |= uint64(b)
 	}
+
 	return
 }
 
@@ -595,6 +612,7 @@ func (ca ChecksumAlgorithm) String() string {
 	case ChecksumAlgorithmSHA256:
 		return "x-amz-checksum-sha256"
 	}
+
 	return ""
 }
 
@@ -612,5 +630,6 @@ func getCheckSumWriter(checksumAlgorithm ChecksumAlgorithm) hash.Hash {
 	case ChecksumAlgorithmSHA256:
 		return sha256.New()
 	}
+
 	return nil
 }

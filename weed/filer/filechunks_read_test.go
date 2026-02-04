@@ -10,7 +10,6 @@ import (
 )
 
 func TestReadResolvedChunks(t *testing.T) {
-
 	chunks := []*filer_pb.FileChunk{
 		{
 			FileId:       "a",
@@ -51,11 +50,9 @@ func TestReadResolvedChunks(t *testing.T) {
 		visible := x.Value
 		fmt.Printf("[%d,%d) %s %d\n", visible.start, visible.stop, visible.fileId, visible.modifiedTsNs)
 	}
-
 }
 
 func TestReadResolvedChunks2(t *testing.T) {
-
 	chunks := []*filer_pb.FileChunk{
 		{
 			FileId:       "c",
@@ -78,15 +75,13 @@ func TestReadResolvedChunks2(t *testing.T) {
 		visible := x.Value
 		fmt.Printf("[%d,%d) %s %d\n", visible.start, visible.stop, visible.fileId, visible.modifiedTsNs)
 	}
-
 }
 
 func TestRandomizedReadResolvedChunks(t *testing.T) {
-
 	var limit int64 = 1024 * 1024
 	array := make([]int64, limit)
 	var chunks []*filer_pb.FileChunk
-	for ts := int64(0); ts < 1024; ts++ {
+	for ts := range int64(1024) {
 		x := rand.Int63n(limit)
 		y := rand.Int63n(limit)
 		size := x - y
@@ -96,10 +91,7 @@ func TestRandomizedReadResolvedChunks(t *testing.T) {
 		if size > 1024 {
 			size = 1024
 		}
-		start := x
-		if start > y {
-			start = y
-		}
+		start := min(x, y)
 		chunks = append(chunks, randomWrite(array, start, size, ts))
 	}
 
@@ -115,7 +107,6 @@ func TestRandomizedReadResolvedChunks(t *testing.T) {
 	}
 
 	// fmt.Printf("visibles %d", len(visibles))
-
 }
 
 func randomWrite(array []int64, start int64, size int64, ts int64) *filer_pb.FileChunk {
@@ -132,10 +123,9 @@ func randomWrite(array []int64, start int64, size int64, ts int64) *filer_pb.Fil
 }
 
 func TestSequentialReadResolvedChunks(t *testing.T) {
-
 	var chunkSize int64 = 1024 * 1024 * 2
 	var chunks []*filer_pb.FileChunk
-	for ts := int64(0); ts < 13; ts++ {
+	for ts := range int64(13) {
 		chunks = append(chunks, &filer_pb.FileChunk{
 			FileId:       "",
 			Offset:       chunkSize * ts,
@@ -147,11 +137,9 @@ func TestSequentialReadResolvedChunks(t *testing.T) {
 	visibles := readResolvedChunks(chunks, 0, math.MaxInt64)
 
 	fmt.Printf("visibles %d", visibles.Len())
-
 }
 
 func TestActualReadResolvedChunks(t *testing.T) {
-
 	chunks := []*filer_pb.FileChunk{
 		{
 			FileId:       "5,e7b96fef48",
@@ -239,11 +227,9 @@ func TestActualReadResolvedChunks(t *testing.T) {
 		visible := x.Value
 		fmt.Printf("[%d,%d) %s %d\n", visible.start, visible.stop, visible.fileId, visible.modifiedTsNs)
 	}
-
 }
 
 func TestActualReadResolvedChunks2(t *testing.T) {
-
 	chunks := []*filer_pb.FileChunk{
 		{
 			FileId:       "1,e7b96fef48",
@@ -277,5 +263,4 @@ func TestActualReadResolvedChunks2(t *testing.T) {
 		visible := x.Value
 		fmt.Printf("[%d,%d) %s %d\n", visible.start, visible.stop, visible.fileId, visible.modifiedTsNs)
 	}
-
 }

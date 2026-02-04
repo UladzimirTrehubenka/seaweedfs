@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -9,12 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"google.golang.org/grpc/peer"
-	"google.golang.org/protobuf/proto"
 )
 
 // PUB
@@ -39,7 +41,6 @@ import (
 // Each subscription may not get data. It can act as a backup.
 
 func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_PublishMessageServer) error {
-
 	req, err := stream.Recv()
 	if err != nil {
 		return err
@@ -50,30 +51,34 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 	if initMessage == nil {
 		response.ErrorCode, response.Error = CreateBrokerError(BrokerErrorInvalidRecord, "missing init message")
 		glog.Errorf("missing init message")
+
 		return stream.Send(response)
 	}
 
 	// Check whether current broker should be the leader for the topic partition
-	leaderBroker, err := b.findBrokerForTopicPartition(initMessage.Topic, initMessage.Partition)
+	leaderBroker, err := b.findBrokerForTopicPartition(initMessage.GetTopic(), initMessage.GetPartition())
 	if err != nil {
 		response.ErrorCode, response.Error = CreateBrokerError(BrokerErrorTopicNotFound, fmt.Sprintf("failed to find leader for topic partition: %v", err))
 		glog.Errorf("failed to find leader for topic partition: %v", err)
+
 		return stream.Send(response)
 	}
 
 	currentBrokerAddress := fmt.Sprintf("%s:%d", b.option.Ip, b.option.Port)
 	if leaderBroker != currentBrokerAddress {
-		response.ErrorCode, response.Error = CreateBrokerError(BrokerErrorNotLeaderOrFollower, fmt.Sprintf("not the leader for this partition, leader is: %s", leaderBroker))
+		response.ErrorCode, response.Error = CreateBrokerError(BrokerErrorNotLeaderOrFollower, "not the leader for this partition, leader is: "+leaderBroker)
 		glog.V(1).Infof("rejecting publish request: not the leader for partition, leader is: %s", leaderBroker)
+
 		return stream.Send(response)
 	}
 
 	// get or generate a local partition
-	t, p := topic.FromPbTopic(initMessage.Topic), topic.FromPbPartition(initMessage.Partition)
+	t, p := topic.FromPbTopic(initMessage.GetTopic()), topic.FromPbPartition(initMessage.GetPartition())
 	localTopicPartition, getOrGenErr := b.GetOrGenerateLocalPartition(t, p)
 	if getOrGenErr != nil {
 		response.ErrorCode, response.Error = CreateBrokerError(BrokerErrorTopicNotFound, fmt.Sprintf("topic %v not found: %v", t, getOrGenErr))
 		glog.Errorf("topic %v not found: %v", t, getOrGenErr)
+
 		return stream.Send(response)
 	}
 
@@ -81,6 +86,7 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 	if followerErr := localTopicPartition.MaybeConnectToFollowers(initMessage, b.grpcDialOption); followerErr != nil {
 		response.ErrorCode, response.Error = CreateBrokerError(BrokerErrorFollowerConnectionFailed, followerErr.Error())
 		glog.Errorf("MaybeConnectToFollowers: %v", followerErr)
+
 		return stream.Send(response)
 	}
 
@@ -96,8 +102,8 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 
 	if false {
 		ackInterval := int64(1)
-		if initMessage.AckInterval > 0 {
-			ackInterval = int64(initMessage.AckInterval)
+		if initMessage.GetAckInterval() > 0 {
+			ackInterval = int64(initMessage.GetAckInterval())
 		}
 		go func() {
 			defer func() {
@@ -132,7 +138,7 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 		// Use topic-aware shutdown logic to prevent aggressive removal of system topics
 		if localTopicPartition.MaybeShutdownLocalPartitionForTopic(t.Name) {
 			b.localTopicManager.RemoveLocalPartition(t, p)
-			glog.V(0).Infof("Removed local topic %v partition %v", initMessage.Topic, initMessage.Partition)
+			glog.V(0).Infof("Removed local topic %v partition %v", initMessage.GetTopic(), initMessage.GetPartition())
 		}
 	}()
 
@@ -148,10 +154,11 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 		// receive a message
 		req, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
-			glog.V(0).Infof("topic %v partition %v publish stream from %s error: %v", initMessage.Topic, initMessage.Partition, initMessage.PublisherName, err)
+			glog.V(0).Infof("topic %v partition %v publish stream from %s error: %v", initMessage.GetTopic(), initMessage.GetPartition(), initMessage.GetPublisherName(), err)
+
 			break
 		}
 
@@ -166,10 +173,10 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 		// Regular Kafka messages and offset management messages are stored as raw bytes
 		if dataMessage.Value != nil {
 			record := &schema_pb.RecordValue{}
-			if err := proto.Unmarshal(dataMessage.Value, record); err == nil {
+			if err := proto.Unmarshal(dataMessage.GetValue(), record); err == nil {
 				// Successfully unmarshaled as RecordValue - validate structure
-				if err := b.validateRecordValue(record, initMessage.Topic); err != nil {
-					glog.V(1).Infof("RecordValue validation failed on topic %v partition %v: %v", initMessage.Topic, initMessage.Partition, err)
+				if err := b.validateRecordValue(record, initMessage.GetTopic()); err != nil {
+					glog.V(1).Infof("RecordValue validation failed on topic %v partition %v: %v", initMessage.GetTopic(), initMessage.GetPartition(), err)
 				}
 			}
 			// Note: We don't log errors for non-RecordValue messages since most Kafka messages
@@ -180,7 +187,7 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 		// to avoid timing issue when ack messages.
 
 		// Send to the local partition with offset assignment
-		t, p := topic.FromPbTopic(initMessage.Topic), topic.FromPbPartition(initMessage.Partition)
+		t, p := topic.FromPbTopic(initMessage.GetTopic()), topic.FromPbPartition(initMessage.GetPartition())
 
 		// Create offset assignment function for this partition
 		assignOffsetFn := func() (int64, error) {
@@ -190,29 +197,30 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 		// Use offset-aware publishing
 		assignedOffset, err := localTopicPartition.PublishWithOffset(dataMessage, assignOffsetFn)
 		if err != nil {
-			return fmt.Errorf("topic %v partition %v publish error: %w", initMessage.Topic, initMessage.Partition, err)
+			return fmt.Errorf("topic %v partition %v publish error: %w", initMessage.GetTopic(), initMessage.GetPartition(), err)
 		}
 
 		// No ForceFlush - subscribers use per-subscriber notification channels for instant wake-up
 		// Data is served from in-memory LogBuffer with <1ms latency
-		glog.V(2).Infof("Published offset %d to %s", assignedOffset, initMessage.Topic.Name)
+		glog.V(2).Infof("Published offset %d to %s", assignedOffset, initMessage.GetTopic().GetName())
 
 		// Send immediate per-message ack WITH offset
 		// This is critical for Gateway to return correct offsets to Kafka clients
 		response := &mq_pb.PublishMessageResponse{
-			AckTsNs:        dataMessage.TsNs,
+			AckTsNs:        dataMessage.GetTsNs(),
 			AssignedOffset: assignedOffset,
 		}
 		if err := stream.Send(response); err != nil {
 			glog.Errorf("Error sending immediate ack %v: %v", response, err)
-			return fmt.Errorf("failed to send ack: %v", err)
+
+			return fmt.Errorf("failed to send ack: %w", err)
 		}
 
 		// Update published offset and last seen time for this publisher
 		publisher.UpdatePublishedOffset(assignedOffset)
 	}
 
-	glog.V(0).Infof("topic %v partition %v publish stream from %s closed.", initMessage.Topic, initMessage.Partition, initMessage.PublisherName)
+	glog.V(0).Infof("topic %v partition %v publish stream from %s closed.", initMessage.GetTopic(), initMessage.GetPartition(), initMessage.GetPublisherName())
 
 	return nil
 }
@@ -224,17 +232,17 @@ func (b *MessageQueueBroker) PublishMessage(stream mq_pb.SeaweedMessaging_Publis
 func (b *MessageQueueBroker) validateRecordValue(record *schema_pb.RecordValue, topic *schema_pb.Topic) error {
 	// Check for nil RecordValue
 	if record == nil {
-		return fmt.Errorf("RecordValue is nil")
+		return errors.New("RecordValue is nil")
 	}
 
 	// Check for nil Fields map
 	if record.Fields == nil {
-		return fmt.Errorf("RecordValue.Fields is nil")
+		return errors.New("RecordValue.Fields is nil")
 	}
 
 	// Check for empty Fields map
-	if len(record.Fields) == 0 {
-		return fmt.Errorf("RecordValue has no fields")
+	if len(record.GetFields()) == 0 {
+		return errors.New("RecordValue has no fields")
 	}
 
 	// If protobuf unmarshaling succeeded, the RecordValue is structurally valid
@@ -247,25 +255,28 @@ func findClientAddress(ctx context.Context) string {
 	pr, ok := peer.FromContext(ctx)
 	if !ok {
 		glog.Error("failed to get peer from ctx")
+
 		return ""
 	}
 	if pr.Addr == net.Addr(nil) {
 		glog.Error("failed to get peer address")
+
 		return ""
 	}
+
 	return pr.Addr.String()
 }
 
 // GetPartitionRangeInfo returns comprehensive range information for a partition (offsets, timestamps, etc.)
 func (b *MessageQueueBroker) GetPartitionRangeInfo(ctx context.Context, req *mq_pb.GetPartitionRangeInfoRequest) (*mq_pb.GetPartitionRangeInfoResponse, error) {
-	if req.Topic == nil || req.Partition == nil {
+	if req.GetTopic() == nil || req.GetPartition() == nil {
 		return &mq_pb.GetPartitionRangeInfoResponse{
 			Error: "topic and partition are required",
 		}, nil
 	}
 
-	t := topic.FromPbTopic(req.Topic)
-	p := topic.FromPbPartition(req.Partition)
+	t := topic.FromPbTopic(req.GetTopic())
+	p := topic.FromPbPartition(req.GetPartition())
 
 	// Get offset information from the broker's internal method
 	info, err := b.GetPartitionOffsetInfoInternal(t, p)

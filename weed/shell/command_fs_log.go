@@ -44,16 +44,18 @@ func (c *commandFsLogPurge) Do(args []string, commandEnv *CommandEnv, writer io.
 
 	modificationTimeAgo := time.Now().Add(-time.Hour * 24 * time.Duration(*daysAgo)).Unix()
 	err = filer_pb.ReadDirAllEntries(context.Background(), commandEnv, filer.SystemLogDir, "", func(entry *filer_pb.Entry, isLast bool) error {
-		if entry.Attributes.Mtime > modificationTimeAgo {
+		if entry.GetAttributes().GetMtime() > modificationTimeAgo {
 			return nil
 		}
-		if errDel := filer_pb.Remove(context.Background(), commandEnv, filer.SystemLogDir, entry.Name, true, true, true, false, nil); errDel != nil {
+		if errDel := filer_pb.Remove(context.Background(), commandEnv, filer.SystemLogDir, entry.GetName(), true, true, true, false, nil); errDel != nil {
 			return errDel
 		}
 		if *verbose {
-			fmt.Fprintf(writer, "delete %s\n", entry.Name)
+			fmt.Fprintf(writer, "delete %s\n", entry.GetName())
 		}
+
 		return nil
 	})
+
 	return err
 }

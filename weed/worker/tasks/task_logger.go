@@ -17,17 +17,17 @@ import (
 // TaskLogger provides file-based logging for individual tasks
 type TaskLogger interface {
 	// Log methods
-	Info(message string, args ...interface{})
-	Warning(message string, args ...interface{})
-	Error(message string, args ...interface{})
-	Debug(message string, args ...interface{})
+	Info(message string, args ...any)
+	Warning(message string, args ...any)
+	Error(message string, args ...any)
+	Debug(message string, args ...any)
 
 	// Progress and status logging
 	LogProgress(progress float64, message string)
 	LogStatus(status string, message string)
 
 	// Structured logging
-	LogWithFields(level string, message string, fields map[string]interface{})
+	LogWithFields(level string, message string, fields map[string]any)
 
 	// Lifecycle
 	Close() error
@@ -63,30 +63,30 @@ type FileTaskLogger struct {
 
 // TaskLogMetadata contains metadata about the task execution
 type TaskLogMetadata struct {
-	TaskID      string                 `json:"task_id"`
-	TaskType    string                 `json:"task_type"`
-	WorkerID    string                 `json:"worker_id"`
-	StartTime   time.Time              `json:"start_time"`
-	EndTime     *time.Time             `json:"end_time,omitempty"`
-	Duration    *time.Duration         `json:"duration,omitempty"`
-	Status      string                 `json:"status"`
-	Progress    float64                `json:"progress"`
-	VolumeID    uint32                 `json:"volume_id,omitempty"`
-	Server      string                 `json:"server,omitempty"`
-	Collection  string                 `json:"collection,omitempty"`
-	CustomData  map[string]interface{} `json:"custom_data,omitempty"`
-	LogFilePath string                 `json:"log_file_path"`
-	CreatedAt   time.Time              `json:"created_at"`
+	TaskID      string         `json:"task_id"`
+	TaskType    string         `json:"task_type"`
+	WorkerID    string         `json:"worker_id"`
+	StartTime   time.Time      `json:"start_time"`
+	EndTime     *time.Time     `json:"end_time,omitempty"`
+	Duration    *time.Duration `json:"duration,omitempty"`
+	Status      string         `json:"status"`
+	Progress    float64        `json:"progress"`
+	VolumeID    uint32         `json:"volume_id,omitempty"`
+	Server      string         `json:"server,omitempty"`
+	Collection  string         `json:"collection,omitempty"`
+	CustomData  map[string]any `json:"custom_data,omitempty"`
+	LogFilePath string         `json:"log_file_path"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 // TaskLogEntry represents a single log entry
 type TaskLogEntry struct {
-	Timestamp time.Time              `json:"timestamp"`
-	Level     string                 `json:"level"`
-	Message   string                 `json:"message"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
-	Progress  *float64               `json:"progress,omitempty"`
-	Status    *string                `json:"status,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
+	Level     string         `json:"level"`
+	Message   string         `json:"message"`
+	Fields    map[string]any `json:"fields,omitempty"`
+	Progress  *float64       `json:"progress,omitempty"`
+	Status    *string        `json:"status,omitempty"`
 }
 
 // DefaultTaskLoggerConfig returns default configuration
@@ -127,9 +127,9 @@ func NewTaskLogger(taskID string, taskType types.TaskType, workerID string, para
 		Status:      "started",
 		Progress:    0.0,
 		VolumeID:    params.VolumeID,
-		Server:      getServerFromSources(params.TypedParams.Sources),
+		Server:      getServerFromSources(params.TypedParams.GetSources()),
 		Collection:  params.Collection,
-		CustomData:  make(map[string]interface{}),
+		CustomData:  make(map[string]any),
 		LogFilePath: logFilePath,
 		CreatedAt:   time.Now(),
 	}
@@ -147,9 +147,9 @@ func NewTaskLogger(taskID string, taskType types.TaskType, workerID string, para
 
 	// Write initial log entry
 	logger.Info("Task logger initialized for %s (type: %s, worker: %s)", taskID, taskType, workerID)
-	logger.LogWithFields("INFO", "Task parameters", map[string]interface{}{
+	logger.LogWithFields("INFO", "Task parameters", map[string]any{
 		"volume_id":  params.VolumeID,
-		"server":     getServerFromSources(params.TypedParams.Sources),
+		"server":     getServerFromSources(params.TypedParams.GetSources()),
 		"collection": params.Collection,
 	})
 
@@ -165,22 +165,22 @@ func NewTaskLogger(taskID string, taskType types.TaskType, workerID string, para
 }
 
 // Info logs an info message
-func (l *FileTaskLogger) Info(message string, args ...interface{}) {
+func (l *FileTaskLogger) Info(message string, args ...any) {
 	l.log("INFO", message, args...)
 }
 
 // Warning logs a warning message
-func (l *FileTaskLogger) Warning(message string, args ...interface{}) {
+func (l *FileTaskLogger) Warning(message string, args ...any) {
 	l.log("WARNING", message, args...)
 }
 
 // Error logs an error message
-func (l *FileTaskLogger) Error(message string, args ...interface{}) {
+func (l *FileTaskLogger) Error(message string, args ...any) {
 	l.log("ERROR", message, args...)
 }
 
 // Debug logs a debug message
-func (l *FileTaskLogger) Debug(message string, args ...interface{}) {
+func (l *FileTaskLogger) Debug(message string, args ...any) {
 	l.log("DEBUG", message, args...)
 }
 
@@ -219,7 +219,7 @@ func (l *FileTaskLogger) LogStatus(status string, message string) {
 }
 
 // LogWithFields logs a message with structured fields
-func (l *FileTaskLogger) LogWithFields(level string, message string, fields map[string]interface{}) {
+func (l *FileTaskLogger) LogWithFields(level string, message string, fields map[string]any) {
 	entry := TaskLogEntry{
 		Timestamp: time.Now(),
 		Level:     level,
@@ -271,7 +271,7 @@ func (l *FileTaskLogger) GetLogDir() string {
 }
 
 // log is the internal logging method
-func (l *FileTaskLogger) log(level string, message string, args ...interface{}) {
+func (l *FileTaskLogger) log(level string, message string, args ...any) {
 	formattedMessage := fmt.Sprintf(message, args...)
 
 	entry := TaskLogEntry{
@@ -296,12 +296,14 @@ func (l *FileTaskLogger) writeLogEntry(entry TaskLogEntry) {
 	jsonData, err := json.Marshal(entry)
 	if err != nil {
 		glog.Errorf("Failed to marshal log entry: %v", err)
+
 		return
 	}
 
 	// Write to file
 	if _, err := l.logFile.WriteString(string(jsonData) + "\n"); err != nil {
 		glog.Errorf("Failed to write log entry: %v", err)
+
 		return
 	}
 
@@ -347,6 +349,7 @@ func (l *FileTaskLogger) cleanupOldLogs() {
 	entries, err := os.ReadDir(baseDir)
 	if err != nil {
 		glog.Warningf("Failed to read log directory %s: %v", baseDir, err)
+
 		return
 	}
 
@@ -370,12 +373,13 @@ func (l *FileTaskLogger) cleanupOldLogs() {
 		if errI != nil || errJ != nil {
 			return false
 		}
+
 		return infoI.ModTime().Before(infoJ.ModTime())
 	})
 
 	// Remove oldest directories
 	numToRemove := len(dirs) - l.config.MaxTasks
-	for i := 0; i < numToRemove; i++ {
+	for i := range numToRemove {
 		dirPath := filepath.Join(baseDir, dirs[i].Name())
 		if err := os.RemoveAll(dirPath); err != nil {
 			glog.Warningf("Failed to remove old log directory %s: %v", dirPath, err)
@@ -423,6 +427,7 @@ func ReadTaskLogs(logDir string) ([]TaskLogEntry, error) {
 			if err == io.EOF {
 				break
 			}
+
 			return nil, fmt.Errorf("failed to decode log entry: %w", err)
 		}
 		entries = append(entries, entry)

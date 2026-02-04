@@ -142,7 +142,7 @@ func TestCacheInvalidationInterface(t *testing.T) {
 	fileId := "3,test123"
 
 	// Simulate invalidation
-	if invalidator, ok := interface{}(mock).(CacheInvalidator); ok {
+	if invalidator, ok := any(mock).(CacheInvalidator); ok {
 		invalidator.InvalidateCache(fileId)
 	} else {
 		t.Fatal("mockMasterClient should implement CacheInvalidator")

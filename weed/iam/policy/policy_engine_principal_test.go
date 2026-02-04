@@ -14,7 +14,7 @@ func TestPrincipalMatching(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		principal interface{}
+		principal any
 		evalCtx   *EvaluationContext
 		want      bool
 	}{
@@ -22,37 +22,37 @@ func TestPrincipalMatching(t *testing.T) {
 			name:      "plain wildcard principal",
 			principal: "*",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{},
+				RequestContext: map[string]any{},
 			},
 			want: true,
 		},
 		{
 			name: "structured wildcard federated principal",
-			principal: map[string]interface{}{
+			principal: map[string]any{
 				"Federated": "*",
 			},
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{},
+				RequestContext: map[string]any{},
 			},
 			want: true,
 		},
 		{
 			name: "wildcard in array",
-			principal: map[string]interface{}{
-				"Federated": []interface{}{"specific-provider", "*"},
+			principal: map[string]any{
+				"Federated": []any{"specific-provider", "*"},
 			},
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{},
+				RequestContext: map[string]any{},
 			},
 			want: true,
 		},
 		{
 			name: "specific federated provider match",
-			principal: map[string]interface{}{
+			principal: map[string]any{
 				"Federated": "https://example.com/oidc",
 			},
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://example.com/oidc",
 				},
 			},
@@ -60,11 +60,11 @@ func TestPrincipalMatching(t *testing.T) {
 		},
 		{
 			name: "specific federated provider no match",
-			principal: map[string]interface{}{
+			principal: map[string]any{
 				"Federated": "https://example.com/oidc",
 			},
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://other.com/oidc",
 				},
 			},
@@ -72,11 +72,11 @@ func TestPrincipalMatching(t *testing.T) {
 		},
 		{
 			name: "array with specific provider match",
-			principal: map[string]interface{}{
+			principal: map[string]any{
 				"Federated": []string{"https://provider1.com", "https://provider2.com"},
 			},
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://provider2.com",
 				},
 			},
@@ -84,11 +84,11 @@ func TestPrincipalMatching(t *testing.T) {
 		},
 		{
 			name: "AWS principal match",
-			principal: map[string]interface{}{
+			principal: map[string]any{
 				"AWS": "arn:aws:iam::123456789012:user/alice",
 			},
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:PrincipalArn": "arn:aws:iam::123456789012:user/alice",
 				},
 			},
@@ -96,11 +96,11 @@ func TestPrincipalMatching(t *testing.T) {
 		},
 		{
 			name: "Service principal match",
-			principal: map[string]interface{}{
+			principal: map[string]any{
 				"Service": "s3.amazonaws.com",
 			},
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:PrincipalServiceName": "s3.amazonaws.com",
 				},
 			},
@@ -122,7 +122,7 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		principalValue interface{}
+		principalValue any
 		contextKey     string
 		evalCtx        *EvaluationContext
 		want           bool
@@ -132,7 +132,7 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 			principalValue: "*",
 			contextKey:     "aws:FederatedProvider",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{},
+				RequestContext: map[string]any{},
 			},
 			want: true,
 		},
@@ -141,7 +141,7 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 			principalValue: "https://example.com",
 			contextKey:     "aws:FederatedProvider",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://example.com",
 				},
 			},
@@ -152,7 +152,7 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 			principalValue: "https://example.com",
 			contextKey:     "aws:FederatedProvider",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://other.com",
 				},
 			},
@@ -160,10 +160,10 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 		},
 		{
 			name:           "wildcard in array",
-			principalValue: []interface{}{"provider1", "*"},
+			principalValue: []any{"provider1", "*"},
 			contextKey:     "aws:FederatedProvider",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{},
+				RequestContext: map[string]any{},
 			},
 			want: true,
 		},
@@ -172,7 +172,7 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 			principalValue: []string{"provider1", "provider2", "provider3"},
 			contextKey:     "aws:FederatedProvider",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "provider2",
 				},
 			},
@@ -183,7 +183,7 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 			principalValue: []string{"provider1", "provider2"},
 			contextKey:     "aws:FederatedProvider",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "provider3",
 				},
 			},
@@ -194,7 +194,7 @@ func TestEvaluatePrincipalValue(t *testing.T) {
 			principalValue: "specific-value",
 			contextKey:     "aws:FederatedProvider",
 			evalCtx: &EvaluationContext{
-				RequestContext: map[string]interface{}{},
+				RequestContext: map[string]any{},
 			},
 			want: false,
 		},
@@ -226,7 +226,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 				Statement: []Statement{
 					{
 						Effect: "Allow",
-						Principal: map[string]interface{}{
+						Principal: map[string]any{
 							"Federated": "*",
 						},
 						Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -235,7 +235,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 			},
 			evalCtx: &EvaluationContext{
 				Action: "sts:AssumeRoleWithWebIdentity",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://any-provider.com",
 				},
 			},
@@ -249,7 +249,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 				Statement: []Statement{
 					{
 						Effect: "Allow",
-						Principal: map[string]interface{}{
+						Principal: map[string]any{
 							"Federated": "https://example.com/oidc",
 						},
 						Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -258,7 +258,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 			},
 			evalCtx: &EvaluationContext{
 				Action: "sts:AssumeRoleWithWebIdentity",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://example.com/oidc",
 				},
 			},
@@ -272,7 +272,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 				Statement: []Statement{
 					{
 						Effect: "Allow",
-						Principal: map[string]interface{}{
+						Principal: map[string]any{
 							"Federated": "https://example.com/oidc",
 						},
 						Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -281,7 +281,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 			},
 			evalCtx: &EvaluationContext{
 				Action: "sts:AssumeRoleWithWebIdentity",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://other.com/oidc",
 				},
 			},
@@ -302,7 +302,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 			},
 			evalCtx: &EvaluationContext{
 				Action: "sts:AssumeRoleWithWebIdentity",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://any-provider.com",
 				},
 			},
@@ -316,11 +316,11 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 				Statement: []Statement{
 					{
 						Effect: "Allow",
-						Principal: map[string]interface{}{
+						Principal: map[string]any{
 							"Federated": "*",
 						},
 						Action: []string{"sts:AssumeRoleWithWebIdentity"},
-						Condition: map[string]map[string]interface{}{
+						Condition: map[string]map[string]any{
 							"StringEquals": {
 								"oidc:aud": "my-app-id",
 							},
@@ -330,7 +330,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 			},
 			evalCtx: &EvaluationContext{
 				Action: "sts:AssumeRoleWithWebIdentity",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://provider.com",
 					"oidc:aud":              "my-app-id",
 				},
@@ -345,11 +345,11 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 				Statement: []Statement{
 					{
 						Effect: "Allow",
-						Principal: map[string]interface{}{
+						Principal: map[string]any{
 							"Federated": "*",
 						},
 						Action: []string{"sts:AssumeRoleWithWebIdentity"},
-						Condition: map[string]map[string]interface{}{
+						Condition: map[string]map[string]any{
 							"StringEquals": {
 								"oidc:aud": "my-app-id",
 							},
@@ -359,7 +359,7 @@ func TestTrustPolicyEvaluation(t *testing.T) {
 			},
 			evalCtx: &EvaluationContext{
 				Action: "sts:AssumeRoleWithWebIdentity",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:FederatedProvider": "https://provider.com",
 					"oidc:aud":              "wrong-app-id",
 				},

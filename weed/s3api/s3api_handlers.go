@@ -2,12 +2,14 @@ package s3api
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -25,9 +27,9 @@ func (s3a *S3ApiServer) WithFilerClient(streamingMode bool, fn func(filer_pb.Sea
 	// This should only happen during initialization or testing
 	return pb.WithGrpcClient(streamingMode, s3a.randomClientId, func(grpcConnection *grpc.ClientConn) error {
 		client := filer_pb.NewSeaweedFilerClient(grpcConnection)
+
 		return fn(client)
 	}, s3a.getFilerAddress().ToGrpcAddress(), false, s3a.option.GrpcDialOption)
-
 }
 
 // withFilerClientFailover attempts to execute fn with automatic failover to other filers
@@ -38,11 +40,13 @@ func (s3a *S3ApiServer) withFilerClientFailover(streamingMode bool, fn func(file
 	// Try current filer first (fast path)
 	err := pb.WithGrpcClient(streamingMode, s3a.randomClientId, func(grpcConnection *grpc.ClientConn) error {
 		client := filer_pb.NewSeaweedFilerClient(grpcConnection)
+
 		return fn(client)
 	}, currentFiler.ToGrpcAddress(), false, s3a.option.GrpcDialOption)
 
 	if err == nil {
 		s3a.filerClient.RecordFilerSuccess(currentFiler)
+
 		return nil
 	}
 
@@ -51,7 +55,7 @@ func (s3a *S3ApiServer) withFilerClientFailover(streamingMode bool, fn func(file
 
 	// Current filer failed - try all other filers with health-aware selection
 	filers := s3a.filerClient.GetAllFilers()
-	var lastErr error = err
+	var lastErr = err
 
 	for _, filer := range filers {
 		if filer == currentFiler {
@@ -61,11 +65,13 @@ func (s3a *S3ApiServer) withFilerClientFailover(streamingMode bool, fn func(file
 		// Skip filers known to be unhealthy (circuit breaker pattern)
 		if s3a.filerClient.ShouldSkipUnhealthyFiler(filer) {
 			glog.V(2).Infof("WithFilerClient: skipping unhealthy filer %s", filer)
+
 			continue
 		}
 
 		err = pb.WithGrpcClient(streamingMode, s3a.randomClientId, func(grpcConnection *grpc.ClientConn) error {
 			client := filer_pb.NewSeaweedFilerClient(grpcConnection)
+
 			return fn(client)
 		}, filer.ToGrpcAddress(), false, s3a.option.GrpcDialOption)
 
@@ -74,6 +80,7 @@ func (s3a *S3ApiServer) withFilerClientFailover(streamingMode bool, fn func(file
 			s3a.filerClient.RecordFilerSuccess(filer)
 			s3a.filerClient.SetCurrentFiler(filer)
 			glog.V(1).Infof("WithFilerClient: failover from %s to %s succeeded", currentFiler, filer)
+
 			return nil
 		}
 
@@ -88,14 +95,14 @@ func (s3a *S3ApiServer) withFilerClientFailover(streamingMode bool, fn func(file
 }
 
 func (s3a *S3ApiServer) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 func (s3a *S3ApiServer) GetDataCenter() string {
 	return s3a.option.DataCenter
 }
 
-func writeSuccessResponseXML(w http.ResponseWriter, r *http.Request, response interface{}) {
+func writeSuccessResponseXML(w http.ResponseWriter, r *http.Request, response any) {
 	s3err.WriteXMLResponse(w, r, http.StatusOK, response)
 	s3err.PostLog(r, http.StatusOK, s3err.ErrNone)
 }
@@ -112,9 +119,11 @@ func validateContentMd5(h http.Header) ([]byte, error) {
 	md5B64, ok := h["Content-Md5"]
 	if ok {
 		if md5B64[0] == "" {
-			return nil, fmt.Errorf("Content-Md5 header set to empty value")
+			return nil, errors.New("Content-Md5 header set to empty value")
 		}
+
 		return base64.StdEncoding.DecodeString(md5B64[0])
 	}
+
 	return []byte{}, nil
 }

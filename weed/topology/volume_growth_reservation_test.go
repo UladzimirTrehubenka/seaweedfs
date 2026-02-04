@@ -19,6 +19,7 @@ type MockGrpcDialOption struct{}
 func simulateVolumeAllocation(server *DataNode, vid needle.VolumeId, option *VolumeGrowOption) error {
 	// Simulate some processing time
 	time.Sleep(time.Millisecond * 10)
+
 	return nil
 }
 
@@ -52,10 +53,11 @@ func TestVolumeGrowth_ReservationBasedAllocation(t *testing.T) {
 	}
 
 	// Try to create volumes and verify reservations work
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		servers, reservation, err := vg.findEmptySlotsForOneVolume(topo, option, true)
 		if err != nil {
 			t.Errorf("Failed to find slots with reservation on iteration %d: %v", i, err)
+
 			continue
 		}
 
@@ -141,7 +143,7 @@ func TestVolumeGrowth_ConcurrentAllocationPreventsRaceCondition(t *testing.T) {
 	var successCount, failureCount atomic.Int32
 	var commitMutex sync.Mutex // Ensures atomic commit of volume creation + reservation release
 
-	for i := 0; i < concurrentRequests; i++ {
+	for i := range concurrentRequests {
 		wg.Add(1)
 		go func(requestId int) {
 			defer wg.Done()

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -36,7 +37,6 @@ func (wfs *WFS) Create(cancel <-chan struct{}, in *fuse.CreateIn, name string, o
  * regular files that will be called instead.
  */
 func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out *fuse.EntryOut) (code fuse.Status) {
-
 	if wfs.IsOverQuotaWithUncommitted() {
 		return fuse.Status(syscall.ENOSPC)
 	}
@@ -47,7 +47,7 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 
 	dirFullPath, code := wfs.inodeToPath.GetPath(in.NodeId)
 	if code != fuse.OK {
-		return
+		return code
 	}
 
 	entryFullPath := dirFullPath.Child(name)
@@ -71,7 +71,6 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 	}
 
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		wfs.mapPbIdFromLocalToFiler(newEntry)
 		defer wfs.mapPbIdFromFilerToLocal(newEntry)
 
@@ -85,6 +84,7 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 		glog.V(1).Infof("mknod: %v", request)
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			glog.V(0).Infof("mknod %s: %v", entryFullPath, err)
+
 			return err
 		}
 
@@ -92,7 +92,7 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 		// This avoids polluting the cache with partial directory data.
 		if wfs.metaCache.IsDirectoryCached(dirFullPath) {
 			wfs.inodeToPath.TouchDirectory(dirFullPath)
-			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, request.Entry)); err != nil {
+			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.GetDirectory(), request.GetEntry())); err != nil {
 				return fmt.Errorf("local mknod %s: %w", entryFullPath, err)
 			}
 		}
@@ -107,22 +107,21 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 	}
 
 	// this is to increase nlookup counter
-	inode = wfs.inodeToPath.Lookup(entryFullPath, newEntry.Attributes.Crtime, false, false, inode, true)
+	inode = wfs.inodeToPath.Lookup(entryFullPath, newEntry.GetAttributes().GetCrtime(), false, false, inode, true)
 
 	wfs.outputPbEntry(out, inode, newEntry)
 
 	return fuse.OK
-
 }
 
 /** Remove a file */
 func (wfs *WFS) Unlink(cancel <-chan struct{}, header *fuse.InHeader, name string) (code fuse.Status) {
-
 	dirFullPath, code := wfs.inodeToPath.GetPath(header.NodeId)
 	if code != fuse.OK {
 		if code == fuse.ENOENT {
 			return fuse.OK
 		}
+
 		return code
 	}
 	entryFullPath := dirFullPath.Child(name)
@@ -132,6 +131,7 @@ func (wfs *WFS) Unlink(cancel <-chan struct{}, header *fuse.InHeader, name strin
 		if code == fuse.ENOENT {
 			return fuse.OK
 		}
+
 		return code
 	}
 
@@ -146,12 +146,14 @@ func (wfs *WFS) Unlink(cancel <-chan struct{}, header *fuse.InHeader, name strin
 	err := filer_pb.Remove(context.Background(), wfs, string(dirFullPath), name, true, false, false, false, []int32{wfs.signature})
 	if err != nil {
 		glog.V(0).Infof("remove %s: %v", entryFullPath, err)
+
 		return fuse.OK
 	}
 
 	// then, delete meta cache
 	if err = wfs.metaCache.DeleteEntry(context.Background(), entryFullPath); err != nil {
 		glog.V(3).Infof("local DeleteEntry %s: %v", entryFullPath, err)
+
 		return fuse.EIO
 	}
 	wfs.inodeToPath.TouchDirectory(dirFullPath)
@@ -159,5 +161,4 @@ func (wfs *WFS) Unlink(cancel <-chan struct{}, header *fuse.InHeader, name strin
 	wfs.inodeToPath.RemovePath(entryFullPath)
 
 	return fuse.OK
-
 }

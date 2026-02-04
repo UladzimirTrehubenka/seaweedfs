@@ -21,6 +21,7 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	if e := r.ParseForm(); e != nil {
 		glog.V(0).InfolnCtx(ctx, "form parse error:", e)
 		writeJsonError(w, r, http.StatusBadRequest, e)
+
 		return
 	}
 
@@ -29,11 +30,13 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	if ve != nil {
 		glog.V(0).InfolnCtx(ctx, "NewVolumeId error:", ve)
 		writeJsonError(w, r, http.StatusBadRequest, ve)
+
 		return
 	}
 
 	if !vs.maybeCheckJwtAuthorization(r, vid, fid, true) {
 		writeJsonError(w, r, http.StatusUnauthorized, errors.New("wrong jwt"))
+
 		return
 	}
 
@@ -43,6 +46,7 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	reqNeedle, originalSize, contentMd5, ne := needle.CreateNeedleFromRequest(r, vs.FixJpgOrientation, vs.fileSizeLimitBytes, bytesBuffer)
 	if ne != nil {
 		writeJsonError(w, r, http.StatusBadRequest, ne)
+
 		return
 	}
 
@@ -51,6 +55,7 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	isUnchanged, writeError := topology.ReplicatedWrite(context.WithoutCancel(ctx), vs.GetMaster, vs.grpcDialOption, vs.store, volumeId, reqNeedle, r, contentMd5)
 	if writeError != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, writeError)
+
 		return
 	}
 
@@ -58,6 +63,7 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	if writeError == nil && isUnchanged {
 		SetEtag(w, reqNeedle.Etag())
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 
@@ -81,6 +87,7 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !vs.maybeCheckJwtAuthorization(r, vid, fid, true) {
 		writeJsonError(w, r, http.StatusUnauthorized, errors.New("wrong jwt"))
+
 		return
 	}
 
@@ -93,6 +100,7 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if hasEcVolume {
 		count, err := vs.store.DeleteEcShardNeedle(ecVolume, n, cookie)
 		writeDeleteResult(err, count, w, r)
+
 		return
 	}
 
@@ -101,12 +109,14 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		m := make(map[string]uint32)
 		m["size"] = 0
 		writeJsonQuiet(w, r, http.StatusNotFound, m)
+
 		return
 	}
 
 	if n.Cookie != cookie {
 		glog.V(0).Infoln("delete", r.URL.Path, "with unmaching cookie from ", r.RemoteAddr, "agent", r.UserAgent())
 		writeJsonError(w, r, http.StatusBadRequest, errors.New("File Random Cookie does not match."))
+
 		return
 	}
 
@@ -115,12 +125,14 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if n.IsChunkedManifest() {
 		chunkManifest, e := operation.LoadChunkManifest(n.Data, n.IsCompressed())
 		if e != nil {
-			writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Load chunks manifest error: %v", e))
+			writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Load chunks manifest error: %w", e))
+
 			return
 		}
 		// make sure all chunks had deleted before delete manifest
 		if e := chunkManifest.DeleteChunks(vs.GetMaster, false, vs.grpcDialOption); e != nil {
-			writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Delete chunks error: %v", e))
+			writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Delete chunks error: %w", e))
+
 			return
 		}
 		count = chunkManifest.Size
@@ -137,7 +149,6 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := topology.ReplicatedDelete(vs.GetMaster, vs.grpcDialOption, vs.store, volumeId, n, r)
 
 	writeDeleteResult(err, count, w, r)
-
 }
 
 func writeDeleteResult(err error, count int64, w http.ResponseWriter, r *http.Request) {
@@ -165,5 +176,6 @@ func getEtag(resp *http.Response) (etag string) {
 	if strings.HasPrefix(etag, "\"") && strings.HasSuffix(etag, "\"") {
 		return etag[1 : len(etag)-1]
 	}
+
 	return
 }

@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -23,7 +24,9 @@ func GetSSECIVFromMetadata(metadata map[string][]byte) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode SSE-C IV from metadata: %w", err)
 		}
+
 		return iv, nil
 	}
-	return nil, fmt.Errorf("SSE-C IV not found in metadata")
+
+	return nil, errors.New("SSE-C IV not found in metadata")
 }

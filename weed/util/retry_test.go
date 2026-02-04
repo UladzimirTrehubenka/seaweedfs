@@ -11,6 +11,7 @@ func TestRetryUntil(t *testing.T) {
 		callCount := 0
 		err := RetryUntil("test", func() error {
 			callCount++
+
 			return nil
 		}, func(err error) bool {
 			return false
@@ -32,6 +33,7 @@ func TestRetryUntil(t *testing.T) {
 			if callCount < 3 {
 				return errors.New("retryable error")
 			}
+
 			return nil
 		}, func(err error) bool {
 			return err.Error() == "retryable error"
@@ -50,6 +52,7 @@ func TestRetryUntil(t *testing.T) {
 		callCount := 0
 		err := RetryUntil("test", func() error {
 			callCount++
+
 			return errors.New("fatal error")
 		}, func(err error) bool {
 			return err.Error() == "retryable error"

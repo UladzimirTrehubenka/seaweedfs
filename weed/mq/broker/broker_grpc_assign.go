@@ -19,11 +19,11 @@ func (b *MessageQueueBroker) AssignTopicPartitions(c context.Context, request *m
 	ret := &mq_pb.AssignTopicPartitionsResponse{}
 
 	// drain existing topic partition subscriptions
-	for _, assignment := range request.BrokerPartitionAssignments {
-		t := topic.FromPbTopic(request.Topic)
-		partition := topic.FromPbPartition(assignment.Partition)
+	for _, assignment := range request.GetBrokerPartitionAssignments() {
+		t := topic.FromPbTopic(request.GetTopic())
+		partition := topic.FromPbPartition(assignment.GetPartition())
 		b.accessLock.Lock()
-		if request.IsDraining {
+		if request.GetIsDraining() {
 			// TODO drain existing topic partition subscriptions
 			b.localTopicManager.RemoveLocalPartition(t, partition)
 		} else {
@@ -42,11 +42,12 @@ func (b *MessageQueueBroker) AssignTopicPartitions(c context.Context, request *m
 	}
 
 	// if is leader, notify the followers to drain existing topic partition subscriptions
-	if request.IsLeader {
-		for _, brokerPartition := range request.BrokerPartitionAssignments {
-			if follower := brokerPartition.FollowerBroker; follower != "" {
+	if request.GetIsLeader() {
+		for _, brokerPartition := range request.GetBrokerPartitionAssignments() {
+			if follower := brokerPartition.GetFollowerBroker(); follower != "" {
 				err := pb.WithBrokerGrpcClient(false, follower, b.grpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
 					_, err := client.AssignTopicPartitions(context.Background(), request)
+
 					return err
 				})
 				if err != nil {
@@ -68,12 +69,12 @@ func (b *MessageQueueBroker) assignTopicPartitionsToBrokers(ctx context.Context,
 		wg.Add(1)
 		go func(bpa *mq_pb.BrokerPartitionAssignment) {
 			defer wg.Done()
-			if doCreateErr := b.withBrokerClient(false, pb.ServerAddress(bpa.LeaderBroker), func(client mq_pb.SeaweedMessagingClient) error {
+			if doCreateErr := b.withBrokerClient(false, pb.ServerAddress(bpa.GetLeaderBroker()), func(client mq_pb.SeaweedMessagingClient) error {
 				_, doCreateErr := client.AssignTopicPartitions(ctx, &mq_pb.AssignTopicPartitionsRequest{
 					Topic: t,
 					BrokerPartitionAssignments: []*mq_pb.BrokerPartitionAssignment{
 						{
-							Partition: bpa.Partition,
+							Partition: bpa.GetPartition(),
 						},
 					},
 					IsLeader:   true,
@@ -81,22 +82,23 @@ func (b *MessageQueueBroker) assignTopicPartitionsToBrokers(ctx context.Context,
 				})
 				if doCreateErr != nil {
 					if !isAdd {
-						return fmt.Errorf("drain topic %s %v on %s: %v", t, bpa.LeaderBroker, bpa.Partition, doCreateErr)
+						return fmt.Errorf("drain topic %s %v on %s: %w", t, bpa.GetLeaderBroker(), bpa.GetPartition(), doCreateErr)
 					} else {
-						return fmt.Errorf("create topic %s %v on %s: %v", t, bpa.LeaderBroker, bpa.Partition, doCreateErr)
+						return fmt.Errorf("create topic %s %v on %s: %w", t, bpa.GetLeaderBroker(), bpa.GetPartition(), doCreateErr)
 					}
 				}
-				brokerStats, found := b.PubBalancer.Brokers.Get(bpa.LeaderBroker)
+				brokerStats, found := b.PubBalancer.Brokers.Get(bpa.GetLeaderBroker())
 				if !found {
 					brokerStats = pub_balancer.NewBrokerStats()
-					if !b.PubBalancer.Brokers.SetIfAbsent(bpa.LeaderBroker, brokerStats) {
-						brokerStats, _ = b.PubBalancer.Brokers.Get(bpa.LeaderBroker)
+					if !b.PubBalancer.Brokers.SetIfAbsent(bpa.GetLeaderBroker(), brokerStats) {
+						brokerStats, _ = b.PubBalancer.Brokers.Get(bpa.GetLeaderBroker())
 					}
 				}
-				brokerStats.RegisterAssignment(t, bpa.Partition, isAdd)
+				brokerStats.RegisterAssignment(t, bpa.GetPartition(), isAdd)
+
 				return nil
 			}); doCreateErr != nil {
-				glog.Errorf("create topic %s partition %+v on %s: %v", t, bpa.Partition, bpa.LeaderBroker, doCreateErr)
+				glog.Errorf("create topic %s partition %+v on %s: %v", t, bpa.GetPartition(), bpa.GetLeaderBroker(), doCreateErr)
 			}
 		}(bpa)
 	}

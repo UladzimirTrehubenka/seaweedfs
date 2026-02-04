@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -92,8 +93,8 @@ func TestAzureStorageClientBasic(t *testing.T) {
 		if remoteEntry == nil {
 			t.Fatal("Remote entry is nil")
 		}
-		if remoteEntry.RemoteSize != int64(len(testContent)) {
-			t.Errorf("Expected size %d, got %d", len(testContent), remoteEntry.RemoteSize)
+		if remoteEntry.GetRemoteSize() != int64(len(testContent)) {
+			t.Errorf("Expected size %d, got %d", len(testContent), remoteEntry.GetRemoteSize())
 		}
 	})
 
@@ -146,6 +147,7 @@ func TestAzureStorageClientBasic(t *testing.T) {
 			if !isDir && name == testKey[1:] { // Remove leading slash
 				foundFile = true
 			}
+
 			return nil
 		})
 		if err != nil {
@@ -322,8 +324,7 @@ func BenchmarkToMetadata(b *testing.B) {
 		"other-key":               []byte("ignored"),
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		toMetadata(input)
 	}
 }

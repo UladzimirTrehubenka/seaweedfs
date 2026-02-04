@@ -36,7 +36,6 @@ type FilerPostResult struct {
 }
 
 func (fs *FilerServer) assignNewFileInfo(ctx context.Context, so *operation.StorageOption) (fileId, urlLocation string, auth security.EncodedJwt, err error) {
-
 	stats.FilerHandlerCounter.WithLabelValues(stats.ChunkAssign).Inc()
 	start := time.Now()
 	defer func() {
@@ -52,7 +51,8 @@ func (fs *FilerServer) assignNewFileInfo(ctx context.Context, so *operation.Stor
 	if ae != nil {
 		glog.ErrorfCtx(ctx, "failing to assign a file id: %v", ae)
 		err = ae
-		return
+
+		return fileId, urlLocation, auth, err
 	}
 	fileId = assignResult.Fid
 	assignUrl := assignResult.Url
@@ -61,6 +61,7 @@ func (fs *FilerServer) assignNewFileInfo(ctx context.Context, so *operation.Stor
 		for _, repl := range assignResult.Replicas {
 			if repl.DataCenter == fs.option.DataCenter {
 				assignUrl = repl.Url
+
 				break
 			}
 		}
@@ -70,7 +71,8 @@ func (fs *FilerServer) assignNewFileInfo(ctx context.Context, so *operation.Stor
 		urlLocation += "?fsync=true"
 	}
 	auth = assignResult.Auth
-	return
+
+	return fileId, urlLocation, auth, err
 }
 
 func (fs *FilerServer) PostHandler(w http.ResponseWriter, r *http.Request, contentLength int64) {
@@ -94,18 +96,20 @@ func (fs *FilerServer) PostHandler(w http.ResponseWriter, r *http.Request, conte
 		query.Get("saveInside"),
 	)
 	if err != nil {
-		if err == ErrReadOnly {
+		if errors.Is(err, ErrReadOnly) {
 			w.WriteHeader(http.StatusInsufficientStorage)
 		} else {
 			glog.V(1).InfolnCtx(ctx, "post", r.RequestURI, ":", err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 		}
+
 		return
 	}
 
 	if util.FullPath(r.URL.Path).IsLongerFileName(so.MaxFileNameLength) {
 		glog.V(1).InfolnCtx(ctx, "post", r.RequestURI, ": ", "entry name too long")
 		w.WriteHeader(http.StatusRequestURITooLong)
+
 		return
 	}
 
@@ -127,7 +131,6 @@ func (fs *FilerServer) PostHandler(w http.ResponseWriter, r *http.Request, conte
 	}
 
 	util_http.CloseRequest(r)
-
 }
 
 func (fs *FilerServer) move(ctx context.Context, w http.ResponseWriter, r *http.Request, so *operation.StorageOption) {
@@ -139,41 +142,48 @@ func (fs *FilerServer) move(ctx context.Context, w http.ResponseWriter, r *http.
 	var err error
 	if src, err = clearName(src); err != nil {
 		writeJsonError(w, r, http.StatusBadRequest, err)
+
 		return
 	}
 	if dst, err = clearName(dst); err != nil {
 		writeJsonError(w, r, http.StatusBadRequest, err)
+
 		return
 	}
 	src = strings.TrimRight(src, "/")
 	if src == "" {
-		err = fmt.Errorf("invalid source '/'")
+		err = errors.New("invalid source '/'")
 		writeJsonError(w, r, http.StatusBadRequest, err)
+
 		return
 	}
 
 	srcPath := util.FullPath(src)
 	dstPath := util.FullPath(dst)
 	if dstPath.IsLongerFileName(so.MaxFileNameLength) {
-		err = fmt.Errorf("dst name to long")
+		err = errors.New("dst name to long")
 		writeJsonError(w, r, http.StatusBadRequest, err)
+
 		return
 	}
 	srcEntry, err := fs.filer.FindEntry(ctx, srcPath)
 	if err != nil {
-		err = fmt.Errorf("failed to get src entry '%s', err: %s", src, err)
+		err = fmt.Errorf("failed to get src entry '%s', err: %w", src, err)
 		writeJsonError(w, r, http.StatusBadRequest, err)
+
 		return
 	}
 
 	wormEnforced, err := fs.wormEnforcedForEntry(ctx, src)
 	if err != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, err)
+
 		return
 	} else if wormEnforced {
 		// you cannot move a worm file or directory
 		err = fmt.Errorf("cannot move write-once entry from '%s' to '%s': %s", src, dst, constants.ErrMsgOperationNotPermitted)
 		writeJsonError(w, r, http.StatusForbidden, err)
+
 		return
 	}
 
@@ -182,14 +192,16 @@ func (fs *FilerServer) move(ctx context.Context, w http.ResponseWriter, r *http.
 	newName = util.Nvl(newName, oldName)
 
 	dstEntry, err := fs.filer.FindEntry(ctx, util.FullPath(strings.TrimRight(dst, "/")))
-	if err != nil && err != filer_pb.ErrNotFound {
-		err = fmt.Errorf("failed to get dst entry '%s', err: %s", dst, err)
+	if err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
+		err = fmt.Errorf("failed to get dst entry '%s', err: %w", dst, err)
 		writeJsonError(w, r, http.StatusInternalServerError, err)
+
 		return
 	}
 	if err == nil && !dstEntry.IsDirectory() && srcEntry.IsDirectory() {
 		err = fmt.Errorf("move: cannot overwrite non-directory '%s' with directory '%s'", dst, src)
 		writeJsonError(w, r, http.StatusBadRequest, err)
+
 		return
 	}
 
@@ -200,8 +212,9 @@ func (fs *FilerServer) move(ctx context.Context, w http.ResponseWriter, r *http.
 		NewName:      newName,
 	})
 	if err != nil {
-		err = fmt.Errorf("failed to move entry from '%s' to '%s', err: %s", src, dst, err)
+		err = fmt.Errorf("failed to move entry from '%s' to '%s', err: %w", src, dst, err)
 		writeJsonError(w, r, http.StatusBadRequest, err)
+
 		return
 	}
 
@@ -230,16 +243,19 @@ func (fs *FilerServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	wormEnforced, err := fs.wormEnforcedForEntry(context.TODO(), objectPath)
 	if err != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, err)
+
 		return
 	} else if wormEnforced {
 		writeJsonError(w, r, http.StatusForbidden, errors.New(constants.ErrMsgOperationNotPermitted))
+
 		return
 	}
 
 	err = fs.filer.DeleteEntryMetaAndData(context.Background(), util.FullPath(objectPath), isRecursive, ignoreRecursiveError, !skipChunkDeletion, false, nil, 0)
-	if err != nil && err != filer_pb.ErrNotFound {
+	if err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 		glog.V(1).Infoln("deleting", objectPath, ":", err.Error())
 		writeJsonError(w, r, http.StatusInternalServerError, err)
+
 		return
 	}
 
@@ -247,15 +263,14 @@ func (fs *FilerServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fs *FilerServer) detectStorageOption(ctx context.Context, requestURI, qCollection, qReplication string, ttlSeconds int32, diskType, dataCenter, rack, dataNode string) (*operation.StorageOption, error) {
-
 	rule := fs.filer.FilerConf.MatchStorageRule(requestURI)
 
-	if rule.ReadOnly {
+	if rule.GetReadOnly() {
 		return nil, ErrReadOnly
 	}
 
 	// Use local variable instead of mutating shared rule
-	maxFileNameLength := rule.MaxFileNameLength
+	maxFileNameLength := rule.GetMaxFileNameLength()
 	if maxFileNameLength == 0 {
 		maxFileNameLength = fs.filer.MaxFilenameLength
 	}
@@ -269,27 +284,26 @@ func (fs *FilerServer) detectStorageOption(ctx context.Context, requestURI, qCol
 	if ttlSeconds == 0 {
 		ttl, err := needle.ReadTTL(rule.GetTtl())
 		if err != nil {
-			glog.ErrorfCtx(ctx, "fail to parse %s ttl setting %s: %v", rule.LocationPrefix, rule.Ttl, err)
+			glog.ErrorfCtx(ctx, "fail to parse %s ttl setting %s: %v", rule.GetLocationPrefix(), rule.GetTtl(), err)
 		}
 		ttlSeconds = int32(ttl.Minutes()) * 60
 	}
 
 	return &operation.StorageOption{
-		Replication:       util.Nvl(qReplication, rule.Replication, fs.option.DefaultReplication),
-		Collection:        util.Nvl(qCollection, rule.Collection, bucketDefaultCollection, fs.option.Collection),
-		DataCenter:        util.Nvl(dataCenter, rule.DataCenter, fs.option.DataCenter),
-		Rack:              util.Nvl(rack, rule.Rack, fs.option.Rack),
-		DataNode:          util.Nvl(dataNode, rule.DataNode, fs.option.DataNode),
+		Replication:       util.Nvl(qReplication, rule.GetReplication(), fs.option.DefaultReplication),
+		Collection:        util.Nvl(qCollection, rule.GetCollection(), bucketDefaultCollection, fs.option.Collection),
+		DataCenter:        util.Nvl(dataCenter, rule.GetDataCenter(), fs.option.DataCenter),
+		Rack:              util.Nvl(rack, rule.GetRack(), fs.option.Rack),
+		DataNode:          util.Nvl(dataNode, rule.GetDataNode(), fs.option.DataNode),
 		TtlSeconds:        ttlSeconds,
-		DiskType:          util.Nvl(diskType, rule.DiskType),
-		Fsync:             rule.Fsync,
-		VolumeGrowthCount: rule.VolumeGrowthCount,
+		DiskType:          util.Nvl(diskType, rule.GetDiskType()),
+		Fsync:             rule.GetFsync(),
+		VolumeGrowthCount: rule.GetVolumeGrowthCount(),
 		MaxFileNameLength: maxFileNameLength,
 	}, nil
 }
 
 func (fs *FilerServer) detectStorageOption0(ctx context.Context, requestURI, qCollection, qReplication string, qTtl string, diskType string, fsync string, dataCenter, rack, dataNode, saveInside string) (*operation.StorageOption, error) {
-
 	ttl, err := needle.ReadTTL(qTtl)
 	if err != nil {
 		glog.ErrorfCtx(ctx, "fail to parse ttl %s: %v", qTtl, err)
@@ -297,9 +311,10 @@ func (fs *FilerServer) detectStorageOption0(ctx context.Context, requestURI, qCo
 
 	so, err := fs.detectStorageOption(ctx, requestURI, qCollection, qReplication, int32(ttl.Minutes())*60, diskType, dataCenter, rack, dataNode)
 	if so != nil {
-		if fsync == "false" {
+		switch fsync {
+		case "false":
 			so.Fsync = false
-		} else if fsync == "true" {
+		case "true":
 			so.Fsync = true
 		}
 		if saveInside == "true" {

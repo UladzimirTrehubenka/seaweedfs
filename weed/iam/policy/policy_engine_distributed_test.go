@@ -19,7 +19,7 @@ func TestDistributedPolicyEngine(t *testing.T) {
 	commonConfig := &PolicyEngineConfig{
 		DefaultEffect: "Deny",
 		StoreType:     "memory", // For testing - would be "filer" in production
-		StoreConfig:   map[string]interface{}{},
+		StoreConfig:   map[string]any{},
 	}
 
 	// Create multiple PolicyEngine instances simulating distributed deployment
@@ -86,7 +86,7 @@ func TestDistributedPolicyEngine(t *testing.T) {
 			Principal: "arn:aws:sts::assumed-role/TestRole/session",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::test-bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"sourceIp": "192.168.1.100",
 			},
 		}
@@ -296,7 +296,7 @@ func TestPolicyStoreDistributed(t *testing.T) {
 func TestFilerPolicyStoreConfiguration(t *testing.T) {
 	t.Run("filer_store_creation", func(t *testing.T) {
 		// Test with minimal configuration
-		config := map[string]interface{}{
+		config := map[string]any{
 			"filerAddress": "localhost:8888",
 		}
 
@@ -306,7 +306,7 @@ func TestFilerPolicyStoreConfiguration(t *testing.T) {
 	})
 
 	t.Run("filer_store_custom_path", func(t *testing.T) {
-		config := map[string]interface{}{
+		config := map[string]any{
 			"filerAddress": "prod-filer:8888",
 			"basePath":     "/custom/iam/policies",
 		}
@@ -317,7 +317,7 @@ func TestFilerPolicyStoreConfiguration(t *testing.T) {
 	})
 
 	t.Run("filer_store_missing_address", func(t *testing.T) {
-		config := map[string]interface{}{
+		config := map[string]any{
 			"basePath": "/seaweedfs/iam/policies",
 		}
 
@@ -342,7 +342,7 @@ func TestPolicyEvaluationPerformance(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add multiple policies
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		policy := &PolicyDocument{
 			Version: "2012-10-17",
 			Statement: []Statement{
@@ -367,13 +367,13 @@ func TestPolicyEvaluationPerformance(t *testing.T) {
 	}
 
 	policyNames := make([]string, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		policyNames[i] = fmt.Sprintf("Policy%d", i)
 	}
 
 	// Measure evaluation time
 	start := time.Now()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		_, err := engine.Evaluate(ctx, "", evalCtx, policyNames)
 		require.NoError(t, err)
 	}

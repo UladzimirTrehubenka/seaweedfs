@@ -19,7 +19,7 @@ func TestNegationSetOperators(t *testing.T) {
 					Sid:    "DenyAdmin",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRole"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:StringNotEquals": {
 							"oidc:roles": []string{"Admin"},
 						},
@@ -33,7 +33,7 @@ func TestNegationSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"User", "Developer"},
 			},
 		}
@@ -46,7 +46,7 @@ func TestNegationSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"Admin", "User"},
 			},
 		}
@@ -63,7 +63,7 @@ func TestNegationSetOperators(t *testing.T) {
 					Sid:    "Requirement",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRole"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAnyValue:StringNotEquals": {
 							"oidc:roles": []string{"Prohibited"},
 						},
@@ -77,7 +77,7 @@ func TestNegationSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"Prohibited", "Allowed"},
 			},
 		}
@@ -90,7 +90,7 @@ func TestNegationSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"Prohibited", "Prohibited"},
 			},
 		}

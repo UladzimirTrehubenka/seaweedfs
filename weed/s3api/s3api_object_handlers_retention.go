@@ -33,6 +33,7 @@ func (s3a *S3ApiServer) PutObjectRetentionHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		glog.Errorf("PutObjectRetentionHandler: failed to parse retention config: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
@@ -40,6 +41,7 @@ func (s3a *S3ApiServer) PutObjectRetentionHandler(w http.ResponseWriter, r *http
 	if err := ValidateRetention(retention); err != nil {
 		glog.Errorf("PutObjectRetentionHandler: invalid retention config: %v", err)
 		s3err.WriteErrorResponse(w, r, mapValidationErrorToS3Error(err))
+
 		return
 	}
 
@@ -50,16 +52,19 @@ func (s3a *S3ApiServer) PutObjectRetentionHandler(w http.ResponseWriter, r *http
 		// Handle specific error cases
 		if errors.Is(err, ErrObjectNotFound) || errors.Is(err, ErrVersionNotFound) || errors.Is(err, ErrLatestVersionNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		if errors.Is(err, ErrComplianceModeActive) || errors.Is(err, ErrGovernanceModeActive) {
 			// Return 403 Forbidden for retention mode changes without proper permissions
 			s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 			return
 		}
 
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -98,15 +103,18 @@ func (s3a *S3ApiServer) GetObjectRetentionHandler(w http.ResponseWriter, r *http
 		// Handle specific error cases
 		if errors.Is(err, ErrObjectNotFound) || errors.Is(err, ErrVersionNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		if errors.Is(err, ErrNoRetentionConfiguration) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrObjectLockConfigurationNotFoundError)
+
 			return
 		}
 
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -115,6 +123,7 @@ func (s3a *S3ApiServer) GetObjectRetentionHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		glog.Errorf("GetObjectRetentionHandler: failed to marshal retention: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -125,11 +134,13 @@ func (s3a *S3ApiServer) GetObjectRetentionHandler(w http.ResponseWriter, r *http
 	// Write XML response
 	if _, err := w.Write([]byte(xml.Header)); err != nil {
 		glog.Errorf("GetObjectRetentionHandler: failed to write XML header: %v", err)
+
 		return
 	}
 
 	if _, err := w.Write(retentionXML); err != nil {
 		glog.Errorf("GetObjectRetentionHandler: failed to write retention XML: %v", err)
+
 		return
 	}
 

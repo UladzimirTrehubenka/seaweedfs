@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
@@ -14,7 +15,7 @@ func (store *MemoryStore) LoadConfiguration(ctx context.Context) (*iam_pb.S3ApiC
 	defer store.mu.RUnlock()
 
 	if !store.initialized {
-		return nil, fmt.Errorf("store not initialized")
+		return nil, errors.New("store not initialized")
 	}
 
 	config := &iam_pb.S3ApiConfiguration{}
@@ -34,7 +35,7 @@ func (store *MemoryStore) SaveConfiguration(ctx context.Context, config *iam_pb.
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	// Clear existing data
@@ -42,14 +43,14 @@ func (store *MemoryStore) SaveConfiguration(ctx context.Context, config *iam_pb.
 	store.accessKeys = make(map[string]string)
 
 	// Add all identities
-	for _, identity := range config.Identities {
+	for _, identity := range config.GetIdentities() {
 		// Deep copy to avoid mutation issues
 		identityCopy := store.deepCopyIdentity(identity)
-		store.users[identity.Name] = identityCopy
+		store.users[identity.GetName()] = identityCopy
 
 		// Index access keys
-		for _, credential := range identity.Credentials {
-			store.accessKeys[credential.AccessKey] = identity.Name
+		for _, credential := range identity.GetCredentials() {
+			store.accessKeys[credential.GetAccessKey()] = identity.GetName()
 		}
 	}
 
@@ -61,27 +62,27 @@ func (store *MemoryStore) CreateUser(ctx context.Context, identity *iam_pb.Ident
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
-	if _, exists := store.users[identity.Name]; exists {
+	if _, exists := store.users[identity.GetName()]; exists {
 		return credential.ErrUserAlreadyExists
 	}
 
 	// Check for duplicate access keys
-	for _, cred := range identity.Credentials {
-		if _, exists := store.accessKeys[cred.AccessKey]; exists {
-			return fmt.Errorf("access key %s already exists", cred.AccessKey)
+	for _, cred := range identity.GetCredentials() {
+		if _, exists := store.accessKeys[cred.GetAccessKey()]; exists {
+			return fmt.Errorf("access key %s already exists", cred.GetAccessKey())
 		}
 	}
 
 	// Deep copy to avoid mutation issues
 	identityCopy := store.deepCopyIdentity(identity)
-	store.users[identity.Name] = identityCopy
+	store.users[identity.GetName()] = identityCopy
 
 	// Index access keys
-	for _, cred := range identity.Credentials {
-		store.accessKeys[cred.AccessKey] = identity.Name
+	for _, cred := range identity.GetCredentials() {
+		store.accessKeys[cred.GetAccessKey()] = identity.GetName()
 	}
 
 	return nil
@@ -92,7 +93,7 @@ func (store *MemoryStore) GetUser(ctx context.Context, username string) (*iam_pb
 	defer store.mu.RUnlock()
 
 	if !store.initialized {
-		return nil, fmt.Errorf("store not initialized")
+		return nil, errors.New("store not initialized")
 	}
 
 	user, exists := store.users[username]
@@ -109,7 +110,7 @@ func (store *MemoryStore) UpdateUser(ctx context.Context, username string, ident
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	existingUser, exists := store.users[username]
@@ -118,14 +119,14 @@ func (store *MemoryStore) UpdateUser(ctx context.Context, username string, ident
 	}
 
 	// Remove old access keys from index
-	for _, cred := range existingUser.Credentials {
-		delete(store.accessKeys, cred.AccessKey)
+	for _, cred := range existingUser.GetCredentials() {
+		delete(store.accessKeys, cred.GetAccessKey())
 	}
 
 	// Check for duplicate access keys (excluding current user)
-	for _, cred := range identity.Credentials {
-		if existingUsername, exists := store.accessKeys[cred.AccessKey]; exists && existingUsername != username {
-			return fmt.Errorf("access key %s already exists", cred.AccessKey)
+	for _, cred := range identity.GetCredentials() {
+		if existingUsername, exists := store.accessKeys[cred.GetAccessKey()]; exists && existingUsername != username {
+			return fmt.Errorf("access key %s already exists", cred.GetAccessKey())
 		}
 	}
 
@@ -134,8 +135,8 @@ func (store *MemoryStore) UpdateUser(ctx context.Context, username string, ident
 	store.users[username] = identityCopy
 
 	// Re-index access keys
-	for _, cred := range identity.Credentials {
-		store.accessKeys[cred.AccessKey] = username
+	for _, cred := range identity.GetCredentials() {
+		store.accessKeys[cred.GetAccessKey()] = username
 	}
 
 	return nil
@@ -146,7 +147,7 @@ func (store *MemoryStore) DeleteUser(ctx context.Context, username string) error
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	user, exists := store.users[username]
@@ -155,8 +156,8 @@ func (store *MemoryStore) DeleteUser(ctx context.Context, username string) error
 	}
 
 	// Remove access keys from index
-	for _, cred := range user.Credentials {
-		delete(store.accessKeys, cred.AccessKey)
+	for _, cred := range user.GetCredentials() {
+		delete(store.accessKeys, cred.GetAccessKey())
 	}
 
 	// Remove user
@@ -170,7 +171,7 @@ func (store *MemoryStore) ListUsers(ctx context.Context) ([]string, error) {
 	defer store.mu.RUnlock()
 
 	if !store.initialized {
-		return nil, fmt.Errorf("store not initialized")
+		return nil, errors.New("store not initialized")
 	}
 
 	var usernames []string
@@ -186,7 +187,7 @@ func (store *MemoryStore) GetUserByAccessKey(ctx context.Context, accessKey stri
 	defer store.mu.RUnlock()
 
 	if !store.initialized {
-		return nil, fmt.Errorf("store not initialized")
+		return nil, errors.New("store not initialized")
 	}
 
 	username, exists := store.accessKeys[accessKey]
@@ -209,7 +210,7 @@ func (store *MemoryStore) CreateAccessKey(ctx context.Context, username string, 
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	user, exists := store.users[username]
@@ -218,18 +219,18 @@ func (store *MemoryStore) CreateAccessKey(ctx context.Context, username string, 
 	}
 
 	// Check if access key already exists
-	if _, exists := store.accessKeys[cred.AccessKey]; exists {
-		return fmt.Errorf("access key %s already exists", cred.AccessKey)
+	if _, exists := store.accessKeys[cred.GetAccessKey()]; exists {
+		return fmt.Errorf("access key %s already exists", cred.GetAccessKey())
 	}
 
 	// Add credential to user
 	user.Credentials = append(user.Credentials, &iam_pb.Credential{
-		AccessKey: cred.AccessKey,
-		SecretKey: cred.SecretKey,
+		AccessKey: cred.GetAccessKey(),
+		SecretKey: cred.GetSecretKey(),
 	})
 
 	// Index the access key
-	store.accessKeys[cred.AccessKey] = username
+	store.accessKeys[cred.GetAccessKey()] = username
 
 	return nil
 }
@@ -239,7 +240,7 @@ func (store *MemoryStore) DeleteAccessKey(ctx context.Context, username string, 
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	user, exists := store.users[username]
@@ -250,8 +251,8 @@ func (store *MemoryStore) DeleteAccessKey(ctx context.Context, username string, 
 	// Find and remove the credential
 	var newCredentials []*iam_pb.Credential
 	found := false
-	for _, cred := range user.Credentials {
-		if cred.AccessKey == accessKey {
+	for _, cred := range user.GetCredentials() {
+		if cred.GetAccessKey() == accessKey {
 			found = true
 			// Remove from access key index
 			delete(store.accessKeys, accessKey)
@@ -265,6 +266,7 @@ func (store *MemoryStore) DeleteAccessKey(ctx context.Context, username string, 
 	}
 
 	user.Credentials = newCredentials
+
 	return nil
 }
 
@@ -280,10 +282,10 @@ func (store *MemoryStore) deepCopyIdentity(identity *iam_pb.Identity) *iam_pb.Id
 	if err != nil {
 		// Fallback to shallow copy if JSON fails
 		return &iam_pb.Identity{
-			Name:        identity.Name,
-			Account:     identity.Account,
-			Credentials: identity.Credentials,
-			Actions:     identity.Actions,
+			Name:        identity.GetName(),
+			Account:     identity.GetAccount(),
+			Credentials: identity.GetCredentials(),
+			Actions:     identity.GetActions(),
 		}
 	}
 
@@ -291,10 +293,10 @@ func (store *MemoryStore) deepCopyIdentity(identity *iam_pb.Identity) *iam_pb.Id
 	if err := json.Unmarshal(data, &copy); err != nil {
 		// Fallback to shallow copy if JSON fails
 		return &iam_pb.Identity{
-			Name:        identity.Name,
-			Account:     identity.Account,
-			Credentials: identity.Credentials,
-			Actions:     identity.Actions,
+			Name:        identity.GetName(),
+			Account:     identity.GetAccount(),
+			Credentials: identity.GetCredentials(),
+			Actions:     identity.GetActions(),
 		}
 	}
 

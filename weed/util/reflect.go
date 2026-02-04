@@ -3,12 +3,12 @@ package util
 import "reflect"
 
 // IsNotEmpty returns true if the given value is not zero or empty.
-func IsNotEmpty(given interface{}) bool {
+func IsNotEmpty(given any) bool {
 	return !IsEmpty(given)
 }
 
 // IsEmpty returns true if the given value has the zero value for its type.
-func IsEmpty(given interface{}) bool {
+func IsEmpty(given any) bool {
 	g := reflect.ValueOf(given)
 	if !g.IsValid() {
 		return true

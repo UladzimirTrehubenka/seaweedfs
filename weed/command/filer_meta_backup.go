@@ -7,10 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
-	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -64,7 +65,6 @@ When both match, the deeper prefix wins.
 }
 
 func runFilerMetaBackup(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	metaBackup.grpcDialOption = security.LoadClientTLS(util.GetViper(), "grpc.client")
 
@@ -80,6 +80,7 @@ func runFilerMetaBackup(cmd *Command, args []string) bool {
 
 	if err := metaBackup.initStore(v); err != nil {
 		glog.V(0).Infof("init backup filer store: %v", err)
+
 		return true
 	}
 
@@ -87,7 +88,7 @@ func runFilerMetaBackup(cmd *Command, args []string) bool {
 	metaBackup.pathFilter = util.NewPathPrefixFilter(
 		*metaBackup.includePrefixes,
 		*metaBackup.excludePrefixes,
-		func(format string, args ...interface{}) {
+		func(format string, args ...any) {
 			glog.Warningf(format, args...)
 		},
 	)
@@ -111,6 +112,7 @@ func runFilerMetaBackup(cmd *Command, args []string) bool {
 		startTime := time.Now()
 		if err := metaBackup.traverseMetadata(); err != nil {
 			glog.Errorf("traverse meta data: %v", err)
+
 			return true
 		}
 		glog.V(0).Infof("metadata copied up to %v", startTime)
@@ -140,6 +142,7 @@ func (metaBackup *FilerMetaBackupOptions) initStore(v *viper.Viper) error {
 			glog.V(0).Infof("configured filer store to %s", store.GetName())
 			hasDefaultStoreConfigured = true
 			metaBackup.store = filer.NewFilerStoreWrapper(store)
+
 			break
 		}
 	}
@@ -158,7 +161,7 @@ func (metaBackup *FilerMetaBackupOptions) shouldInclude(fullpath string) bool {
 
 func (metaBackup *FilerMetaBackupOptions) traverseMetadata() (err error) {
 	return filer_pb.TraverseBfs(context.Background(), metaBackup, util.FullPath(*metaBackup.filerDirectory), func(parentPath util.FullPath, entry *filer_pb.Entry) error {
-		fullpath := string(parentPath.Child(entry.Name))
+		fullpath := string(parentPath.Child(entry.GetName()))
 		if !metaBackup.shouldInclude(fullpath) {
 			return nil
 		}
@@ -167,6 +170,7 @@ func (metaBackup *FilerMetaBackupOptions) traverseMetadata() (err error) {
 		if err := metaBackup.store.InsertEntry(context.Background(), filer.FromPbEntry(string(parentPath), entry)); err != nil {
 			return fmt.Errorf("insert entry error: %w", err)
 		}
+
 		return nil
 	})
 }
@@ -176,7 +180,6 @@ var (
 )
 
 func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
-
 	startTime, err := metaBackup.getOffset()
 	if err != nil {
 		startTime = time.Now()
@@ -186,9 +189,8 @@ func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
 	store := metaBackup.store
 
 	eachEntryFunc := func(resp *filer_pb.SubscribeMetadataResponse) error {
-
 		ctx := context.Background()
-		message := resp.EventNotification
+		message := resp.GetEventNotification()
 
 		if filer_pb.IsEmpty(resp) {
 			return nil
@@ -197,12 +199,12 @@ func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
 		// Compute exclusion for both old and new paths
 		var oldPathExcluded, newPathExcluded bool
 		var oldPath, newPath string
-		if message.OldEntry != nil {
-			oldPath = string(util.FullPath(resp.Directory).Child(message.OldEntry.Name))
+		if message.GetOldEntry() != nil {
+			oldPath = string(util.FullPath(resp.GetDirectory()).Child(message.GetOldEntry().GetName()))
 			oldPathExcluded = !metaBackup.shouldInclude(oldPath)
 		}
-		if message.NewEntry != nil {
-			newPath = string(util.FullPath(message.NewParentPath).Child(message.NewEntry.Name))
+		if message.GetNewEntry() != nil {
+			newPath = string(util.FullPath(message.GetNewParentPath()).Child(message.GetNewEntry().GetName()))
 			newPathExcluded = !metaBackup.shouldInclude(newPath)
 		}
 
@@ -211,33 +213,38 @@ func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
 				return nil
 			}
 			println("+", newPath)
-			entry := filer.FromPbEntry(message.NewParentPath, message.NewEntry)
+			entry := filer.FromPbEntry(message.GetNewParentPath(), message.GetNewEntry())
+
 			return store.InsertEntry(ctx, entry)
 		} else if filer_pb.IsDelete(resp) {
 			if oldPathExcluded {
 				return nil
 			}
 			println("-", oldPath)
-			return store.DeleteEntry(ctx, util.FullPath(resp.Directory).Child(message.OldEntry.Name))
+
+			return store.DeleteEntry(ctx, util.FullPath(resp.GetDirectory()).Child(message.GetOldEntry().GetName()))
 		} else if filer_pb.IsUpdate(resp) {
 			if newPathExcluded {
 				return nil
 			}
 			println("~", newPath)
-			entry := filer.FromPbEntry(message.NewParentPath, message.NewEntry)
+			entry := filer.FromPbEntry(message.GetNewParentPath(), message.GetNewEntry())
+
 			return store.UpdateEntry(ctx, entry)
 		} else {
 			// renaming - handle all four combinations
 			if !oldPathExcluded {
 				println("-", oldPath)
-				if err := store.DeleteEntry(ctx, util.FullPath(resp.Directory).Child(message.OldEntry.Name)); err != nil {
+				if err := store.DeleteEntry(ctx, util.FullPath(resp.GetDirectory()).Child(message.GetOldEntry().GetName())); err != nil {
 					return err
 				}
 			}
 			if !newPathExcluded {
 				println("+", newPath)
-				return store.InsertEntry(ctx, filer.FromPbEntry(message.NewParentPath, message.NewEntry))
+
+				return store.InsertEntry(ctx, filer.FromPbEntry(message.GetNewParentPath(), message.GetNewEntry()))
 			}
+
 			return nil
 		}
 	}
@@ -245,6 +252,7 @@ func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
 	processEventFnWithOffset := pb.AddOffsetFunc(eachEntryFunc, 3*time.Second, func(counter int64, lastTsNs int64) error {
 		lastTime := time.Unix(0, lastTsNs)
 		glog.V(0).Infof("meta backup %s progressed to %v %0.2f/sec", *metaBackup.filerAddress, lastTime, float64(counter)/float64(3))
+
 		return metaBackup.setOffset(lastTime)
 	})
 
@@ -268,7 +276,6 @@ func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
 	}
 
 	return pb.FollowMetadata(pb.ServerAddress(*metaBackup.filerAddress), metaBackup.grpcDialOption, metadataFollowOption, processEventFnWithOffset)
-
 }
 
 func (metaBackup *FilerMetaBackupOptions) getOffset() (lastWriteTime time.Time, err error) {
@@ -288,21 +295,20 @@ func (metaBackup *FilerMetaBackupOptions) setOffset(lastWriteTime time.Time) err
 	if err := metaBackup.store.KvPut(context.Background(), MetaBackupKey, valueBuf); err != nil {
 		return err
 	}
+
 	return nil
 }
 
 var _ = filer_pb.FilerClient(&FilerMetaBackupOptions{})
 
 func (metaBackup *FilerMetaBackupOptions) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
-
 	return pb.WithFilerClient(streamingMode, metaBackup.clientId, pb.ServerAddress(*metaBackup.filerAddress), metaBackup.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		return fn(client)
 	})
-
 }
 
 func (metaBackup *FilerMetaBackupOptions) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 func (metaBackup *FilerMetaBackupOptions) GetDataCenter() string {

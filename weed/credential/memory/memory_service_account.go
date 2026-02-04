@@ -2,7 +2,7 @@ package memory
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
@@ -12,13 +12,14 @@ func (store *MemoryStore) CreateServiceAccount(ctx context.Context, sa *iam_pb.S
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	if _, exists := store.serviceAccounts[sa.Id]; exists {
-		return fmt.Errorf("service account already exists")
+	if _, exists := store.serviceAccounts[sa.GetId()]; exists {
+		return errors.New("service account already exists")
 	}
-	store.serviceAccounts[sa.Id] = sa
-	if sa.Credential != nil && sa.Credential.AccessKey != "" {
-		store.serviceAccountAccessKeys[sa.Credential.AccessKey] = sa.Id
+	store.serviceAccounts[sa.GetId()] = sa
+	if sa.GetCredential() != nil && sa.GetCredential().GetAccessKey() != "" {
+		store.serviceAccountAccessKeys[sa.GetCredential().GetAccessKey()] = sa.GetId()
 	}
+
 	return nil
 }
 
@@ -30,8 +31,8 @@ func (store *MemoryStore) UpdateServiceAccount(ctx context.Context, id string, s
 	if !exists {
 		return credential.ErrServiceAccountNotFound
 	}
-	if sa.Id != id {
-		return fmt.Errorf("service account ID mismatch")
+	if sa.GetId() != id {
+		return errors.New("service account ID mismatch")
 	}
 
 	// Update access key index: remove any existing keys for this SA
@@ -43,9 +44,10 @@ func (store *MemoryStore) UpdateServiceAccount(ctx context.Context, id string, s
 
 	store.serviceAccounts[id] = sa
 
-	if sa.Credential != nil && sa.Credential.AccessKey != "" {
-		store.serviceAccountAccessKeys[sa.Credential.AccessKey] = sa.Id
+	if sa.GetCredential() != nil && sa.GetCredential().GetAccessKey() != "" {
+		store.serviceAccountAccessKeys[sa.GetCredential().GetAccessKey()] = sa.GetId()
 	}
+
 	return nil
 }
 
@@ -54,12 +56,14 @@ func (store *MemoryStore) DeleteServiceAccount(ctx context.Context, id string) e
 	defer store.mu.Unlock()
 
 	if sa, ok := store.serviceAccounts[id]; ok {
-		if sa.Credential != nil && sa.Credential.AccessKey != "" {
-			delete(store.serviceAccountAccessKeys, sa.Credential.AccessKey)
+		if sa.GetCredential() != nil && sa.GetCredential().GetAccessKey() != "" {
+			delete(store.serviceAccountAccessKeys, sa.GetCredential().GetAccessKey())
 		}
 		delete(store.serviceAccounts, id)
+
 		return nil
 	}
+
 	return credential.ErrServiceAccountNotFound
 }
 
@@ -70,6 +74,7 @@ func (store *MemoryStore) GetServiceAccount(ctx context.Context, id string) (*ia
 	if sa, exists := store.serviceAccounts[id]; exists {
 		return sa, nil
 	}
+
 	return nil, credential.ErrServiceAccountNotFound
 }
 
@@ -81,5 +86,6 @@ func (store *MemoryStore) ListServiceAccounts(ctx context.Context) ([]*iam_pb.Se
 	for _, sa := range store.serviceAccounts {
 		accounts = append(accounts, sa)
 	}
+
 	return accounts, nil
 }

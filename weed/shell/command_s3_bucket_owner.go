@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -50,7 +51,6 @@ func (c *commandS3BucketOwner) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3BucketOwner) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	bucketName := bucketCommand.String("name", "", "bucket name")
 	bucketOwner := bucketCommand.String("owner", "", "new bucket owner identity name")
@@ -60,7 +60,7 @@ func (c *commandS3BucketOwner) Do(args []string, commandEnv *CommandEnv, writer 
 	}
 
 	if *bucketName == "" {
-		return fmt.Errorf("empty bucket name")
+		return errors.New("empty bucket name")
 	}
 
 	// Trim whitespace from owner
@@ -68,16 +68,15 @@ func (c *commandS3BucketOwner) Do(args []string, commandEnv *CommandEnv, writer 
 
 	// Validate flags: can't use both -owner and -delete
 	if owner != "" && *deleteOwner {
-		return fmt.Errorf("cannot use both -owner and -delete flags together")
+		return errors.New("cannot use both -owner and -delete flags together")
 	}
 
 	err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
 			return fmt.Errorf("get filer configuration: %w", err)
 		}
-		filerBucketsPath := resp.DirBuckets
+		filerBucketsPath := resp.GetDirBuckets()
 
 		// Look up the bucket entry
 		lookupResp, err := client.LookupDirectoryEntry(context.Background(), &filer_pb.LookupDirectoryEntryRequest{
@@ -88,7 +87,7 @@ func (c *commandS3BucketOwner) Do(args []string, commandEnv *CommandEnv, writer 
 			return fmt.Errorf("lookup bucket %s: %w", *bucketName, err)
 		}
 
-		entry := lookupResp.Entry
+		entry := lookupResp.GetEntry()
 
 		// If -owner is provided, set the owner
 		if owner != "" {
@@ -107,13 +106,14 @@ func (c *commandS3BucketOwner) Do(args []string, commandEnv *CommandEnv, writer 
 			}
 
 			fmt.Fprintf(writer, "Bucket owner updated successfully.\n")
+
 			return nil
 		}
 
 		// If -delete is provided, remove the owner
 		if *deleteOwner {
 			if entry.Extended != nil {
-				delete(entry.Extended, s3_constants.AmzIdentityId)
+				delete(entry.GetExtended(), s3_constants.AmzIdentityId)
 			}
 			fmt.Fprintf(writer, "Removing owner from bucket %s\n", *bucketName)
 
@@ -126,6 +126,7 @@ func (c *commandS3BucketOwner) Do(args []string, commandEnv *CommandEnv, writer 
 			}
 
 			fmt.Fprintf(writer, "Bucket owner removed. Bucket is now admin-only.\n")
+
 			return nil
 		}
 
@@ -134,7 +135,7 @@ func (c *commandS3BucketOwner) Do(args []string, commandEnv *CommandEnv, writer 
 		fmt.Fprintf(writer, "Path: %s\n", util.NewFullPath(filerBucketsPath, *bucketName))
 
 		if entry.Extended != nil {
-			if ownerBytes, ok := entry.Extended[s3_constants.AmzIdentityId]; ok && len(ownerBytes) > 0 {
+			if ownerBytes, ok := entry.GetExtended()[s3_constants.AmzIdentityId]; ok && len(ownerBytes) > 0 {
 				fmt.Fprintf(writer, "Owner: %s\n", string(ownerBytes))
 			} else {
 				fmt.Fprintf(writer, "Owner: (none - admin access only)\n")

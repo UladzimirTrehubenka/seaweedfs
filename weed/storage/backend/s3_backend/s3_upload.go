@@ -13,17 +13,16 @@ import (
 )
 
 func uploadToS3(sess s3iface.S3API, filename string, destBucket string, destKey string, storageClass string, fn func(progressed int64, percentage float32) error) (fileSize int64, err error) {
-
-	//open the file
+	// open the file
 	f, err := os.Open(filename)
 	if err != nil {
-		return 0, fmt.Errorf("failed to open file %q, %v", filename, err)
+		return 0, fmt.Errorf("failed to open file %q, %w", filename, err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return 0, fmt.Errorf("failed to stat file %q, %v", filename, err)
+		return 0, fmt.Errorf("failed to stat file %q, %w", filename, err)
 	}
 
 	fileSize = info.Size()
@@ -55,13 +54,13 @@ func uploadToS3(sess s3iface.S3API, filename string, destBucket string, destKey 
 		StorageClass: aws.String(storageClass),
 	})
 
-	//in case it fails to upload
+	// in case it fails to upload
 	if err != nil {
-		return 0, fmt.Errorf("failed to upload file %s: %v", filename, err)
+		return 0, fmt.Errorf("failed to upload file %s: %w", filename, err)
 	}
 	glog.V(1).Infof("file %s uploaded to %s\n", filename, result.Location)
 
-	return
+	return fileSize, err
 }
 
 // adapted from https://github.com/aws/aws-sdk-go/pull/1868

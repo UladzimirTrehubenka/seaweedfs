@@ -1,14 +1,16 @@
 package webhook
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -122,7 +124,7 @@ func newConfigWithDefaults(configuration util.Configuration, prefix string) *con
 
 func (c *config) validate() error {
 	if c.endpoint == "" {
-		return fmt.Errorf("webhook endpoint is required")
+		return errors.New("webhook endpoint is required")
 	}
 
 	_, err := url.Parse(c.endpoint)
@@ -158,9 +160,9 @@ func (c *config) validate() error {
 }
 
 func detectEventType(notification *filer_pb.EventNotification) eventType {
-	hasOldEntry := notification.OldEntry != nil
-	hasNewEntry := notification.NewEntry != nil
-	hasNewParentPath := notification.NewParentPath != ""
+	hasOldEntry := notification.GetOldEntry() != nil
+	hasNewEntry := notification.GetNewEntry() != nil
+	hasNewParentPath := notification.GetNewParentPath() != ""
 
 	if !hasOldEntry && hasNewEntry {
 		return eventTypeCreate

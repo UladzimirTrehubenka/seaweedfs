@@ -44,7 +44,6 @@ var (
 )
 
 func runFilerMetaTail(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	clientId := util.RandomInt32()
@@ -58,6 +57,7 @@ func runFilerMetaTail(cmd *Command, args []string) bool {
 				if err != nil {
 					fmt.Printf("error: %v", err)
 				}
+
 				return matched
 			}
 		} else {
@@ -67,6 +67,7 @@ func runFilerMetaTail(cmd *Command, args []string) bool {
 				if err != nil {
 					fmt.Printf("error: %v", err)
 				}
+
 				return matched
 			}
 		}
@@ -79,18 +80,20 @@ func runFilerMetaTail(cmd *Command, args []string) bool {
 		if filterFunc == nil {
 			return true
 		}
-		if resp.EventNotification.OldEntry != nil && filterFunc(resp.Directory, resp.EventNotification.OldEntry.Name) {
+		if resp.GetEventNotification().GetOldEntry() != nil && filterFunc(resp.GetDirectory(), resp.GetEventNotification().GetOldEntry().GetName()) {
 			return true
 		}
-		if resp.EventNotification.NewEntry != nil && filterFunc(resp.EventNotification.NewParentPath, resp.EventNotification.NewEntry.Name) {
+		if resp.GetEventNotification().GetNewEntry() != nil && filterFunc(resp.GetEventNotification().GetNewParentPath(), resp.GetEventNotification().GetNewEntry().GetName()) {
 			return true
 		}
+
 		return false
 	}
 
 	eachEntryFunc := func(resp *filer_pb.SubscribeMetadataResponse) error {
 		filer.ProtoToText(os.Stdout, resp)
 		fmt.Fprintln(os.Stdout)
+
 		return nil
 	}
 	if *esServers != "" {
@@ -98,6 +101,7 @@ func runFilerMetaTail(cmd *Command, args []string) bool {
 		eachEntryFunc, err = sendToElasticSearchFunc(*esServers, *esIndex)
 		if err != nil {
 			fmt.Printf("create elastic search client to %s: %+v\n", *esServers, err)
+
 			return false
 		}
 	}
@@ -127,6 +131,7 @@ func runFilerMetaTail(cmd *Command, args []string) bool {
 		if err := eachEntryFunc(resp); err != nil {
 			return err
 		}
+
 		return nil
 	})
 

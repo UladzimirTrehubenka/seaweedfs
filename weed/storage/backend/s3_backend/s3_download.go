@@ -15,16 +15,15 @@ import (
 
 func downloadFromS3(sess s3iface.S3API, destFileName string, sourceBucket string, sourceKey string,
 	fn func(progressed int64, percentage float32) error) (fileSize int64, err error) {
-
 	fileSize, err = getFileSize(sess, sourceBucket, sourceKey)
 	if err != nil {
-		return
+		return fileSize, err
 	}
 
-	//open the file
+	// open the file
 	f, err := os.OpenFile(destFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return 0, fmt.Errorf("failed to open file %q, %v", destFileName, err)
+		return 0, fmt.Errorf("failed to open file %q, %w", destFileName, err)
 	}
 	defer f.Close()
 
@@ -47,12 +46,12 @@ func downloadFromS3(sess s3iface.S3API, destFileName string, sourceBucket string
 		Key:    aws.String(sourceKey),
 	})
 	if err != nil {
-		return fileSize, fmt.Errorf("failed to download /buckets/%s/%s to %s: %v", sourceBucket, sourceKey, destFileName, err)
+		return fileSize, fmt.Errorf("failed to download /buckets/%s/%s to %s: %w", sourceBucket, sourceKey, destFileName, err)
 	}
 
 	glog.V(1).Infof("downloaded file %s\n", destFileName)
 
-	return
+	return fileSize, err
 }
 
 // adapted from https://github.com/aws/aws-sdk-go/pull/1868

@@ -2,20 +2,23 @@ package topic
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type LocalPartition struct {
@@ -64,6 +67,7 @@ func NewLocalPartition(partition Partition, logFlushInterval int, logFlushFn log
 				lp.ListenersCond.Broadcast()
 			}
 		})
+
 	return lp
 }
 
@@ -81,10 +85,10 @@ func (p *LocalPartition) Publish(message *mq_pb.DataMessage) error {
 				Data: message,
 			},
 		}); followErr != nil {
-			return fmt.Errorf("send to follower %s: %v", p.Follower, followErr)
+			return fmt.Errorf("send to follower %s: %w", p.Follower, followErr)
 		}
 	} else {
-		atomic.StoreInt64(&p.AckTsNs, message.TsNs)
+		atomic.StoreInt64(&p.AckTsNs, message.GetTsNs())
 	}
 
 	return nil
@@ -106,12 +110,14 @@ func (p *LocalPartition) Subscribe(clientName string, startPosition log_buffer.M
 		// Also update activity when messages are processed
 		eachMessageWithOffsetFn := func(logEntry *filer_pb.LogEntry, offset int64) (bool, error) {
 			p.UpdateActivity() // Track message read activity
+
 			return eachMessageFn(logEntry)
 		}
 
 		// Wrap eachMessageFn for disk reads to also update activity
 		eachMessageWithActivityFn := func(logEntry *filer_pb.LogEntry) (bool, error) {
 			p.UpdateActivity() // Track disk read activity for idle cleanup
+
 			return eachMessageFn(logEntry)
 		}
 
@@ -122,6 +128,7 @@ func (p *LocalPartition) Subscribe(clientName string, startPosition log_buffer.M
 		processedPosition, isDone, readPersistedLogErr = p.LogBuffer.ReadFromDiskFn(startPosition, 0, eachMessageWithActivityFn)
 		if readPersistedLogErr != nil {
 			glog.V(2).Infof("%s read %v persisted log: %v", clientName, p.Partition, readPersistedLogErr)
+
 			return readPersistedLogErr
 		}
 		if isDone {
@@ -151,11 +158,12 @@ func (p *LocalPartition) Subscribe(clientName string, startPosition log_buffer.M
 
 			// If we get ResumeFromDiskError, it means data was flushed to disk
 			// Read from disk ONCE to catch up, then continue with in-memory buffer
-			if readInMemoryLogErr == log_buffer.ResumeFromDiskError {
+			if errors.Is(readInMemoryLogErr, log_buffer.ResumeFromDiskError) {
 				glog.V(4).Infof("SUBSCRIBE: ResumeFromDiskError - reading flushed data from disk for %s at offset %d", clientName, startPosition.Offset)
 				processedPosition, isDone, readPersistedLogErr = p.LogBuffer.ReadFromDiskFn(startPosition, 0, eachMessageWithActivityFn)
 				if readPersistedLogErr != nil {
 					glog.V(2).Infof("%s read %v persisted log after flush: %v", clientName, p.Partition, readPersistedLogErr)
+
 					return readPersistedLogErr
 				}
 				if isDone {
@@ -174,6 +182,7 @@ func (p *LocalPartition) Subscribe(clientName string, startPosition log_buffer.M
 			// Any other error is a real error
 			if readInMemoryLogErr != nil {
 				glog.V(2).Infof("%s read %v in memory log: %v", clientName, p.Partition, readInMemoryLogErr)
+
 				return readInMemoryLogErr
 			}
 
@@ -186,6 +195,7 @@ func (p *LocalPartition) Subscribe(clientName string, startPosition log_buffer.M
 	// Wrap eachMessageFn for disk reads to also update activity
 	eachMessageWithActivityFn := func(logEntry *filer_pb.LogEntry) (bool, error) {
 		p.UpdateActivity() // Track disk read activity for idle cleanup
+
 		return eachMessageFn(logEntry)
 	}
 
@@ -193,6 +203,7 @@ func (p *LocalPartition) Subscribe(clientName string, startPosition log_buffer.M
 		processedPosition, isDone, readPersistedLogErr = p.LogBuffer.ReadFromDiskFn(startPosition, 0, eachMessageWithActivityFn)
 		if readPersistedLogErr != nil {
 			glog.V(0).Infof("%s read %v persisted log: %v", clientName, p.Partition, readPersistedLogErr)
+
 			return readPersistedLogErr
 		}
 		if isDone {
@@ -212,11 +223,12 @@ func (p *LocalPartition) Subscribe(clientName string, startPosition log_buffer.M
 			startPosition = processedPosition
 		}
 
-		if readInMemoryLogErr == log_buffer.ResumeFromDiskError {
+		if errors.Is(readInMemoryLogErr, log_buffer.ResumeFromDiskError) {
 			continue
 		}
 		if readInMemoryLogErr != nil {
 			glog.V(0).Infof("%s read %v in memory log: %v", clientName, p.Partition, readInMemoryLogErr)
+
 			return readInMemoryLogErr
 		}
 	}
@@ -254,15 +266,15 @@ func (p *LocalPartition) MaybeConnectToFollowers(initMessage *mq_pb.PublishMessa
 	if p.publishFolloweMeStream != nil {
 		return nil
 	}
-	if initMessage.FollowerBroker == "" {
+	if initMessage.GetFollowerBroker() == "" {
 		return nil
 	}
 
-	p.Follower = initMessage.FollowerBroker
+	p.Follower = initMessage.GetFollowerBroker()
 	ctx := context.Background()
 	p.followerGrpcConnection, err = pb.GrpcDial(ctx, p.Follower, true, grpcDialOption)
 	if err != nil {
-		return fmt.Errorf("fail to dial %s: %v", p.Follower, err)
+		return fmt.Errorf("fail to dial %s: %w", p.Follower, err)
 	}
 	followerClient := mq_pb.NewSeaweedMessagingClient(p.followerGrpcConnection)
 	p.publishFolloweMeStream, err = followerClient.PublishFollowMe(ctx)
@@ -272,8 +284,8 @@ func (p *LocalPartition) MaybeConnectToFollowers(initMessage *mq_pb.PublishMessa
 	if err = p.publishFolloweMeStream.Send(&mq_pb.PublishFollowMeRequest{
 		Message: &mq_pb.PublishFollowMeRequest_Init{
 			Init: &mq_pb.PublishFollowMeRequest_InitMessage{
-				Topic:     initMessage.Topic,
-				Partition: initMessage.Partition,
+				Topic:     initMessage.GetTopic(),
+				Partition: initMessage.GetPartition(),
 			},
 		},
 	}); err != nil {
@@ -292,20 +304,22 @@ func (p *LocalPartition) MaybeConnectToFollowers(initMessage *mq_pb.PublishMessa
 				e, _ := status.FromError(err)
 				if e.Code() == codes.Canceled {
 					glog.V(0).Infof("local partition %v follower %v stopped", p.Partition, p.Follower)
+
 					return
 				}
 				glog.Errorf("Receiving local partition %v  follower %s ack: %v", p.Partition, p.Follower, err)
+
 				return
 			}
-			atomic.StoreInt64(&p.AckTsNs, ack.AckTsNs)
+			atomic.StoreInt64(&p.AckTsNs, ack.GetAckTsNs())
 			// println("recv ack", ack.AckTsNs)
 		}
 	}()
+
 	return nil
 }
 
 func (p *LocalPartition) MaybeShutdownLocalPartition() (hasShutdown bool) {
-
 	if p.Publishers.Size() == 0 && p.Subscribers.Size() == 0 {
 		p.LogBuffer.ShutdownLogBuffer()
 		for !p.LogBuffer.IsAllFlushed() {
@@ -330,6 +344,7 @@ func (p *LocalPartition) MaybeShutdownLocalPartition() (hasShutdown bool) {
 	}
 
 	glog.V(0).Infof("local partition %v Publisher:%d Subscriber:%d follower:%s shutdown %v", p.Partition, p.Publishers.Size(), p.Subscribers.Size(), p.Follower, hasShutdown)
+
 	return
 }
 
@@ -339,6 +354,7 @@ func (p *LocalPartition) MaybeShutdownLocalPartitionForTopic(topicName string) (
 	if isSystemTopic(topicName) {
 		glog.V(0).Infof("System topic %s - skipping aggressive shutdown for partition %v (Publishers:%d Subscribers:%d)",
 			topicName, p.Partition, p.Publishers.Size(), p.Subscribers.Size())
+
 		return false
 	}
 
@@ -354,10 +370,8 @@ func isSystemTopic(topicName string) bool {
 		"__transaction_state", // Kafka transaction state topic
 	}
 
-	for _, systemTopic := range systemTopics {
-		if topicName == systemTopic {
-			return true
-		}
+	if slices.Contains(systemTopics, topicName) {
+		return true
 	}
 
 	// Also check for topics with system prefixes
@@ -400,6 +414,7 @@ func (p *LocalPartition) IsIdle() bool {
 // GetIdleDuration returns how long the partition has been idle
 func (p *LocalPartition) GetIdleDuration() time.Duration {
 	lastActivity := p.lastActivityTime.Load()
+
 	return time.Since(time.Unix(0, lastActivity))
 }
 
@@ -411,5 +426,6 @@ func (p *LocalPartition) ShouldCleanup(idleTimeout time.Duration) bool {
 	if !p.IsIdle() {
 		return false
 	}
+
 	return p.GetIdleDuration() > idleTimeout
 }

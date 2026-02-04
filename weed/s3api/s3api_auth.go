@@ -32,12 +32,14 @@ func isRequestSignatureV2(r *http.Request) bool {
 // Verify if request has AWS PreSign Version '4'.
 func isRequestPresignedSignatureV4(r *http.Request) bool {
 	_, ok := r.URL.Query()["X-Amz-Credential"]
+
 	return ok
 }
 
 // Verify request has AWS PreSign Version '2'.
 func isRequestPresignedSignatureV2(r *http.Request) bool {
 	_, ok := r.URL.Query()["AWSAccessKeyId"]
+
 	return ok
 }
 
@@ -50,6 +52,7 @@ func isRequestSignStreamingV4(r *http.Request) bool {
 		return false
 	}
 	contentSha256 := r.Header.Get("x-amz-content-sha256")
+
 	return contentSha256 == streamingContentSHA256 || contentSha256 == streamingContentSHA256Trailer
 }
 
@@ -57,6 +60,7 @@ func isRequestUnsignedStreaming(r *http.Request) bool {
 	if r.Method != http.MethodPut {
 		return false
 	}
+
 	return r.Header.Get("x-amz-content-sha256") == streamingUnsignedPayload
 }
 

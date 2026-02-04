@@ -2,7 +2,7 @@ package ldap
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
@@ -33,8 +33,9 @@ func (m *MockLDAPProvider) Name() string {
 }
 
 // Initialize initializes the mock provider (no-op for testing)
-func (m *MockLDAPProvider) Initialize(config interface{}) error {
+func (m *MockLDAPProvider) Initialize(config any) error {
 	m.initialized = true
+
 	return nil
 }
 
@@ -47,17 +48,17 @@ func (m *MockLDAPProvider) AddTestUser(username, password string, identity *prov
 // Authenticate authenticates using test data
 func (m *MockLDAPProvider) Authenticate(ctx context.Context, credentials string) (*providers.ExternalIdentity, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if credentials == "" {
-		return nil, fmt.Errorf("credentials cannot be empty")
+		return nil, errors.New("credentials cannot be empty")
 	}
 
 	// Parse credentials (username:password format)
 	parts := strings.SplitN(credentials, ":", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid credentials format (expected username:password)")
+		return nil, errors.New("invalid credentials format (expected username:password)")
 	}
 
 	username, password := parts[0], parts[1]
@@ -65,11 +66,11 @@ func (m *MockLDAPProvider) Authenticate(ctx context.Context, credentials string)
 	// Check test credentials
 	expectedPassword, userExists := m.TestCredentials[username]
 	if !userExists {
-		return nil, fmt.Errorf("user not found")
+		return nil, errors.New("user not found")
 	}
 
 	if password != expectedPassword {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, errors.New("invalid credentials")
 	}
 
 	// Return test user identity
@@ -77,17 +78,17 @@ func (m *MockLDAPProvider) Authenticate(ctx context.Context, credentials string)
 		return identity, nil
 	}
 
-	return nil, fmt.Errorf("user identity not found")
+	return nil, errors.New("user identity not found")
 }
 
 // GetUserInfo returns test user info
 func (m *MockLDAPProvider) GetUserInfo(ctx context.Context, userID string) (*providers.ExternalIdentity, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if userID == "" {
-		return nil, fmt.Errorf("user ID cannot be empty")
+		return nil, errors.New("user ID cannot be empty")
 	}
 
 	// Check test users
@@ -108,17 +109,17 @@ func (m *MockLDAPProvider) GetUserInfo(ctx context.Context, userID string) (*pro
 // ValidateToken validates credentials using test data
 func (m *MockLDAPProvider) ValidateToken(ctx context.Context, token string) (*providers.TokenClaims, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("provider not initialized")
+		return nil, errors.New("provider not initialized")
 	}
 
 	if token == "" {
-		return nil, fmt.Errorf("token cannot be empty")
+		return nil, errors.New("token cannot be empty")
 	}
 
 	// Parse credentials (username:password format)
 	parts := strings.SplitN(token, ":", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid token format (expected username:password)")
+		return nil, errors.New("invalid token format (expected username:password)")
 	}
 
 	username, password := parts[0], parts[1]
@@ -126,18 +127,19 @@ func (m *MockLDAPProvider) ValidateToken(ctx context.Context, token string) (*pr
 	// Check test credentials
 	expectedPassword, userExists := m.TestCredentials[username]
 	if !userExists {
-		return nil, fmt.Errorf("user not found")
+		return nil, errors.New("user not found")
 	}
 
 	if password != expectedPassword {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, errors.New("invalid credentials")
 	}
 
 	// Return test claims
 	identity := m.TestUsers[username]
+
 	return &providers.TokenClaims{
 		Subject: username,
-		Claims: map[string]interface{}{
+		Claims: map[string]any{
 			"ldap_dn":  "CN=" + username + ",DC=test,DC=com",
 			"email":    identity.Email,
 			"name":     identity.DisplayName,

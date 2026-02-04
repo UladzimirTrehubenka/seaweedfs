@@ -2,7 +2,8 @@ package memory
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"maps"
 
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 )
@@ -13,14 +14,12 @@ func (store *MemoryStore) GetPolicies(ctx context.Context) (map[string]policy_en
 	defer store.mu.RUnlock()
 
 	if !store.initialized {
-		return nil, fmt.Errorf("store not initialized")
+		return nil, errors.New("store not initialized")
 	}
 
 	// Create a copy of the policies map to avoid mutation issues
 	policies := make(map[string]policy_engine.PolicyDocument)
-	for name, doc := range store.policies {
-		policies[name] = doc
-	}
+	maps.Copy(policies, store.policies)
 
 	return policies, nil
 }
@@ -43,10 +42,11 @@ func (store *MemoryStore) CreatePolicy(ctx context.Context, name string, documen
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	store.policies[name] = document
+
 	return nil
 }
 
@@ -56,10 +56,11 @@ func (store *MemoryStore) UpdatePolicy(ctx context.Context, name string, documen
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	store.policies[name] = document
+
 	return nil
 }
 
@@ -69,10 +70,11 @@ func (store *MemoryStore) PutPolicy(ctx context.Context, name string, document p
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	store.policies[name] = document
+
 	return nil
 }
 
@@ -82,9 +84,10 @@ func (store *MemoryStore) DeletePolicy(ctx context.Context, name string) error {
 	defer store.mu.Unlock()
 
 	if !store.initialized {
-		return fmt.Errorf("store not initialized")
+		return errors.New("store not initialized")
 	}
 
 	delete(store.policies, name)
+
 	return nil
 }

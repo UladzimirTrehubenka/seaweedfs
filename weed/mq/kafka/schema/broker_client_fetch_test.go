@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	"github.com/linkedin/goavro/v2"
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestBrokerClient_FetchIntegration tests the fetch functionality
@@ -88,12 +89,12 @@ func TestBrokerClient_FetchIntegration(t *testing.T) {
 			t.Logf("Expected error in envelope reconstruction due to schema mismatch: %v", err)
 			assert.Contains(t, err.Error(), "failed to encode RecordValue")
 		} else {
-			assert.True(t, len(envelope) > 5) // Should have magic byte + schema ID + data
+			assert.Greater(t, len(envelope), 5) // Should have magic byte + schema ID + data
 
 			// Verify envelope structure
 			assert.Equal(t, byte(0x00), envelope[0]) // Magic byte
 			reconstructedSchemaID := binary.BigEndian.Uint32(envelope[1:5])
-			assert.True(t, reconstructedSchemaID > 0) // Should have a schema ID
+			assert.Positive(t, reconstructedSchemaID) // Should have a schema ID
 
 			t.Logf("Successfully reconstructed envelope with %d bytes", len(envelope))
 		}
@@ -150,7 +151,7 @@ func TestBrokerClient_RoundTripIntegration(t *testing.T) {
 		registerFetchTestSchema(t, registry, schemaID, schemaJSON)
 
 		// Create test data
-		testData := map[string]interface{}{
+		testData := map[string]any{
 			"user_id":   "user-123",
 			"action":    "login",
 			"timestamp": int64(1640995200000),
@@ -172,8 +173,8 @@ func TestBrokerClient_RoundTripIntegration(t *testing.T) {
 		assert.Equal(t, FormatAvro, decoded.SchemaFormat)
 
 		// Verify decoded fields
-		userIDField := decoded.RecordValue.Fields["user_id"]
-		actionField := decoded.RecordValue.Fields["action"]
+		userIDField := decoded.RecordValue.GetFields()["user_id"]
+		actionField := decoded.RecordValue.GetFields()["action"]
 		assert.Equal(t, "user-123", userIDField.GetStringValue())
 		assert.Equal(t, "login", actionField.GetStringValue())
 
@@ -188,7 +189,7 @@ func TestBrokerClient_RoundTripIntegration(t *testing.T) {
 		if err != nil {
 			assert.Error(t, err)
 		}
-		assert.Equal(t, 0, len(messages))
+		assert.Empty(t, messages)
 
 		// Test reconstruction with invalid RecordValue
 		invalidRecord := &schema_pb.RecordValue{
@@ -274,7 +275,7 @@ func createFetchTestRegistry(t *testing.T) *httptest.Server {
 					w.WriteHeader(http.StatusNotFound)
 					w.Write([]byte(`{"error_code": 40403, "message": "Schema not found"}`))
 				}
-			} else if r.Method == "POST" && r.URL.Path == "/register-schema" {
+			} else if r.Method == http.MethodPost && r.URL.Path == "/register-schema" {
 				var req struct {
 					SchemaID int32  `json:"schema_id"`
 					Schema   string `json:"schema"`
@@ -306,5 +307,6 @@ func createFetchTestEnvelope(schemaID int32, data []byte) []byte {
 	envelope[0] = 0x00 // Magic byte
 	binary.BigEndian.PutUint32(envelope[1:5], uint32(schemaID))
 	copy(envelope[5:], data)
+
 	return envelope
 }

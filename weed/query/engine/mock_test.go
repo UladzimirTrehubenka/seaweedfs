@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -31,8 +32,8 @@ func TestMockBrokerClient_BasicFunctionality(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if len(schema.Fields) != 3 {
-		t.Errorf("Expected 3 fields in user_events schema, got %d", len(schema.Fields))
+	if len(schema.GetFields()) != 3 {
+		t.Errorf("Expected 3 fields in user_events schema, got %d", len(schema.GetFields()))
 	}
 	if len(keyColumns) == 0 {
 		t.Error("Expected at least one key column")
@@ -95,13 +96,7 @@ func TestMockBrokerClient_TopicManagement(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	foundNewTopic := false
-	for _, topic := range topics {
-		if topic == "new-topic" {
-			foundNewTopic = true
-			break
-		}
-	}
+	foundNewTopic := slices.Contains(topics, "new-topic")
 	if !foundNewTopic {
 		t.Error("Expected new-topic to be in the topics list")
 	}
@@ -145,6 +140,7 @@ func TestSQLEngineWithMockBrokerClient_ErrorHandling(t *testing.T) {
 	if err != nil {
 		// If ExecuteSQL returns an error, that's also acceptable for this test
 		t.Logf("ExecuteSQL returned error (acceptable): %v", err)
+
 		return
 	}
 

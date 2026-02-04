@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,7 +12,7 @@ import (
 func (f *Filer) CanRename(ctx context.Context, source, target util.FullPath, oldName string) error {
 	sourcePath := source.Child(oldName)
 	if strings.HasPrefix(string(target), string(sourcePath)) {
-		return fmt.Errorf("mv: can not move directory to a subdirectory of itself")
+		return errors.New("mv: can not move directory to a subdirectory of itself")
 	}
 
 	// Check if attempting to rename a bucket itself
@@ -21,7 +22,7 @@ func (f *Filer) CanRename(ctx context.Context, source, target util.FullPath, old
 		return err
 	}
 	if f.IsBucket(entry) {
-		return fmt.Errorf("bucket renaming is not allowed")
+		return errors.New("bucket renaming is not allowed")
 	}
 
 	sourceBucket := f.DetectBucket(source)
@@ -44,5 +45,6 @@ func (f *Filer) DetectBucket(source util.FullPath) (bucket string) {
 			bucket = bucketAndObjectKey[:t]
 		}
 	}
+
 	return bucket
 }

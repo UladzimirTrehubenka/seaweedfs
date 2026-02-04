@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/app"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/layout"
@@ -41,6 +42,7 @@ func (h *UserHandlers) ShowObjectStoreUsers(c *gin.Context) {
 	err := layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -50,6 +52,7 @@ func (h *UserHandlers) GetUsers(c *gin.Context) {
 	users, err := h.adminServer.GetObjectStoreUsers(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get users: " + err.Error()})
+
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"users": users})
@@ -60,12 +63,14 @@ func (h *UserHandlers) CreateUser(c *gin.Context) {
 	var req dash.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
 	// Validate required fields
 	if req.Username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
+
 		return
 	}
 
@@ -73,6 +78,7 @@ func (h *UserHandlers) CreateUser(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to create user %s: %v", req.Username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
+
 		return
 	}
 
@@ -87,12 +93,14 @@ func (h *UserHandlers) UpdateUser(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
+
 		return
 	}
 
 	var req dash.UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
@@ -100,6 +108,7 @@ func (h *UserHandlers) UpdateUser(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to update user %s: %v", username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user: " + err.Error()})
+
 		return
 	}
 
@@ -114,6 +123,7 @@ func (h *UserHandlers) DeleteUser(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
+
 		return
 	}
 
@@ -121,6 +131,7 @@ func (h *UserHandlers) DeleteUser(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to delete user %s: %v", username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user: " + err.Error()})
+
 		return
 	}
 
@@ -134,12 +145,14 @@ func (h *UserHandlers) GetUserDetails(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
+
 		return
 	}
 
 	user, err := h.adminServer.GetObjectStoreUserDetails(username)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found: " + err.Error()})
+
 		return
 	}
 
@@ -151,6 +164,7 @@ func (h *UserHandlers) CreateAccessKey(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
+
 		return
 	}
 
@@ -158,6 +172,7 @@ func (h *UserHandlers) CreateAccessKey(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to create access key for user %s: %v", username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create access key: " + err.Error()})
+
 		return
 	}
 
@@ -174,6 +189,7 @@ func (h *UserHandlers) DeleteAccessKey(c *gin.Context) {
 
 	if username == "" || accessKeyId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username and access key ID are required"})
+
 		return
 	}
 
@@ -181,6 +197,7 @@ func (h *UserHandlers) DeleteAccessKey(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to delete access key %s for user %s: %v", accessKeyId, username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete access key: " + err.Error()})
+
 		return
 	}
 
@@ -196,18 +213,21 @@ func (h *UserHandlers) UpdateAccessKeyStatus(c *gin.Context) {
 
 	if username == "" || accessKeyId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username and access key ID are required"})
+
 		return
 	}
 
 	var req dash.UpdateAccessKeyStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
 	// Validate status
 	if req.Status != dash.AccessKeyStatusActive && req.Status != dash.AccessKeyStatusInactive {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Status must be '%s' or '%s'", dash.AccessKeyStatusActive, dash.AccessKeyStatusInactive)})
+
 		return
 	}
 
@@ -215,6 +235,7 @@ func (h *UserHandlers) UpdateAccessKeyStatus(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to update access key status %s for user %s: %v", accessKeyId, username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update access key status: " + err.Error()})
+
 		return
 	}
 
@@ -228,12 +249,14 @@ func (h *UserHandlers) GetUserPolicies(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
+
 		return
 	}
 
 	policies, err := h.adminServer.GetUserPolicies(username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user policies: " + err.Error()})
+
 		return
 	}
 
@@ -245,12 +268,14 @@ func (h *UserHandlers) UpdateUserPolicies(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
+
 		return
 	}
 
 	var req dash.UpdateUserPoliciesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
@@ -258,6 +283,7 @@ func (h *UserHandlers) UpdateUserPolicies(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to update policies for user %s: %v", username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user policies: " + err.Error()})
+
 		return
 	}
 

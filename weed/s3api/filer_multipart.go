@@ -24,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/google/uuid"
+
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 
 	"net/http"
@@ -54,11 +55,11 @@ func getRequestScheme(r *http.Request) string {
 	if r.TLS != nil {
 		return "https"
 	}
+
 	return "http"
 }
 
 func (s3a *S3ApiServer) createMultipartUpload(r *http.Request, input *s3.CreateMultipartUploadInput) (output *InitiateMultipartUploadResult, code s3err.ErrorCode) {
-
 	glog.V(2).Infof("createMultipartUpload input %v", input)
 
 	uploadIdString := s3a.generateUploadID(*input.Key)
@@ -91,6 +92,7 @@ func (s3a *S3ApiServer) createMultipartUpload(r *http.Request, input *s3.CreateM
 		encryptionConfig, prepErr := s3a.prepareMultipartEncryptionConfig(r, *input.Bucket, uploadIdString)
 		if prepErr != nil {
 			encryptionError = prepErr
+
 			return // Exit callback, letting mkdir handle the error
 		}
 		s3a.applyMultipartEncryptionConfig(entry, encryptionConfig)
@@ -103,12 +105,14 @@ func (s3a *S3ApiServer) createMultipartUpload(r *http.Request, input *s3.CreateM
 		}
 	}); err != nil {
 		_, errorCode := handleMultipartInternalError("create multipart upload directory", err)
+
 		return nil, errorCode
 	}
 
 	// Check for encryption configuration errors that occurred within the callback
 	if encryptionError != nil {
 		_, errorCode := handleMultipartInternalError("prepare encryption configuration", encryptionError)
+
 		return nil, errorCode
 	}
 
@@ -120,7 +124,7 @@ func (s3a *S3ApiServer) createMultipartUpload(r *http.Request, input *s3.CreateM
 		},
 	}
 
-	return
+	return output, code
 }
 
 type CompleteMultipartUploadResult struct {
@@ -158,7 +162,7 @@ func copySSEHeadersFromFirstPart(dst *filer_pb.Entry, firstPart *filer_pb.Entry,
 	}
 
 	for _, key := range sseKeys {
-		if value, exists := firstPart.Extended[key]; exists {
+		if value, exists := firstPart.GetExtended()[key]; exists {
 			dst.Extended[key] = value
 			glog.V(4).Infof("completeMultipartUpload: copied SSE header %s from first part (%s)", key, context)
 		}
@@ -166,10 +170,10 @@ func copySSEHeadersFromFirstPart(dst *filer_pb.Entry, firstPart *filer_pb.Entry,
 }
 
 func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.CompleteMultipartUploadInput, parts *CompleteMultipartUpload) (output *CompleteMultipartUploadResult, code s3err.ErrorCode) {
-
 	glog.V(2).Infof("completeMultipartUpload input %v", input)
 	if len(parts.Parts) == 0 {
 		stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedNoSuchUpload).Inc()
+
 		return nil, s3err.ErrNoSuchUpload
 	}
 	completedPartNumbers := []int{}
@@ -194,13 +198,14 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 	if err != nil {
 		glog.Errorf("completeMultipartUpload %s %s error: %v, entries:%d", *input.Bucket, *input.UploadId, err, len(entries))
 		stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedNoSuchUpload).Inc()
+
 		return nil, s3err.ErrNoSuchUpload
 	}
 
 	if len(entries) == 0 {
 		entryName, dirName := s3a.getEntryNameAndDir(input)
 		if entry, _ := s3a.getEntry(dirName, entryName); entry != nil && entry.Extended != nil {
-			if uploadId, ok := entry.Extended[s3_constants.SeaweedFSUploadId]; ok && *input.UploadId == string(uploadId) {
+			if uploadId, ok := entry.GetExtended()[s3_constants.SeaweedFSUploadId]; ok && *input.UploadId == string(uploadId) {
 				// Location uses the S3 endpoint that the client connected to
 				// Format: scheme://s3-endpoint/bucket/object (following AWS S3 API)
 				return &CompleteMultipartUploadResult{
@@ -212,6 +217,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 			}
 		}
 		stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedNoSuchUpload).Inc()
+
 		return nil, s3err.ErrNoSuchUpload
 	}
 
@@ -219,6 +225,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 	if err != nil {
 		glog.Errorf("completeMultipartUpload %s %s error: %v", *input.Bucket, *input.UploadId, err)
 		stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedNoSuchUpload).Inc()
+
 		return nil, s3err.ErrNoSuchUpload
 	}
 	deleteEntries := []*filer_pb.Entry{}
@@ -227,14 +234,15 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 	entityWithTtl := false
 	for _, entry := range entries {
 		foundEntry := false
-		glog.V(4).Infof("completeMultipartUpload part entries %s", entry.Name)
-		if entry.IsDirectory || !strings.HasSuffix(entry.Name, multipartExt) {
+		glog.V(4).Infof("completeMultipartUpload part entries %s", entry.GetName())
+		if entry.GetIsDirectory() || !strings.HasSuffix(entry.GetName(), multipartExt) {
 			continue
 		}
-		partNumber, err := parsePartNumber(entry.Name)
+		partNumber, err := parsePartNumber(entry.GetName())
 		if err != nil {
 			stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedPartNumber).Inc()
-			glog.Errorf("completeMultipartUpload failed to pasre partNumber %s:%s", entry.Name, err)
+			glog.Errorf("completeMultipartUpload failed to pasre partNumber %s:%s", entry.GetName(), err)
+
 			continue
 		}
 		completedPartsByNumber, ok := completedPartMap[partNumber]
@@ -243,33 +251,35 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 		}
 		for _, partETag := range completedPartsByNumber {
 			partETag = strings.Trim(partETag, `"`)
-			entryETag := hex.EncodeToString(entry.Attributes.GetMd5())
+			entryETag := hex.EncodeToString(entry.GetAttributes().GetMd5())
 			if partETag != "" && len(partETag) == 32 && entryETag != "" {
 				if entryETag != partETag {
-					glog.Errorf("completeMultipartUpload %s ETag mismatch chunk: %s part: %s", entry.Name, entryETag, partETag)
+					glog.Errorf("completeMultipartUpload %s ETag mismatch chunk: %s part: %s", entry.GetName(), entryETag, partETag)
 					stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedEtagMismatch).Inc()
+
 					continue
 				}
 			} else {
 				glog.Warningf("invalid complete etag %s, partEtag %s", partETag, entryETag)
 				stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedEtagInvalid).Inc()
 			}
-			if len(entry.Chunks) == 0 && partNumber != maxPartNo {
-				glog.Warningf("completeMultipartUpload %s empty chunks", entry.Name)
+			if len(entry.GetChunks()) == 0 && partNumber != maxPartNo {
+				glog.Warningf("completeMultipartUpload %s empty chunks", entry.GetName())
 				stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedPartEmpty).Inc()
+
 				continue
 			}
-			//there maybe multi same part, because of client retry
+			// there maybe multi same part, because of client retry
 			partEntries[partNumber] = append(partEntries[partNumber], entry)
 			foundEntry = true
 		}
 		if foundEntry {
-			if !entityWithTtl && entry.Attributes != nil && entry.Attributes.TtlSec > 0 {
+			if !entityWithTtl && entry.GetAttributes() != nil && entry.GetAttributes().GetTtlSec() > 0 {
 				entityWithTtl = true
 			}
 			if len(completedPartNumbers) > 1 && partNumber != completedPartNumbers[len(completedPartNumbers)-1] &&
-				entry.Attributes.FileSize < multiPartMinSize {
-				glog.Warningf("completeMultipartUpload %s part file size less 5mb", entry.Name)
+				entry.GetAttributes().GetFileSize() < multiPartMinSize {
+				glog.Warningf("completeMultipartUpload %s part file size less 5mb", entry.GetName())
 				entityTooSmall = true
 			}
 		} else {
@@ -278,9 +288,10 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 	}
 	if entityTooSmall {
 		stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompleteEntityTooSmall).Inc()
+
 		return nil, s3err.ErrEntityTooSmall
 	}
-	mime := pentry.Attributes.Mime
+	mime := pentry.GetAttributes().GetMime()
 	var finalParts []*filer_pb.FileChunk
 	var offset int64
 
@@ -298,18 +309,20 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 		if !ok {
 			glog.Errorf("part %d has no entry", partNumber)
 			stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedPartNotFound).Inc()
+
 			return nil, s3err.ErrInvalidPart
 		}
 		found := false
 		if len(partEntriesByNumber) > 1 {
 			slices.SortFunc(partEntriesByNumber, func(a, b *filer_pb.Entry) int {
-				return cmp.Compare(b.Chunks[0].ModifiedTsNs, a.Chunks[0].ModifiedTsNs)
+				return cmp.Compare(b.GetChunks()[0].GetModifiedTsNs(), a.GetChunks()[0].GetModifiedTsNs())
 			})
 		}
 		for _, entry := range partEntriesByNumber {
 			if found {
 				deleteEntries = append(deleteEntries, entry)
 				stats.S3HandlerCounter.WithLabelValues(stats.ErrorCompletedPartEntryMismatch).Inc()
+
 				continue
 			}
 
@@ -329,17 +342,17 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 				p := &filer_pb.FileChunk{
 					FileId:       chunk.GetFileIdString(),
 					Offset:       offset,
-					Size:         chunk.Size,
-					ModifiedTsNs: chunk.ModifiedTsNs,
-					CipherKey:    chunk.CipherKey,
-					ETag:         chunk.ETag,
-					IsCompressed: chunk.IsCompressed,
+					Size:         chunk.GetSize(),
+					ModifiedTsNs: chunk.GetModifiedTsNs(),
+					CipherKey:    chunk.GetCipherKey(),
+					ETag:         chunk.GetETag(),
+					IsCompressed: chunk.GetIsCompressed(),
 					// Preserve SSE metadata UNCHANGED - do not modify the offset!
-					SseType:     chunk.SseType,
-					SseMetadata: chunk.SseMetadata,
+					SseType:     chunk.GetSseType(),
+					SseMetadata: chunk.GetSseMetadata(),
 				}
 				finalParts = append(finalParts, p)
-				offset += int64(chunk.Size)
+				offset += int64(chunk.GetSize())
 			}
 
 			// Record the part boundary
@@ -379,7 +392,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 			versionEntry.Extended[s3_constants.ExtVersionIdKey] = []byte(versionId)
 			versionEntry.Extended[s3_constants.SeaweedFSUploadId] = []byte(*input.UploadId)
 			// Store parts count for x-amz-mp-parts-count header
-			versionEntry.Extended[s3_constants.SeaweedFSMultipartPartsCount] = []byte(fmt.Sprintf("%d", len(completedPartNumbers)))
+			versionEntry.Extended[s3_constants.SeaweedFSMultipartPartsCount] = []byte(strconv.Itoa(len(completedPartNumbers)))
 			// Store part boundaries for GetObject with PartNumber
 			if partBoundariesJSON, err := json.Marshal(partBoundaries); err == nil {
 				versionEntry.Extended[s3_constants.SeaweedFSMultipartPartBoundaries] = partBoundariesJSON
@@ -390,7 +403,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 				versionEntry.Extended[s3_constants.ExtAmzOwnerKey] = []byte(amzAccountId)
 			}
 
-			for k, v := range pentry.Extended {
+			for k, v := range pentry.GetExtended() {
 				if k != s3_constants.ExtMultipartObjectKey {
 					versionEntry.Extended[k] = v
 				}
@@ -402,8 +415,8 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 				firstPartEntry := partEntries[completedPartNumbers[0]][0]
 				copySSEHeadersFromFirstPart(versionEntry, firstPartEntry, "versioned")
 			}
-			if pentry.Attributes.Mime != "" {
-				versionEntry.Attributes.Mime = pentry.Attributes.Mime
+			if pentry.GetAttributes().GetMime() != "" {
+				versionEntry.Attributes.Mime = pentry.GetAttributes().GetMime()
 			} else if mime != "" {
 				versionEntry.Attributes.Mime = mime
 			}
@@ -413,6 +426,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 
 		if err != nil {
 			glog.Errorf("completeMultipartUpload: failed to create version %s: %v", versionId, err)
+
 			return nil, s3err.ErrInternalError
 		}
 
@@ -437,6 +451,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 		err = s3a.updateLatestVersionInDirectory(*input.Bucket, *input.Key, versionId, versionFileName, versionEntryForCache)
 		if err != nil {
 			glog.Errorf("completeMultipartUpload: failed to update latest version in directory: %v", err)
+
 			return nil, s3err.ErrInternalError
 		}
 
@@ -458,7 +473,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 			}
 			entry.Extended[s3_constants.ExtVersionIdKey] = []byte("null")
 			// Store parts count for x-amz-mp-parts-count header
-			entry.Extended[s3_constants.SeaweedFSMultipartPartsCount] = []byte(fmt.Sprintf("%d", len(completedPartNumbers)))
+			entry.Extended[s3_constants.SeaweedFSMultipartPartsCount] = []byte(strconv.Itoa(len(completedPartNumbers)))
 			// Store part boundaries for GetObject with PartNumber
 			if partBoundariesJSON, jsonErr := json.Marshal(partBoundaries); jsonErr == nil {
 				entry.Extended[s3_constants.SeaweedFSMultipartPartBoundaries] = partBoundariesJSON
@@ -470,7 +485,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 				entry.Extended[s3_constants.ExtAmzOwnerKey] = []byte(amzAccountId)
 			}
 
-			for k, v := range pentry.Extended {
+			for k, v := range pentry.GetExtended() {
 				if k != s3_constants.ExtMultipartObjectKey {
 					entry.Extended[k] = v
 				}
@@ -482,8 +497,8 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 				firstPartEntry := partEntries[completedPartNumbers[0]][0]
 				copySSEHeadersFromFirstPart(entry, firstPartEntry, "suspended versioning")
 			}
-			if pentry.Attributes.Mime != "" {
-				entry.Attributes.Mime = pentry.Attributes.Mime
+			if pentry.GetAttributes().GetMime() != "" {
+				entry.Attributes.Mime = pentry.GetAttributes().GetMime()
 			} else if mime != "" {
 				entry.Attributes.Mime = mime
 			}
@@ -492,6 +507,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 
 		if err != nil {
 			glog.Errorf("completeMultipartUpload: failed to create suspended versioning object: %v", err)
+
 			return nil, s3err.ErrInternalError
 		}
 
@@ -511,7 +527,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 			}
 			entry.Extended[s3_constants.SeaweedFSUploadId] = []byte(*input.UploadId)
 			// Store parts count for x-amz-mp-parts-count header
-			entry.Extended[s3_constants.SeaweedFSMultipartPartsCount] = []byte(fmt.Sprintf("%d", len(completedPartNumbers)))
+			entry.Extended[s3_constants.SeaweedFSMultipartPartsCount] = []byte(strconv.Itoa(len(completedPartNumbers)))
 			// Store part boundaries for GetObject with PartNumber
 			if partBoundariesJSON, err := json.Marshal(partBoundaries); err == nil {
 				entry.Extended[s3_constants.SeaweedFSMultipartPartBoundaries] = partBoundariesJSON
@@ -523,7 +539,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 				entry.Extended[s3_constants.ExtAmzOwnerKey] = []byte(amzAccountId)
 			}
 
-			for k, v := range pentry.Extended {
+			for k, v := range pentry.GetExtended() {
 				if k != s3_constants.ExtMultipartObjectKey {
 					entry.Extended[k] = v
 				}
@@ -535,8 +551,8 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 				firstPartEntry := partEntries[completedPartNumbers[0]][0]
 				copySSEHeadersFromFirstPart(entry, firstPartEntry, "non-versioned")
 			}
-			if pentry.Attributes.Mime != "" {
-				entry.Attributes.Mime = pentry.Attributes.Mime
+			if pentry.GetAttributes().GetMime() != "" {
+				entry.Attributes.Mime = pentry.GetAttributes().GetMime()
 			} else if mime != "" {
 				entry.Attributes.Mime = mime
 			}
@@ -549,6 +565,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 
 		if err != nil {
 			glog.Errorf("completeMultipartUpload %s/%s error: %v", dirName, entryName, err)
+
 			return nil, s3err.ErrInternalError
 		}
 
@@ -562,16 +579,16 @@ func (s3a *S3ApiServer) completeMultipartUpload(r *http.Request, input *s3.Compl
 	}
 
 	for _, deleteEntry := range deleteEntries {
-		//delete unused part data
-		if err = s3a.rm(uploadDirectory, deleteEntry.Name, true, true); err != nil {
-			glog.Warningf("completeMultipartUpload cleanup %s upload %s unused %s : %v", *input.Bucket, *input.UploadId, deleteEntry.Name, err)
+		// delete unused part data
+		if err = s3a.rm(uploadDirectory, deleteEntry.GetName(), true, true); err != nil {
+			glog.Warningf("completeMultipartUpload cleanup %s upload %s unused %s : %v", *input.Bucket, *input.UploadId, deleteEntry.GetName(), err)
 		}
 	}
 	if err = s3a.rm(s3a.genUploadsFolder(*input.Bucket), *input.UploadId, false, true); err != nil {
 		glog.V(1).Infof("completeMultipartUpload cleanup %s upload %s: %v", *input.Bucket, *input.UploadId, err)
 	}
 
-	return
+	return output, code
 }
 
 func (s3a *S3ApiServer) getEntryNameAndDir(input *s3.CompleteMultipartUploadInput) (string, string) {
@@ -585,6 +602,7 @@ func (s3a *S3ApiServer) getEntryNameAndDir(input *s3.CompleteMultipartUploadInpu
 
 	// remove suffix '/'
 	dirName = strings.TrimSuffix(dirName, "/")
+
 	return entryName, dirName
 }
 
@@ -596,16 +614,17 @@ func parsePartNumber(fileName string) (int, error) {
 	} else {
 		partNumberString = fileName[:len(fileName)-len(multipartExt)]
 	}
+
 	return strconv.Atoi(partNumberString)
 }
 
 func (s3a *S3ApiServer) abortMultipartUpload(input *s3.AbortMultipartUploadInput) (output *s3.AbortMultipartUploadOutput, code s3err.ErrorCode) {
-
 	glog.V(2).Infof("abortMultipartUpload input %v", input)
 
 	exists, err := s3a.exists(s3a.genUploadsFolder(*input.Bucket), *input.UploadId, true)
 	if err != nil {
 		glog.V(1).Infof("bucket %s abort upload %s: %v", *input.Bucket, *input.UploadId, err)
+
 		return nil, s3err.ErrNoSuchUpload
 	}
 	if exists {
@@ -613,6 +632,7 @@ func (s3a *S3ApiServer) abortMultipartUpload(input *s3.AbortMultipartUploadInput
 	}
 	if err != nil {
 		glog.V(1).Infof("bucket %s remove upload %s: %v", *input.Bucket, *input.UploadId, err)
+
 		return nil, s3err.ErrInternalError
 	}
 
@@ -625,7 +645,7 @@ type ListMultipartUploadsResult struct {
 	// copied from s3.ListMultipartUploadsOutput, the Uploads is not converting to <Upload></Upload>
 	Bucket             *string               `type:"string"`
 	Delimiter          *string               `type:"string"`
-	EncodingType       *string               `type:"string" enum:"EncodingType"`
+	EncodingType       *string               `enum:"EncodingType" type:"string"`
 	IsTruncated        *bool                 `type:"boolean"`
 	KeyMarker          *string               `type:"string"`
 	MaxUploads         *int64                `type:"integer"`
@@ -633,7 +653,7 @@ type ListMultipartUploadsResult struct {
 	NextUploadIdMarker *string               `type:"string"`
 	Prefix             *string               `type:"string"`
 	UploadIdMarker     *string               `type:"string"`
-	Upload             []*s3.MultipartUpload `locationName:"Upload" type:"list" flattened:"true"`
+	Upload             []*s3.MultipartUpload `flattened:"true"    locationName:"Upload" type:"list"`
 }
 
 func (s3a *S3ApiServer) listMultipartUploads(input *s3.ListMultipartUploadsInput) (output *ListMultipartUploadsResult, code s3err.ErrorCode) {
@@ -654,13 +674,14 @@ func (s3a *S3ApiServer) listMultipartUploads(input *s3.ListMultipartUploadsInput
 	entries, _, err := s3a.list(s3a.genUploadsFolder(*input.Bucket), "", *input.UploadIdMarker, false, math.MaxInt32)
 	if err != nil {
 		glog.Errorf("listMultipartUploads %s error: %v", *input.Bucket, err)
-		return
+
+		return output, code
 	}
 
 	uploadsCount := int64(0)
 	for _, entry := range entries {
 		if entry.Extended != nil {
-			key := string(entry.Extended[s3_constants.ExtMultipartObjectKey])
+			key := string(entry.GetExtended()[s3_constants.ExtMultipartObjectKey])
 			if *input.KeyMarker != "" && *input.KeyMarker != key {
 				continue
 			}
@@ -669,18 +690,19 @@ func (s3a *S3ApiServer) listMultipartUploads(input *s3.ListMultipartUploadsInput
 			}
 			output.Upload = append(output.Upload, &s3.MultipartUpload{
 				Key:      objectKey(aws.String(key)),
-				UploadId: aws.String(entry.Name),
+				UploadId: aws.String(entry.GetName()),
 			})
 			uploadsCount += 1
 		}
 		if uploadsCount >= *input.MaxUploads {
 			output.IsTruncated = aws.Bool(true)
-			output.NextUploadIdMarker = aws.String(entry.Name)
+			output.NextUploadIdMarker = aws.String(entry.GetName())
+
 			break
 		}
 	}
 
-	return
+	return output, code
 }
 
 type ListPartsResult struct {
@@ -689,12 +711,12 @@ type ListPartsResult struct {
 	// copied from s3.ListPartsOutput, the Parts is not converting to <Part></Part>
 	Bucket               *string    `type:"string"`
 	IsTruncated          *bool      `type:"boolean"`
-	Key                  *string    `min:"1" type:"string"`
+	Key                  *string    `min:"1"             type:"string"`
 	MaxParts             *int64     `type:"integer"`
 	NextPartNumberMarker *int64     `type:"integer"`
 	PartNumberMarker     *int64     `type:"integer"`
-	Part                 []*s3.Part `locationName:"Part" type:"list" flattened:"true"`
-	StorageClass         *string    `type:"string" enum:"StorageClass"`
+	Part                 []*s3.Part `flattened:"true"    locationName:"Part" type:"list"`
+	StorageClass         *string    `enum:"StorageClass" type:"string"`
 	UploadId             *string    `type:"string"`
 }
 
@@ -715,6 +737,7 @@ func (s3a *S3ApiServer) listObjectParts(input *s3.ListPartsInput) (output *ListP
 	entries, isLast, err := s3a.list(s3a.genUploadsFolder(*input.Bucket)+"/"+*input.UploadId, "", fmt.Sprintf("%04d%s", *input.PartNumberMarker, multipartExt), false, uint32(*input.MaxParts))
 	if err != nil {
 		glog.Errorf("listObjectParts %s %s error: %v", *input.Bucket, *input.UploadId, err)
+
 		return nil, s3err.ErrNoSuchUpload
 	}
 
@@ -724,16 +747,17 @@ func (s3a *S3ApiServer) listObjectParts(input *s3.ListPartsInput) (output *ListP
 	output.IsTruncated = aws.Bool(!isLast)
 
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name, multipartExt) && !entry.IsDirectory {
-			partNumber, err := parsePartNumber(entry.Name)
+		if strings.HasSuffix(entry.GetName(), multipartExt) && !entry.GetIsDirectory() {
+			partNumber, err := parsePartNumber(entry.GetName())
 			if err != nil {
-				glog.Errorf("listObjectParts %s %s parse %s: %v", *input.Bucket, *input.UploadId, entry.Name, err)
+				glog.Errorf("listObjectParts %s %s parse %s: %v", *input.Bucket, *input.UploadId, entry.GetName(), err)
+
 				continue
 			}
 			partETag := filer.ETag(entry)
 			part := &s3.Part{
 				PartNumber:   aws.Int64(int64(partNumber)),
-				LastModified: aws.Time(time.Unix(entry.Attributes.Mtime, 0).UTC()),
+				LastModified: aws.Time(time.Unix(entry.GetAttributes().GetMtime(), 0).UTC()),
 				Size:         aws.Int64(int64(filer.FileSize(entry))),
 				ETag:         aws.String("\"" + partETag + "\""),
 			}
@@ -747,7 +771,8 @@ func (s3a *S3ApiServer) listObjectParts(input *s3.ListPartsInput) (output *ListP
 	}
 
 	glog.V(2).Infof("listObjectParts: Returning %d parts for uploadId=%s", len(output.Part), *input.UploadId)
-	return
+
+	return output, code
 }
 
 // maxInt returns the maximum of two int values
@@ -755,6 +780,7 @@ func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}
+
 	return b
 }
 
@@ -794,7 +820,7 @@ func (s3a *S3ApiServer) prepareMultipartEncryptionConfig(r *http.Request, bucket
 		baseIV := make([]byte, s3_constants.AESBlockSize)
 		n, err := rand.Read(baseIV)
 		if err != nil || n != len(baseIV) {
-			return nil, fmt.Errorf("failed to generate secure IV for SSE-KMS multipart upload: %v (read %d/%d bytes)", err, n, len(baseIV))
+			return nil, fmt.Errorf("failed to generate secure IV for SSE-KMS multipart upload: %w (read %d/%d bytes)", err, n, len(baseIV))
 		}
 		config.KMSBaseIVEncoded = base64.StdEncoding.EncodeToString(baseIV)
 		glog.V(4).Infof("Generated base IV %x for explicit SSE-KMS multipart upload %s", baseIV[:8], uploadIdString)
@@ -808,7 +834,7 @@ func (s3a *S3ApiServer) prepareMultipartEncryptionConfig(r *http.Request, bucket
 		baseIV := make([]byte, s3_constants.AESBlockSize)
 		n, err := rand.Read(baseIV)
 		if err != nil || n != len(baseIV) {
-			return nil, fmt.Errorf("failed to generate secure IV for SSE-S3 multipart upload: %v (read %d/%d bytes)", err, n, len(baseIV))
+			return nil, fmt.Errorf("failed to generate secure IV for SSE-S3 multipart upload: %w (read %d/%d bytes)", err, n, len(baseIV))
 		}
 		config.S3BaseIVEncoded = base64.StdEncoding.EncodeToString(baseIV)
 		glog.V(4).Infof("Generated base IV %x for explicit SSE-S3 multipart upload %s", baseIV[:8], uploadIdString)
@@ -817,12 +843,12 @@ func (s3a *S3ApiServer) prepareMultipartEncryptionConfig(r *http.Request, bucket
 		keyManager := GetSSES3KeyManager()
 		sseS3Key, err := keyManager.GetOrCreateKey("")
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate SSE-S3 key for multipart upload: %v", err)
+			return nil, fmt.Errorf("failed to generate SSE-S3 key for multipart upload: %w", err)
 		}
 
 		keyData, serErr := SerializeSSES3Metadata(sseS3Key)
 		if serErr != nil {
-			return nil, fmt.Errorf("failed to serialize SSE-S3 metadata for multipart upload: %v", serErr)
+			return nil, fmt.Errorf("failed to serialize SSE-S3 metadata for multipart upload: %w", serErr)
 		}
 
 		config.S3KeyDataEncoded = base64.StdEncoding.EncodeToString(keyData)
@@ -840,26 +866,26 @@ func (s3a *S3ApiServer) prepareMultipartEncryptionConfig(r *http.Request, bucket
 			// Check if this is just "no encryption configured" vs a real error
 			if !errors.Is(err, ErrNoEncryptionConfig) {
 				// Real error - propagate to prevent silent encryption bypass
-				return nil, fmt.Errorf("failed to read bucket encryption config for multipart upload: %v", err)
+				return nil, fmt.Errorf("failed to read bucket encryption config for multipart upload: %w", err)
 			}
 			// No default encryption configured, continue without encryption
-		} else if encryptionConfig != nil && encryptionConfig.SseAlgorithm != "" {
+		} else if encryptionConfig != nil && encryptionConfig.GetSseAlgorithm() != "" {
 			glog.V(3).Infof("prepareMultipartEncryptionConfig: applying bucket-default encryption %s for bucket %s, upload %s",
-				encryptionConfig.SseAlgorithm, bucket, uploadIdString)
+				encryptionConfig.GetSseAlgorithm(), bucket, uploadIdString)
 
-			switch encryptionConfig.SseAlgorithm {
+			switch encryptionConfig.GetSseAlgorithm() {
 			case EncryptionTypeKMS:
 				// Apply SSE-KMS as bucket default
 				config.IsSSEKMS = true
-				config.KMSKeyID = encryptionConfig.KmsKeyId
-				config.BucketKeyEnabled = encryptionConfig.BucketKeyEnabled
+				config.KMSKeyID = encryptionConfig.GetKmsKeyId()
+				config.BucketKeyEnabled = encryptionConfig.GetBucketKeyEnabled()
 				// No encryption context for bucket defaults
 
 				// Generate and encode base IV
 				baseIV := make([]byte, s3_constants.AESBlockSize)
 				n, readErr := rand.Read(baseIV)
 				if readErr != nil || n != len(baseIV) {
-					return nil, fmt.Errorf("failed to generate secure IV for bucket-default SSE-KMS multipart upload: %v (read %d/%d bytes)", readErr, n, len(baseIV))
+					return nil, fmt.Errorf("failed to generate secure IV for bucket-default SSE-KMS multipart upload: %w (read %d/%d bytes)", readErr, n, len(baseIV))
 				}
 				config.KMSBaseIVEncoded = base64.StdEncoding.EncodeToString(baseIV)
 				glog.V(4).Infof("Generated base IV %x for bucket-default SSE-KMS multipart upload %s", baseIV[:8], uploadIdString)
@@ -872,7 +898,7 @@ func (s3a *S3ApiServer) prepareMultipartEncryptionConfig(r *http.Request, bucket
 				baseIV := make([]byte, s3_constants.AESBlockSize)
 				n, readErr := rand.Read(baseIV)
 				if readErr != nil || n != len(baseIV) {
-					return nil, fmt.Errorf("failed to generate secure IV for bucket-default SSE-S3 multipart upload: %v (read %d/%d bytes)", readErr, n, len(baseIV))
+					return nil, fmt.Errorf("failed to generate secure IV for bucket-default SSE-S3 multipart upload: %w (read %d/%d bytes)", readErr, n, len(baseIV))
 				}
 				config.S3BaseIVEncoded = base64.StdEncoding.EncodeToString(baseIV)
 				glog.V(4).Infof("Generated base IV %x for bucket-default SSE-S3 multipart upload %s", baseIV[:8], uploadIdString)
@@ -881,12 +907,12 @@ func (s3a *S3ApiServer) prepareMultipartEncryptionConfig(r *http.Request, bucket
 				keyManager := GetSSES3KeyManager()
 				sseS3Key, keyErr := keyManager.GetOrCreateKey("")
 				if keyErr != nil {
-					return nil, fmt.Errorf("failed to generate SSE-S3 key for bucket-default multipart upload: %v", keyErr)
+					return nil, fmt.Errorf("failed to generate SSE-S3 key for bucket-default multipart upload: %w", keyErr)
 				}
 
 				keyData, serErr := SerializeSSES3Metadata(sseS3Key)
 				if serErr != nil {
-					return nil, fmt.Errorf("failed to serialize SSE-S3 metadata for bucket-default multipart upload: %v", serErr)
+					return nil, fmt.Errorf("failed to serialize SSE-S3 metadata for bucket-default multipart upload: %w", serErr)
 				}
 
 				config.S3KeyDataEncoded = base64.StdEncoding.EncodeToString(keyData)
@@ -897,7 +923,7 @@ func (s3a *S3ApiServer) prepareMultipartEncryptionConfig(r *http.Request, bucket
 
 			default:
 				glog.V(3).Infof("prepareMultipartEncryptionConfig: unsupported bucket-default encryption algorithm %s for bucket %s",
-					encryptionConfig.SseAlgorithm, bucket)
+					encryptionConfig.GetSseAlgorithm(), bucket)
 			}
 		}
 	}

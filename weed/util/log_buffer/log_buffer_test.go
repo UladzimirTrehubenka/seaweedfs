@@ -2,6 +2,7 @@ package log_buffer
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -37,20 +38,22 @@ func TestNewLogBufferFirstBuffer(t *testing.T) {
 			receivedMessageCount++
 			if receivedMessageCount >= messageCount {
 				println("processed all messages")
+
 				return true, io.EOF
 			}
+
 			return false, nil
 		})
 
 		fmt.Printf("before flush: sent %d received %d\n", messageCount, receivedMessageCount)
 		fmt.Printf("lastProcessedTime %v isDone %v err: %v\n", lastProcessedTime, isDone, err)
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			t.Errorf("unexpected error %v", err)
 		}
 	}()
 
 	var buf = make([]byte, messageSize)
-	for i := 0; i < messageCount; i++ {
+	for range messageCount {
 		rand.Read(buf)
 		if err := lb.AddToBuffer(&mq_pb.DataMessage{
 			Key:   nil,
@@ -161,7 +164,7 @@ func TestReadFromBuffer_OldOffsetReturnsResumeFromDiskError(t *testing.T) {
 
 			// Verify the error matches expectations
 			if tt.expectError != nil {
-				if err != tt.expectError {
+				if !errors.Is(err, tt.expectError) {
 					t.Errorf("%s\nExpected error: %v\nGot error: %v\nbuf=%v, batchIdx=%d",
 						tt.description, tt.expectError, err, buf != nil, batchIdx)
 				} else {
@@ -222,7 +225,7 @@ func TestReadFromBuffer_OldOffsetWithNoPrevBuffers(t *testing.T) {
 	t.Logf("DEBUG: Requested offset 5, prevBuffers[0] range: [%d-%d]",
 		lb.prevBuffers.buffers[0].startOffset, lb.prevBuffers.buffers[0].offset)
 
-	if err != ResumeFromDiskError {
+	if !errors.Is(err, ResumeFromDiskError) {
 		t.Errorf("CRITICAL BUG REPRODUCED: Expected ResumeFromDiskError but got err=%v, buf=%v, batchIdx=%d\n"+
 			"This causes Schema Registry to hang indefinitely waiting for data that's on disk!",
 			err, buf != nil, batchIdx)
@@ -258,7 +261,7 @@ func TestReadFromBuffer_EmptyBufferAtCurrentOffset(t *testing.T) {
 	t.Logf("DEBUG: Buffer state: bufferStartOffset=%d, offset=%d, pos=%d",
 		lb.bufferStartOffset, lb.offset, lb.pos)
 
-	if err != ResumeFromDiskError {
+	if !errors.Is(err, ResumeFromDiskError) {
 		if buf == nil || len(buf.Bytes()) == 0 {
 			t.Errorf("CRITICAL BUG #2 REPRODUCED: Empty buffer should return ResumeFromDiskError, got err=%v, buf=%v\n"+
 				"Without the fix, Schema Registry gets empty data instead of reading from disk!",
@@ -322,7 +325,7 @@ func TestReadFromBuffer_OffsetRanges(t *testing.T) {
 			_, _, err := lb.ReadFromBuffer(requestPosition)
 
 			if tc.expectedError != nil {
-				if err != tc.expectedError {
+				if !errors.Is(err, tc.expectedError) {
 					t.Errorf("%s\nExpected error: %v, got: %v", tc.description, tc.expectedError, err)
 				} else {
 					t.Logf("✓ %s", tc.description)
@@ -330,7 +333,7 @@ func TestReadFromBuffer_OffsetRanges(t *testing.T) {
 			} else {
 				// For nil expectedError, we accept either nil or no error condition
 				// (future offsets return nil without error)
-				if err != nil && err != ResumeFromDiskError {
+				if err != nil && !errors.Is(err, ResumeFromDiskError) {
 					t.Errorf("%s\nExpected no ResumeFromDiskError, got: %v", tc.description, err)
 				} else {
 					t.Logf("✓ %s", tc.description)
@@ -395,7 +398,7 @@ func TestReadFromBuffer_InitializedFromDisk(t *testing.T) {
 	// bufferStartOffset=0 after initialization, so requestedOffset=0 is in range [0, 5]
 	// → returns the NEW message (offset 4) instead of reading from disk!
 
-	if err != ResumeFromDiskError {
+	if !errors.Is(err, ResumeFromDiskError) {
 		t.Errorf("CRITICAL BUG #3 REPRODUCED: Reading offset 0 after initialization from disk should return ResumeFromDiskError\n"+
 			"Instead got: err=%v, buf=%v, batchIdx=%d\n"+
 			"This means Schema Registry would receive WRONG data (offset 4) when requesting offset 0!",
@@ -431,19 +434,21 @@ func TestLoopProcessLogDataWithOffset_DiskReadRetry(t *testing.T) {
 		if !hasData {
 			// Simulate: data not yet on disk (flush hasn't completed)
 			t.Logf("  → No data found (flush not completed yet)")
+
 			return startPosition, false, nil
 		}
 
 		// Data is now on disk, process it
 		t.Logf("  → Found %d entries on disk", len(flushedData))
 		for _, entry := range flushedData {
-			if entry.Offset >= startPosition.Offset {
+			if entry.GetOffset() >= startPosition.Offset {
 				isDone, err := eachLogEntryFn(entry)
 				if err != nil || isDone {
-					return NewMessagePositionFromOffset(entry.Offset + 1), isDone, err
+					return NewMessagePositionFromOffset(entry.GetOffset() + 1), isDone, err
 				}
 			}
 		}
+
 		return NewMessagePositionFromOffset(int64(len(flushedData))), false, nil
 	}
 
@@ -490,7 +495,8 @@ func TestLoopProcessLogDataWithOffset_DiskReadRetry(t *testing.T) {
 		mu.Lock()
 		receivedMessages++
 		mu.Unlock()
-		t.Logf("✉️  RECEIVED: offset=%d key=%s", offset, string(logEntry.Key))
+		t.Logf("✉️  RECEIVED: offset=%d key=%s", offset, string(logEntry.GetKey()))
+
 		return true, nil // Stop after first message
 	}
 

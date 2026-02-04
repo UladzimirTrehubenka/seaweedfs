@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -47,6 +48,7 @@ func (p *ProtobufDescriptorParser) ParseBinaryDescriptor(binaryData []byte, mess
 		if cached.MessageDescriptor == nil {
 			return cached, fmt.Errorf("failed to find message descriptor for %s: message descriptor resolution not fully implemented in Phase E1 - found message %s in package %s", messageName, messageName, cached.PackageName)
 		}
+
 		return cached, nil
 	}
 	p.mu.RUnlock()
@@ -66,7 +68,7 @@ func (p *ProtobufDescriptorParser) ParseBinaryDescriptor(binaryData []byte, mess
 	if messageName == "" {
 		messageName = p.findFirstMessageName(&fileDescriptorSet)
 		if messageName == "" {
-			return nil, fmt.Errorf("no messages found in FileDescriptorSet")
+			return nil, errors.New("no messages found in FileDescriptorSet")
 		}
 	}
 
@@ -85,6 +87,7 @@ func (p *ProtobufDescriptorParser) ParseBinaryDescriptor(binaryData []byte, mess
 		p.mu.Lock()
 		p.descriptorCache[cacheKey] = schema
 		p.mu.Unlock()
+
 		return schema, fmt.Errorf("failed to find message descriptor for %s: %w", messageName, err)
 	}
 
@@ -110,16 +113,16 @@ func (p *ProtobufDescriptorParser) ParseBinaryDescriptor(binaryData []byte, mess
 
 // validateDescriptorSet performs basic validation on the FileDescriptorSet
 func (p *ProtobufDescriptorParser) validateDescriptorSet(fds *descriptorpb.FileDescriptorSet) error {
-	if len(fds.File) == 0 {
-		return fmt.Errorf("FileDescriptorSet contains no files")
+	if len(fds.GetFile()) == 0 {
+		return errors.New("FileDescriptorSet contains no files")
 	}
 
-	for i, file := range fds.File {
+	for i, file := range fds.GetFile() {
 		if file.Name == nil {
 			return fmt.Errorf("file descriptor %d has no name", i)
 		}
 		if file.Package == nil {
-			return fmt.Errorf("file descriptor %s has no package", *file.Name)
+			return fmt.Errorf("file descriptor %s has no package", file.GetName())
 		}
 	}
 
@@ -128,11 +131,12 @@ func (p *ProtobufDescriptorParser) validateDescriptorSet(fds *descriptorpb.FileD
 
 // findFirstMessageName finds the first message name in the FileDescriptorSet
 func (p *ProtobufDescriptorParser) findFirstMessageName(fds *descriptorpb.FileDescriptorSet) string {
-	for _, file := range fds.File {
-		if len(file.MessageType) > 0 {
-			return file.MessageType[0].GetName()
+	for _, file := range fds.GetFile() {
+		if len(file.GetMessageType()) > 0 {
+			return file.GetMessageType()[0].GetName()
 		}
 	}
+
 	return ""
 }
 
@@ -145,15 +149,15 @@ func (p *ProtobufDescriptorParser) findMessageDescriptor(fds *descriptorpb.FileD
 	// 3. Handle nested message types and packages correctly
 	// 4. Support fully qualified message names
 
-	for _, file := range fds.File {
+	for _, file := range fds.GetFile() {
 		packageName := ""
 		if file.Package != nil {
-			packageName = *file.Package
+			packageName = file.GetPackage()
 		}
 
 		// Search for the message in this file
-		for _, messageType := range file.MessageType {
-			if messageType.Name != nil && *messageType.Name == messageName {
+		for _, messageType := range file.GetMessageType() {
+			if messageType.Name != nil && messageType.GetName() == messageName {
 				// Try to build a proper descriptor from the FileDescriptorProto
 				fileDesc, err := p.buildFileDescriptor(file)
 				if err != nil {
@@ -243,8 +247,8 @@ func (p *ProtobufDescriptorParser) findNestedMessageDescriptor(msgDesc protorefl
 
 // searchNestedMessages recursively searches for nested message types
 func (p *ProtobufDescriptorParser) searchNestedMessages(messageType *descriptorpb.DescriptorProto, targetName string) *descriptorpb.DescriptorProto {
-	for _, nested := range messageType.NestedType {
-		if nested.Name != nil && *nested.Name == targetName {
+	for _, nested := range messageType.GetNestedType() {
+		if nested.Name != nil && nested.GetName() == targetName {
 			return nested
 		}
 		// Recursively search deeper nesting
@@ -252,6 +256,7 @@ func (p *ProtobufDescriptorParser) searchNestedMessages(messageType *descriptorp
 			return found
 		}
 	}
+
 	return nil
 }
 
@@ -259,8 +264,8 @@ func (p *ProtobufDescriptorParser) searchNestedMessages(messageType *descriptorp
 func (p *ProtobufDescriptorParser) extractDependencies(fds *descriptorpb.FileDescriptorSet) []string {
 	dependencySet := make(map[string]bool)
 
-	for _, file := range fds.File {
-		for _, dep := range file.Dependency {
+	for _, file := range fds.GetFile() {
+		for _, dep := range file.GetDependency() {
 			dependencySet[dep] = true
 		}
 	}
@@ -276,7 +281,7 @@ func (p *ProtobufDescriptorParser) extractDependencies(fds *descriptorpb.FileDes
 // GetMessageFields returns information about the fields in the message
 func (s *ProtobufSchema) GetMessageFields() ([]FieldInfo, error) {
 	if s.FileDescriptorSet == nil {
-		return nil, fmt.Errorf("no FileDescriptorSet available")
+		return nil, errors.New("no FileDescriptorSet available")
 	}
 
 	// Find the message descriptor for this schema
@@ -286,8 +291,8 @@ func (s *ProtobufSchema) GetMessageFields() ([]FieldInfo, error) {
 	}
 
 	// Extract field information
-	fields := make([]FieldInfo, 0, len(messageDesc.Field))
-	for _, field := range messageDesc.Field {
+	fields := make([]FieldInfo, 0, len(messageDesc.GetField()))
+	for _, field := range messageDesc.GetField() {
 		fieldInfo := FieldInfo{
 			Name:   field.GetName(),
 			Number: field.GetNumber(),
@@ -353,9 +358,9 @@ func (s *ProtobufSchema) findMessageDescriptor(messageName string) *descriptorpb
 		return nil
 	}
 
-	for _, file := range s.FileDescriptorSet.File {
+	for _, file := range s.FileDescriptorSet.GetFile() {
 		// Check top-level messages
-		for _, message := range file.MessageType {
+		for _, message := range file.GetMessageType() {
 			if message.GetName() == messageName {
 				return message
 			}
@@ -371,8 +376,8 @@ func (s *ProtobufSchema) findMessageDescriptor(messageName string) *descriptorpb
 
 // searchNestedMessages recursively searches for nested message types
 func searchNestedMessages(messageType *descriptorpb.DescriptorProto, targetName string) *descriptorpb.DescriptorProto {
-	for _, nested := range messageType.NestedType {
-		if nested.Name != nil && *nested.Name == targetName {
+	for _, nested := range messageType.GetNestedType() {
+		if nested.Name != nil && nested.GetName() == targetName {
 			return nested
 		}
 		// Recursively search deeper nesting
@@ -380,6 +385,7 @@ func searchNestedMessages(messageType *descriptorpb.DescriptorProto, targetName 
 			return found
 		}
 	}
+
 	return nil
 }
 
@@ -444,7 +450,7 @@ func (s *ProtobufSchema) fieldLabelToString(label descriptorpb.FieldDescriptorPr
 // ValidateMessage validates that a message conforms to the schema
 func (s *ProtobufSchema) ValidateMessage(messageData []byte) error {
 	if s.MessageDescriptor == nil {
-		return fmt.Errorf("no message descriptor available for validation")
+		return errors.New("no message descriptor available for validation")
 	}
 
 	// Create a dynamic message from the descriptor
@@ -468,18 +474,11 @@ func (p *ProtobufDescriptorParser) ClearCache() {
 }
 
 // GetCacheStats returns statistics about the descriptor cache
-func (p *ProtobufDescriptorParser) GetCacheStats() map[string]interface{} {
+func (p *ProtobufDescriptorParser) GetCacheStats() map[string]any {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return map[string]interface{}{
+
+	return map[string]any{
 		"cached_descriptors": len(p.descriptorCache),
 	}
-}
-
-// Helper function for min
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

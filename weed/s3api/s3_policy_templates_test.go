@@ -405,12 +405,13 @@ func TestPolicyTemplateMetadata(t *testing.T) {
 		for _, template := range allTemplates {
 			if template.Name == "BucketSpecificRead" {
 				templateWithParams = &template
+
 				break
 			}
 		}
 
 		require.NotNil(t, templateWithParams)
-		assert.Greater(t, len(templateWithParams.Parameters), 0)
+		assert.NotEmpty(t, templateWithParams.Parameters)
 
 		param := templateWithParams.Parameters[0]
 		assert.Equal(t, "bucketName", param.Name)
@@ -468,7 +469,7 @@ func TestPolicyTemplateCategories(t *testing.T) {
 	for _, expectedCategory := range expectedCategories {
 		count, exists := categoryMap[expectedCategory]
 		assert.True(t, exists, "Category %s should exist", expectedCategory)
-		assert.Greater(t, count, 0, "Category %s should have at least one template", expectedCategory)
+		assert.Positive(t, count, "Category %s should have at least one template", expectedCategory)
 	}
 }
 
@@ -483,14 +484,14 @@ func TestPolicyValidation(t *testing.T) {
 
 			// Basic validation
 			assert.Equal(t, "2012-10-17", policy.Version)
-			assert.Greater(t, len(policy.Statement), 0)
+			assert.NotEmpty(t, policy.Statement)
 
 			// Validate each statement
 			for i, stmt := range policy.Statement {
 				assert.NotEmpty(t, stmt.Effect, "Statement %d should have effect", i)
 				assert.Contains(t, []string{"Allow", "Deny"}, stmt.Effect, "Statement %d effect should be Allow or Deny", i)
-				assert.Greater(t, len(stmt.Action), 0, "Statement %d should have actions", i)
-				assert.Greater(t, len(stmt.Resource), 0, "Statement %d should have resources", i)
+				assert.NotEmpty(t, stmt.Action, "Statement %d should have actions", i)
+				assert.NotEmpty(t, stmt.Resource, "Statement %d should have resources", i)
 
 				// Check resource format
 				for _, resource := range stmt.Resource {

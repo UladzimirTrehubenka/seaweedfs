@@ -6,6 +6,7 @@ import (
 
 	parquet "github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/schema"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
@@ -58,7 +59,7 @@ func TestWriteRowsNoPanic(t *testing.T) {
 	var rows []parquet.Row
 
 	// Build a few hundred rows with various optional/missing values and nil/empty keys
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		rb.Reset()
 
 		rec := &schema_pb.RecordValue{Fields: map[string]*schema_pb.Value{}}
@@ -83,11 +84,12 @@ func TestWriteRowsNoPanic(t *testing.T) {
 		// Log columns
 		rec.Fields[SW_COLUMN_NAME_TS] = &schema_pb.Value{Kind: &schema_pb.Value_Int64Value{Int64Value: 1756913789000000000 + int64(i)}}
 		var keyBytes []byte
-		if i%7 == 0 {
+		switch i % 7 {
+		case 0:
 			keyBytes = nil // ensure nil-keys are handled
-		} else if i%7 == 1 {
+		case 1:
 			keyBytes = []byte{} // empty
-		} else {
+		default:
 			keyBytes = []byte("key-")
 		}
 		rec.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{Kind: &schema_pb.Value_BytesValue{BytesValue: keyBytes}}

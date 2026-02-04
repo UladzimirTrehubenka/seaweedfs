@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 )
@@ -126,6 +127,7 @@ func (ics *IncrementalCooperativeAssignmentStrategy) handleRevocationPhase(
 	if time.Since(ics.rebalanceState.StartTime) > ics.rebalanceState.RevocationTimeout {
 		// Force move to assignment phase
 		ics.rebalanceState.Phase = RebalancePhaseAssignment
+
 		return ics.handleAssignmentPhase(members, topicPartitions)
 	}
 
@@ -195,6 +197,7 @@ func (ics *IncrementalCooperativeAssignmentStrategy) calculateIdealAssignment(
 		if allPartitions[i].Topic != allPartitions[j].Topic {
 			return allPartitions[i].Topic < allPartitions[j].Topic
 		}
+
 		return allPartitions[i].Partition < allPartitions[j].Partition
 	})
 
@@ -211,11 +214,8 @@ func (ics *IncrementalCooperativeAssignmentStrategy) calculateIdealAssignment(
 			// Find members subscribed to this topic
 			subscribedMembers := make([]*GroupMember, 0)
 			for _, member := range sortedMembers {
-				for _, subscribedTopic := range member.Subscription {
-					if subscribedTopic == topic {
-						subscribedMembers = append(subscribedMembers, member)
-						break
-					}
+				if slices.Contains(member.Subscription, topic) {
+					subscribedMembers = append(subscribedMembers, member)
 				}
 			}
 

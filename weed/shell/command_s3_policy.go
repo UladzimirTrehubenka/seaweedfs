@@ -3,16 +3,18 @@ package shell
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
-	"google.golang.org/grpc"
 )
 
 func init() {
@@ -48,7 +50,6 @@ func (c *commandS3Policy) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3Policy) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	s3PolicyCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	put := s3PolicyCommand.Bool("put", false, "create or update a policy")
 	get := s3PolicyCommand.Bool("get", false, "get a policy")
@@ -68,10 +69,10 @@ func (c *commandS3Policy) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 		}
 	}
 	if actionCount == 0 {
-		return fmt.Errorf("one of -put, -get, -list, -delete must be specified")
+		return errors.New("one of -put, -get, -list, -delete must be specified")
 	}
 	if actionCount > 1 {
-		return fmt.Errorf("only one of -put, -get, -list, -delete can be specified")
+		return errors.New("only one of -put, -get, -list, -delete can be specified")
 	}
 
 	return pb.WithGrpcClient(false, 0, func(conn *grpc.ClientConn) error {
@@ -81,32 +82,33 @@ func (c *commandS3Policy) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 
 		if *put {
 			if *name == "" {
-				return fmt.Errorf("-name is required")
+				return errors.New("-name is required")
 			}
 			if *file == "" {
-				return fmt.Errorf("-file is required")
+				return errors.New("-file is required")
 			}
 			data, err := os.ReadFile(*file)
 			if err != nil {
-				return fmt.Errorf("failed to read policy file: %v", err)
+				return fmt.Errorf("failed to read policy file: %w", err)
 			}
 
 			// Validate JSON
 			var policy policy_engine.PolicyDocument
 			if err := json.Unmarshal(data, &policy); err != nil {
-				return fmt.Errorf("invalid policy json: %v", err)
+				return fmt.Errorf("invalid policy json: %w", err)
 			}
 
 			_, err = client.PutPolicy(ctx, &iam_pb.PutPolicyRequest{
 				Name:    *name,
 				Content: string(data),
 			})
+
 			return err
 		}
 
 		if *get {
 			if *name == "" {
-				return fmt.Errorf("-name is required")
+				return errors.New("-name is required")
 			}
 			resp, err := client.GetPolicy(ctx, &iam_pb.GetPolicyRequest{
 				Name: *name,
@@ -114,10 +116,11 @@ func (c *commandS3Policy) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 			if err != nil {
 				return err
 			}
-			if resp.Content == "" {
-				return fmt.Errorf("policy not found")
+			if resp.GetContent() == "" {
+				return errors.New("policy not found")
 			}
-			fmt.Fprintf(writer, "%s\n", resp.Content)
+			fmt.Fprintf(writer, "%s\n", resp.GetContent())
+
 			return nil
 		}
 
@@ -126,25 +129,26 @@ func (c *commandS3Policy) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 			if err != nil {
 				return err
 			}
-			for _, policy := range resp.Policies {
-				fmt.Fprintf(writer, "Name: %s\n", policy.Name)
-				fmt.Fprintf(writer, "Content: %s\n", policy.Content)
+			for _, policy := range resp.GetPolicies() {
+				fmt.Fprintf(writer, "Name: %s\n", policy.GetName())
+				fmt.Fprintf(writer, "Content: %s\n", policy.GetContent())
 				fmt.Fprintf(writer, "---\n")
 			}
+
 			return nil
 		}
 
 		if *del {
 			if *name == "" {
-				return fmt.Errorf("-name is required")
+				return errors.New("-name is required")
 			}
 			_, err := client.DeletePolicy(ctx, &iam_pb.DeletePolicyRequest{
 				Name: *name,
 			})
+
 			return err
 		}
 
 		return nil
 	}, commandEnv.option.FilerAddress.ToGrpcAddress(), false, commandEnv.option.GrpcDialOption)
-
 }

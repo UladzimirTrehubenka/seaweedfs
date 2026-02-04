@@ -1,8 +1,9 @@
 package pub_balancer
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 )
 
 /*
@@ -30,8 +31,7 @@ When the goal is to make sure that each broker has the same number of partitions
 
 */
 
-type BalanceAction interface {
-}
+type BalanceAction any
 type BalanceActionMerge struct {
 	Before []topic.TopicPartition
 	After  topic.TopicPartition
@@ -56,18 +56,20 @@ type BalanceActionCreate struct {
 // and balance the publishers to the brokers.
 func (balancer *PubBalancer) BalancePublishers() []BalanceAction {
 	action := BalanceTopicPartitionOnBrokers(balancer.Brokers)
+
 	return []BalanceAction{action}
 }
 
 func (balancer *PubBalancer) ExecuteBalanceAction(actions []BalanceAction, grpcDialOption grpc.DialOption) (err error) {
 	for _, action := range actions {
-		switch action.(type) {
+		switch action := action.(type) {
 		case *BalanceActionMove:
-			err = balancer.ExecuteBalanceActionMove(action.(*BalanceActionMove), grpcDialOption)
+			err = balancer.ExecuteBalanceActionMove(action, grpcDialOption)
 		}
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }

@@ -2,6 +2,7 @@ package dash
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -44,11 +45,13 @@ func (p *TopicRetentionPurger) PurgeExpiredTopicData() error {
 		err := p.purgeTopicData(topicRetention)
 		if err != nil {
 			glog.Errorf("Failed to purge data for topic %s: %v", topicRetention.TopicName, err)
+
 			continue
 		}
 	}
 
 	glog.V(1).Infof("Completed topic data purge")
+
 	return nil
 }
 
@@ -81,22 +84,23 @@ func (p *TopicRetentionPurger) getTopicsWithRetention() ([]TopicRetentionConfig,
 		}
 
 		// Check each topic for retention configuration
-		for _, pbTopic := range resp.Topics {
+		for _, pbTopic := range resp.GetTopics() {
 			configResp, err := client.GetTopicConfiguration(ctx, &mq_pb.GetTopicConfigurationRequest{
 				Topic: pbTopic,
 			})
 			if err != nil {
-				glog.Warningf("Failed to get configuration for topic %s.%s: %v", pbTopic.Namespace, pbTopic.Name, err)
+				glog.Warningf("Failed to get configuration for topic %s.%s: %v", pbTopic.GetNamespace(), pbTopic.GetName(), err)
+
 				continue
 			}
 
 			// Check if retention is enabled
-			if configResp.Retention != nil && configResp.Retention.Enabled && configResp.Retention.RetentionSeconds > 0 {
+			if configResp.GetRetention() != nil && configResp.GetRetention().GetEnabled() && configResp.GetRetention().GetRetentionSeconds() > 0 {
 				topicRetention := TopicRetentionConfig{
-					TopicName:        fmt.Sprintf("%s.%s", pbTopic.Namespace, pbTopic.Name),
-					Namespace:        pbTopic.Namespace,
-					Name:             pbTopic.Name,
-					RetentionSeconds: configResp.Retention.RetentionSeconds,
+					TopicName:        fmt.Sprintf("%s.%s", pbTopic.GetNamespace(), pbTopic.GetName()),
+					Namespace:        pbTopic.GetNamespace(),
+					Name:             pbTopic.GetName(),
+					RetentionSeconds: configResp.GetRetention().GetRetentionSeconds(),
 				}
 				topicsWithRetention = append(topicsWithRetention, topicRetention)
 			}
@@ -135,7 +139,7 @@ func (p *TopicRetentionPurger) purgeTopicData(topicRetention TopicRetentionConfi
 			Limit:              1000,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to list topic directory %s: %v", topicDir, err)
+			return fmt.Errorf("failed to list topic directory %s: %w", topicDir, err)
 		}
 
 		var versionDirs []VersionDirInfo
@@ -144,24 +148,26 @@ func (p *TopicRetentionPurger) purgeTopicData(topicRetention TopicRetentionConfi
 		for {
 			versionResp, err := versionStream.Recv()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
+
 				return fmt.Errorf("failed to receive version entries: %w", err)
 			}
 
 			// Only process directories that are versions (start with "v")
-			if versionResp.Entry.IsDirectory && strings.HasPrefix(versionResp.Entry.Name, "v") {
-				versionTime, err := p.parseVersionTime(versionResp.Entry.Name)
+			if versionResp.GetEntry().GetIsDirectory() && strings.HasPrefix(versionResp.GetEntry().GetName(), "v") {
+				versionTime, err := p.parseVersionTime(versionResp.GetEntry().GetName())
 				if err != nil {
-					glog.Warningf("Failed to parse version time from %s: %v", versionResp.Entry.Name, err)
+					glog.Warningf("Failed to parse version time from %s: %v", versionResp.GetEntry().GetName(), err)
+
 					continue
 				}
 
 				versionDirs = append(versionDirs, VersionDirInfo{
-					Name:        versionResp.Entry.Name,
+					Name:        versionResp.GetEntry().GetName(),
 					VersionTime: versionTime,
-					ModTime:     time.Unix(versionResp.Entry.Attributes.Mtime, 0),
+					ModTime:     time.Unix(versionResp.GetEntry().GetAttributes().GetMtime(), 0),
 				})
 			}
 		}
@@ -174,11 +180,12 @@ func (p *TopicRetentionPurger) purgeTopicData(topicRetention TopicRetentionConfi
 		// Keep at least the most recent version directory, even if it's expired
 		if len(versionDirs) <= 1 {
 			glog.V(1).Infof("Topic %s has %d version directories, keeping all", topicRetention.TopicName, len(versionDirs))
+
 			return nil
 		}
 
 		// Purge expired directories (keep the most recent one)
-		for i := 0; i < len(versionDirs)-1; i++ {
+		for i := range len(versionDirs) - 1 {
 			versionDir := versionDirs[i]
 
 			// Check if this version directory is expired
@@ -230,7 +237,7 @@ func (p *TopicRetentionPurger) parseVersionTime(versionName string) (time.Time, 
 	// Parse the time format: 2025-01-10-05-44-34
 	versionTime, err := time.Parse("2006-01-02-15-04-05", timeStr)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse version time %s: %v", timeStr, err)
+		return time.Time{}, fmt.Errorf("failed to parse version time %s: %w", timeStr, err)
 	}
 
 	return versionTime, nil
@@ -247,35 +254,36 @@ func (p *TopicRetentionPurger) deleteDirectoryRecursively(client filer_pb.Seawee
 		Limit:              1000,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list directory %s: %v", dirPath, err)
+		return fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
 
 	// Delete all entries
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
+
 			return fmt.Errorf("failed to receive entries: %w", err)
 		}
 
-		entryPath := filepath.Join(dirPath, resp.Entry.Name)
+		entryPath := filepath.Join(dirPath, resp.GetEntry().GetName())
 
-		if resp.Entry.IsDirectory {
+		if resp.GetEntry().GetIsDirectory() {
 			// Recursively delete subdirectory
 			err = p.deleteDirectoryRecursively(client, entryPath)
 			if err != nil {
-				return fmt.Errorf("failed to delete subdirectory %s: %v", entryPath, err)
+				return fmt.Errorf("failed to delete subdirectory %s: %w", entryPath, err)
 			}
 		} else {
 			// Delete file
 			_, err = client.DeleteEntry(context.Background(), &filer_pb.DeleteEntryRequest{
 				Directory: dirPath,
-				Name:      resp.Entry.Name,
+				Name:      resp.GetEntry().GetName(),
 			})
 			if err != nil {
-				return fmt.Errorf("failed to delete file %s: %v", entryPath, err)
+				return fmt.Errorf("failed to delete file %s: %w", entryPath, err)
 			}
 		}
 	}
@@ -289,7 +297,7 @@ func (p *TopicRetentionPurger) deleteDirectoryRecursively(client filer_pb.Seawee
 		Name:      dirName,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to delete directory %s: %v", dirPath, err)
+		return fmt.Errorf("failed to delete directory %s: %w", dirPath, err)
 	}
 
 	return nil

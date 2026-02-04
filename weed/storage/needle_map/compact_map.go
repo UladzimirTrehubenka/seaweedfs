@@ -1,8 +1,8 @@
 package needle_map
 
-/* CompactMap is an in-memory map of needle indeces, optimized for memory usage.
+/* CompactMap is an in-memory map of needle indices, optimized for memory usage.
  *
- * It's implemented as a map of sorted indeces segments, which are in turn accessed through binary
+ * It's implemented as a map of sorted indices segments, which are in turn accessed through binary
  * search. This guarantees a best-case scenario (ordered inserts/updates) of O(1) and a worst case
  * scenario of O(log n) runtime, with memory usage unaffected by insert ordering.
  *
@@ -54,6 +54,7 @@ func (ck CompactKey) Key(chunk Chunk) types.NeedleId {
 func OffsetToCompact(offset types.Offset) CompactOffset {
 	var co CompactOffset
 	types.OffsetToBytes(co[:], offset)
+
 	return co
 }
 
@@ -111,6 +112,7 @@ func (cs *CompactMapSegment) bsearchKey(key types.NeedleId) (int, bool) {
 	i := sort.Search(len(cs.list), func(i int) bool {
 		return cs.list[i].key >= ck
 	})
+
 	return i, cs.list[i].key == ck
 }
 
@@ -129,7 +131,8 @@ func (cs *CompactMapSegment) set(key types.NeedleId, offset types.Offset, size t
 		o.OffsetHigher = offset.OffsetHigher
 		cs.list[i].offset = OffsetToCompact(o)
 		cs.list[i].size = size
-		return
+
+		return oldOffset, oldSize
 	}
 
 	// insert
@@ -160,10 +163,10 @@ func (cs *CompactMapSegment) set(key types.NeedleId, offset types.Offset, size t
 		cs.lastKey = ck
 	}
 
-	return
+	return oldOffset, oldSize
 }
 
-// get seeks a map entry by key. Returns an entry pointer, with a boolean specifiying if the entry was found.
+// get seeks a map entry by key. Returns an entry pointer, with a boolean specifying if the entry was found.
 func (cs *CompactMapSegment) get(key types.NeedleId) (*CompactNeedleValue, bool) {
 	if i, found := cs.bsearchKey(key); found {
 		return &cs.list[i], true
@@ -183,6 +186,7 @@ func (cs *CompactMapSegment) delete(key types.NeedleId) types.Size {
 			} else {
 				cs.list[i].size = -cs.list[i].size
 			}
+
 			return ret
 		}
 	}
@@ -201,6 +205,7 @@ func (cm *CompactMap) Len() int {
 	for _, s := range cm.segments {
 		l += s.len()
 	}
+
 	return l
 }
 
@@ -209,6 +214,7 @@ func (cm *CompactMap) Cap() int {
 	for _, s := range cm.segments {
 		c += s.cap()
 	}
+
 	return c
 }
 
@@ -216,6 +222,7 @@ func (cm *CompactMap) String() string {
 	if cm.Len() == 0 {
 		return "empty"
 	}
+
 	return fmt.Sprintf(
 		"%d/%d elements on %d segments, %.02f%% efficiency",
 		cm.Len(), cm.Cap(), len(cm.segments),
@@ -230,6 +237,7 @@ func (cm *CompactMap) segmentForKey(key types.NeedleId) *CompactMapSegment {
 
 	cs := newCompactMapSegment(chunk)
 	cm.segments[chunk] = cs
+
 	return cs
 }
 
@@ -240,10 +248,11 @@ func (cm *CompactMap) Set(key types.NeedleId, offset types.Offset, size types.Si
 	defer cm.Unlock()
 
 	cs := cm.segmentForKey(key)
+
 	return cs.set(key, offset, size)
 }
 
-// Get seeks a map entry by key. Returns an entry pointer, with a boolean specifiying if the entry was found.
+// Get seeks a map entry by key. Returns an entry pointer, with a boolean specifying if the entry was found.
 func (cm *CompactMap) Get(key types.NeedleId) (*NeedleValue, bool) {
 	cm.RLock()
 	defer cm.RUnlock()
@@ -255,8 +264,10 @@ func (cm *CompactMap) Get(key types.NeedleId) (*NeedleValue, bool) {
 	}
 	if cnv, found := cs.get(key); found {
 		nv := cnv.NeedleValue(cs.chunk)
+
 		return &nv, true
 	}
+
 	return nil, false
 }
 
@@ -270,6 +281,7 @@ func (cm *CompactMap) Delete(key types.NeedleId) types.Size {
 	if !ok {
 		return types.Size(0)
 	}
+
 	return cs.delete(key)
 }
 
@@ -293,5 +305,6 @@ func (cm *CompactMap) AscendingVisit(visit func(NeedleValue) error) error {
 			}
 		}
 	}
+
 	return nil
 }

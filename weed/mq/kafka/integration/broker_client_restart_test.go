@@ -4,18 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 )
 
 // MockSubscribeStream implements mq_pb.SeaweedMessaging_SubscribeMessageClient for testing
 type MockSubscribeStream struct {
-	sendCalls []interface{}
+	sendCalls []any
 	closed    bool
 }
 
 func (m *MockSubscribeStream) Send(req *mq_pb.SubscribeMessageRequest) error {
 	m.sendCalls = append(m.sendCalls, req)
+
 	return nil
 }
 
@@ -25,14 +27,15 @@ func (m *MockSubscribeStream) Recv() (*mq_pb.SubscribeMessageResponse, error) {
 
 func (m *MockSubscribeStream) CloseSend() error {
 	m.closed = true
+
 	return nil
 }
 
 func (m *MockSubscribeStream) Header() (metadata.MD, error) { return nil, nil }
 func (m *MockSubscribeStream) Trailer() metadata.MD         { return nil }
 func (m *MockSubscribeStream) Context() context.Context     { return context.Background() }
-func (m *MockSubscribeStream) SendMsg(m2 interface{}) error { return nil }
-func (m *MockSubscribeStream) RecvMsg(m2 interface{}) error { return nil }
+func (m *MockSubscribeStream) SendMsg(m2 any) error         { return nil }
+func (m *MockSubscribeStream) RecvMsg(m2 any) error         { return nil }
 
 // TestNeedsRestart tests the NeedsRestart logic
 func TestNeedsRestart(t *testing.T) {
@@ -243,7 +246,7 @@ func TestNeedsRestart_ThreadSafety(t *testing.T) {
 
 	// Run many concurrent checks
 	done := make(chan bool)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		go func(offset int64) {
 			bc.NeedsRestart(session, offset)
 			done <- true
@@ -251,7 +254,7 @@ func TestNeedsRestart_ThreadSafety(t *testing.T) {
 	}
 
 	// Wait for all to complete
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		<-done
 	}
 
@@ -306,12 +309,11 @@ func BenchmarkNeedsRestart_CacheHit(b *testing.B) {
 		consumedRecords: make([]*SeaweedRecord, 100),
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		session.consumedRecords[i] = &SeaweedRecord{Offset: int64(i)}
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		bc.NeedsRestart(session, 50) // Hit cache
 	}
 }
@@ -329,12 +331,11 @@ func BenchmarkNeedsRestart_CacheMiss(b *testing.B) {
 		consumedRecords: make([]*SeaweedRecord, 100),
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		session.consumedRecords[i] = &SeaweedRecord{Offset: int64(i)}
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		bc.NeedsRestart(session, 500) // Miss cache (within gap threshold)
 	}
 }

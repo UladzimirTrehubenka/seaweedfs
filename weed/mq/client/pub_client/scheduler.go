@@ -2,6 +2,7 @@ package pub_client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -9,24 +10,27 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/glog"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
-	"github.com/seaweedfs/seaweedfs/weed/util/buffered_queue"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util/buffered_queue"
 )
 
 type EachPartitionError struct {
 	*mq_pb.BrokerPartitionAssignment
+
 	Err        error
 	generation int
 }
 
 type EachPartitionPublishJob struct {
 	*mq_pb.BrokerPartitionAssignment
+
 	stopChan   chan bool
 	wg         sync.WaitGroup
 	generation int
@@ -34,10 +38,10 @@ type EachPartitionPublishJob struct {
 }
 
 func (p *TopicPublisher) startSchedulerThread(wg *sync.WaitGroup) error {
-
 	if err := p.doConfigureTopic(); err != nil {
 		wg.Done()
-		return fmt.Errorf("configure topic %s: %v", p.config.Topic, err)
+
+		return fmt.Errorf("configure topic %s: %w", p.config.Topic, err)
 	}
 
 	log.Printf("start scheduler thread for topic %s", p.config.Topic)
@@ -56,6 +60,7 @@ func (p *TopicPublisher) startSchedulerThread(wg *sync.WaitGroup) error {
 		} else {
 			glog.Errorf("lookup topic %s: %v", p.config.Topic, err)
 			time.Sleep(5 * time.Second)
+
 			continue
 		}
 
@@ -71,6 +76,7 @@ func (p *TopicPublisher) startSchedulerThread(wg *sync.WaitGroup) error {
 				if eachErr.generation < generation {
 					continue
 				}
+
 				break
 			}
 		}
@@ -80,20 +86,20 @@ func (p *TopicPublisher) startSchedulerThread(wg *sync.WaitGroup) error {
 func (p *TopicPublisher) onEachAssignments(generation int, assignments []*mq_pb.BrokerPartitionAssignment, errChan chan EachPartitionError) {
 	// TODO assuming this is not re-configured so the partitions are fixed.
 	sort.Slice(assignments, func(i, j int) bool {
-		return assignments[i].Partition.RangeStart < assignments[j].Partition.RangeStart
+		return assignments[i].GetPartition().GetRangeStart() < assignments[j].GetPartition().GetRangeStart()
 	})
 	var jobs []*EachPartitionPublishJob
 	hasExistingJob := len(p.jobs) == len(assignments)
 	for i, assignment := range assignments {
-		if assignment.LeaderBroker == "" {
+		if assignment.GetLeaderBroker() == "" {
 			continue
 		}
 		if hasExistingJob {
-			var existingJob *EachPartitionPublishJob
-			existingJob = p.jobs[i]
-			if existingJob.BrokerPartitionAssignment.LeaderBroker == assignment.LeaderBroker {
+			var existingJob = p.jobs[i]
+			if existingJob.LeaderBroker == assignment.GetLeaderBroker() {
 				existingJob.generation = generation
 				jobs = append(jobs, existingJob)
+
 				continue
 			} else {
 				if existingJob.LeaderBroker != "" {
@@ -122,18 +128,17 @@ func (p *TopicPublisher) onEachAssignments(generation int, assignments []*mq_pb.
 		jobs = append(jobs, job)
 		// TODO assuming this is not re-configured so the partitions are fixed.
 		// better just re-use the existing job
-		p.partition2Buffer.Insert(assignment.Partition.RangeStart, assignment.Partition.RangeStop, job.inputQueue)
+		p.partition2Buffer.Insert(assignment.GetPartition().GetRangeStart(), assignment.GetPartition().GetRangeStop(), job.inputQueue)
 	}
 	p.jobs = jobs
 }
 
 func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) error {
-
 	log.Printf("connecting to %v for topic partition %+v", job.LeaderBroker, job.Partition)
 
 	grpcConnection, err := grpc.NewClient(job.LeaderBroker, grpc.WithTransportCredentials(insecure.NewCredentials()), p.grpcDialOption)
 	if err != nil {
-		return fmt.Errorf("dial broker %s: %v", job.LeaderBroker, err)
+		return fmt.Errorf("dial broker %s: %w", job.LeaderBroker, err)
 	}
 	brokerClient := mq_pb.NewSeaweedMessagingClient(grpcConnection)
 	stream, err := brokerClient.PublishMessage(context.Background())
@@ -162,8 +167,8 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 	if err != nil {
 		return fmt.Errorf("recv init response: %w", err)
 	}
-	if resp.Error != "" {
-		return fmt.Errorf("init response error: %v", resp.Error)
+	if resp.GetError() != "" {
+		return fmt.Errorf("init response error: %v", resp.GetError())
 	}
 
 	var publishedTsNs int64
@@ -178,21 +183,24 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 				e, _ := status.FromError(err)
 				if e.Code() == codes.Unknown && e.Message() == "EOF" {
 					log.Printf("publish to %s EOF", publishClient.Broker)
+
 					return
 				}
 				publishClient.Err = err
 				log.Printf("publish1 to %s error: %v\n", publishClient.Broker, err)
+
 				return
 			}
-			if ackResp.Error != "" {
-				publishClient.Err = fmt.Errorf("ack error: %v", ackResp.Error)
-				log.Printf("publish2 to %s error: %v\n", publishClient.Broker, ackResp.Error)
+			if ackResp.GetError() != "" {
+				publishClient.Err = fmt.Errorf("ack error: %v", ackResp.GetError())
+				log.Printf("publish2 to %s error: %v\n", publishClient.Broker, ackResp.GetError())
+
 				return
 			}
-			if ackResp.AckTsNs > 0 {
-				log.Printf("ack %d published %d hasMoreData:%d", ackResp.AckTsNs, atomic.LoadInt64(&publishedTsNs), atomic.LoadInt32(&hasMoreData))
+			if ackResp.GetAckTsNs() > 0 {
+				log.Printf("ack %d published %d hasMoreData:%d", ackResp.GetAckTsNs(), atomic.LoadInt64(&publishedTsNs), atomic.LoadInt32(&hasMoreData))
 			}
-			if atomic.LoadInt64(&publishedTsNs) <= ackResp.AckTsNs && atomic.LoadInt32(&hasMoreData) == 0 {
+			if atomic.LoadInt64(&publishedTsNs) <= ackResp.GetAckTsNs() && atomic.LoadInt32(&hasMoreData) == 0 {
 				return
 			}
 		}
@@ -200,7 +208,7 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 
 	publishCounter := 0
 	for data, hasData := job.inputQueue.Dequeue(); hasData; data, hasData = job.inputQueue.Dequeue() {
-		if data.Ctrl != nil && data.Ctrl.IsClose {
+		if data.GetCtrl() != nil && data.GetCtrl().GetIsClose() {
 			// need to set this before sending to brokers, to avoid timing issue
 			atomic.StoreInt32(&hasMoreData, 0)
 		}
@@ -212,7 +220,7 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 			return fmt.Errorf("send publish data: %w", err)
 		}
 		publishCounter++
-		atomic.StoreInt64(&publishedTsNs, data.TsNs)
+		atomic.StoreInt64(&publishedTsNs, data.GetTsNs())
 	}
 	if publishCounter > 0 {
 		wg.Wait()
@@ -230,7 +238,7 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 
 func (p *TopicPublisher) doConfigureTopic() (err error) {
 	if len(p.config.Brokers) == 0 {
-		return fmt.Errorf("topic configuring found no bootstrap brokers")
+		return errors.New("topic configuring found no bootstrap brokers")
 	}
 	var lastErr error
 	for _, brokerAddress := range p.config.Brokers {
@@ -243,25 +251,28 @@ func (p *TopicPublisher) doConfigureTopic() (err error) {
 					PartitionCount:    p.config.PartitionCount,
 					MessageRecordType: p.config.RecordType, // Flat schema
 				})
+
 				return err
 			})
 		if err == nil {
 			lastErr = nil
+
 			return nil
 		} else {
-			lastErr = fmt.Errorf("%s: %v", brokerAddress, err)
+			lastErr = fmt.Errorf("%s: %w", brokerAddress, err)
 		}
 	}
 
 	if lastErr != nil {
-		return fmt.Errorf("doConfigureTopic %s: %v", p.config.Topic, err)
+		return fmt.Errorf("doConfigureTopic %s: %w", p.config.Topic, err)
 	}
+
 	return nil
 }
 
 func (p *TopicPublisher) doLookupTopicPartitions() (assignments []*mq_pb.BrokerPartitionAssignment, err error) {
 	if len(p.config.Brokers) == 0 {
-		return nil, fmt.Errorf("lookup found no bootstrap brokers")
+		return nil, errors.New("lookup found no bootstrap brokers")
 	}
 	var lastErr error
 	for _, brokerAddress := range p.config.Brokers {
@@ -279,11 +290,11 @@ func (p *TopicPublisher) doLookupTopicPartitions() (assignments []*mq_pb.BrokerP
 					return err
 				}
 
-				if len(lookupResp.BrokerPartitionAssignments) == 0 {
-					return fmt.Errorf("no broker partition assignments")
+				if len(lookupResp.GetBrokerPartitionAssignments()) == 0 {
+					return errors.New("no broker partition assignments")
 				}
 
-				assignments = lookupResp.BrokerPartitionAssignments
+				assignments = lookupResp.GetBrokerPartitionAssignments()
 
 				return nil
 			})
@@ -294,6 +305,5 @@ func (p *TopicPublisher) doLookupTopicPartitions() (assignments []*mq_pb.BrokerP
 		}
 	}
 
-	return nil, fmt.Errorf("lookup topic %s: %v", p.config.Topic, lastErr)
-
+	return nil, fmt.Errorf("lookup topic %s: %w", p.config.Topic, lastErr)
 }

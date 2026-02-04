@@ -12,6 +12,8 @@ import (
 
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/mq"
 	"github.com/seaweedfs/seaweedfs/weed/mq/schema"
@@ -22,7 +24,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -43,21 +44,22 @@ func CompactTopicPartitions(filerClient filer_pb.FilerClient, t topic.Topic, tim
 	for _, topicVersion := range topicVersions {
 		partitions, err := collectTopicVersionsPartitions(filerClient, t, topicVersion)
 		if err != nil {
-			return fmt.Errorf("list partitions %s/%s/%s: %v", t.Namespace, t.Name, topicVersion, err)
+			return fmt.Errorf("list partitions %s/%s/%s: %w", t.Namespace, t.Name, topicVersion, err)
 		}
 		for _, partition := range partitions {
 			err := compactTopicPartition(filerClient, t, timeAgo, recordType, partition, preference)
 			if err != nil {
-				return fmt.Errorf("compact partition %s/%s/%s/%s: %v", t.Namespace, t.Name, topicVersion, partition, err)
+				return fmt.Errorf("compact partition %s/%s/%s/%s: %w", t.Namespace, t.Name, topicVersion, partition, err)
 			}
 		}
 	}
+
 	return nil
 }
 
 func collectTopicVersions(filerClient filer_pb.FilerClient, t topic.Topic, timeAgo time.Duration) (partitionVersions []time.Time, err error) {
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(t.Dir()), "", func(entry *filer_pb.Entry, isLast bool) error {
-		t, err := topic.ParseTopicVersion(entry.Name)
+		t, err := topic.ParseTopicVersion(entry.GetName())
 		if err != nil {
 			// skip non-partition directories
 			return nil
@@ -65,18 +67,20 @@ func collectTopicVersions(filerClient filer_pb.FilerClient, t topic.Topic, timeA
 		if t.Unix() < time.Now().Unix()-int64(timeAgo/time.Second) {
 			partitionVersions = append(partitionVersions, t)
 		}
+
 		return nil
 	})
+
 	return
 }
 
 func collectTopicVersionsPartitions(filerClient filer_pb.FilerClient, t topic.Topic, topicVersion time.Time) (partitions []topic.Partition, err error) {
 	version := topicVersion.Format(topic.PartitionGenerationFormat)
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(t.Dir()).Child(version), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if !entry.IsDirectory {
+		if !entry.GetIsDirectory() {
 			return nil
 		}
-		start, stop := topic.ParsePartitionBoundary(entry.Name)
+		start, stop := topic.ParsePartitionBoundary(entry.GetName())
 		if start != stop {
 			partitions = append(partitions, topic.Partition{
 				RangeStart: start,
@@ -85,8 +89,10 @@ func collectTopicVersionsPartitions(filerClient filer_pb.FilerClient, t topic.To
 				UnixTimeNs: topicVersion.UnixNano(),
 			})
 		}
+
 		return nil
 	})
+
 	return
 }
 
@@ -119,7 +125,7 @@ func compactTopicPartitionDir(filerClient filer_pb.FilerClient, topicName, parti
 	// write to parquet file
 	parquetLevels, err := schema.ToParquetLevels(recordType)
 	if err != nil {
-		return fmt.Errorf("ToParquetLevels failed %+v: %v", recordType, err)
+		return fmt.Errorf("ToParquetLevels failed %+v: %w", recordType, err)
 	}
 
 	// create a parquet schema
@@ -142,29 +148,30 @@ func groupFilesBySize(logFiles []*filer_pb.Entry, maxGroupSize int64) (logFileGr
 	var logFileGroup []*filer_pb.Entry
 	var groupSize int64
 	for _, logFile := range logFiles {
-		if groupSize+int64(logFile.Attributes.FileSize) > maxGroupSize {
+		if groupSize+int64(logFile.GetAttributes().GetFileSize()) > maxGroupSize {
 			logFileGroups = append(logFileGroups, logFileGroup)
 			logFileGroup = nil
 			groupSize = 0
 		}
 		logFileGroup = append(logFileGroup, logFile)
-		groupSize += int64(logFile.Attributes.FileSize)
+		groupSize += int64(logFile.GetAttributes().GetFileSize())
 	}
 	if len(logFileGroup) > 0 {
 		logFileGroups = append(logFileGroups, logFileGroup)
 	}
+
 	return
 }
 
 func readAllLogFiles(filerClient filer_pb.FilerClient, partitionDir string, timeAgo time.Duration, minTsNs, maxTsNs int64) (logFiles []*filer_pb.Entry, err error) {
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(partitionDir), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if strings.HasSuffix(entry.Name, ".parquet") {
+		if strings.HasSuffix(entry.GetName(), ".parquet") {
 			return nil
 		}
-		if entry.Attributes.Crtime > time.Now().Unix()-int64(timeAgo/time.Second) {
+		if entry.GetAttributes().GetCrtime() > time.Now().Unix()-int64(timeAgo/time.Second) {
 			return nil
 		}
-		logTime, err := time.Parse(topic.TIME_FORMAT, entry.Name)
+		logTime, err := time.Parse(topic.TIME_FORMAT, entry.GetName())
 		if err != nil {
 			// glog.Warningf("parse log time %s: %v", entry.Name, err)
 			return nil
@@ -173,22 +180,24 @@ func readAllLogFiles(filerClient filer_pb.FilerClient, partitionDir string, time
 			return nil
 		}
 		logFiles = append(logFiles, entry)
+
 		return nil
 	})
+
 	return
 }
 
 func readAllParquetFiles(filerClient filer_pb.FilerClient, partitionDir string) (minTsNs, maxTsNs int64, err error) {
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(partitionDir), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if !strings.HasSuffix(entry.Name, ".parquet") {
+		if !strings.HasSuffix(entry.GetName(), ".parquet") {
 			return nil
 		}
-		if len(entry.Extended) == 0 {
+		if len(entry.GetExtended()) == 0 {
 			return nil
 		}
 
 		// read min ts
-		minTsBytes := entry.Extended[mq.ExtendedAttrTimestampMin]
+		minTsBytes := entry.GetExtended()[mq.ExtendedAttrTimestampMin]
 		if len(minTsBytes) != 8 {
 			return nil
 		}
@@ -198,7 +207,7 @@ func readAllParquetFiles(filerClient filer_pb.FilerClient, partitionDir string) 
 		}
 
 		// read max ts
-		maxTsBytes := entry.Extended[mq.ExtendedAttrTimestampMax]
+		maxTsBytes := entry.GetExtended()[mq.ExtendedAttrTimestampMax]
 		if len(maxTsBytes) != 8 {
 			return nil
 		}
@@ -206,9 +215,11 @@ func readAllParquetFiles(filerClient filer_pb.FilerClient, partitionDir string) 
 		if maxTsNs == 0 || maxTs > maxTsNs {
 			maxTsNs = maxTs
 		}
+
 		return nil
 	})
-	return
+
+	return minTsNs, maxTsNs, err
 }
 
 // isSchemalessRecordType checks if the recordType represents a schema-less topic
@@ -223,8 +234,8 @@ func isSchemalessRecordType(recordType *schema_pb.RecordType) bool {
 	hasValue := false
 	dataFieldCount := 0
 
-	for _, field := range recordType.Fields {
-		switch field.Name {
+	for _, field := range recordType.GetFields() {
+		switch field.GetName() {
 		case SW_COLUMN_NAME_TS, SW_COLUMN_NAME_KEY, SW_COLUMN_NAME_OFFSET:
 			// System fields - ignore
 			continue
@@ -242,7 +253,6 @@ func isSchemalessRecordType(recordType *schema_pb.RecordType) bool {
 }
 
 func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir string, recordType *schema_pb.RecordType, logFileGroups []*filer_pb.Entry, parquetSchema *parquet.Schema, parquetLevels *schema.ParquetLevels, preference *operation.StoragePreference) (err error) {
-
 	tempFile, err := os.CreateTemp(".", "t*.parquet")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
@@ -267,29 +277,28 @@ func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir strin
 	for _, logFile := range logFileGroups {
 		var rows []parquet.Row
 		if err := iterateLogEntries(filerClient, logFile, func(entry *filer_pb.LogEntry) error {
-
 			// Skip control entries without actual data (same logic as read operations)
 			if isControlEntry(entry) {
 				return nil
 			}
 
 			if startTsNs == 0 {
-				startTsNs = entry.TsNs
+				startTsNs = entry.GetTsNs()
 			}
-			stopTsNs = entry.TsNs
+			stopTsNs = entry.GetTsNs()
 
 			// Track offset ranges for Kafka integration
-			if entry.Offset > 0 {
+			if entry.GetOffset() > 0 {
 				if !hasOffsets {
-					minOffset = entry.Offset
-					maxOffset = entry.Offset
+					minOffset = entry.GetOffset()
+					maxOffset = entry.GetOffset()
 					hasOffsets = true
 				} else {
-					if entry.Offset < minOffset {
-						minOffset = entry.Offset
+					if entry.GetOffset() < minOffset {
+						minOffset = entry.GetOffset()
 					}
-					if entry.Offset > maxOffset {
-						maxOffset = entry.Offset
+					if entry.GetOffset() > maxOffset {
+						maxOffset = entry.GetOffset()
 					}
 				}
 			}
@@ -304,12 +313,12 @@ func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir strin
 				record.Fields = make(map[string]*schema_pb.Value)
 				record.Fields[SW_COLUMN_NAME_VALUE] = &schema_pb.Value{
 					Kind: &schema_pb.Value_BytesValue{
-						BytesValue: entry.Data,
+						BytesValue: entry.GetData(),
 					},
 				}
 			} else {
 				// For schematized topics, unmarshal entry.Data as RecordValue
-				if err := proto.Unmarshal(entry.Data, record); err != nil {
+				if err := proto.Unmarshal(entry.GetData(), record); err != nil {
 					return fmt.Errorf("unmarshal record value: %w", err)
 				}
 
@@ -322,7 +331,7 @@ func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir strin
 				// ASSUMPTION: LogEntry.Offset field is populated by broker during message publishing
 				record.Fields[SW_COLUMN_NAME_OFFSET] = &schema_pb.Value{
 					Kind: &schema_pb.Value_Int64Value{
-						Int64Value: entry.Offset,
+						Int64Value: entry.GetOffset(),
 					},
 				}
 			}
@@ -330,12 +339,12 @@ func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir strin
 			// Add system columns (for both schematized and schema-less topics)
 			record.Fields[SW_COLUMN_NAME_TS] = &schema_pb.Value{
 				Kind: &schema_pb.Value_Int64Value{
-					Int64Value: entry.TsNs,
+					Int64Value: entry.GetTsNs(),
 				},
 			}
 
 			// Handle nil key bytes to prevent growslice panic in parquet-go
-			keyBytes := entry.Key
+			keyBytes := entry.GetKey()
 			if keyBytes == nil {
 				keyBytes = []byte{} // Use empty slice instead of nil
 			}
@@ -362,9 +371,8 @@ func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir strin
 			rows = append(rows, row)
 
 			return nil
-
 		}); err != nil {
-			return fmt.Errorf("iterate log entry %v/%v: %w", partitionDir, logFile.Name, err)
+			return fmt.Errorf("iterate log entry %v/%v: %w", partitionDir, logFile.GetName(), err)
 		}
 
 		// Nil ByteArray handling is done during row creation
@@ -380,13 +388,13 @@ func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir strin
 	}
 
 	// write to parquet file to partitionDir
-	parquetFileName := fmt.Sprintf("%s.parquet", time.Unix(0, startTsNs).UTC().Format("2006-01-02-15-04-05"))
+	parquetFileName := time.Unix(0, startTsNs).UTC().Format("2006-01-02-15-04-05") + ".parquet"
 
 	// Collect source log file names and buffer_start metadata for deduplication
 	var sourceLogFiles []string
 	var earliestBufferStart int64
 	for _, logFile := range logFileGroups {
-		sourceLogFiles = append(sourceLogFiles, logFile.Name)
+		sourceLogFiles = append(sourceLogFiles, logFile.GetName())
 
 		// Extract buffer_start from log file metadata
 		if bufferStart := getBufferStartFromLogFile(logFile); bufferStart > 0 {
@@ -397,11 +405,10 @@ func writeLogFilesToParquet(filerClient filer_pb.FilerClient, partitionDir strin
 	}
 
 	if err := saveParquetFileToPartitionDir(filerClient, tempFile, partitionDir, parquetFileName, preference, startTsNs, stopTsNs, sourceLogFiles, earliestBufferStart, minOffset, maxOffset, hasOffsets); err != nil {
-		return fmt.Errorf("save parquet file %s: %v", parquetFileName, err)
+		return fmt.Errorf("save parquet file %s: %w", parquetFileName, err)
 	}
 
 	return nil
-
 }
 
 func saveParquetFileToPartitionDir(filerClient filer_pb.FilerClient, sourceFile *os.File, partitionDir, parquetFileName string, preference *operation.StoragePreference, startTsNs, stopTsNs int64, sourceLogFiles []string, earliestBufferStart int64, minOffset, maxOffset int64, hasOffsets bool) error {
@@ -461,7 +468,7 @@ func saveParquetFileToPartitionDir(filerClient filer_pb.FilerClient, sourceFile 
 		entry.Extended[mq.ExtendedAttrBufferStart] = bufferStartBytes
 	}
 
-	for i := int64(0); i < chunkCount; i++ {
+	for i := range chunkCount {
 		fileId, uploadResult, err, _ := uploader.UploadWithRetry(
 			filerClient,
 			&filer_pb.AssignVolumeRequest{
@@ -485,7 +492,7 @@ func saveParquetFileToPartitionDir(filerClient filer_pb.FilerClient, sourceFile 
 			io.NewSectionReader(sourceFile, i*chunkSize, chunkSize),
 		)
 		if err != nil {
-			return fmt.Errorf("upload chunk %d: %v", i, err)
+			return fmt.Errorf("upload chunk %d: %w", i, err)
 		}
 		if uploadResult.Error != "" {
 			return fmt.Errorf("upload result: %v", uploadResult.Error)
@@ -512,32 +519,36 @@ func iterateLogEntries(filerClient filer_pb.FilerClient, logFile *filer_pb.Entry
 		if err := eachLogEntryFn(logEntry); err != nil {
 			return true, err
 		}
+
 		return false, nil
 	})
+
 	return err
 }
 
 func eachFile(entry *filer_pb.Entry, lookupFileIdFn func(ctx context.Context, fileId string) (targetUrls []string, err error), eachLogEntryFn log_buffer.EachLogEntryFuncType) (processedTsNs int64, err error) {
-	if len(entry.Content) > 0 {
+	if len(entry.GetContent()) > 0 {
 		// skip .offset files
-		return
+		return processedTsNs, err
 	}
 	var urlStrings []string
-	for _, chunk := range entry.Chunks {
-		if chunk.Size == 0 {
+	for _, chunk := range entry.GetChunks() {
+		if chunk.GetSize() == 0 {
 			continue
 		}
-		if chunk.IsChunkManifest {
-			return
+		if chunk.GetIsChunkManifest() {
+			return processedTsNs, err
 		}
-		urlStrings, err = lookupFileIdFn(context.Background(), chunk.FileId)
+		urlStrings, err = lookupFileIdFn(context.Background(), chunk.GetFileId())
 		if err != nil {
-			err = fmt.Errorf("lookup %s: %v", chunk.FileId, err)
-			return
+			err = fmt.Errorf("lookup %s: %w", chunk.GetFileId(), err)
+
+			return processedTsNs, err
 		}
 		if len(urlStrings) == 0 {
-			err = fmt.Errorf("no url found for %s", chunk.FileId)
-			return
+			err = fmt.Errorf("no url found for %s", chunk.GetFileId())
+
+			return processedTsNs, err
 		}
 
 		// try one of the urlString until util.Get(urlString) succeeds
@@ -547,26 +558,28 @@ func eachFile(entry *filer_pb.Entry, lookupFileIdFn func(ctx context.Context, fi
 			if data, _, err = util_http.Get(urlString); err == nil {
 				processed = true
 				if processedTsNs, err = eachChunk(data, eachLogEntryFn); err != nil {
-					return
+					return processedTsNs, err
 				}
+
 				break
 			}
 		}
 		if !processed {
-			err = fmt.Errorf("no data processed for %s %s", entry.Name, chunk.FileId)
-			return
-		}
+			err = fmt.Errorf("no data processed for %s %s", entry.GetName(), chunk.GetFileId())
 
+			return processedTsNs, err
+		}
 	}
-	return
+
+	return processedTsNs, err
 }
 
 func eachChunk(buf []byte, eachLogEntryFn log_buffer.EachLogEntryFuncType) (processedTsNs int64, err error) {
 	for pos := 0; pos+4 < len(buf); {
-
 		size := util.BytesToUint32(buf[pos : pos+4])
 		if pos+4+int(size) > len(buf) {
 			err = fmt.Errorf("reach each log chunk: read [%d,%d) from [0,%d)", pos, pos+int(size)+4, len(buf))
+
 			return
 		}
 		entryData := buf[pos+4 : pos+4+int(size)]
@@ -575,18 +588,19 @@ func eachChunk(buf []byte, eachLogEntryFn log_buffer.EachLogEntryFuncType) (proc
 		if err = proto.Unmarshal(entryData, logEntry); err != nil {
 			pos += 4 + int(size)
 			err = fmt.Errorf("unexpected unmarshal mq_pb.Message: %w", err)
+
 			return
 		}
 
 		if _, err = eachLogEntryFn(logEntry); err != nil {
 			err = fmt.Errorf("process log entry %v: %w", logEntry, err)
+
 			return
 		}
 
-		processedTsNs = logEntry.TsNs
+		processedTsNs = logEntry.GetTsNs()
 
 		pos += 4 + int(size)
-
 	}
 
 	return
@@ -599,7 +613,7 @@ func getBufferStartFromLogFile(logFile *filer_pb.Entry) int64 {
 	}
 
 	// Parse buffer_start binary format
-	if startData, exists := logFile.Extended["buffer_start"]; exists {
+	if startData, exists := logFile.GetExtended()["buffer_start"]; exists {
 		if len(startData) == 8 {
 			startIndex := int64(binary.BigEndian.Uint64(startData))
 			if startIndex > 0 {

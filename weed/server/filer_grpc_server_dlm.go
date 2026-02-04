@@ -2,58 +2,60 @@ package weed_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster/lock_manager"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // DistributedLock is a grpc handler to handle FilerServer's LockRequest
 func (fs *FilerServer) DistributedLock(ctx context.Context, req *filer_pb.LockRequest) (resp *filer_pb.LockResponse, err error) {
-
 	glog.V(4).Infof("FILER LOCK: Received DistributedLock request - name=%s owner=%s renewToken=%s secondsToLock=%d isMoved=%v",
-		req.Name, req.Owner, req.RenewToken, req.SecondsToLock, req.IsMoved)
+		req.GetName(), req.GetOwner(), req.GetRenewToken(), req.GetSecondsToLock(), req.GetIsMoved())
 
 	resp = &filer_pb.LockResponse{}
 
 	var movedTo pb.ServerAddress
-	expiredAtNs := time.Now().Add(time.Duration(req.SecondsToLock) * time.Second).UnixNano()
-	resp.LockOwner, resp.RenewToken, movedTo, err = fs.filer.Dlm.LockWithTimeout(req.Name, expiredAtNs, req.RenewToken, req.Owner)
+	expiredAtNs := time.Now().Add(time.Duration(req.GetSecondsToLock()) * time.Second).UnixNano()
+	resp.LockOwner, resp.RenewToken, movedTo, err = fs.filer.Dlm.LockWithTimeout(req.GetName(), expiredAtNs, req.GetRenewToken(), req.GetOwner())
 	glog.V(4).Infof("FILER LOCK: LockWithTimeout result - name=%s lockOwner=%s renewToken=%s movedTo=%s err=%v",
-		req.Name, resp.LockOwner, resp.RenewToken, movedTo, err)
-	glog.V(4).Infof("lock %s %v %v %v, isMoved=%v %v", req.Name, req.SecondsToLock, req.RenewToken, req.Owner, req.IsMoved, movedTo)
-	if movedTo != "" && movedTo != fs.option.Host && !req.IsMoved {
+		req.GetName(), resp.GetLockOwner(), resp.GetRenewToken(), movedTo, err)
+	glog.V(4).Infof("lock %s %v %v %v, isMoved=%v %v", req.GetName(), req.GetSecondsToLock(), req.GetRenewToken(), req.GetOwner(), req.GetIsMoved(), movedTo)
+	if movedTo != "" && movedTo != fs.option.Host && !req.GetIsMoved() {
 		glog.V(0).Infof("FILER LOCK: Forwarding to correct filer - from=%s to=%s", fs.option.Host, movedTo)
 		err = pb.WithFilerClient(false, 0, movedTo, fs.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			secondResp, err := client.DistributedLock(ctx, &filer_pb.LockRequest{
-				Name:          req.Name,
-				SecondsToLock: req.SecondsToLock,
-				RenewToken:    req.RenewToken,
+				Name:          req.GetName(),
+				SecondsToLock: req.GetSecondsToLock(),
+				RenewToken:    req.GetRenewToken(),
 				IsMoved:       true,
-				Owner:         req.Owner,
+				Owner:         req.GetOwner(),
 			})
 			if err == nil {
-				resp.RenewToken = secondResp.RenewToken
-				resp.LockOwner = secondResp.LockOwner
-				resp.Error = secondResp.Error
-				glog.V(0).Infof("FILER LOCK: Forwarded lock acquired - name=%s renewToken=%s", req.Name, resp.RenewToken)
+				resp.RenewToken = secondResp.GetRenewToken()
+				resp.LockOwner = secondResp.GetLockOwner()
+				resp.Error = secondResp.GetError()
+				glog.V(0).Infof("FILER LOCK: Forwarded lock acquired - name=%s renewToken=%s", req.GetName(), resp.GetRenewToken())
 			} else {
-				glog.V(0).Infof("FILER LOCK: Forward failed - name=%s err=%v", req.Name, err)
+				glog.V(0).Infof("FILER LOCK: Forward failed - name=%s err=%v", req.GetName(), err)
 			}
+
 			return err
 		})
 	}
 
 	if err != nil {
 		resp.Error = fmt.Sprintf("%v", err)
-		if !strings.Contains(resp.Error, "lock already owned") {
-			glog.V(0).Infof("FILER LOCK: Error - name=%s error=%s", req.Name, resp.Error)
+		if !strings.Contains(resp.GetError(), "lock already owned") {
+			glog.V(0).Infof("FILER LOCK: Error - name=%s error=%s", req.GetName(), resp.GetError())
 		}
 	}
 	if movedTo != "" {
@@ -61,27 +63,27 @@ func (fs *FilerServer) DistributedLock(ctx context.Context, req *filer_pb.LockRe
 	}
 
 	glog.V(4).Infof("FILER LOCK: Returning response - name=%s renewToken=%s lockOwner=%s error=%s movedTo=%s",
-		req.Name, resp.RenewToken, resp.LockOwner, resp.Error, resp.LockHostMovedTo)
+		req.GetName(), resp.GetRenewToken(), resp.GetLockOwner(), resp.GetError(), resp.GetLockHostMovedTo())
 
 	return resp, nil
 }
 
 // Unlock is a grpc handler to handle FilerServer's UnlockRequest
 func (fs *FilerServer) DistributedUnlock(ctx context.Context, req *filer_pb.UnlockRequest) (resp *filer_pb.UnlockResponse, err error) {
-
 	resp = &filer_pb.UnlockResponse{}
 
 	var movedTo pb.ServerAddress
-	movedTo, err = fs.filer.Dlm.Unlock(req.Name, req.RenewToken)
+	movedTo, err = fs.filer.Dlm.Unlock(req.GetName(), req.GetRenewToken())
 
-	if !req.IsMoved && movedTo != "" {
+	if !req.GetIsMoved() && movedTo != "" {
 		err = pb.WithFilerClient(false, 0, movedTo, fs.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			secondResp, err := client.DistributedUnlock(ctx, &filer_pb.UnlockRequest{
-				Name:       req.Name,
-				RenewToken: req.RenewToken,
+				Name:       req.GetName(),
+				RenewToken: req.GetRenewToken(),
 				IsMoved:    true,
 			})
-			resp.Error = secondResp.Error
+			resp.Error = secondResp.GetError()
+
 			return err
 		})
 	}
@@ -94,21 +96,21 @@ func (fs *FilerServer) DistributedUnlock(ctx context.Context, req *filer_pb.Unlo
 	}
 
 	return resp, nil
-
 }
 
 func (fs *FilerServer) FindLockOwner(ctx context.Context, req *filer_pb.FindLockOwnerRequest) (*filer_pb.FindLockOwnerResponse, error) {
-	owner, movedTo, err := fs.filer.Dlm.FindLockOwner(req.Name)
-	if !req.IsMoved && movedTo != "" || err == lock_manager.LockNotFound {
+	owner, movedTo, err := fs.filer.Dlm.FindLockOwner(req.GetName())
+	if !req.GetIsMoved() && movedTo != "" || errors.Is(err, lock_manager.LockNotFound) {
 		err = pb.WithFilerClient(false, 0, movedTo, fs.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			secondResp, err := client.FindLockOwner(ctx, &filer_pb.FindLockOwnerRequest{
-				Name:    req.Name,
+				Name:    req.GetName(),
 				IsMoved: true,
 			})
 			if err != nil {
 				return err
 			}
-			owner = secondResp.Owner
+			owner = secondResp.GetOwner()
+
 			return nil
 		})
 		if err != nil {
@@ -117,8 +119,9 @@ func (fs *FilerServer) FindLockOwner(ctx context.Context, req *filer_pb.FindLock
 	}
 
 	if owner == "" {
-		glog.V(0).Infof("find lock %s moved to %v: %v", req.Name, movedTo, err)
-		return nil, status.Error(codes.NotFound, fmt.Sprintf("lock %s not found", req.Name))
+		glog.V(0).Infof("find lock %s moved to %v: %v", req.GetName(), movedTo, err)
+
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("lock %s not found", req.GetName()))
 	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -131,13 +134,11 @@ func (fs *FilerServer) FindLockOwner(ctx context.Context, req *filer_pb.FindLock
 
 // TransferLocks is a grpc handler to handle FilerServer's TransferLocksRequest
 func (fs *FilerServer) TransferLocks(ctx context.Context, req *filer_pb.TransferLocksRequest) (*filer_pb.TransferLocksResponse, error) {
-
-	for _, lock := range req.Locks {
-		fs.filer.Dlm.InsertLock(lock.Name, lock.ExpiredAtNs, lock.RenewToken, lock.Owner)
+	for _, lock := range req.GetLocks() {
+		fs.filer.Dlm.InsertLock(lock.GetName(), lock.GetExpiredAtNs(), lock.GetRenewToken(), lock.GetOwner())
 	}
 
 	return &filer_pb.TransferLocksResponse{}, nil
-
 }
 
 func (fs *FilerServer) OnDlmChangeSnapshot(snapshot []pb.ServerAddress) {
@@ -161,6 +162,7 @@ func (fs *FilerServer) OnDlmChangeSnapshot(snapshot []pb.ServerAddress) {
 					},
 				},
 			})
+
 			return err
 		})
 		cancel()
@@ -169,5 +171,4 @@ func (fs *FilerServer) OnDlmChangeSnapshot(snapshot []pb.ServerAddress) {
 			glog.Errorf("transfer lock %v to %v: %v", lock.Key, server, err)
 		}
 	}
-
 }

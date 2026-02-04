@@ -1,7 +1,7 @@
 package broker
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -49,6 +49,7 @@ func (s *InMemoryOffsetStorage) SaveCheckpoint(namespace, topicName string, part
 
 	key := offset.PartitionKey(partition)
 	s.checkpoints[key] = off
+
 	return nil
 }
 
@@ -60,7 +61,7 @@ func (s *InMemoryOffsetStorage) LoadCheckpoint(namespace, topicName string, part
 	key := offset.PartitionKey(partition)
 	off, exists := s.checkpoints[key]
 	if !exists {
-		return -1, fmt.Errorf("no checkpoint found")
+		return -1, errors.New("no checkpoint found")
 	}
 
 	return off, nil
@@ -74,7 +75,7 @@ func (s *InMemoryOffsetStorage) GetHighestOffset(namespace, topicName string, pa
 	key := offset.PartitionKey(partition)
 	offsets, exists := s.records[key]
 	if !exists || len(offsets) == 0 {
-		return -1, fmt.Errorf("no records found")
+		return -1, errors.New("no records found")
 	}
 
 	var highest int64 = -1
@@ -115,6 +116,7 @@ func (s *InMemoryOffsetStorage) Reset() error {
 	s.checkpoints = make(map[string]int64)
 	s.records = make(map[string]map[int64]*recordEntry)
 	s.lastCleanup = time.Now()
+
 	return nil
 }
 
@@ -154,7 +156,7 @@ func (s *InMemoryOffsetStorage) cleanupIfNeeded() {
 			}
 
 			// Sort by timestamp (newest first)
-			for i := 0; i < len(entries)-1; i++ {
+			for i := range len(entries) - 1 {
 				for j := i + 1; j < len(entries); j++ {
 					if entries[i].time.Before(entries[j].time) {
 						entries[i], entries[j] = entries[j], entries[i]

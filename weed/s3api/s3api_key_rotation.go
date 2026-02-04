@@ -3,6 +3,7 @@ package s3api
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,16 +28,17 @@ func (s3a *S3ApiServer) rotateSSECKey(entry *filer_pb.Entry, r *http.Request) ([
 
 	// Validate that we have both keys
 	if sourceKey == nil {
-		return nil, fmt.Errorf("source SSE-C key required for key rotation")
+		return nil, errors.New("source SSE-C key required for key rotation")
 	}
 
 	if destKey == nil {
-		return nil, fmt.Errorf("destination SSE-C key required for key rotation")
+		return nil, errors.New("destination SSE-C key required for key rotation")
 	}
 
 	// Check if keys are actually different
 	if sourceKey.KeyMD5 == destKey.KeyMD5 {
 		glog.V(2).Infof("SSE-C key rotation: keys are identical, using direct copy")
+
 		return entry.GetChunks(), nil
 	}
 
@@ -51,9 +53,9 @@ func (s3a *S3ApiServer) rotateSSECKey(entry *filer_pb.Entry, r *http.Request) ([
 // rotateSSEKMSKey handles SSE-KMS key rotation for same-object copies
 func (s3a *S3ApiServer) rotateSSEKMSKey(entry *filer_pb.Entry, r *http.Request) ([]*filer_pb.FileChunk, error) {
 	// Get source and destination key IDs
-	srcKeyID, srcEncrypted := GetSourceSSEKMSInfo(entry.Extended)
+	srcKeyID, srcEncrypted := GetSourceSSEKMSInfo(entry.GetExtended())
 	if !srcEncrypted {
-		return nil, fmt.Errorf("source object is not SSE-KMS encrypted")
+		return nil, errors.New("source object is not SSE-KMS encrypted")
 	}
 
 	dstKeyID := r.Header.Get(s3_constants.AmzServerSideEncryptionAwsKmsKeyId)
@@ -65,6 +67,7 @@ func (s3a *S3ApiServer) rotateSSEKMSKey(entry *filer_pb.Entry, r *http.Request) 
 	// Check if keys are actually different
 	if srcKeyID == dstKeyID {
 		glog.V(2).Infof("SSE-KMS key rotation: keys are identical, using direct copy")
+
 		return entry.GetChunks(), nil
 	}
 
@@ -94,13 +97,13 @@ func (s3a *S3ApiServer) CanDoMetadataOnlyKMSRotation(srcKeyID, dstKeyID string) 
 func (s3a *S3ApiServer) rotateSSEKMSMetadataOnly(entry *filer_pb.Entry, srcKeyID, dstKeyID string) ([]*filer_pb.FileChunk, error) {
 	// This would re-wrap the data encryption key with the new KMS key
 	// For now, return an error since we don't support this yet
-	return nil, fmt.Errorf("metadata-only KMS key rotation not yet implemented")
+	return nil, errors.New("metadata-only KMS key rotation not yet implemented")
 }
 
 // rotateSSECChunks re-encrypts all chunks with new SSE-C key
 func (s3a *S3ApiServer) rotateSSECChunks(entry *filer_pb.Entry, sourceKey, destKey *SSECustomerKey) ([]*filer_pb.FileChunk, error) {
 	// Get IV from entry metadata
-	iv, err := GetSSECIVFromMetadata(entry.Extended)
+	iv, err := GetSSECIVFromMetadata(entry.GetExtended())
 	if err != nil {
 		return nil, fmt.Errorf("get SSE-C IV from metadata: %w", err)
 	}
@@ -125,7 +128,7 @@ func (s3a *S3ApiServer) rotateSSECChunks(entry *filer_pb.Entry, sourceKey, destK
 	if entry.Extended == nil {
 		entry.Extended = make(map[string][]byte)
 	}
-	StoreSSECIVInMetadata(entry.Extended, newIV)
+	StoreSSECIVInMetadata(entry.GetExtended(), newIV)
 	entry.Extended[s3_constants.AmzServerSideEncryptionCustomerAlgorithm] = []byte("AES256")
 	entry.Extended[s3_constants.AmzServerSideEncryptionCustomerKeyMD5] = []byte(destKey.KeyMD5)
 
@@ -157,10 +160,10 @@ func (s3a *S3ApiServer) rotateSSEKMSChunks(entry *filer_pb.Entry, srcKeyID, dstK
 func (s3a *S3ApiServer) rotateSSECChunk(chunk *filer_pb.FileChunk, sourceKey, destKey *SSECustomerKey, iv []byte) (*filer_pb.FileChunk, error) {
 	// Create new chunk with same properties
 	newChunk := &filer_pb.FileChunk{
-		Offset:       chunk.Offset,
-		Size:         chunk.Size,
-		ModifiedTsNs: chunk.ModifiedTsNs,
-		ETag:         chunk.ETag,
+		Offset:       chunk.GetOffset(),
+		Size:         chunk.GetSize(),
+		ModifiedTsNs: chunk.GetModifiedTsNs(),
+		ETag:         chunk.GetETag(),
 	}
 
 	// Assign new volume for the rotated chunk
@@ -182,7 +185,7 @@ func (s3a *S3ApiServer) rotateSSECChunk(chunk *filer_pb.FileChunk, sourceKey, de
 	}
 
 	// Download encrypted data
-	encryptedData, err := s3a.downloadChunkData(srcUrl, fileId, 0, int64(chunk.Size), chunk.CipherKey)
+	encryptedData, err := s3a.downloadChunkData(srcUrl, fileId, 0, int64(chunk.GetSize()), chunk.GetCipherKey())
 	if err != nil {
 		return nil, fmt.Errorf("download chunk data: %w", err)
 	}
@@ -226,10 +229,10 @@ func (s3a *S3ApiServer) rotateSSECChunk(chunk *filer_pb.FileChunk, sourceKey, de
 func (s3a *S3ApiServer) rotateSSEKMSChunk(chunk *filer_pb.FileChunk, srcKeyID, dstKeyID string, encryptionContext map[string]string, bucketKeyEnabled bool) (*filer_pb.FileChunk, error) {
 	// Create new chunk with same properties
 	newChunk := &filer_pb.FileChunk{
-		Offset:       chunk.Offset,
-		Size:         chunk.Size,
-		ModifiedTsNs: chunk.ModifiedTsNs,
-		ETag:         chunk.ETag,
+		Offset:       chunk.GetOffset(),
+		Size:         chunk.GetSize(),
+		ModifiedTsNs: chunk.GetModifiedTsNs(),
+		ETag:         chunk.GetETag(),
 	}
 
 	// Assign new volume for the rotated chunk
@@ -251,7 +254,7 @@ func (s3a *S3ApiServer) rotateSSEKMSChunk(chunk *filer_pb.FileChunk, srcKeyID, d
 	}
 
 	// Download data (this would be encrypted with the old KMS key)
-	chunkData, err := s3a.downloadChunkData(srcUrl, fileId, 0, int64(chunk.Size), chunk.CipherKey)
+	chunkData, err := s3a.downloadChunkData(srcUrl, fileId, 0, int64(chunk.GetSize()), chunk.GetCipherKey())
 	if err != nil {
 		return nil, fmt.Errorf("download chunk data: %w", err)
 	}
@@ -278,14 +281,15 @@ func IsSameObjectCopy(r *http.Request, srcBucket, srcObject, dstBucket, dstObjec
 // NeedsKeyRotation determines if the copy operation requires key rotation
 func NeedsKeyRotation(entry *filer_pb.Entry, r *http.Request) bool {
 	// Check for SSE-C key rotation
-	if IsSSECEncrypted(entry.Extended) && IsSSECRequest(r) {
+	if IsSSECEncrypted(entry.GetExtended()) && IsSSECRequest(r) {
 		return true // Assume different keys for safety
 	}
 
 	// Check for SSE-KMS key rotation
-	if IsSSEKMSEncrypted(entry.Extended) && IsSSEKMSRequest(r) {
-		srcKeyID, _ := GetSourceSSEKMSInfo(entry.Extended)
+	if IsSSEKMSEncrypted(entry.GetExtended()) && IsSSEKMSRequest(r) {
+		srcKeyID, _ := GetSourceSSEKMSInfo(entry.GetExtended())
 		dstKeyID := r.Header.Get(s3_constants.AmzServerSideEncryptionAwsKmsKeyId)
+
 		return srcKeyID != dstKeyID
 	}
 

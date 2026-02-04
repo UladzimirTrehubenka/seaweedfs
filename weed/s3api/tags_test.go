@@ -81,16 +81,19 @@ func TestParseTagsHeader(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
 			if len(result) != len(tt.expected) {
 				t.Errorf("Expected %d tags, got %d", len(tt.expected), len(result))
+
 				return
 			}
 

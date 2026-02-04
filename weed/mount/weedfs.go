@@ -2,6 +2,7 @@ package mount
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
 	"os"
 	"path"
@@ -88,6 +89,7 @@ type WFS struct {
 	fuse.RawFileSystem
 	mount_pb.UnimplementedSeaweedMountServer
 	fs.Inode
+
 	option               *Option
 	metaCache            *meta_cache.MetaCache
 	stats                statsCache
@@ -236,6 +238,7 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 	wfs.copyBufferPool.New = func() any {
 		return make([]byte, option.ChunkSizeLimit)
 	}
+
 	return wfs
 }
 
@@ -283,6 +286,7 @@ func (wfs *WFS) maybeReadEntry(inode uint64) (path util.FullPath, fh *FileHandle
 	} else {
 		entry, status = wfs.maybeLoadEntry(path)
 	}
+
 	return
 }
 
@@ -309,6 +313,7 @@ func (wfs *WFS) maybeLoadEntry(fullpath util.FullPath) (*filer_pb.Entry, fuse.St
 	if status != fuse.OK {
 		return nil, status
 	}
+
 	return entry.ToProtoEntry(), fuse.OK
 }
 
@@ -321,12 +326,14 @@ func (wfs *WFS) lookupEntry(fullpath util.FullPath) (*filer.Entry, fuse.Status) 
 
 	// Try to find the entry in the local cache first.
 	cachedEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), fullpath)
-	if cacheErr != nil && cacheErr != filer_pb.ErrNotFound {
+	if cacheErr != nil && !errors.Is(cacheErr, filer_pb.ErrNotFound) {
 		glog.Errorf("lookupEntry: cache lookup for %s failed: %v", fullpath, cacheErr)
+
 		return nil, fuse.EIO
 	}
 	if cachedEntry != nil {
 		glog.V(4).Infof("lookupEntry cache hit %s", fullpath)
+
 		return cachedEntry, fuse.OK
 	}
 
@@ -334,6 +341,7 @@ func (wfs *WFS) lookupEntry(fullpath util.FullPath) (*filer.Entry, fuse.Status) 
 	// No need to query the filer again.
 	if wfs.metaCache.IsDirectoryCached(util.FullPath(dir)) {
 		glog.V(4).Infof("lookupEntry cache miss (dir cached) %s", fullpath)
+
 		return nil, fuse.ENOENT
 	}
 
@@ -342,11 +350,13 @@ func (wfs *WFS) lookupEntry(fullpath util.FullPath) (*filer.Entry, fuse.Status) 
 	entry, err := filer_pb.GetEntry(context.Background(), wfs, fullpath)
 	if err != nil {
 		glog.V(1).Infof("lookupEntry GetEntry %s: %v", fullpath, err)
+
 		return nil, fuse.ENOENT
 	}
-	if entry != nil && entry.Attributes != nil && wfs.option.UidGidMapper != nil {
-		entry.Attributes.Uid, entry.Attributes.Gid = wfs.option.UidGidMapper.FilerToLocal(entry.Attributes.Uid, entry.Attributes.Gid)
+	if entry != nil && entry.GetAttributes() != nil && wfs.option.UidGidMapper != nil {
+		entry.Attributes.Uid, entry.Attributes.Gid = wfs.option.UidGidMapper.FilerToLocal(entry.GetAttributes().GetUid(), entry.GetAttributes().GetGid())
 	}
+
 	return filer.FromPbEntry(dir, entry), fuse.OK
 }
 
@@ -362,6 +372,7 @@ func (wfs *WFS) LookupFn() wdclient.LookupFileIdFunctionType {
 
 func (wfs *WFS) getCurrentFiler() pb.ServerAddress {
 	i := atomic.LoadInt32(&wfs.option.filerIndex)
+
 	return wfs.option.FilerAddresses[i]
 }
 
@@ -378,6 +389,7 @@ func (wfs *WFS) maybeRefreshDirectory(dirPath util.FullPath) {
 	wfs.refreshMu.Lock()
 	if _, exists := wfs.refreshingDirs[dirPath]; exists {
 		wfs.refreshMu.Unlock()
+
 		return
 	}
 	wfs.refreshingDirs[dirPath] = struct{}{}
@@ -392,6 +404,7 @@ func (wfs *WFS) maybeRefreshDirectory(dirPath util.FullPath) {
 		wfs.inodeToPath.InvalidateChildrenCache(dirPath)
 		if err := meta_cache.EnsureVisited(wfs.metaCache, wfs, dirPath); err != nil {
 			glog.Warningf("refresh dir cache %s: %v", dirPath, err)
+
 			return
 		}
 		wfs.inodeToPath.MarkDirectoryRefreshed(dirPath, time.Now())

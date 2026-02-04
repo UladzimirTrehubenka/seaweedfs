@@ -157,6 +157,7 @@ func (c *SchemaCatalog) ListTables(database string) ([]string, error) {
 			}
 			tables = append(tables, name)
 		}
+
 		return tables, nil
 	}
 
@@ -183,6 +184,7 @@ func (c *SchemaCatalog) GetTableInfo(database, table string) (*TableInfo, error)
 	db, exists := c.databases[database]
 	if !exists {
 		c.mu.RUnlock()
+
 		return nil, TableNotFoundError{
 			Database: database,
 			Table:    "",
@@ -223,7 +225,8 @@ func (c *SchemaCatalog) GetTableInfo(database, table string) (*TableInfo, error)
 			if exists {
 				return tableInfo, nil
 			}
-			return nil, fmt.Errorf("failed to register topic schema: %v", err)
+
+			return nil, fmt.Errorf("failed to register topic schema: %w", err)
 		}
 
 		// Get the newly registered table info
@@ -250,6 +253,7 @@ func (c *SchemaCatalog) GetTableInfo(database, table string) (*TableInfo, error)
 	}
 
 	c.mu.RUnlock()
+
 	return tableInfo, nil
 }
 
@@ -275,13 +279,14 @@ func (c *SchemaCatalog) RegisterTopic(namespace, topicName string, mqSchema *sch
 	// Convert MQ schema to SQL table info
 	tableInfo, err := c.convertMQSchemaToTableInfo(namespace, topicName, mqSchema)
 	if err != nil {
-		return fmt.Errorf("failed to convert MQ schema: %v", err)
+		return fmt.Errorf("failed to convert MQ schema: %w", err)
 	}
 
 	// Set the cached timestamp for the table
 	tableInfo.CachedAt = now
 
 	db.Tables[topicName] = tableInfo
+
 	return nil
 }
 
@@ -311,16 +316,16 @@ func (c *SchemaCatalog) convertMQSchemaToTableInfo(namespace, topicName string, 
 		}, nil
 	}
 
-	columns := make([]ColumnInfo, len(mqSchema.RecordType.Fields))
+	columns := make([]ColumnInfo, len(mqSchema.RecordType.GetFields()))
 
-	for i, field := range mqSchema.RecordType.Fields {
-		sqlType, err := c.convertMQFieldTypeToSQL(field.Type)
+	for i, field := range mqSchema.RecordType.GetFields() {
+		sqlType, err := c.convertMQFieldTypeToSQL(field.GetType())
 		if err != nil {
-			return nil, fmt.Errorf("unsupported field type for '%s': %v", field.Name, err)
+			return nil, fmt.Errorf("unsupported field type for '%s': %w", field.GetName(), err)
 		}
 
 		columns[i] = ColumnInfo{
-			Name:     field.Name,
+			Name:     field.GetName(),
 			Type:     sqlType,
 			Nullable: true, // Assumption: MQ fields are nullable by default
 		}
@@ -338,7 +343,7 @@ func (c *SchemaCatalog) convertMQSchemaToTableInfo(namespace, topicName string, 
 // convertMQFieldTypeToSQL maps MQ field types to SQL types
 // Uses standard SQL type mappings with PostgreSQL compatibility
 func (c *SchemaCatalog) convertMQFieldTypeToSQL(fieldType *schema_pb.Type) (string, error) {
-	switch t := fieldType.Kind.(type) {
+	switch t := fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		switch t.ScalarType {
 		case schema_pb.ScalarType_BOOL:
@@ -377,6 +382,7 @@ func (c *SchemaCatalog) SetCurrentDatabase(database string) error {
 
 	// TODO: Validate database exists in MQ broker
 	c.currentDatabase = database
+
 	return nil
 }
 
@@ -384,6 +390,7 @@ func (c *SchemaCatalog) SetCurrentDatabase(database string) error {
 func (c *SchemaCatalog) GetCurrentDatabase() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
 	return c.currentDatabase
 }
 
@@ -398,6 +405,7 @@ func (c *SchemaCatalog) SetDefaultPartitionCount(count int32) {
 func (c *SchemaCatalog) GetDefaultPartitionCount() int32 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
 	return c.defaultPartitionCount
 }
 
@@ -412,6 +420,7 @@ func (c *SchemaCatalog) SetCacheTTL(ttl time.Duration) {
 func (c *SchemaCatalog) GetCacheTTL() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
 	return c.cacheTTL
 }
 

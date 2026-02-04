@@ -9,14 +9,14 @@ import (
 type ConcurrentReadMap struct {
 	sync.RWMutex
 
-	items map[string]interface{}
+	items map[string]any
 }
 
 func NewConcurrentReadMap() *ConcurrentReadMap {
-	return &ConcurrentReadMap{items: make(map[string]interface{})}
+	return &ConcurrentReadMap{items: make(map[string]any)}
 }
 
-func (m *ConcurrentReadMap) initMapEntry(key string, newEntry func() interface{}) (value interface{}) {
+func (m *ConcurrentReadMap) initMapEntry(key string, newEntry func() any) (value any) {
 	m.Lock()
 	defer m.Unlock()
 	if value, ok := m.items[key]; ok {
@@ -24,32 +24,37 @@ func (m *ConcurrentReadMap) initMapEntry(key string, newEntry func() interface{}
 	}
 	value = newEntry()
 	m.items[key] = value
+
 	return value
 }
 
-func (m *ConcurrentReadMap) Get(key string, newEntry func() interface{}) interface{} {
+func (m *ConcurrentReadMap) Get(key string, newEntry func() any) any {
 	m.RLock()
 	if value, ok := m.items[key]; ok {
 		m.RUnlock()
+
 		return value
 	}
 	m.RUnlock()
+
 	return m.initMapEntry(key, newEntry)
 }
 
-func (m *ConcurrentReadMap) Find(key string) (interface{}, bool) {
+func (m *ConcurrentReadMap) Find(key string) (any, bool) {
 	m.RLock()
 	value, ok := m.items[key]
 	m.RUnlock()
+
 	return value, ok
 }
 
-func (m *ConcurrentReadMap) Items() (itemsCopy []interface{}) {
+func (m *ConcurrentReadMap) Items() (itemsCopy []any) {
 	m.RLock()
 	for _, i := range m.items {
 		itemsCopy = append(itemsCopy, i)
 	}
 	m.RUnlock()
+
 	return itemsCopy
 }
 

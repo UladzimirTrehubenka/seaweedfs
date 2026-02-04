@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -43,6 +44,7 @@ func (store *LevelDB3Store) GetName() string {
 
 func (store *LevelDB3Store) Initialize(configuration weed_util.Configuration, prefix string) (err error) {
 	dir := configuration.GetString(prefix + "dir")
+
 	return store.initialize(dir)
 }
 
@@ -50,7 +52,7 @@ func (store *LevelDB3Store) initialize(dir string) (err error) {
 	glog.Infof("filer store leveldb3 dir: %s", dir)
 	os.MkdirAll(dir, 0755)
 	if err := weed_util.TestFolderWritable(dir); err != nil {
-		return fmt.Errorf("Check Level Folder %s Writable: %s", dir, err)
+		return fmt.Errorf("Check Level Folder %s Writable: %w", dir, err)
 	}
 	store.dir = dir
 
@@ -89,18 +91,20 @@ func (store *LevelDB3Store) loadDB(name string) (*leveldb.DB, error) {
 	}
 	if dbErr != nil {
 		glog.Errorf("filer store open dir %s: %v", dbFolder, dbErr)
+
 		return nil, dbErr
 	}
+
 	return db, nil
 }
 
 func (store *LevelDB3Store) findDB(fullpath weed_util.FullPath, isForChildren bool) (*leveldb.DB, string, weed_util.FullPath, error) {
-
 	store.dbsLock.RLock()
 
 	defaultDB := store.dbs[DEFAULT]
 	if !strings.HasPrefix(string(fullpath), "/buckets/") {
 		store.dbsLock.RUnlock()
+
 		return defaultDB, DEFAULT, fullpath, nil
 	}
 
@@ -109,6 +113,7 @@ func (store *LevelDB3Store) findDB(fullpath weed_util.FullPath, isForChildren bo
 	t := strings.Index(bucketAndObjectKey, "/")
 	if t < 0 && !isForChildren {
 		store.dbsLock.RUnlock()
+
 		return defaultDB, DEFAULT, fullpath, nil
 	}
 	bucket := bucketAndObjectKey
@@ -120,6 +125,7 @@ func (store *LevelDB3Store) findDB(fullpath weed_util.FullPath, isForChildren bo
 
 	if db, found := store.dbs[bucket]; found {
 		store.dbsLock.RUnlock()
+
 		return db, bucket, shortPath, nil
 	}
 
@@ -131,7 +137,6 @@ func (store *LevelDB3Store) findDB(fullpath weed_util.FullPath, isForChildren bo
 }
 
 func (store *LevelDB3Store) createDB(bucket string) (*leveldb.DB, error) {
-
 	store.dbsLock.Lock()
 	defer store.dbsLock.Unlock()
 
@@ -152,7 +157,6 @@ func (store *LevelDB3Store) createDB(bucket string) (*leveldb.DB, error) {
 }
 
 func (store *LevelDB3Store) closeDB(bucket string) {
-
 	store.dbsLock.Lock()
 	defer store.dbsLock.Unlock()
 
@@ -160,7 +164,6 @@ func (store *LevelDB3Store) closeDB(bucket string) {
 		db.Close()
 		delete(store.dbs, bucket)
 	}
-
 }
 
 func (store *LevelDB3Store) BeginTransaction(ctx context.Context) (context.Context, error) {
@@ -174,10 +177,9 @@ func (store *LevelDB3Store) RollbackTransaction(ctx context.Context) error {
 }
 
 func (store *LevelDB3Store) InsertEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	db, _, shortPath, err := store.findDB(entry.FullPath, false)
 	if err != nil {
-		return fmt.Errorf("findDB %s : %v", entry.FullPath, err)
+		return fmt.Errorf("findDB %s : %w", entry.FullPath, err)
 	}
 
 	dir, name := shortPath.DirAndName()
@@ -185,7 +187,7 @@ func (store *LevelDB3Store) InsertEntry(ctx context.Context, entry *filer.Entry)
 
 	value, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encoding %s %+v: %v", entry.FullPath, entry.Attr, err)
+		return fmt.Errorf("encoding %s %+v: %w", entry.FullPath, entry.Attr, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -195,7 +197,7 @@ func (store *LevelDB3Store) InsertEntry(ctx context.Context, entry *filer.Entry)
 	err = db.Put(key, value, nil)
 
 	if err != nil {
-		return fmt.Errorf("persisting %s : %v", entry.FullPath, err)
+		return fmt.Errorf("persisting %s : %w", entry.FullPath, err)
 	}
 
 	// println("saved", entry.FullPath, "chunks", len(entry.GetChunks()))
@@ -204,15 +206,13 @@ func (store *LevelDB3Store) InsertEntry(ctx context.Context, entry *filer.Entry)
 }
 
 func (store *LevelDB3Store) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	return store.InsertEntry(ctx, entry)
 }
 
 func (store *LevelDB3Store) FindEntry(ctx context.Context, fullpath weed_util.FullPath) (entry *filer.Entry, err error) {
-
 	db, _, shortPath, err := store.findDB(fullpath, false)
 	if err != nil {
-		return nil, fmt.Errorf("findDB %s : %v", fullpath, err)
+		return nil, fmt.Errorf("findDB %s : %w", fullpath, err)
 	}
 
 	dir, name := shortPath.DirAndName()
@@ -220,11 +220,11 @@ func (store *LevelDB3Store) FindEntry(ctx context.Context, fullpath weed_util.Fu
 
 	data, err := db.Get(key, nil)
 
-	if err == leveldb.ErrNotFound {
+	if errors.Is(err, leveldb.ErrNotFound) {
 		return nil, filer_pb.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get %s : %v", fullpath, err)
+		return nil, fmt.Errorf("get %s : %w", fullpath, err)
 	}
 
 	entry = &filer.Entry{
@@ -232,7 +232,7 @@ func (store *LevelDB3Store) FindEntry(ctx context.Context, fullpath weed_util.Fu
 	}
 	err = entry.DecodeAttributesAndChunks(weed_util.MaybeDecompressData(data))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	// println("read", entry.FullPath, "chunks", len(entry.GetChunks()), "data", len(data), string(data))
@@ -241,10 +241,9 @@ func (store *LevelDB3Store) FindEntry(ctx context.Context, fullpath weed_util.Fu
 }
 
 func (store *LevelDB3Store) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (err error) {
-
 	db, _, shortPath, err := store.findDB(fullpath, false)
 	if err != nil {
-		return fmt.Errorf("findDB %s : %v", fullpath, err)
+		return fmt.Errorf("findDB %s : %w", fullpath, err)
 	}
 
 	dir, name := shortPath.DirAndName()
@@ -252,17 +251,16 @@ func (store *LevelDB3Store) DeleteEntry(ctx context.Context, fullpath weed_util.
 
 	err = db.Delete(key, nil)
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
 }
 
 func (store *LevelDB3Store) DeleteFolderChildren(ctx context.Context, fullpath weed_util.FullPath) (err error) {
-
 	db, bucket, shortPath, err := store.findDB(fullpath, true)
 	if err != nil {
-		return fmt.Errorf("findDB %s : %v", fullpath, err)
+		return fmt.Errorf("findDB %s : %w", fullpath, err)
 	}
 
 	if bucket != DEFAULT && shortPath == "/" {
@@ -270,6 +268,7 @@ func (store *LevelDB3Store) DeleteFolderChildren(ctx context.Context, fullpath w
 		if bucket != "" { // just to make sure
 			os.RemoveAll(store.dir + "/" + bucket)
 		}
+
 		return nil
 	}
 
@@ -294,7 +293,7 @@ func (store *LevelDB3Store) DeleteFolderChildren(ctx context.Context, fullpath w
 	err = db.Write(batch, nil)
 
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -305,10 +304,9 @@ func (store *LevelDB3Store) ListDirectoryEntries(ctx context.Context, dirPath we
 }
 
 func (store *LevelDB3Store) ListDirectoryPrefixedEntries(ctx context.Context, dirPath weed_util.FullPath, startFileName string, includeStartFile bool, limit int64, prefix string, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
-
 	db, _, shortPath, err := store.findDB(dirPath, true)
 	if err != nil {
-		return lastFileName, fmt.Errorf("findDB %s : %v", dirPath, err)
+		return lastFileName, fmt.Errorf("findDB %s : %w", dirPath, err)
 	}
 
 	directoryPrefix := genDirectoryKeyPrefix(shortPath, prefix)
@@ -343,12 +341,14 @@ func (store *LevelDB3Store) ListDirectoryPrefixedEntries(ctx context.Context, di
 		if decodeErr := entry.DecodeAttributesAndChunks(weed_util.MaybeDecompressData(iter.Value())); decodeErr != nil {
 			err = decodeErr
 			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
+
 			break
 		}
 
 		resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 		if resEachEntryFuncErr != nil {
 			err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 			break
 		}
 
@@ -364,6 +364,7 @@ func (store *LevelDB3Store) ListDirectoryPrefixedEntries(ctx context.Context, di
 func genKey(dirPath, fileName string) (key []byte) {
 	key = hashToBytes(dirPath)
 	key = append(key, []byte(fileName)...)
+
 	return key
 }
 
@@ -372,13 +373,12 @@ func genDirectoryKeyPrefix(fullpath weed_util.FullPath, startFileName string) (k
 	if len(startFileName) > 0 {
 		keyPrefix = append(keyPrefix, []byte(startFileName)...)
 	}
+
 	return keyPrefix
 }
 
 func getNameFromKey(key []byte) string {
-
 	return string(key[md5.Size:])
-
 }
 
 // hash directory
@@ -386,6 +386,7 @@ func hashToBytes(dir string) []byte {
 	h := md5.New()
 	io.WriteString(h, dir)
 	b := h.Sum(nil)
+
 	return b
 }
 

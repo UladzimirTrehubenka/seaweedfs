@@ -8,11 +8,12 @@ import (
 
 // TaskConfigSchema defines the schema for task configuration
 type TaskConfigSchema struct {
-	config.Schema        // Embed common schema functionality
-	TaskName      string `json:"task_name"`
-	DisplayName   string `json:"display_name"`
-	Description   string `json:"description"`
-	Icon          string `json:"icon"`
+	config.Schema // Embed common schema functionality
+
+	TaskName    string `json:"task_name"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
 }
 
 // TaskConfigSchemaProvider is an interface for providing task configuration schemas

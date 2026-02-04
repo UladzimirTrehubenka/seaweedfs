@@ -3,6 +3,8 @@ package util
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // HumanReadableIntsMax joins a serials of inits into a smart one like 1-3 5 ... for human readable.
@@ -22,27 +24,31 @@ func HumanReadableInts(ids ...int) string {
 	start := 0
 	last := 0
 
+	var sSb25 strings.Builder
 	for i, v := range ids {
 		if i == 0 {
 			start = v
 			last = v
-			s = fmt.Sprintf("%d", v)
+			s = strconv.Itoa(v)
+
 			continue
 		}
 
 		if last+1 == v {
 			last = v
+
 			continue
 		}
 
 		if last > start {
-			s += fmt.Sprintf("-%d", last)
+			sSb25.WriteString(fmt.Sprintf("-%d", last))
 		}
 
-		s += fmt.Sprintf(" %d", v)
+		sSb25.WriteString(fmt.Sprintf(" %d", v))
 		start = v
 		last = v
 	}
+	s += sSb25.String()
 
 	if last != start {
 		s += fmt.Sprintf("-%d", last)

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
@@ -148,7 +149,6 @@ func (h *Handler) handleOffsetCommit(correlationID uint32, apiVersion uint16, re
 		}
 
 		for _, p := range t.Partitions {
-
 			// Create consumer offset key for SMQ storage (not used immediately)
 			key := ConsumerOffsetKey{
 				Topic:                 t.Name,
@@ -158,7 +158,7 @@ func (h *Handler) handleOffsetCommit(correlationID uint32, apiVersion uint16, re
 			}
 
 			// Commit offset synchronously for immediate consistency
-			var errCode int16 = ErrorCodeNone
+			var errCode = ErrorCodeNone
 			if generationMatches {
 				// Store in in-memory map for immediate response
 				// This is the primary committed offset position for consumers
@@ -248,8 +248,8 @@ func (h *Handler) handleOffsetFetch(correlationID uint32, apiVersion uint16, req
 		// Fetch offsets for requested partitions
 		for _, partition := range partitionsToFetch {
 			var fetchedOffset int64 = -1
-			var metadata string = ""
-			var errorCode int16 = ErrorCodeNone
+			var metadata = ""
+			var errorCode = ErrorCodeNone
 
 			// Try fetching from in-memory cache first (works for both mock and SMQ backends)
 			if off, meta, err := h.fetchOffset(group, topic.Name, partition); err == nil && off >= 0 {
@@ -296,7 +296,7 @@ func (h *Handler) handleOffsetFetch(correlationID uint32, apiVersion uint16, req
 
 func (h *Handler) parseOffsetCommitRequest(data []byte, apiVersion uint16) (*OffsetCommitRequest, error) {
 	if len(data) < 8 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	offset := 0
@@ -305,26 +305,26 @@ func (h *Handler) parseOffsetCommitRequest(data []byte, apiVersion uint16) (*Off
 	groupIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
 	if offset+groupIDLength > len(data) {
-		return nil, fmt.Errorf("invalid group ID length")
+		return nil, errors.New("invalid group ID length")
 	}
 	groupID := string(data[offset : offset+groupIDLength])
 	offset += groupIDLength
 
 	// Generation ID (4 bytes)
 	if offset+4 > len(data) {
-		return nil, fmt.Errorf("missing generation ID")
+		return nil, errors.New("missing generation ID")
 	}
 	generationID := int32(binary.BigEndian.Uint32(data[offset:]))
 	offset += 4
 
 	// MemberID (string)
 	if offset+2 > len(data) {
-		return nil, fmt.Errorf("missing member ID length")
+		return nil, errors.New("missing member ID length")
 	}
 	memberIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
 	if offset+memberIDLength > len(data) {
-		return nil, fmt.Errorf("invalid member ID length")
+		return nil, errors.New("invalid member ID length")
 	}
 	memberID := string(data[offset : offset+memberIDLength])
 	offset += memberIDLength
@@ -343,7 +343,7 @@ func (h *Handler) parseOffsetCommitRequest(data []byte, apiVersion uint16) (*Off
 	var groupInstanceID string
 	if apiVersion >= 3 {
 		if offset+2 > len(data) {
-			return nil, fmt.Errorf("missing group instance ID length")
+			return nil, errors.New("missing group instance ID length")
 		}
 		groupInstanceIDLength := int(int16(binary.BigEndian.Uint16(data[offset:])))
 		offset += 2
@@ -352,7 +352,7 @@ func (h *Handler) parseOffsetCommitRequest(data []byte, apiVersion uint16) (*Off
 			groupInstanceID = ""
 		} else if groupInstanceIDLength > 0 {
 			if offset+groupInstanceIDLength > len(data) {
-				return nil, fmt.Errorf("invalid group instance ID length")
+				return nil, errors.New("invalid group instance ID length")
 			}
 			groupInstanceID = string(data[offset : offset+groupInstanceIDLength])
 			offset += groupInstanceIDLength
@@ -417,7 +417,7 @@ func (h *Handler) parseOffsetCommitRequest(data []byte, apiVersion uint16) (*Off
 			}
 
 			// Parse metadata (string)
-			var metadata string = ""
+			var metadata = ""
 			if len(data) >= offset+2 {
 				metadataLength := int16(binary.BigEndian.Uint16(data[offset : offset+2]))
 				offset += 2
@@ -454,7 +454,7 @@ func (h *Handler) parseOffsetCommitRequest(data []byte, apiVersion uint16) (*Off
 
 func (h *Handler) parseOffsetFetchRequest(data []byte) (*OffsetFetchRequest, error) {
 	if len(data) < 4 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	offset := 0
@@ -463,14 +463,14 @@ func (h *Handler) parseOffsetFetchRequest(data []byte) (*OffsetFetchRequest, err
 	groupIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
 	if offset+groupIDLength > len(data) {
-		return nil, fmt.Errorf("invalid group ID length")
+		return nil, errors.New("invalid group ID length")
 	}
 	groupID := string(data[offset : offset+groupIDLength])
 	offset += groupIDLength
 
 	// Parse Topics array - classic encoding (INT32 count) for v0-v5
 	if len(data) < offset+4 {
-		return nil, fmt.Errorf("OffsetFetch request missing topics array")
+		return nil, errors.New("OffsetFetch request missing topics array")
 	}
 	topicsCount := binary.BigEndian.Uint32(data[offset : offset+4])
 	offset += 4

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 	jsonpb "google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 )
 
 func TestJsonpMarshalUnmarshal(t *testing.T) {
-
 	tv := &volume_server_pb.RemoteFile{
 		BackendType: "aws",
 		BackendId:   "",
@@ -39,5 +39,4 @@ func TestJsonpMarshalUnmarshal(t *testing.T) {
 	}
 
 	fmt.Printf("unmarshalled: %+v\n", tv1)
-
 }

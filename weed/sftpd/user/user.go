@@ -4,6 +4,7 @@ package user
 import (
 	"math/rand/v2"
 	"path/filepath"
+	"slices"
 )
 
 // User represents an SFTP user with authentication and permission details
@@ -41,10 +42,8 @@ func (u *User) SetPassword(password string) {
 // AddPublicKey adds a public key to the user
 func (u *User) AddPublicKey(key string) {
 	// Check if key already exists
-	for _, existingKey := range u.PublicKeys {
-		if existingKey == key {
-			return
-		}
+	if slices.Contains(u.PublicKeys, key) {
+		return
 	}
 	u.PublicKeys = append(u.PublicKeys, key)
 }
@@ -56,9 +55,11 @@ func (u *User) RemovePublicKey(key string) bool {
 			// Remove the key by replacing it with the last element and truncating
 			u.PublicKeys[i] = u.PublicKeys[len(u.PublicKeys)-1]
 			u.PublicKeys = u.PublicKeys[:len(u.PublicKeys)-1]
+
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -71,7 +72,9 @@ func (u *User) SetPermission(path string, permissions []string) {
 func (u *User) RemovePermission(path string) bool {
 	if _, exists := u.Permissions[path]; exists {
 		delete(u.Permissions, path)
+
 		return true
 	}
+
 	return false
 }

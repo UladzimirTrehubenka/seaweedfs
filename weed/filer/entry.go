@@ -34,6 +34,7 @@ type Entry struct {
 	util.FullPath
 
 	Attr
+
 	Extended map[string][]byte
 
 	// the following is for files
@@ -82,8 +83,9 @@ func (entry *Entry) ToProtoEntry() *filer_pb.Entry {
 		return nil
 	}
 	message := &filer_pb.Entry{}
-	message.Name = entry.FullPath.Name()
+	message.Name = entry.Name()
 	entry.ToExistingProtoEntry(message)
+
 	return message
 }
 
@@ -93,8 +95,8 @@ func (entry *Entry) ToExistingProtoEntry(message *filer_pb.Entry) {
 	}
 	message.IsDirectory = entry.IsDirectory()
 	// Reuse pre-allocated attributes if available, otherwise allocate
-	if message.Attributes != nil {
-		EntryAttributeToExistingPb(entry, message.Attributes)
+	if message.GetAttributes() != nil {
+		EntryAttributeToExistingPb(entry, message.GetAttributes())
 	} else {
 		message.Attributes = EntryAttributeToPb(entry)
 	}
@@ -109,23 +111,24 @@ func (entry *Entry) ToExistingProtoEntry(message *filer_pb.Entry) {
 }
 
 func FromPbEntryToExistingEntry(message *filer_pb.Entry, fsEntry *Entry) {
-	fsEntry.Attr = PbToEntryAttribute(message.Attributes)
-	fsEntry.Chunks = message.Chunks
-	fsEntry.Extended = message.Extended
-	fsEntry.HardLinkId = HardLinkId(message.HardLinkId)
-	fsEntry.HardLinkCounter = message.HardLinkCounter
-	fsEntry.Content = message.Content
-	fsEntry.Remote = message.RemoteEntry
-	fsEntry.Quota = message.Quota
+	fsEntry.Attr = PbToEntryAttribute(message.GetAttributes())
+	fsEntry.Chunks = message.GetChunks()
+	fsEntry.Extended = message.GetExtended()
+	fsEntry.HardLinkId = HardLinkId(message.GetHardLinkId())
+	fsEntry.HardLinkCounter = message.GetHardLinkCounter()
+	fsEntry.Content = message.GetContent()
+	fsEntry.Remote = message.GetRemoteEntry()
+	fsEntry.Quota = message.GetQuota()
 	fsEntry.FileSize = FileSize(message)
-	fsEntry.WORMEnforcedAtTsNs = message.WormEnforcedAtTsNs
+	fsEntry.WORMEnforcedAtTsNs = message.GetWormEnforcedAtTsNs()
 }
 
 func (entry *Entry) ToProtoFullEntry() *filer_pb.FullEntry {
 	if entry == nil {
 		return nil
 	}
-	dir, _ := entry.FullPath.DirAndName()
+	dir, _ := entry.DirAndName()
+
 	return &filer_pb.FullEntry{
 		Dir:   dir,
 		Entry: entry.ToProtoEntry(),
@@ -138,8 +141,9 @@ func (entry *Entry) GetChunks() []*filer_pb.FileChunk {
 
 func FromPbEntry(dir string, entry *filer_pb.Entry) *Entry {
 	t := &Entry{}
-	t.FullPath = util.NewFullPath(dir, entry.Name)
+	t.FullPath = util.NewFullPath(dir, entry.GetName())
 	FromPbEntryToExistingEntry(entry, t)
+
 	return t
 }
 
@@ -147,6 +151,7 @@ func maxUint64(x, y uint64) uint64 {
 	if x > y {
 		return x
 	}
+
 	return y
 }
 
@@ -154,6 +159,7 @@ func (entry *Entry) IsExpireS3Enabled() (exist bool) {
 	if entry.Extended != nil {
 		_, exist = entry.Extended[s3_constants.SeaweedFSExpiresS3]
 	}
+
 	return exist
 }
 
@@ -161,6 +167,7 @@ func (entry *Entry) IsS3Versioning() (exist bool) {
 	if entry.Extended != nil {
 		_, exist = entry.Extended[s3_constants.ExtVersionIdKey]
 	}
+
 	return exist
 }
 
@@ -170,5 +177,6 @@ func (entry *Entry) GetS3ExpireTime() (expireTime time.Time) {
 	} else {
 		expireTime = entry.Mtime
 	}
+
 	return expireTime.Add(time.Duration(entry.TtlSec) * time.Second)
 }

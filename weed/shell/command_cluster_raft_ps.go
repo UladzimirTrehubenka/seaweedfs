@@ -32,7 +32,6 @@ func (c *commandRaftClusterPs) HasTag(CommandTag) bool {
 }
 
 func (c *commandRaftClusterPs) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	raftClusterPsCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	if err = raftClusterPsCommand.Parse(args); err != nil {
 		return nil
@@ -43,18 +42,17 @@ func (c *commandRaftClusterPs) Do(args []string, commandEnv *CommandEnv, writer 
 		if err != nil {
 			return fmt.Errorf("raft list cluster: %w", err)
 		}
-		fmt.Fprintf(writer, "the raft cluster has %d servers\n", len(resp.ClusterServers))
-		for _, server := range resp.ClusterServers {
-			suffrage := server.Suffrage
-			if server.IsLeader {
+		fmt.Fprintf(writer, "the raft cluster has %d servers\n", len(resp.GetClusterServers()))
+		for _, server := range resp.GetClusterServers() {
+			suffrage := server.GetSuffrage()
+			if server.GetIsLeader() {
 				suffrage = "Leader"
 			}
-			fmt.Fprintf(writer, "  * %s %s (%s)\n", server.Id, server.Address, suffrage)
+			fmt.Fprintf(writer, "  * %s %s (%s)\n", server.GetId(), server.GetAddress(), suffrage)
 		}
 
 		return nil
 	})
 
 	return err
-
 }

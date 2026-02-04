@@ -2,17 +2,21 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/seaweedfs/seaweedfs/weed/query/sqltypes"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
-	"google.golang.org/protobuf/proto"
 )
 
 // NewTestSchemaCatalog creates a schema catalog for testing with sample data
@@ -27,6 +31,7 @@ func NewTestSchemaCatalog() *SchemaCatalog {
 
 	// Pre-populate with sample data to avoid service discovery requirements
 	initTestSampleData(catalog)
+
 	return catalog
 }
 
@@ -86,6 +91,7 @@ func initTestSampleData(c *SchemaCatalog) {
 // TestSQLEngine wraps SQLEngine with test-specific behavior
 type TestSQLEngine struct {
 	*SQLEngine
+
 	funcExpressions       map[string]*FuncExpr       // Map from column key to function expression
 	arithmeticExpressions map[string]*ArithmeticExpr // Map from column key to arithmetic expression
 }
@@ -136,7 +142,8 @@ func (e *TestSQLEngine) ExecuteSQL(ctx context.Context, sql string) (*QueryResul
 func (e *TestSQLEngine) executeTestSelectStatement(ctx context.Context, stmt *SelectStatement, sql string) (*QueryResult, error) {
 	// Extract table name
 	if len(stmt.From) != 1 {
-		err := fmt.Errorf("SELECT supports single table queries only")
+		err := errors.New("SELECT supports single table queries only")
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -148,10 +155,12 @@ func (e *TestSQLEngine) executeTestSelectStatement(ctx context.Context, stmt *Se
 			tableName = tableExpr.Name.String()
 		default:
 			err := fmt.Errorf("unsupported table expression: %T", tableExpr)
+
 			return &QueryResult{Error: err}, err
 		}
 	default:
 		err := fmt.Errorf("unsupported FROM clause: %T", table)
+
 		return &QueryResult{Error: err}, err
 	}
 
@@ -161,9 +170,11 @@ func (e *TestSQLEngine) executeTestSelectStatement(ctx context.Context, stmt *Se
 		return e.generateTestQueryResult(tableName, stmt, sql)
 	case "nonexistent_table":
 		err := fmt.Errorf("table %s not found", tableName)
+
 		return &QueryResult{Error: err}, err
 	default:
 		err := fmt.Errorf("table %s not found", tableName)
+
 		return &QueryResult{Error: err}, err
 	}
 }
@@ -206,9 +217,9 @@ func (e *TestSQLEngine) generateTestQueryResult(tableName string, stmt *SelectSt
 
 	// Apply WHERE clause filtering if present
 	if stmt.Where != nil {
-		predicate, err := e.SQLEngine.buildPredicate(stmt.Where.Expr)
+		predicate, err := e.buildPredicate(stmt.Where.Expr)
 		if err != nil {
-			return &QueryResult{Error: fmt.Errorf("failed to build WHERE predicate: %v", err)}, err
+			return &QueryResult{Error: fmt.Errorf("failed to build WHERE predicate: %w", err)}, err
 		}
 
 		var filteredData []HybridScanResult
@@ -219,9 +230,7 @@ func (e *TestSQLEngine) generateTestQueryResult(tableName string, stmt *SelectSt
 			}
 
 			// Copy all values from result to recordValue
-			for name, value := range result.Values {
-				recordValue.Fields[name] = value
-			}
+			maps.Copy(recordValue.GetFields(), result.Values)
 
 			// Apply predicate
 			if predicate(recordValue) {
@@ -605,7 +614,7 @@ func convertSchemaValueToSQLValue(value *schema_pb.Value) sqltypes.Value {
 		return sqltypes.NewVarChar("")
 	}
 
-	switch v := value.Kind.(type) {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_Int32Value:
 		return sqltypes.NewInt32(v.Int32Value)
 	case *schema_pb.Value_Int64Value:
@@ -620,13 +629,15 @@ func convertSchemaValueToSQLValue(value *schema_pb.Value) sqltypes.Value {
 		if v.BoolValue {
 			return sqltypes.NewVarChar("true")
 		}
+
 		return sqltypes.NewVarChar("false")
 	case *schema_pb.Value_BytesValue:
 		return sqltypes.NewVarChar(string(v.BytesValue))
 	case *schema_pb.Value_TimestampValue:
 		// Convert timestamp to string representation
-		timestampMicros := v.TimestampValue.TimestampMicros
+		timestampMicros := v.TimestampValue.GetTimestampMicros()
 		seconds := timestampMicros / 1000000
+
 		return sqltypes.NewInt64(seconds)
 	default:
 		return sqltypes.NewVarChar("")
@@ -665,6 +676,7 @@ func (e *TestSQLEngine) getColumnName(expr ExprNode) string {
 	if colName, ok := expr.(*ColName); ok {
 		return colName.Name.String()
 	}
+
 	return "col"
 }
 
@@ -700,6 +712,7 @@ func (e *TestSQLEngine) isAggregationQuery(stmt *SelectStatement, sql string) bo
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -864,6 +877,7 @@ func (m *MockBrokerClient) ListNamespaces(ctx context.Context) ([]string, error)
 	if m.shouldFail {
 		return nil, fmt.Errorf("mock broker failure: %s", m.failMessage)
 	}
+
 	return m.namespaces, nil
 }
 
@@ -876,6 +890,7 @@ func (m *MockBrokerClient) ListTopics(ctx context.Context, namespace string) ([]
 	if topics, exists := m.topics[namespace]; exists {
 		return topics, nil
 	}
+
 	return []string{}, nil
 }
 
@@ -889,11 +904,13 @@ func (m *MockBrokerClient) GetTopicSchema(ctx context.Context, namespace, topic 
 	if schema, exists := m.schemas[key]; exists {
 		// For testing, assume first field is key column
 		var keyColumns []string
-		if len(schema.Fields) > 0 {
-			keyColumns = []string{schema.Fields[0].Name}
+		if len(schema.GetFields()) > 0 {
+			keyColumns = []string{schema.GetFields()[0].GetName()}
 		}
+
 		return schema, keyColumns, "", nil // Schema format empty for mocks
 	}
+
 	return nil, nil, "", fmt.Errorf("topic %s not found", key)
 }
 
@@ -909,13 +926,7 @@ func (m *MockBrokerClient) ConfigureTopic(ctx context.Context, namespace, topicN
 
 	// Add topic to namespace if it doesn't exist
 	if topics, exists := m.topics[namespace]; exists {
-		found := false
-		for _, t := range topics {
-			if t == topicName {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(topics, topicName)
 		if !found {
 			m.topics[namespace] = append(topics, topicName)
 		}
@@ -931,6 +942,7 @@ func (m *MockBrokerClient) GetFilerClient() (filer_pb.FilerClient, error) {
 	if m.shouldFail {
 		return nil, fmt.Errorf("mock broker failure: %s", m.failMessage)
 	}
+
 	return NewMockFilerClient(), nil
 }
 
@@ -964,9 +976,10 @@ func (m *MockFilerClient) WithFilerClient(followRedirect bool, fn func(client fi
 
 // AdjustedUrl implements the FilerClient interface (mock implementation)
 func (m *MockFilerClient) AdjustedUrl(location *filer_pb.Location) string {
-	if location != nil && location.Url != "" {
-		return location.Url
+	if location != nil && location.GetUrl() != "" {
+		return location.GetUrl()
 	}
+
 	return "mock://localhost:8080"
 }
 
@@ -1040,9 +1053,7 @@ func (m *MockBrokerClient) GetUnflushedMessages(ctx context.Context, namespace, 
 
 		// Convert sample data to protobuf LogEntry format
 		recordValue := &schema_pb.RecordValue{Fields: make(map[string]*schema_pb.Value)}
-		for k, v := range result.Values {
-			recordValue.Fields[k] = v
-		}
+		maps.Copy(recordValue.GetFields(), result.Values)
 
 		// Serialize the RecordValue
 		data, err := proto.Marshal(recordValue)
@@ -1082,9 +1093,9 @@ func (e *TestSQLEngine) evaluateStringConcatenationMock(columnName string, resul
 				if strValue := value.GetStringValue(); strValue != "" {
 					concatenated.WriteString(strValue)
 				} else if intValue := value.GetInt64Value(); intValue != 0 {
-					concatenated.WriteString(fmt.Sprintf("%d", intValue))
+					concatenated.WriteString(strconv.FormatInt(intValue, 10))
 				} else if int32Value := value.GetInt32Value(); int32Value != 0 {
-					concatenated.WriteString(fmt.Sprintf("%d", int32Value))
+					concatenated.WriteString(strconv.Itoa(int(int32Value)))
 				} else if floatValue := value.GetDoubleValue(); floatValue != 0 {
 					concatenated.WriteString(fmt.Sprintf("%g", floatValue))
 				} else if floatValue := value.GetFloatValue(); floatValue != 0 {
@@ -1102,7 +1113,7 @@ func (e *TestSQLEngine) evaluateStringConcatenationMock(columnName string, resul
 func (e *TestSQLEngine) evaluateComplexExpressionMock(columnName string, result HybridScanResult) *sqltypes.Value {
 	// Parse the column name back into an expression using CockroachDB parser
 	cockroachParser := NewCockroachSQLParser()
-	dummySelect := fmt.Sprintf("SELECT %s", columnName)
+	dummySelect := "SELECT " + columnName
 
 	stmt, err := cockroachParser.ParseSQL(dummySelect)
 	if err == nil {
@@ -1113,12 +1124,14 @@ func (e *TestSQLEngine) evaluateComplexExpressionMock(columnName string, result 
 					tempEngine := &SQLEngine{}
 					if value, err := tempEngine.evaluateArithmeticExpression(arithmeticExpr, result); err == nil && value != nil {
 						sqlValue := convertSchemaValueToSQLValue(value)
+
 						return &sqlValue
 					}
 				}
 			}
 		}
 	}
+
 	return nil
 }
 

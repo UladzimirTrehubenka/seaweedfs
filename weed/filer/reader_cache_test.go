@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -27,8 +28,10 @@ func (m *mockChunkCacheForReaderCache) GetChunk(fileId string, minSize uint64) [
 	defer m.mu.Unlock()
 	if d, ok := m.data[fileId]; ok {
 		atomic.AddInt32(&m.hitCount, 1)
+
 		return d
 	}
+
 	return nil
 }
 
@@ -38,8 +41,10 @@ func (m *mockChunkCacheForReaderCache) ReadChunkAt(data []byte, fileId string, o
 	if d, ok := m.data[fileId]; ok && int(offset) < len(d) {
 		atomic.AddInt32(&m.hitCount, 1)
 		n := copy(data, d[offset:])
+
 		return n, nil
 	}
+
 	return 0, nil
 }
 
@@ -57,6 +62,7 @@ func (m *mockChunkCacheForReaderCache) IsInCache(fileId string, lockNeeded bool)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	_, ok := m.data[fileId]
+
 	return ok
 }
 
@@ -147,7 +153,7 @@ func TestReaderCacheMultipleReadersWaitForSameChunk(t *testing.T) {
 	errors := make(chan error, numReaders)
 	bytesRead := make(chan int, numReaders)
 
-	for i := 0; i < numReaders; i++ {
+	for range numReaders {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -226,14 +232,14 @@ func TestReaderCacheCleanup(t *testing.T) {
 	defer rc.destroy()
 
 	// Add data for multiple files
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		fileId := string(rune('A' + i))
 		data := []byte("data for file " + fileId)
 		cache.SetChunk(fileId, data)
 	}
 
 	// Read from multiple files - should trigger cleanup when exceeding limit
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		fileId := string(rune('A' + i))
 		buffer := make([]byte, 20)
 		_, err := rc.ReadChunkAt(context.Background(), buffer, fileId, nil, false, 0, 20, true)
@@ -243,7 +249,7 @@ func TestReaderCacheCleanup(t *testing.T) {
 	}
 
 	// Cache should still work - reads should succeed
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		fileId := string(rune('A' + i))
 		buffer := make([]byte, 20)
 		n, err := rc.ReadChunkAt(context.Background(), buffer, fileId, nil, false, 0, 20, true)
@@ -268,7 +274,7 @@ func TestSingleChunkCacherDoneSignal(t *testing.T) {
 
 	// Multiple goroutines reading same chunk
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -277,7 +283,7 @@ func TestSingleChunkCacherDoneSignal(t *testing.T) {
 			defer cancel()
 
 			n, err := rc.ReadChunkAt(ctx, buffer, "done-signal-test", nil, false, 0, len(testData), true)
-			if err != nil && err != context.DeadlineExceeded {
+			if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 				t.Errorf("Unexpected error: %v", err)
 			}
 			if n == 0 && err == nil {
@@ -340,7 +346,8 @@ func TestSingleChunkCacherContextCancellationDuringLookup(t *testing.T) {
 	lookupFn := func(ctx context.Context, fileId string) ([]string, error) {
 		close(lookupStarted)
 		<-lookupCanFinish // Block until test allows completion
-		return nil, fmt.Errorf("lookup completed but reader should have cancelled")
+
+		return nil, errors.New("lookup completed but reader should have cancelled")
 	}
 
 	rc := NewReaderCache(10, cache, lookupFn)
@@ -367,7 +374,7 @@ func TestSingleChunkCacherContextCancellationDuringLookup(t *testing.T) {
 	// Read should return with context.Canceled
 	select {
 	case err := <-readResult:
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			t.Errorf("Expected context.Canceled, got: %v", err)
 		}
 	case <-time.After(5 * time.Second):
@@ -388,7 +395,8 @@ func TestSingleChunkCacherMultipleReadersWaitForDownload(t *testing.T) {
 	lookupFn := func(ctx context.Context, fileId string) ([]string, error) {
 		lookupStartedOnce.Do(func() { close(lookupStarted) })
 		<-lookupCanFinish
-		return nil, fmt.Errorf("simulated lookup error")
+
+		return nil, errors.New("simulated lookup error")
 	}
 
 	rc := NewReaderCache(10, cache, lookupFn)
@@ -399,7 +407,7 @@ func TestSingleChunkCacherMultipleReadersWaitForDownload(t *testing.T) {
 	errors := make(chan error, numReaders)
 
 	// Start multiple readers for the same chunk
-	for i := 0; i < numReaders; i++ {
+	for range numReaders {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -444,7 +452,8 @@ func TestSingleChunkCacherOneReaderCancelsOthersContinue(t *testing.T) {
 	lookupFn := func(ctx context.Context, fileId string) ([]string, error) {
 		lookupStartedOnce.Do(func() { close(lookupStarted) })
 		<-lookupCanFinish
-		return nil, fmt.Errorf("simulated error after delay")
+
+		return nil, errors.New("simulated error after delay")
 	}
 
 	rc := NewReaderCache(10, cache, lookupFn)
@@ -482,7 +491,7 @@ func TestSingleChunkCacherOneReaderCancelsOthersContinue(t *testing.T) {
 	// First reader should complete with context.Canceled quickly
 	select {
 	case err := <-cancelledReaderDone:
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			t.Errorf("Cancelled reader: expected context.Canceled, got: %v", err)
 		}
 	case <-time.After(2 * time.Second):
@@ -495,7 +504,7 @@ func TestSingleChunkCacherOneReaderCancelsOthersContinue(t *testing.T) {
 	// Other reader should eventually complete (with error since lookup returns error)
 	select {
 	case err := <-otherReaderDone:
-		if err == nil || err == context.Canceled {
+		if err == nil || errors.Is(err, context.Canceled) {
 			t.Errorf("Other reader: expected non-nil non-cancelled error, got: %v", err)
 		}
 		// Expected: "simulated error after delay"

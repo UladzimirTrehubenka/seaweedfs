@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -204,6 +205,7 @@ Supported Filer Stores:
 	}
 	sort.Strings(storeNames)
 	storeList := strings.Join(storeNames, "\n")
+
 	return desc + storeList
 }
 
@@ -304,11 +306,11 @@ func (fo *FilerOptions) GetCertificateWithUpdate(*tls.ClientHelloInfo) (*tls.Cer
 	if certs == nil {
 		return nil, err
 	}
+
 	return &certs.Certs[0], err
 }
 
 func (fo *FilerOptions) startFiler() {
-
 	defaultMux := http.NewServeMux()
 	publicVolumeMux := defaultMux
 
@@ -490,7 +492,7 @@ func (fo *FilerOptions) startFiler() {
 				grpcS.Stop()
 			}()
 		}
-		if err := httpS.ServeTLS(filerListener, "", ""); err != nil && err != http.ErrServerClosed {
+		if err := httpS.ServeTLS(filerListener, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			glog.Fatalf("Filer Fail to serve: %v", err)
 		}
 	} else {
@@ -510,7 +512,7 @@ func (fo *FilerOptions) startFiler() {
 				grpcS.Stop()
 			}()
 		}
-		if err := httpS.Serve(filerListener); err != nil && err != http.ErrServerClosed {
+		if err := httpS.Serve(filerListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			glog.Fatalf("Filer Fail to serve: %v", err)
 		}
 	}

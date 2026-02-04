@@ -24,6 +24,7 @@ func (c *ChunkCacheInMemory) IsInCache(fileId string, lockNeeded bool) (answer b
 	if item == nil {
 		return false
 	}
+
 	return true
 }
 
@@ -36,6 +37,7 @@ func NewChunkCacheInMemory(maxEntries int64) *ChunkCacheInMemory {
 	if pruneCount <= 0 {
 		pruneCount = 500
 	}
+
 	return &ChunkCacheInMemory{
 		cache: ccache.New(ccache.Configure().MaxSize(maxEntries).ItemsToPrune(uint32(pruneCount))),
 	}
@@ -48,6 +50,7 @@ func (c *ChunkCacheInMemory) GetChunk(fileId string) []byte {
 	}
 	data := item.Value().([]byte)
 	item.Extend(time.Hour)
+
 	return data
 }
 
@@ -62,6 +65,7 @@ func (c *ChunkCacheInMemory) getChunkSlice(fileId string, offset, length uint64)
 	if wanted < 0 {
 		return nil, ErrorOutOfBounds
 	}
+
 	return data[offset : int(offset)+wanted], nil
 }
 
@@ -77,6 +81,7 @@ func (c *ChunkCacheInMemory) readChunkAt(buffer []byte, fileId string, offset ui
 		return 0, ErrorOutOfBounds
 	}
 	n := copy(buffer, data[offset:int(offset)+wanted])
+
 	return n, nil
 }
 

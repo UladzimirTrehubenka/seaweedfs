@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
@@ -44,5 +45,6 @@ func (store *RedisLuaSentinelStore) initialize(addresses []string, masterName st
 		WriteTimeout:    time.Second * 5,
 	})
 	store.keyPrefix = keyPrefix
+
 	return
 }

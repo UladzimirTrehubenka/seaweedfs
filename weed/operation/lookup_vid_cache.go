@@ -17,6 +17,7 @@ type VidInfo struct {
 }
 type VidCache struct {
 	sync.RWMutex
+
 	cache []VidInfo
 }
 
@@ -24,6 +25,7 @@ func (vc *VidCache) Get(vid string) ([]Location, error) {
 	id, err := strconv.Atoi(vid)
 	if err != nil {
 		glog.V(1).Infof("Unknown volume id %s", vid)
+
 		return nil, err
 	}
 	vc.RLock()
@@ -35,14 +37,17 @@ func (vc *VidCache) Get(vid string) ([]Location, error) {
 		if vc.cache[id-1].NextRefreshTime.Before(time.Now()) {
 			return nil, errors.New("expired")
 		}
+
 		return vc.cache[id-1].Locations, nil
 	}
+
 	return nil, ErrorNotFound
 }
 func (vc *VidCache) Set(vid string, locations []Location, duration time.Duration) {
 	id, err := strconv.Atoi(vid)
 	if err != nil {
 		glog.V(1).Infof("Unknown volume id %s", vid)
+
 		return
 	}
 	vc.Lock()

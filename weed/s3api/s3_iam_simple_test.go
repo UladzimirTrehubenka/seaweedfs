@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
 	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
 	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/seaweedfs/seaweedfs/weed/iam/utils"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestS3IAMMiddleware tests the basic S3 IAM middleware functionality
@@ -61,7 +62,7 @@ func TestS3IAMMiddlewareJWTAuth(t *testing.T) {
 	s3iam := NewS3IAMIntegration(nil, "localhost:8888") // Disabled integration
 
 	// Create test request with JWT token
-	req := httptest.NewRequest("GET", "/test-bucket/test-object", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-object", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
 
 	// Test authentication (should return not implemented when disabled)
@@ -69,7 +70,7 @@ func TestS3IAMMiddlewareJWTAuth(t *testing.T) {
 	identity, errCode := s3iam.AuthenticateJWT(ctx, req)
 
 	assert.Nil(t, identity)
-	assert.NotEqual(t, errCode, 0) // Should return an error
+	assert.NotEqual(t, 0, errCode) // Should return an error
 }
 
 // TestBuildS3ResourceArn tests resource ARN building
@@ -403,10 +404,11 @@ func TestExtractSourceIP(t *testing.T) {
 		{
 			name: "X-Forwarded-For header",
 			setupReq: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test", http.NoBody)
+				req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 				req.Header.Set("X-Forwarded-For", "192.168.1.100, 10.0.0.1")
 				// Set RemoteAddr to private IP to simulate trusted proxy
 				req.RemoteAddr = "127.0.0.1:12345"
+
 				return req
 			},
 			expectedIP: "192.168.1.100",
@@ -414,10 +416,11 @@ func TestExtractSourceIP(t *testing.T) {
 		{
 			name: "X-Real-IP header",
 			setupReq: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test", http.NoBody)
+				req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 				req.Header.Set("X-Real-IP", "192.168.1.200")
 				// Set RemoteAddr to private IP to simulate trusted proxy
 				req.RemoteAddr = "127.0.0.1:12345"
+
 				return req
 			},
 			expectedIP: "192.168.1.200",
@@ -425,8 +428,9 @@ func TestExtractSourceIP(t *testing.T) {
 		{
 			name: "RemoteAddr fallback",
 			setupReq: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test", http.NoBody)
+				req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 				req.RemoteAddr = "192.168.1.300:12345"
+
 				return req
 			},
 			expectedIP: "192.168.1.300",
@@ -434,10 +438,11 @@ func TestExtractSourceIP(t *testing.T) {
 		{
 			name: "Untrusted proxy - public RemoteAddr ignores X-Forwarded-For",
 			setupReq: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test", http.NoBody)
+				req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 				req.Header.Set("X-Forwarded-For", "192.168.1.100")
 				// Public IP - headers should NOT be trusted
 				req.RemoteAddr = "8.8.8.8:12345"
+
 				return req
 			},
 			expectedIP: "8.8.8.8", // Should use RemoteAddr, not X-Forwarded-For

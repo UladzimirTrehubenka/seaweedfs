@@ -17,16 +17,16 @@ type APIError struct {
 
 // RESTErrorResponse - error response format
 type RESTErrorResponse struct {
-	XMLName    xml.Name `xml:"Error" json:"-"`
-	Code       string   `xml:"Code" json:"Code"`
-	Message    string   `xml:"Message" json:"Message"`
-	Resource   string   `xml:"Resource" json:"Resource"`
-	RequestID  string   `xml:"RequestId" json:"RequestId"`
-	Key        string   `xml:"Key,omitempty" json:"Key,omitempty"`
-	BucketName string   `xml:"BucketName,omitempty" json:"BucketName,omitempty"`
+	XMLName    xml.Name `json:"-"                    xml:"Error"`
+	Code       string   `json:"Code"                 xml:"Code"`
+	Message    string   `json:"Message"              xml:"Message"`
+	Resource   string   `json:"Resource"             xml:"Resource"`
+	RequestID  string   `json:"RequestId"            xml:"RequestId"`
+	Key        string   `json:"Key,omitempty"        xml:"Key,omitempty"`
+	BucketName string   `json:"BucketName,omitempty" xml:"BucketName,omitempty"`
 
 	// Underlying HTTP status code for the returned error
-	StatusCode int `xml:"-" json:"-"`
+	StatusCode int `json:"-" xml:"-"`
 }
 
 // Error - Returns S3 error string.
@@ -36,8 +36,10 @@ func (e RESTErrorResponse) Error() string {
 		if !ok {
 			msg = fmt.Sprintf("Error response code %s.", e.Code)
 		}
+
 		return msg
 	}
+
 	return e.Message
 }
 

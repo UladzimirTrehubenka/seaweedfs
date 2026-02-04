@@ -72,6 +72,7 @@ func (m *PartitionOffsetManager) Close() error {
 	if currentOffset >= 0 && currentOffset > lastCheckpointed {
 		return m.storage.SaveCheckpoint(m.namespace, m.topicName, m.partition, currentOffset)
 	}
+
 	return nil
 }
 
@@ -100,6 +101,7 @@ func (m *PartitionOffsetManager) AssignOffsets(count int64) (baseOffset int64, l
 func (m *PartitionOffsetManager) GetNextOffset() int64 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
 	return m.nextOffset
 }
 
@@ -183,6 +185,7 @@ func (m *PartitionOffsetManager) performCheckpointIfChanged() {
 	if err := m.storage.SaveCheckpoint(m.namespace, m.topicName, m.partition, currentOffset); err != nil {
 		// Log error but don't fail - checkpointing is for optimization
 		fmt.Printf("Failed to checkpoint offset %d for %s/%s: %v\n", currentOffset, m.namespace, m.topicName, err)
+
 		return
 	}
 
@@ -236,6 +239,7 @@ func (r *PartitionOffsetRegistry) GetManager(namespace, topicName string, partit
 	}
 
 	r.managers[key] = manager
+
 	return manager, nil
 }
 
@@ -259,6 +263,7 @@ func (r *PartitionOffsetRegistry) AssignOffsets(namespace, topicName string, par
 	}
 
 	baseOffset, lastOffset = manager.AssignOffsets(count)
+
 	return baseOffset, lastOffset, nil
 }
 
@@ -292,7 +297,7 @@ func (r *PartitionOffsetRegistry) Close() error {
 func TopicPartitionKey(namespace, topicName string, partition *schema_pb.Partition) string {
 	return fmt.Sprintf("%s/%s/ring:%d:range:%d-%d",
 		namespace, topicName,
-		partition.RingSize, partition.RangeStart, partition.RangeStop)
+		partition.GetRingSize(), partition.GetRangeStart(), partition.GetRangeStop())
 }
 
 // PartitionKey generates a unique key for a partition (without topic context)
@@ -302,7 +307,7 @@ func TopicPartitionKey(namespace, topicName string, partition *schema_pb.Partiti
 // DEPRECATED: Use TopicPartitionKey for production code to avoid key collisions
 func PartitionKey(partition *schema_pb.Partition) string {
 	return fmt.Sprintf("ring:%d:range:%d-%d",
-		partition.RingSize, partition.RangeStart, partition.RangeStop)
+		partition.GetRingSize(), partition.GetRangeStart(), partition.GetRangeStop())
 }
 
 // partitionKey is the internal lowercase version for backward compatibility within this package

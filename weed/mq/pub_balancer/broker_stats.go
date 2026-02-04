@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
@@ -19,6 +20,7 @@ type BrokerStats struct {
 }
 type TopicPartitionStats struct {
 	topic.TopicPartition
+
 	PublisherCount  int32
 	SubscriberCount int32
 }
@@ -34,28 +36,28 @@ func (bs *BrokerStats) String() string {
 }
 
 func (bs *BrokerStats) UpdateStats(stats *mq_pb.BrokerStats) {
-	bs.TopicPartitionCount = int32(len(stats.Stats))
-	bs.CpuUsagePercent = stats.CpuUsagePercent
+	bs.TopicPartitionCount = int32(len(stats.GetStats()))
+	bs.CpuUsagePercent = stats.GetCpuUsagePercent()
 
 	var publisherCount, subscriberCount int32
 	currentTopicPartitions := bs.TopicPartitionStats.Items()
-	for _, topicPartitionStats := range stats.Stats {
+	for _, topicPartitionStats := range stats.GetStats() {
 		tps := &TopicPartitionStats{
 			TopicPartition: topic.TopicPartition{
-				Topic: topic.Topic{Namespace: topicPartitionStats.Topic.Namespace, Name: topicPartitionStats.Topic.Name},
+				Topic: topic.Topic{Namespace: topicPartitionStats.GetTopic().GetNamespace(), Name: topicPartitionStats.GetTopic().GetName()},
 				Partition: topic.Partition{
-					RangeStart: topicPartitionStats.Partition.RangeStart,
-					RangeStop:  topicPartitionStats.Partition.RangeStop,
-					RingSize:   topicPartitionStats.Partition.RingSize,
-					UnixTimeNs: topicPartitionStats.Partition.UnixTimeNs,
+					RangeStart: topicPartitionStats.GetPartition().GetRangeStart(),
+					RangeStop:  topicPartitionStats.GetPartition().GetRangeStop(),
+					RingSize:   topicPartitionStats.GetPartition().GetRingSize(),
+					UnixTimeNs: topicPartitionStats.GetPartition().GetUnixTimeNs(),
 				},
 			},
-			PublisherCount:  topicPartitionStats.PublisherCount,
-			SubscriberCount: topicPartitionStats.SubscriberCount,
+			PublisherCount:  topicPartitionStats.GetPublisherCount(),
+			SubscriberCount: topicPartitionStats.GetSubscriberCount(),
 		}
-		publisherCount += topicPartitionStats.PublisherCount
-		subscriberCount += topicPartitionStats.SubscriberCount
-		key := tps.TopicPartition.TopicPartitionId()
+		publisherCount += topicPartitionStats.GetPublisherCount()
+		subscriberCount += topicPartitionStats.GetSubscriberCount()
+		key := tps.TopicPartitionId()
 		bs.TopicPartitionStats.Set(key, tps)
 		delete(currentTopicPartitions, key)
 	}
@@ -70,18 +72,18 @@ func (bs *BrokerStats) UpdateStats(stats *mq_pb.BrokerStats) {
 func (bs *BrokerStats) RegisterAssignment(t *schema_pb.Topic, partition *schema_pb.Partition, isAdd bool) {
 	tps := &TopicPartitionStats{
 		TopicPartition: topic.TopicPartition{
-			Topic: topic.Topic{Namespace: t.Namespace, Name: t.Name},
+			Topic: topic.Topic{Namespace: t.GetNamespace(), Name: t.GetName()},
 			Partition: topic.Partition{
-				RangeStart: partition.RangeStart,
-				RangeStop:  partition.RangeStop,
-				RingSize:   partition.RingSize,
-				UnixTimeNs: partition.UnixTimeNs,
+				RangeStart: partition.GetRangeStart(),
+				RangeStop:  partition.GetRangeStop(),
+				RingSize:   partition.GetRingSize(),
+				UnixTimeNs: partition.GetUnixTimeNs(),
 			},
 		},
 		PublisherCount:  0,
 		SubscriberCount: 0,
 	}
-	key := tps.TopicPartition.TopicPartitionId()
+	key := tps.TopicPartitionId()
 	if isAdd {
 		bs.TopicPartitionStats.SetIfAbsent(key, tps)
 	} else {

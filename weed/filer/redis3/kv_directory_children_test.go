@@ -60,6 +60,7 @@ func yTestNameList(t *testing.T) {
 
 		nameList.ListNames("", func(name string) bool {
 			println(name)
+
 			return true
 		})
 
@@ -72,13 +73,12 @@ func yTestNameList(t *testing.T) {
 	nameList := LoadItemList(data, "/yyy/bin", client, store, maxNameBatchSizeLimit)
 	nameList.ListNames("", func(name string) bool {
 		println(name)
+
 		return true
 	})
-
 }
 
 func yBenchmarkNameList(b *testing.B) {
-
 	server, err := tempredis.Start(tempredis.Config{})
 	if err != nil {
 		panic(err)
@@ -92,7 +92,7 @@ func yBenchmarkNameList(b *testing.B) {
 
 	store := newSkipListElementStore("/yyy/bin", client)
 	var data []byte
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		nameList := LoadItemList(data, "/yyy/bin", client, store, maxNameBatchSizeLimit)
 
 		nameList.WriteName(strconv.Itoa(i) + "namexxxxxxxxxxxxxxxxxxx")
@@ -104,7 +104,6 @@ func yBenchmarkNameList(b *testing.B) {
 }
 
 func BenchmarkRedis(b *testing.B) {
-
 	server, err := tempredis.Start(tempredis.Config{})
 	if err != nil {
 		panic(err)
@@ -116,13 +115,12 @@ func BenchmarkRedis(b *testing.B) {
 		Addr:    server.Socket(),
 	})
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		client.ZAddNX(context.Background(), "/yyy/bin", redis.Z{Score: 0, Member: strconv.Itoa(i) + "namexxxxxxxxxxxxxxxxxxx"})
 	}
 }
 
 func xTestNameListAdd(t *testing.T) {
-
 	server, err := tempredis.Start(tempredis.Config{})
 	if err != nil {
 		panic(err)
@@ -143,13 +141,13 @@ func xTestNameListAdd(t *testing.T) {
 	store := newSkipListElementStore("/y", client)
 	var data []byte
 	nameList := LoadItemList(data, "/y", client, store, 100000)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		nameList.WriteName(fmt.Sprintf("%8d", i))
 	}
 
 	ts1 := time.Now()
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		client.ZAddNX(context.Background(), "/x", redis.Z{Score: 0, Member: fmt.Sprintf("name %8d", i)})
 	}
 	ts2 := time.Now()
@@ -171,7 +169,6 @@ func xTestNameListAdd(t *testing.T) {
 }
 
 func xBenchmarkNameList(b *testing.B) {
-
 	server, err := tempredis.Start(tempredis.Config{})
 	if err != nil {
 		panic(err)
@@ -186,7 +183,7 @@ func xBenchmarkNameList(b *testing.B) {
 
 	store := newSkipListElementStore("/yyy/bin", client)
 	var data []byte
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		nameList := LoadItemList(data, "/yyy/bin", client, store, maxNameBatchSizeLimit)
 
 		nameList.WriteName(fmt.Sprintf("name %8d", i))
@@ -198,14 +195,13 @@ func xBenchmarkNameList(b *testing.B) {
 }
 
 func xBenchmarkRedis(b *testing.B) {
-
 	client := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "",
 		DB:       0,
 	})
 
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		client.ZAddNX(context.Background(), "/xxx/bin", redis.Z{Score: 0, Member: fmt.Sprintf("name %8d", i)})
 	}
 }

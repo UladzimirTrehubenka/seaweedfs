@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -88,6 +87,7 @@ func TestSQLEngine_SelectFromNonExistentTable(t *testing.T) {
 	t.Logf("ExecuteSQL returned: err=%v, result.Error=%v", err, result.Error)
 	if result.Error == nil {
 		t.Error("Expected error for non-existent table")
+
 		return
 	}
 
@@ -189,14 +189,16 @@ func TestSQLEngine_SelectDifferentTables(t *testing.T) {
 	tables := []string{"user_events", "system_logs"}
 
 	for _, tableName := range tables {
-		result, err := engine.ExecuteSQL(context.Background(), fmt.Sprintf("SELECT * FROM %s", tableName))
+		result, err := engine.ExecuteSQL(context.Background(), "SELECT * FROM "+tableName)
 		if err != nil {
 			t.Errorf("Error querying table %s: %v", tableName, err)
+
 			continue
 		}
 
 		if result.Error != nil {
 			t.Errorf("Query error for table %s: %v", tableName, result.Error)
+
 			continue
 		}
 

@@ -57,6 +57,7 @@ func (c *DiskBufferCache) Get(key string) ([]byte, int64, bool) {
 	entry, exists := c.cache[key]
 	if !exists {
 		c.misses++
+
 		return nil, 0, false
 	}
 
@@ -64,6 +65,7 @@ func (c *DiskBufferCache) Get(key string) ([]byte, int64, bool) {
 	if time.Since(entry.timestamp) > c.ttl {
 		c.evict(entry)
 		c.misses++
+
 		return nil, 0, false
 	}
 
@@ -103,6 +105,7 @@ func (c *DiskBufferCache) Put(key string, data []byte, offset int64) {
 		} else {
 			glog.V(4).Infof("📦 CACHE UPDATE: key=%s offset=%d size=%d", key, offset, len(data))
 		}
+
 		return
 	}
 
@@ -181,6 +184,7 @@ func (c *DiskBufferCache) cleanup() {
 func (c *DiskBufferCache) Stats() (hits, misses, evictions int64, size int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
 	return c.hits, c.misses, c.evictions, c.lruList.Len()
 }
 

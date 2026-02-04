@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/linkedin/goavro/v2"
+
 	schema_pb "github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -94,6 +95,7 @@ func createConfluentWireFormat(schemaID uint32, payload []byte) []byte {
 	wireFormat[0] = 0x00 // Magic byte
 	binary.BigEndian.PutUint32(wireFormat[1:5], schemaID)
 	copy(wireFormat[5:], payload)
+
 	return wireFormat
 }
 
@@ -108,7 +110,7 @@ func TestAvroLoadTestDecoding(t *testing.T) {
 	}
 
 	// Convert message to map for Avro encoding
-	msgMap := map[string]interface{}{
+	msgMap := map[string]any{
 		"id":          msg.ID,
 		"timestamp":   msg.Timestamp,
 		"producer_id": int32(msg.ProducerID), // Avro uses int32 for "int"
@@ -167,7 +169,7 @@ func TestAvroLoadTestDecoding(t *testing.T) {
 	verifyField(t, recordValue, "user_id", msg.UserID)
 	verifyField(t, recordValue, "event_type", msg.EventType)
 
-	t.Logf("✅ Avro decoding successful: %d fields", len(recordValue.Fields))
+	t.Logf("✅ Avro decoding successful: %d fields", len(recordValue.GetFields()))
 }
 
 // TestJSONSchemaLoadTestDecoding tests JSON Schema decoding with load test schema
@@ -224,7 +226,7 @@ func TestJSONSchemaLoadTestDecoding(t *testing.T) {
 	verifyField(t, recordValue, "user_id", msg.UserID)
 	verifyField(t, recordValue, "event_type", msg.EventType)
 
-	t.Logf("✅ JSON Schema decoding successful: %d fields", len(recordValue.Fields))
+	t.Logf("✅ JSON Schema decoding successful: %d fields", len(recordValue.GetFields()))
 }
 
 // TestProtobufLoadTestDecoding tests Protobuf decoding with load test schema
@@ -268,21 +270,23 @@ func TestProtobufLoadTestDecoding(t *testing.T) {
 	if err != nil {
 		t.Logf("⚠️  Expected failure: Protobuf decoder cannot decode JSON: %v", err)
 		t.Logf("This confirms the issue: producer sends JSON but gateway expects Protobuf binary")
+
 		return
 	}
 
 	// If we get here, something unexpected happened
 	t.Logf("Unexpectedly succeeded in decoding JSON as Protobuf")
 	if recordValue.Fields != nil {
-		t.Logf("RecordValue has %d fields", len(recordValue.Fields))
+		t.Logf("RecordValue has %d fields", len(recordValue.GetFields()))
 	}
 }
 
 // verifyField checks if a field exists in RecordValue with expected value
-func verifyField(t *testing.T, rv *schema_pb.RecordValue, fieldName string, expectedValue interface{}) {
-	field, exists := rv.Fields[fieldName]
+func verifyField(t *testing.T, rv *schema_pb.RecordValue, fieldName string, expectedValue any) {
+	field, exists := rv.GetFields()[fieldName]
 	if !exists {
 		t.Errorf("Field '%s' not found in RecordValue", fieldName)
+
 		return
 	}
 

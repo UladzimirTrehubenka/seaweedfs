@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -112,6 +113,7 @@ func (h *Handler) handleJoinGroup(connContext *ConnectionContext, correlationID 
 			for existingID, member := range group.Members {
 				if member.ClientID == clientKey && !h.groupCoordinator.IsStaticMember(member) {
 					existingMemberID = existingID
+
 					break
 				}
 			}
@@ -249,6 +251,7 @@ func (h *Handler) handleJoinGroup(connContext *ConnectionContext, correlationID 
 		}
 		// Recompute group subscription without the rejected member
 		h.updateGroupSubscription(group)
+
 		return h.buildJoinGroupErrorResponse(correlationID, ErrorCodeInconsistentGroupProtocol, apiVersion), nil
 	}
 
@@ -289,12 +292,13 @@ func (h *Handler) handleJoinGroup(connContext *ConnectionContext, correlationID 
 	}
 
 	resp := h.buildJoinGroupResponse(response)
+
 	return resp, nil
 }
 
 func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGroupRequest, error) {
 	if len(data) < 8 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	offset := 0
@@ -314,13 +318,9 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 	var groupID string
 	if isFlexible {
 		// Flexible protocol uses compact strings
-		endIdx := offset + 20
-		if endIdx > len(data) {
-			endIdx = len(data)
-		}
 		groupIDBytes, consumed := parseCompactString(data[offset:])
 		if consumed == 0 {
-			return nil, fmt.Errorf("invalid group ID compact string")
+			return nil, errors.New("invalid group ID compact string")
 		}
 		if groupIDBytes != nil {
 			groupID = string(groupIDBytes)
@@ -329,12 +329,12 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 	} else {
 		// Non-flexible protocol uses regular strings
 		if offset+2 > len(data) {
-			return nil, fmt.Errorf("missing group ID length")
+			return nil, errors.New("missing group ID length")
 		}
 		groupIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 		offset += 2
 		if offset+groupIDLength > len(data) {
-			return nil, fmt.Errorf("invalid group ID length")
+			return nil, errors.New("invalid group ID length")
 		}
 		groupID = string(data[offset : offset+groupIDLength])
 		offset += groupIDLength
@@ -342,7 +342,7 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 
 	// Session timeout (4 bytes)
 	if offset+4 > len(data) {
-		return nil, fmt.Errorf("missing session timeout")
+		return nil, errors.New("missing session timeout")
 	}
 	sessionTimeout := int32(binary.BigEndian.Uint32(data[offset:]))
 	offset += 4
@@ -360,7 +360,7 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 		// Flexible protocol uses compact strings
 		memberIDBytes, consumed := parseCompactString(data[offset:])
 		if consumed == 0 {
-			return nil, fmt.Errorf("invalid member ID compact string")
+			return nil, errors.New("invalid member ID compact string")
 		}
 		if memberIDBytes != nil {
 			memberID = string(memberIDBytes)
@@ -369,13 +369,13 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 	} else {
 		// Non-flexible protocol uses regular strings
 		if offset+2 > len(data) {
-			return nil, fmt.Errorf("missing member ID length")
+			return nil, errors.New("missing member ID length")
 		}
 		memberIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 		offset += 2
 		if memberIDLength > 0 {
 			if offset+memberIDLength > len(data) {
-				return nil, fmt.Errorf("invalid member ID length")
+				return nil, errors.New("invalid member ID length")
 			}
 			memberID = string(data[offset : offset+memberIDLength])
 			offset += memberIDLength
@@ -405,7 +405,7 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 		} else {
 			// Non-flexible v5: regular nullable string
 			if offset+2 > len(data) {
-				return nil, fmt.Errorf("missing group instance ID length")
+				return nil, errors.New("missing group instance ID length")
 			}
 			instanceIDLength := int16(binary.BigEndian.Uint16(data[offset:]))
 			offset += 2
@@ -414,7 +414,7 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 				groupInstanceID = "" // null string
 			} else if instanceIDLength >= 0 {
 				if offset+int(instanceIDLength) > len(data) {
-					return nil, fmt.Errorf("invalid group instance ID length")
+					return nil, errors.New("invalid group instance ID length")
 				}
 				groupInstanceID = string(data[offset : offset+int(instanceIDLength)])
 				offset += int(instanceIDLength)
@@ -426,10 +426,6 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 	var protocolType string
 	if isFlexible {
 		// FLEXIBLE V6+ FIX: ProtocolType is a compact string, not regular string
-		endIdx := offset + 10
-		if endIdx > len(data) {
-			endIdx = len(data)
-		}
 		protocolTypeBytes, consumed := parseCompactString(data[offset:])
 		if consumed == 0 {
 			return nil, fmt.Errorf("JoinGroup v%d: invalid protocol type compact string", apiVersion)
@@ -441,13 +437,13 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 	} else {
 		// Non-flexible parsing (v0-v5)
 		if len(data) < offset+2 {
-			return nil, fmt.Errorf("JoinGroup request missing protocol type")
+			return nil, errors.New("JoinGroup request missing protocol type")
 		}
 		protocolTypeLength := binary.BigEndian.Uint16(data[offset : offset+2])
 		offset += 2
 
 		if len(data) < offset+int(protocolTypeLength) {
-			return nil, fmt.Errorf("JoinGroup request protocol type too short")
+			return nil, errors.New("JoinGroup request protocol type too short")
 		}
 		protocolType = string(data[offset : offset+int(protocolTypeLength)])
 		offset += int(protocolTypeLength)
@@ -466,7 +462,7 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 	} else {
 		// Non-flexible parsing (v0-v5)
 		if len(data) < offset+4 {
-			return nil, fmt.Errorf("JoinGroup request missing group protocols")
+			return nil, errors.New("JoinGroup request missing group protocols")
 		}
 		protocolsCount = binary.BigEndian.Uint32(data[offset : offset+4])
 		offset += 4
@@ -479,10 +475,6 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 		var protocolName string
 		if isFlexible {
 			// FLEXIBLE V6+ FIX: Protocol name is a compact string
-			endIdx := offset + 10
-			if endIdx > len(data) {
-				endIdx = len(data)
-			}
 			protocolNameBytes, consumed := parseCompactString(data[offset:])
 			if consumed == 0 {
 				return nil, fmt.Errorf("JoinGroup v%d: invalid protocol name compact string", apiVersion)
@@ -550,7 +542,6 @@ func (h *Handler) parseJoinGroupRequest(data []byte, apiVersion uint16) (*JoinGr
 			Name:     protocolName,
 			Metadata: metadata,
 		})
-
 	}
 
 	// Parse request-level tagged fields (v6+)
@@ -827,7 +818,6 @@ type SyncGroupResponse struct {
 // Error codes for SyncGroup are imported from errors.go
 
 func (h *Handler) handleSyncGroup(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// Parse SyncGroup request
 	request, err := h.parseSyncGroupRequest(requestBody, apiVersion)
 	if err != nil {
@@ -873,6 +863,7 @@ func (h *Handler) handleSyncGroup(correlationID uint32, apiVersion uint16, reque
 		err = h.processGroupAssignments(group, request.GroupAssignments)
 		if err != nil {
 			glog.Errorf("[SYNCGROUP] ERROR processing leader assignments: %v", err)
+
 			return h.buildSyncGroupErrorResponse(correlationID, ErrorCodeInconsistentGroupProtocol, apiVersion), nil
 		}
 
@@ -933,12 +924,13 @@ func (h *Handler) handleSyncGroup(correlationID uint32, apiVersion uint16, reque
 	}
 
 	resp := h.buildSyncGroupResponse(response, apiVersion)
+
 	return resp, nil
 }
 
 func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGroupRequest, error) {
 	if len(data) < 8 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	offset := 0
@@ -959,7 +951,7 @@ func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGr
 		// FLEXIBLE V4+ FIX: GroupID is a compact string
 		groupIDBytes, consumed := parseCompactString(data[offset:])
 		if consumed == 0 {
-			return nil, fmt.Errorf("invalid group ID compact string")
+			return nil, errors.New("invalid group ID compact string")
 		}
 		if groupIDBytes != nil {
 			groupID = string(groupIDBytes)
@@ -970,7 +962,7 @@ func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGr
 		groupIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 		offset += 2
 		if offset+groupIDLength > len(data) {
-			return nil, fmt.Errorf("invalid group ID length")
+			return nil, errors.New("invalid group ID length")
 		}
 		groupID = string(data[offset : offset+groupIDLength])
 		offset += groupIDLength
@@ -978,7 +970,7 @@ func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGr
 
 	// Generation ID (4 bytes) - always fixed-length
 	if offset+4 > len(data) {
-		return nil, fmt.Errorf("missing generation ID")
+		return nil, errors.New("missing generation ID")
 	}
 	generationID := int32(binary.BigEndian.Uint32(data[offset:]))
 	offset += 4
@@ -989,7 +981,7 @@ func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGr
 		// FLEXIBLE V4+ FIX: MemberID is a compact string
 		memberIDBytes, consumed := parseCompactString(data[offset:])
 		if consumed == 0 {
-			return nil, fmt.Errorf("invalid member ID compact string")
+			return nil, errors.New("invalid member ID compact string")
 		}
 		if memberIDBytes != nil {
 			memberID = string(memberIDBytes)
@@ -998,12 +990,12 @@ func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGr
 	} else {
 		// Non-flexible parsing (v0-v3)
 		if offset+2 > len(data) {
-			return nil, fmt.Errorf("missing member ID length")
+			return nil, errors.New("missing member ID length")
 		}
 		memberIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 		offset += 2
 		if offset+memberIDLength > len(data) {
-			return nil, fmt.Errorf("invalid member ID length")
+			return nil, errors.New("invalid member ID length")
 		}
 		memberID = string(data[offset : offset+memberIDLength])
 		offset += memberIDLength
@@ -1027,7 +1019,7 @@ func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGr
 		} else {
 			// Non-flexible v3: regular nullable string
 			if offset+2 > len(data) {
-				return nil, fmt.Errorf("missing group instance ID length")
+				return nil, errors.New("missing group instance ID length")
 			}
 			instanceIDLength := int16(binary.BigEndian.Uint16(data[offset:]))
 			offset += 2
@@ -1036,7 +1028,7 @@ func (h *Handler) parseSyncGroupRequest(data []byte, apiVersion uint16) (*SyncGr
 				groupInstanceID = "" // null string
 			} else if instanceIDLength >= 0 {
 				if offset+int(instanceIDLength) > len(data) {
-					return nil, fmt.Errorf("invalid group instance ID length")
+					return nil, errors.New("invalid group instance ID length")
 				}
 				groupInstanceID = string(data[offset : offset+int(instanceIDLength)])
 				offset += int(instanceIDLength)
@@ -1239,12 +1231,14 @@ func (h *Handler) processGroupAssignments(group *consumer.ConsumerGroup, assignm
 		if !ok {
 			// Skip unknown members
 			glog.V(1).Infof("[PROCESS_ASSIGNMENTS] Skipping unknown member: %s", ga.MemberID)
+
 			continue
 		}
 
 		parsed, err := h.parseMemberAssignment(ga.Assignment)
 		if err != nil {
 			glog.Errorf("[PROCESS_ASSIGNMENTS] Failed to parse assignment for member %s: %v", ga.MemberID, err)
+
 			return err
 		}
 		m.Assignment = parsed
@@ -1265,14 +1259,14 @@ func (h *Handler) parseMemberAssignment(data []byte) ([]consumer.PartitionAssign
 
 	// Version (2 bytes)
 	if offset+2 > len(data) {
-		return nil, fmt.Errorf("assignment too short for version")
+		return nil, errors.New("assignment too short for version")
 	}
 	_ = int16(binary.BigEndian.Uint16(data[offset : offset+2]))
 	offset += 2
 
 	// Number of topics (4 bytes)
 	if offset+4 > len(data) {
-		return nil, fmt.Errorf("assignment too short for topics count")
+		return nil, errors.New("assignment too short for topics count")
 	}
 	topicsCount := int(binary.BigEndian.Uint32(data[offset:]))
 	offset += 4
@@ -1286,19 +1280,19 @@ func (h *Handler) parseMemberAssignment(data []byte) ([]consumer.PartitionAssign
 	for i := 0; i < topicsCount && offset < len(data); i++ {
 		// topic string
 		if offset+2 > len(data) {
-			return nil, fmt.Errorf("assignment truncated reading topic len")
+			return nil, errors.New("assignment truncated reading topic len")
 		}
 		tlen := int(binary.BigEndian.Uint16(data[offset:]))
 		offset += 2
 		if tlen < 0 || offset+tlen > len(data) {
-			return nil, fmt.Errorf("assignment truncated reading topic name")
+			return nil, errors.New("assignment truncated reading topic name")
 		}
 		topic := string(data[offset : offset+tlen])
 		offset += tlen
 
 		// partitions array length
 		if offset+4 > len(data) {
-			return nil, fmt.Errorf("assignment truncated reading partitions len")
+			return nil, errors.New("assignment truncated reading partitions len")
 		}
 		numPartitions := int(binary.BigEndian.Uint32(data[offset:]))
 		offset += 4
@@ -1306,9 +1300,9 @@ func (h *Handler) parseMemberAssignment(data []byte) ([]consumer.PartitionAssign
 			return nil, fmt.Errorf("unreasonable partitions count: %d", numPartitions)
 		}
 
-		for p := 0; p < numPartitions; p++ {
+		for range numPartitions {
 			if offset+4 > len(data) {
-				return nil, fmt.Errorf("assignment truncated reading partition id")
+				return nil, errors.New("assignment truncated reading partition id")
 			}
 			pid := int32(binary.BigEndian.Uint32(data[offset:]))
 			offset += 4
@@ -1336,7 +1330,7 @@ func (h *Handler) getTopicPartitions(group *consumer.ConsumerGroup) map[string][
 
 		// Create partition list: [0, 1, 2, ...]
 		partitions := make([]int32, partitionCount)
-		for i := int32(0); i < partitionCount; i++ {
+		for i := range partitionCount {
 			partitions[i] = i
 		}
 		topicPartitions[topic] = partitions
@@ -1358,18 +1352,20 @@ func (h *Handler) serializeSchemaRegistryAssignment(group *consumer.ConsumerGrou
 		// Schema Registry should handle this by failing over to another instance
 		glog.Warningf("Schema Registry leader member %s not found in group %s", group.Leader, group.ID)
 		jsonAssignment := `{"error":0,"master":"","master_identity":{"host":"","port":0,"master_eligibility":false,"scheme":"http","version":1}}`
+
 		return []byte(jsonAssignment)
 	}
 
 	// Parse the leader's metadata to extract the Schema Registry identity
 	// The metadata is the serialized SchemaRegistryIdentity JSON
-	var identity map[string]interface{}
+	var identity map[string]any
 	err := json.Unmarshal(leaderMember.Metadata, &identity)
 	if err != nil {
 		// Failed to parse metadata - return minimal assignment
 		// Schema Registry should provide valid metadata; if not, fail gracefully
 		glog.Warningf("Failed to parse Schema Registry metadata for leader %s: %v", group.Leader, err)
 		jsonAssignment := fmt.Sprintf(`{"error":0,"master":"%s","master_identity":{"host":"","port":0,"master_eligibility":false,"scheme":"http","version":1}}`, group.Leader)
+
 		return []byte(jsonAssignment)
 	}
 

@@ -1,6 +1,7 @@
 package vacuum
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,16 +41,17 @@ func RegisterVacuumTask() {
 		ConfigSpec: GetConfigSpec(),
 		CreateTask: func(params *worker_pb.TaskParams) (types.Task, error) {
 			if params == nil {
-				return nil, fmt.Errorf("task parameters are required")
+				return nil, errors.New("task parameters are required")
 			}
-			if len(params.Sources) == 0 {
-				return nil, fmt.Errorf("at least one source is required for vacuum task")
+			if len(params.GetSources()) == 0 {
+				return nil, errors.New("at least one source is required for vacuum task")
 			}
+
 			return NewVacuumTask(
-				fmt.Sprintf("vacuum-%d", params.VolumeId),
-				params.Sources[0].Node, // Use first source node
-				params.VolumeId,
-				params.Collection,
+				fmt.Sprintf("vacuum-%d", params.GetVolumeId()),
+				params.GetSources()[0].GetNode(), // Use first source node
+				params.GetVolumeId(),
+				params.GetCollection(),
 			), nil
 		},
 		DetectionFunc:  Detection,
@@ -67,20 +69,21 @@ func RegisterVacuumTask() {
 }
 
 // UpdateConfigFromPersistence updates the vacuum configuration from persistence
-func UpdateConfigFromPersistence(configPersistence interface{}) error {
+func UpdateConfigFromPersistence(configPersistence any) error {
 	if globalTaskDef == nil {
-		return fmt.Errorf("vacuum task not registered")
+		return errors.New("vacuum task not registered")
 	}
 
 	// Load configuration from persistence
 	newConfig := LoadConfigFromPersistence(configPersistence)
 	if newConfig == nil {
-		return fmt.Errorf("failed to load configuration from persistence")
+		return errors.New("failed to load configuration from persistence")
 	}
 
 	// Update the task definition's config
 	globalTaskDef.Config = newConfig
 
 	glog.V(1).Infof("Updated vacuum task configuration from persistence")
+
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
@@ -127,7 +128,6 @@ func (s3sink *S3Sink) initialize(awsAccessKeyId, awsSecretAccessKey string) erro
 }
 
 func (s3sink *S3Sink) DeleteEntry(key string, isDirectory, deleteIncludeChunks bool, signatures []int32) error {
-
 	key = cleanKey(key)
 
 	if isDirectory {
@@ -148,13 +148,12 @@ func (s3sink *S3Sink) DeleteEntry(key string, isDirectory, deleteIncludeChunks b
 	}
 
 	return err
-
 }
 
 func (s3sink *S3Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int32) (err error) {
 	key = cleanKey(key)
 
-	if entry.IsDirectory {
+	if entry.GetIsDirectory() {
 		return nil
 	}
 
@@ -168,9 +167,9 @@ func (s3sink *S3Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures 
 	})
 
 	if s3sink.keepPartSize {
-		switch chunkCount := len(entry.Chunks); {
+		switch chunkCount := len(entry.GetChunks()); {
 		case chunkCount > 1:
-			if firstChunkSize := int64(entry.Chunks[0].Size); firstChunkSize > s3manager.MinUploadPartSize {
+			if firstChunkSize := int64(entry.GetChunks()[0].GetSize()); firstChunkSize > s3manager.MinUploadPartSize {
 				uploader.PartSize = firstChunkSize
 			}
 		default:
@@ -181,15 +180,15 @@ func (s3sink *S3Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures 
 	doSaveMtime := true
 	if entry.Extended == nil {
 		entry.Extended = make(map[string][]byte)
-	} else if _, ok := entry.Extended[s3_constants.AmzUserMetaMtime]; ok {
+	} else if _, ok := entry.GetExtended()[s3_constants.AmzUserMetaMtime]; ok {
 		doSaveMtime = false
 	}
 	if doSaveMtime {
-		entry.Extended[s3_constants.AmzUserMetaMtime] = []byte(strconv.FormatInt(entry.Attributes.Mtime, 10))
+		entry.Extended[s3_constants.AmzUserMetaMtime] = []byte(strconv.FormatInt(entry.GetAttributes().GetMtime(), 10))
 	}
 	// process tagging
 	tags := ""
-	for k, v := range entry.Extended {
+	for k, v := range entry.GetExtended() {
 		if len(tags) > 0 {
 			tags = tags + "&"
 		}
@@ -203,17 +202,17 @@ func (s3sink *S3Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures 
 		Body:    reader,
 		Tagging: aws.String(tags),
 	}
-	if len(entry.Attributes.Md5) > 0 {
-		uploadInput.ContentMD5 = aws.String(base64.StdEncoding.EncodeToString([]byte(entry.Attributes.Md5)))
+	if len(entry.GetAttributes().GetMd5()) > 0 {
+		uploadInput.ContentMD5 = aws.String(base64.StdEncoding.EncodeToString([]byte(entry.GetAttributes().GetMd5())))
 	}
 	_, err = uploader.Upload(&uploadInput)
 
 	return err
-
 }
 
 func (s3sink *S3Sink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParentPath string, newEntry *filer_pb.Entry, deleteIncludeChunks bool, signatures []int32) (foundExistingEntry bool, err error) {
 	key = cleanKey(key)
+
 	return true, s3sink.CreateEntry(key, newEntry, signatures)
 }
 
@@ -221,5 +220,6 @@ func cleanKey(key string) string {
 	if strings.HasPrefix(key, "/") {
 		key = key[1:]
 	}
+
 	return key
 }

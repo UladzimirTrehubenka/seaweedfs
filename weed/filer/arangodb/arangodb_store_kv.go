@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/arangodb/go-driver"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
@@ -39,8 +40,10 @@ func (store *ArangodbStore) KvGet(ctx context.Context, key []byte) (value []byte
 	}
 	if err != nil {
 		glog.ErrorfCtx(ctx, "kv get: %s %v", string(key), err)
+
 		return nil, filer.ErrKvNotFound
 	}
+
 	return arrayToBytes(model.Meta), nil
 }
 
@@ -48,7 +51,9 @@ func (store *ArangodbStore) KvDelete(ctx context.Context, key []byte) (err error
 	_, err = store.kvCollection.RemoveDocument(ctx, hashString(".kvstore."+string(key)))
 	if err != nil {
 		glog.ErrorfCtx(ctx, "kv del: %v", err)
+
 		return filer.ErrKvNotFound
 	}
+
 	return nil
 }

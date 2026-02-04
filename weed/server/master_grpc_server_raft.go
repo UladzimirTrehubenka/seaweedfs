@@ -2,6 +2,7 @@ package weed_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hashicorp/raft"
@@ -16,6 +17,7 @@ func (ms *MasterServer) RaftListClusterServers(ctx context.Context, req *master_
 	ms.Topo.RaftServerAccessLock.RLock()
 	if ms.Topo.HashicorpRaft == nil && ms.Topo.RaftServer == nil {
 		ms.Topo.RaftServerAccessLock.RUnlock()
+
 		return resp, nil
 	}
 
@@ -56,6 +58,7 @@ func (ms *MasterServer) RaftListClusterServers(ctx context.Context, req *master_
 			})
 		}
 	}
+
 	return resp, nil
 }
 
@@ -70,19 +73,20 @@ func (ms *MasterServer) RaftAddServer(ctx context.Context, req *master_pb.RaftAd
 	}
 
 	if ms.Topo.HashicorpRaft.State() != raft.Leader {
-		return nil, fmt.Errorf("raft add server %s failed: %s is no current leader", req.Id, ms.Topo.HashicorpRaft.String())
+		return nil, fmt.Errorf("raft add server %s failed: %s is no current leader", req.GetId(), ms.Topo.HashicorpRaft.String())
 	}
 
 	var idxFuture raft.IndexFuture
-	if req.Voter {
-		idxFuture = ms.Topo.HashicorpRaft.AddVoter(raft.ServerID(req.Id), raft.ServerAddress(req.Address), 0, 0)
+	if req.GetVoter() {
+		idxFuture = ms.Topo.HashicorpRaft.AddVoter(raft.ServerID(req.GetId()), raft.ServerAddress(req.GetAddress()), 0, 0)
 	} else {
-		idxFuture = ms.Topo.HashicorpRaft.AddNonvoter(raft.ServerID(req.Id), raft.ServerAddress(req.Address), 0, 0)
+		idxFuture = ms.Topo.HashicorpRaft.AddNonvoter(raft.ServerID(req.GetId()), raft.ServerAddress(req.GetAddress()), 0, 0)
 	}
 
 	if err := idxFuture.Error(); err != nil {
 		return nil, err
 	}
+
 	return resp, nil
 }
 
@@ -97,22 +101,23 @@ func (ms *MasterServer) RaftRemoveServer(ctx context.Context, req *master_pb.Raf
 	}
 
 	if ms.Topo.HashicorpRaft.State() != raft.Leader {
-		return nil, fmt.Errorf("raft remove server %s failed: %s is no current leader", req.Id, ms.Topo.HashicorpRaft.String())
+		return nil, fmt.Errorf("raft remove server %s failed: %s is no current leader", req.GetId(), ms.Topo.HashicorpRaft.String())
 	}
 
-	if !req.Force {
+	if !req.GetForce() {
 		ms.clientChansLock.RLock()
-		_, ok := ms.clientChans[fmt.Sprintf("%s@%s", cluster.MasterType, req.Id)]
+		_, ok := ms.clientChans[fmt.Sprintf("%s@%s", cluster.MasterType, req.GetId())]
 		ms.clientChansLock.RUnlock()
 		if ok {
-			return resp, fmt.Errorf("raft remove server %s failed: client connection to master exists", req.Id)
+			return resp, fmt.Errorf("raft remove server %s failed: client connection to master exists", req.GetId())
 		}
 	}
 
-	idxFuture := ms.Topo.HashicorpRaft.RemoveServer(raft.ServerID(req.Id), 0, 0)
+	idxFuture := ms.Topo.HashicorpRaft.RemoveServer(raft.ServerID(req.GetId()), 0, 0)
 	if err := idxFuture.Error(); err != nil {
 		return nil, err
 	}
+
 	return resp, nil
 }
 
@@ -126,13 +131,15 @@ func (ms *MasterServer) RaftLeadershipTransfer(ctx context.Context, req *master_
 	// The default seaweedfs/raft (goraft) implementation does not support this feature
 	if ms.Topo.HashicorpRaft == nil {
 		if ms.Topo.RaftServer != nil {
-			return nil, fmt.Errorf("leadership transfer requires -raftHashicorp=true; the default raft implementation does not support this feature")
+			return nil, errors.New("leadership transfer requires -raftHashicorp=true; the default raft implementation does not support this feature")
 		}
-		return nil, fmt.Errorf("raft not initialized (single master mode)")
+
+		return nil, errors.New("raft not initialized (single master mode)")
 	}
 
 	if ms.Topo.HashicorpRaft.State() != raft.Leader {
 		leaderAddr, _ := ms.Topo.HashicorpRaft.LeaderWithID()
+
 		return nil, fmt.Errorf("this server is not the leader; current leader is %s", leaderAddr)
 	}
 
@@ -141,11 +148,11 @@ func (ms *MasterServer) RaftLeadershipTransfer(ctx context.Context, req *master_
 	resp.PreviousLeader = string(previousLeaderId)
 
 	var future raft.Future
-	if req.TargetId != "" && req.TargetAddress != "" {
+	if req.GetTargetId() != "" && req.GetTargetAddress() != "" {
 		// Transfer to specific server
 		future = ms.Topo.HashicorpRaft.LeadershipTransferToServer(
-			raft.ServerID(req.TargetId),
-			raft.ServerAddress(req.TargetAddress),
+			raft.ServerID(req.GetTargetId()),
+			raft.ServerAddress(req.GetTargetAddress()),
 		)
 	} else {
 		// Transfer to any eligible follower
@@ -153,7 +160,7 @@ func (ms *MasterServer) RaftLeadershipTransfer(ctx context.Context, req *master_
 	}
 
 	if err := future.Error(); err != nil {
-		return nil, fmt.Errorf("leadership transfer failed: %v", err)
+		return nil, fmt.Errorf("leadership transfer failed: %w", err)
 	}
 
 	// Get new leader info

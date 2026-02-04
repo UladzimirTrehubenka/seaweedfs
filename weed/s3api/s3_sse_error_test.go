@@ -212,6 +212,7 @@ func TestSSEKMSInvalidConfigurations(t *testing.T) {
 			setupRequest: func() *http.Request {
 				req := CreateTestHTTPRequest("PUT", "/bucket/object", nil)
 				req.Header.Set(s3_constants.AmzServerSideEncryption, "invalid-algorithm")
+
 				return req
 			},
 			expectError: true,
@@ -222,6 +223,7 @@ func TestSSEKMSInvalidConfigurations(t *testing.T) {
 				req := CreateTestHTTPRequest("PUT", "/bucket/object", nil)
 				req.Header.Set(s3_constants.AmzServerSideEncryption, "aws:kms")
 				req.Header.Set(s3_constants.AmzServerSideEncryptionAwsKmsKeyId, "")
+
 				return req
 			},
 			expectError: false, // Empty key ID might be valid (use default)
@@ -232,6 +234,7 @@ func TestSSEKMSInvalidConfigurations(t *testing.T) {
 				req := CreateTestHTTPRequest("PUT", "/bucket/object", nil)
 				req.Header.Set(s3_constants.AmzServerSideEncryption, "aws:kms")
 				req.Header.Set(s3_constants.AmzServerSideEncryptionAwsKmsKeyId, "invalid key id with spaces")
+
 				return req
 			},
 			expectError: true,
@@ -348,7 +351,7 @@ func TestSSEConcurrentAccess(t *testing.T) {
 	errors := make(chan error, numGoroutines)
 
 	// Run multiple encryption/decryption operations concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			defer func() { done <- true }()
 
@@ -357,38 +360,43 @@ func TestSSEConcurrentAccess(t *testing.T) {
 			// Encrypt
 			encryptedReader, iv, err := CreateSSECEncryptedReader(strings.NewReader(testData), customerKey)
 			if err != nil {
-				errors <- fmt.Errorf("goroutine %d encrypt error: %v", id, err)
+				errors <- fmt.Errorf("goroutine %d encrypt error: %w", id, err)
+
 				return
 			}
 
 			encryptedData, err := io.ReadAll(encryptedReader)
 			if err != nil {
-				errors <- fmt.Errorf("goroutine %d read encrypted error: %v", id, err)
+				errors <- fmt.Errorf("goroutine %d read encrypted error: %w", id, err)
+
 				return
 			}
 
 			// Decrypt
 			decryptedReader, err := CreateSSECDecryptedReader(bytes.NewReader(encryptedData), customerKey, iv)
 			if err != nil {
-				errors <- fmt.Errorf("goroutine %d decrypt error: %v", id, err)
+				errors <- fmt.Errorf("goroutine %d decrypt error: %w", id, err)
+
 				return
 			}
 
 			decryptedData, err := io.ReadAll(decryptedReader)
 			if err != nil {
-				errors <- fmt.Errorf("goroutine %d read decrypted error: %v", id, err)
+				errors <- fmt.Errorf("goroutine %d read decrypted error: %w", id, err)
+
 				return
 			}
 
 			if string(decryptedData) != testData {
 				errors <- fmt.Errorf("goroutine %d data mismatch: expected %s, got %s", id, testData, string(decryptedData))
+
 				return
 			}
 		}(i)
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 

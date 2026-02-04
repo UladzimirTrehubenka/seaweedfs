@@ -20,7 +20,7 @@ func Test_verifyBucketName(t *testing.T) {
 	}
 	for _, invalidName := range invalidS3BucketNames {
 		err := VerifyS3BucketName(invalidName)
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 	}
 	validS3BucketName := []string{
 		"a9325325b",
@@ -34,6 +34,6 @@ func Test_verifyBucketName(t *testing.T) {
 	}
 	for _, invalidName := range validS3BucketName {
 		err := VerifyS3BucketName(invalidName)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 }

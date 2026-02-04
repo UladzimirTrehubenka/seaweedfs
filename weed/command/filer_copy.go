@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,7 +81,6 @@ var cmdFilerCopy = &Command{
 }
 
 func runCopy(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 
 	if len(args) <= 1 {
@@ -92,10 +92,12 @@ func runCopy(cmd *Command, args []string) bool {
 	filerAddress, urlPath, err := pb.ParseUrl(filerDestination)
 	if err != nil {
 		fmt.Printf("The last argument should be a URL on filer: %v\n", err)
+
 		return false
 	}
 	if !strings.HasSuffix(urlPath, "/") {
 		fmt.Printf("The last argument should be a folder and end with \"/\"\n")
+
 		return false
 	}
 
@@ -104,6 +106,7 @@ func runCopy(cmd *Command, args []string) bool {
 	masters, collection, replication, dirBuckets, maxMB, cipher, err := readFilerConfiguration(copy.grpcDialOption, filerAddress)
 	if err != nil {
 		fmt.Printf("read from filer %s: %v\n", filerAddress, err)
+
 		return false
 	}
 	if strings.HasPrefix(urlPath, dirBuckets+"/") {
@@ -114,6 +117,7 @@ func runCopy(cmd *Command, args []string) bool {
 				*copy.collection = expectedBucket
 			} else if *copy.collection != expectedBucket {
 				fmt.Printf("destination %s uses collection \"%s\": unexpected collection \"%v\"\n", urlPath, expectedBucket, *copy.collection)
+
 				return true
 			}
 		}
@@ -133,6 +137,7 @@ func runCopy(cmd *Command, args []string) bool {
 	ttl, err := needle.ReadTTL(*copy.ttl)
 	if err != nil {
 		fmt.Printf("parsing ttl %s: %v\n", *copy.ttl, err)
+
 		return false
 	}
 	copy.ttlSec = int32(ttl.Minutes()) * 60
@@ -148,11 +153,12 @@ func runCopy(cmd *Command, args []string) bool {
 		for _, fileOrDir := range fileOrDirs {
 			if err := genFileCopyTask(fileOrDir, urlPath, fileCopyTaskChan); err != nil {
 				fmt.Fprintf(os.Stderr, "genFileCopyTask : %v\n", err)
+
 				break
 			}
 		}
 	}()
-	for i := 0; i < *copy.concurrentFiles; i++ {
+	for range *copy.concurrentFiles {
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
@@ -163,6 +169,7 @@ func runCopy(cmd *Command, args []string) bool {
 			}
 			if err := worker.copyFiles(fileCopyTaskChan); err != nil {
 				fmt.Fprintf(os.Stderr, "copy file error: %v\n", err)
+
 				return
 			}
 		}()
@@ -176,21 +183,23 @@ func readFilerConfiguration(grpcDialOption grpc.DialOption, filerGrpcAddress pb.
 	err = pb.WithGrpcFilerClient(false, 0, filerGrpcAddress, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
-			return fmt.Errorf("get filer %s configuration: %v", filerGrpcAddress, err)
+			return fmt.Errorf("get filer %s configuration: %w", filerGrpcAddress, err)
 		}
-		masters, collection, replication, maxMB = resp.Masters, resp.Collection, resp.Replication, resp.MaxMb
-		dirBuckets = resp.DirBuckets
-		cipher = resp.Cipher
+		masters, collection, replication, maxMB = resp.GetMasters(), resp.GetCollection(), resp.GetReplication(), resp.GetMaxMb()
+		dirBuckets = resp.GetDirBuckets()
+		cipher = resp.GetCipher()
+
 		return nil
 	})
+
 	return
 }
 
 func genFileCopyTask(fileOrDir string, destPath string, fileCopyTaskChan chan FileCopyTask) error {
-
 	fi, err := os.Stat(fileOrDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: read file %s: %v\n", fileOrDir, err)
+
 		return nil
 	}
 
@@ -235,6 +244,7 @@ func (worker *FileCopyWorker) copyFiles(fileCopyTaskChan chan FileCopyTask) erro
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -248,14 +258,16 @@ type FileCopyTask struct {
 }
 
 func (worker *FileCopyWorker) doEachCopy(task FileCopyTask) error {
-
 	f, err := os.Open(task.sourceLocation)
 	if err != nil {
 		fmt.Printf("Failed to open file %s: %v\n", task.sourceLocation, err)
-		if _, ok := err.(*os.PathError); ok {
+		pathError := &os.PathError{}
+		if errors.As(err, &pathError) {
 			fmt.Printf("skipping %s\n", task.sourceLocation)
+
 			return nil
 		}
+
 		return err
 	}
 	defer f.Close()
@@ -273,6 +285,7 @@ func (worker *FileCopyWorker) doEachCopy(task FileCopyTask) error {
 		if *worker.options.verbose {
 			fmt.Printf("skipping copied file: %v\n", f.Name())
 		}
+
 		return nil
 	}
 
@@ -291,21 +304,20 @@ func (worker *FileCopyWorker) doEachCopy(task FileCopyTask) error {
 }
 
 func (worker *FileCopyWorker) checkExistingFileFirst(task FileCopyTask, f *os.File) (shouldCopy bool, err error) {
-
 	shouldCopy = true
 
 	if !*worker.options.checkSize {
-		return
+		return shouldCopy, err
 	}
 
 	fileStat, err := f.Stat()
 	if err != nil {
 		shouldCopy = false
-		return
+
+		return shouldCopy, err
 	}
 
 	err = pb.WithGrpcFilerClient(false, worker.signature, worker.filerAddress, worker.options.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.LookupDirectoryEntryRequest{
 			Directory: task.destinationUrlPath,
 			Name:      filepath.Base(f.Name()),
@@ -317,17 +329,17 @@ func (worker *FileCopyWorker) checkExistingFileFirst(task FileCopyTask, f *os.Fi
 			return nil
 		}
 
-		if fileStat.Size() == int64(filer.FileSize(resp.Entry)) {
+		if fileStat.Size() == int64(filer.FileSize(resp.GetEntry())) {
 			shouldCopy = false
 		}
 
 		return nil
 	})
-	return
+
+	return shouldCopy, err
 }
 
 func (worker *FileCopyWorker) uploadFileAsOne(task FileCopyTask, f *os.File) error {
-
 	// upload the file content
 	fileName := filepath.Base(f.Name())
 	var mimeType string
@@ -335,7 +347,6 @@ func (worker *FileCopyWorker) uploadFileAsOne(task FileCopyTask, f *os.File) err
 	var chunks []*filer_pb.FileChunk
 
 	if task.fileMode&os.ModeDir == 0 && task.fileSize > 0 {
-
 		mimeType = detectMimeType(f)
 		data, err := io.ReadAll(f)
 		if err != nil {
@@ -397,16 +408,16 @@ func (worker *FileCopyWorker) uploadFileAsOne(task FileCopyTask, f *os.File) err
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			return fmt.Errorf("update fh: %w", err)
 		}
+
 		return nil
 	}); err != nil {
-		return fmt.Errorf("upload data %v to http://%s%s%s: %v\n", fileName, worker.filerAddress.ToHttpAddress(), task.destinationUrlPath, fileName, err)
+		return fmt.Errorf("upload data %v to http://%s%s%s: %w\n", fileName, worker.filerAddress.ToHttpAddress(), task.destinationUrlPath, fileName, err)
 	}
 
 	return nil
 }
 
 func (worker *FileCopyWorker) uploadFileInChunks(task FileCopyTask, f *os.File, chunkCount int, chunkSize int64) error {
-
 	fileName := filepath.Base(f.Name())
 	mimeType := detectMimeType(f)
 
@@ -429,6 +440,7 @@ func (worker *FileCopyWorker) uploadFileInChunks(task FileCopyTask, f *os.File, 
 			uploader, err := operation.NewUploader()
 			if err != nil {
 				uploadError = fmt.Errorf("upload data %v: %w\n", fileName, err)
+
 				return
 			}
 
@@ -457,10 +469,12 @@ func (worker *FileCopyWorker) uploadFileInChunks(task FileCopyTask, f *os.File, 
 
 			if err != nil {
 				uploadError = fmt.Errorf("upload data %v: %w\n", fileName, err)
+
 				return
 			}
 			if uploadResult.Error != "" {
 				uploadError = fmt.Errorf("upload %v result: %v\n", fileName, uploadResult.Error)
+
 				return
 			}
 			chunksChan <- uploadResult.ToPbFileChunk(fileId, i*chunkSize, time.Now().UnixNano())
@@ -479,11 +493,12 @@ func (worker *FileCopyWorker) uploadFileInChunks(task FileCopyTask, f *os.File, 
 	if uploadError != nil {
 		var fileIds []string
 		for _, chunk := range chunks {
-			fileIds = append(fileIds, chunk.FileId)
+			fileIds = append(fileIds, chunk.GetFileId())
 		}
 		operation.DeleteFileIds(func(_ context.Context) pb.ServerAddress {
 			return pb.ServerAddress(copy.masters[0])
 		}, false, worker.options.grpcDialOption, fileIds)
+
 		return uploadError
 	}
 
@@ -514,9 +529,10 @@ func (worker *FileCopyWorker) uploadFileInChunks(task FileCopyTask, f *os.File, 
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			return fmt.Errorf("update fh: %w", err)
 		}
+
 		return nil
 	}); err != nil {
-		return fmt.Errorf("upload data %v to http://%s%s%s: %v\n", fileName, worker.filerAddress.ToHttpAddress(), task.destinationUrlPath, fileName, err)
+		return fmt.Errorf("upload data %v to http://%s%s%s: %w\n", fileName, worker.filerAddress.ToHttpAddress(), task.destinationUrlPath, fileName, err)
 	}
 
 	fmt.Printf("copied %s => http://%s%s%s\n", f.Name(), worker.filerAddress.ToHttpAddress(), task.destinationUrlPath, fileName)
@@ -533,6 +549,7 @@ func detectMimeType(f *os.File) string {
 	}
 	if err != nil {
 		fmt.Printf("read head of %v: %v\n", f.Name(), err)
+
 		return ""
 	}
 	f.Seek(0, io.SeekStart)
@@ -540,6 +557,7 @@ func detectMimeType(f *os.File) string {
 	if mimeType == "application/octet-stream" {
 		return ""
 	}
+
 	return mimeType
 }
 
@@ -578,16 +596,17 @@ func (worker *FileCopyWorker) saveDataAsChunk(reader io.Reader, name string, off
 	if uploadResult.Error != "" {
 		return nil, fmt.Errorf("upload result: %v", uploadResult.Error)
 	}
+
 	return uploadResult.ToPbFileChunk(finalFileId, offset, tsNs), nil
 }
 
 var _ = filer_pb.FilerClient(&FileCopyWorker{})
 
 func (worker *FileCopyWorker) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) (err error) {
-
 	filerGrpcAddress := worker.filerAddress.ToGrpcAddress()
 	err = pb.WithGrpcClient(streamingMode, worker.signature, func(grpcConnection *grpc.ClientConn) error {
 		client := filer_pb.NewSeaweedFilerClient(grpcConnection)
+
 		return fn(client)
 	}, filerGrpcAddress, false, worker.options.grpcDialOption)
 
@@ -596,9 +615,10 @@ func (worker *FileCopyWorker) WithFilerClient(streamingMode bool, fn func(filer_
 
 func (worker *FileCopyWorker) AdjustedUrl(location *filer_pb.Location) string {
 	if *worker.options.volumeServerAccess == "publicUrl" {
-		return location.PublicUrl
+		return location.GetPublicUrl()
 	}
-	return location.Url
+
+	return location.GetUrl()
 }
 
 func (worker *FileCopyWorker) GetDataCenter() string {

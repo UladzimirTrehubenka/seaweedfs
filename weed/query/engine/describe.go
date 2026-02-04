@@ -23,7 +23,8 @@ func (e *SQLEngine) executeDescribeStatement(ctx context.Context, tableName stri
 		// Topic not in catalog, try to discover and register it
 		if regErr := e.discoverAndRegisterTopic(ctx, database, tableName); regErr != nil {
 			fmt.Printf("Warning: Failed to discover topic %s.%s: %v\n", database, tableName, regErr)
-			return &QueryResult{Error: fmt.Errorf("topic %s.%s not found and auto-discovery failed: %v", database, tableName, regErr)}, regErr
+
+			return &QueryResult{Error: fmt.Errorf("topic %s.%s not found and auto-discovery failed: %w", database, tableName, regErr)}, regErr
 		}
 	}
 
@@ -56,7 +57,7 @@ func (e *SQLEngine) executeDescribeStatement(ctx context.Context, tableName stri
 	// Calculate total rows: schema fields + system columns
 	totalRows := len(systemColumns)
 	if flatSchema != nil {
-		totalRows += len(flatSchema.Fields)
+		totalRows += len(flatSchema.GetFields())
 	}
 
 	// Create key column lookup map
@@ -74,9 +75,9 @@ func (e *SQLEngine) executeDescribeStatement(ctx context.Context, tableName stri
 
 	// Add schema fields - mark key columns appropriately
 	if flatSchema != nil {
-		for _, field := range flatSchema.Fields {
-			sqlType := e.convertMQTypeToSQL(field.Type)
-			isKey := keyColumnMap[field.Name]
+		for _, field := range flatSchema.GetFields() {
+			sqlType := e.convertMQTypeToSQL(field.GetType())
+			isKey := keyColumnMap[field.GetName()]
 			keyType := ""
 			if isKey {
 				keyType = "PRI" // Primary key
@@ -87,7 +88,7 @@ func (e *SQLEngine) executeDescribeStatement(ctx context.Context, tableName stri
 			}
 
 			result.Rows[rowIndex] = []sqltypes.Value{
-				sqltypes.NewVarChar(field.Name),
+				sqltypes.NewVarChar(field.GetName()),
 				sqltypes.NewVarChar(sqlType),
 				sqltypes.NewVarChar("YES"),
 				sqltypes.NewVarChar(keyType),
@@ -142,6 +143,7 @@ func (e *SQLEngine) executeShowStatementWithDescribe(ctx context.Context, stmt *
 			// Use current database context
 			database = e.catalog.GetCurrentDatabase()
 		}
+
 		return e.showTables(ctx, database)
 	case "COLUMNS":
 		// SHOW COLUMNS FROM table is equivalent to DESCRIBE
@@ -158,9 +160,11 @@ func (e *SQLEngine) executeShowStatementWithDescribe(ctx context.Context, stmt *
 		if tableName != "" {
 			return e.executeDescribeStatement(ctx, tableName, database)
 		}
+
 		fallthrough
 	default:
 		err := fmt.Errorf("unsupported SHOW statement: %s", stmt.Type)
+
 		return &QueryResult{Error: err}, err
 	}
 }

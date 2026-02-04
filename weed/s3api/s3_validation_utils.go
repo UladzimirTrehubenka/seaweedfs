@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -47,34 +48,37 @@ func ValidateIV(iv []byte, name string) error {
 	if len(iv) != s3_constants.AESBlockSize {
 		return fmt.Errorf("invalid %s length: expected %d bytes, got %d", name, s3_constants.AESBlockSize, len(iv))
 	}
+
 	return nil
 }
 
 // ValidateSSEKMSKey validates that an SSE-KMS key is not nil and has required fields
 func ValidateSSEKMSKey(sseKey *SSEKMSKey) error {
 	if sseKey == nil {
-		return fmt.Errorf("SSE-KMS key cannot be nil")
+		return errors.New("SSE-KMS key cannot be nil")
 	}
+
 	return nil
 }
 
 // ValidateSSECKey validates that an SSE-C key is not nil
 func ValidateSSECKey(customerKey *SSECustomerKey) error {
 	if customerKey == nil {
-		return fmt.Errorf("SSE-C customer key cannot be nil")
+		return errors.New("SSE-C customer key cannot be nil")
 	}
+
 	return nil
 }
 
 // ValidateSSES3Key validates that an SSE-S3 key has valid structure and contents
 func ValidateSSES3Key(sseKey *SSES3Key) error {
 	if sseKey == nil {
-		return fmt.Errorf("SSE-S3 key cannot be nil")
+		return errors.New("SSE-S3 key cannot be nil")
 	}
 
 	// Validate key bytes
 	if sseKey.Key == nil {
-		return fmt.Errorf("SSE-S3 key bytes cannot be nil")
+		return errors.New("SSE-S3 key bytes cannot be nil")
 	}
 	if len(sseKey.Key) != SSES3KeySize {
 		return fmt.Errorf("invalid SSE-S3 key size: expected %d bytes, got %d", SSES3KeySize, len(sseKey.Key))
@@ -87,7 +91,7 @@ func ValidateSSES3Key(sseKey *SSES3Key) error {
 
 	// Validate key ID (should not be empty)
 	if sseKey.KeyID == "" {
-		return fmt.Errorf("SSE-S3 key ID cannot be empty")
+		return errors.New("SSE-S3 key ID cannot be empty")
 	}
 
 	// IV validation is optional during key creation - it will be set during encryption

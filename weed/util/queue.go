@@ -18,12 +18,14 @@ type Queue[T any] struct {
 
 func NewQueue[T any]() *Queue[T] {
 	q := &Queue[T]{}
+
 	return q
 }
 
 func (q *Queue[T]) Len() int {
 	q.RLock()
 	defer q.RUnlock()
+
 	return q.count
 }
 

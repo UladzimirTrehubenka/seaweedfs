@@ -121,7 +121,7 @@ func TestCompress_Gzip(t *testing.T) {
 	compressed, err := Compress(Gzip, data)
 	require.NoError(t, err)
 	assert.NotEqual(t, data, compressed, "Gzip should compress data")
-	assert.True(t, len(compressed) > 0, "Compressed data should not be empty")
+	assert.NotEmpty(t, compressed, "Compressed data should not be empty")
 }
 
 // TestCompress_Snappy tests snappy compression
@@ -131,7 +131,7 @@ func TestCompress_Snappy(t *testing.T) {
 	compressed, err := Compress(Snappy, data)
 	require.NoError(t, err)
 	assert.NotEqual(t, data, compressed, "Snappy should compress data")
-	assert.True(t, len(compressed) > 0, "Compressed data should not be empty")
+	assert.NotEmpty(t, compressed, "Compressed data should not be empty")
 }
 
 // TestCompress_Lz4 tests lz4 compression
@@ -141,7 +141,7 @@ func TestCompress_Lz4(t *testing.T) {
 	compressed, err := Compress(Lz4, data)
 	require.NoError(t, err)
 	assert.NotEqual(t, data, compressed, "Lz4 should compress data")
-	assert.True(t, len(compressed) > 0, "Compressed data should not be empty")
+	assert.NotEmpty(t, compressed, "Compressed data should not be empty")
 }
 
 // TestCompress_Zstd tests zstd compression
@@ -151,7 +151,7 @@ func TestCompress_Zstd(t *testing.T) {
 	compressed, err := Compress(Zstd, data)
 	require.NoError(t, err)
 	assert.NotEqual(t, data, compressed, "Zstd should compress data")
-	assert.True(t, len(compressed) > 0, "Compressed data should not be empty")
+	assert.NotEmpty(t, compressed, "Compressed data should not be empty")
 }
 
 // TestCompress_InvalidCodec tests compression with invalid codec
@@ -316,9 +316,9 @@ func BenchmarkCompression(b *testing.B) {
 	codecs := []CompressionCodec{None, Gzip, Snappy, Lz4, Zstd}
 
 	for _, codec := range codecs {
-		b.Run(fmt.Sprintf("Compress_%s", codec.String()), func(b *testing.B) {
+		b.Run("Compress_"+codec.String(), func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, err := Compress(codec, data)
 				if err != nil {
 					b.Fatal(err)
@@ -340,9 +340,9 @@ func BenchmarkDecompression(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		b.Run(fmt.Sprintf("Decompress_%s", codec.String()), func(b *testing.B) {
+		b.Run("Decompress_"+codec.String(), func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, err := Decompress(codec, compressed)
 				if err != nil {
 					b.Fatal(err)

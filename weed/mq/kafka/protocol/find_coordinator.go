@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -33,12 +34,15 @@ func (h *Handler) handleFindCoordinator(correlationID uint32, apiVersion uint16,
 	switch apiVersion {
 	case 0:
 		glog.V(4).Infof("FindCoordinator - Routing to V0 handler")
+
 		return h.handleFindCoordinatorV0(correlationID, requestBody)
 	case 1, 2:
 		glog.V(4).Infof("FindCoordinator - Routing to V1-2 handler (non-flexible)")
+
 		return h.handleFindCoordinatorV2(correlationID, requestBody)
 	case 3:
 		glog.V(4).Infof("FindCoordinator - Routing to V3 handler (flexible)")
+
 		return h.handleFindCoordinatorV3(correlationID, requestBody)
 	default:
 		return nil, fmt.Errorf("FindCoordinator version %d not supported", apiVersion)
@@ -49,7 +53,7 @@ func (h *Handler) handleFindCoordinatorV0(correlationID uint32, requestBody []by
 	// Parse FindCoordinator v0 request: Key (STRING) only
 
 	if len(requestBody) < 2 { // need at least Key length
-		return nil, fmt.Errorf("FindCoordinator request too short")
+		return nil, errors.New("FindCoordinator request too short")
 	}
 
 	offset := 0
@@ -123,7 +127,7 @@ func (h *Handler) handleFindCoordinatorV2(correlationID uint32, requestBody []by
 	// Parse FindCoordinator request (v0-2 non-flex): Key (STRING), v1+ adds KeyType (INT8)
 
 	if len(requestBody) < 2 { // need at least Key length
-		return nil, fmt.Errorf("FindCoordinator request too short")
+		return nil, errors.New("FindCoordinator request too short")
 	}
 
 	offset := 0
@@ -216,7 +220,7 @@ func (h *Handler) handleFindCoordinatorV3(correlationID uint32, requestBody []by
 	// - Tagged fields (varint)
 
 	if len(requestBody) < 2 {
-		return nil, fmt.Errorf("FindCoordinator v3 request too short")
+		return nil, errors.New("FindCoordinator v3 request too short")
 	}
 
 	// HEX DUMP for debugging
@@ -244,7 +248,7 @@ func (h *Handler) handleFindCoordinatorV3(correlationID uint32, requestBody []by
 	glog.V(4).Infof("FindCoordinator V3: Next bytes after varint: % x", requestBody[offset:min(offset+20, len(requestBody))])
 
 	if coordinatorKeyLen == 0 {
-		return nil, fmt.Errorf("coordinator key cannot be null in v3")
+		return nil, errors.New("coordinator key cannot be null in v3")
 	}
 	// Compact strings in Kafka use length+1 encoding:
 	// varint=0 means null, varint=1 means empty string, varint=n+1 means string of length n
@@ -253,7 +257,7 @@ func (h *Handler) handleFindCoordinatorV3(correlationID uint32, requestBody []by
 	glog.V(4).Infof("FindCoordinator V3: actual coordinatorKeyLen after decoding: %d", coordinatorKeyLen)
 
 	if len(requestBody) < offset+int(coordinatorKeyLen) {
-		return nil, fmt.Errorf("FindCoordinator v3 request missing coordinator key")
+		return nil, errors.New("FindCoordinator v3 request missing coordinator key")
 	}
 
 	coordinatorKey := string(requestBody[offset : offset+int(coordinatorKeyLen)])
@@ -342,13 +346,14 @@ func (h *Handler) findCoordinatorForGroup(groupID string) (host string, port int
 		// Fallback to current gateway if no registry available
 		gatewayAddr := h.GetGatewayAddress()
 		if gatewayAddr == "" {
-			return "", 0, 0, fmt.Errorf("no coordinator registry and no gateway address configured")
+			return "", 0, 0, errors.New("no coordinator registry and no gateway address configured")
 		}
 		host, port, err := h.parseGatewayAddress(gatewayAddr)
 		if err != nil {
 			return "", 0, 0, fmt.Errorf("failed to parse gateway address: %w", err)
 		}
 		nodeID = 1
+
 		return host, port, nodeID, nil
 	}
 
@@ -365,6 +370,7 @@ func (h *Handler) findCoordinatorForGroup(groupID string) (host string, port int
 			return h.handleCoordinatorAssignmentAsLeader(groupID, registry)
 		}
 	}
+
 	return h.requestCoordinatorFromLeader(groupID, registry)
 }
 
@@ -378,7 +384,7 @@ func (h *Handler) handleCoordinatorAssignmentAsLeader(groupID string, registry C
 	// No coordinator exists, assign the requesting gateway (first-come-first-serve)
 	currentGateway := h.GetGatewayAddress()
 	if currentGateway == "" {
-		return "", 0, 0, fmt.Errorf("no gateway address configured for coordinator assignment")
+		return "", 0, 0, errors.New("no gateway address configured for coordinator assignment")
 	}
 	assignment, err := registry.AssignCoordinator(groupID, currentGateway)
 	if err != nil {
@@ -388,6 +394,7 @@ func (h *Handler) handleCoordinatorAssignmentAsLeader(groupID string, registry C
 			return "", 0, 0, fmt.Errorf("failed to parse gateway address after assignment error: %w", parseErr)
 		}
 		nodeID = 1
+
 		return host, port, nodeID, nil
 	}
 
@@ -409,6 +416,7 @@ func (h *Handler) requestCoordinatorFromLeader(groupID string, registry Coordina
 			return "", 0, 0, fmt.Errorf("failed to parse gateway address after leader wait timeout: %w", parseErr)
 		}
 		nodeID = 1
+
 		return host, port, nodeID, nil
 	}
 
@@ -423,19 +431,19 @@ func (h *Handler) requestCoordinatorFromLeader(groupID string, registry Coordina
 	// an RPC call to the leader gateway.
 	gatewayAddr := h.GetGatewayAddress()
 	if gatewayAddr == "" {
-		return "", 0, 0, fmt.Errorf("no gateway address configured for fallback coordinator")
+		return "", 0, 0, errors.New("no gateway address configured for fallback coordinator")
 	}
 	host, port, parseErr := h.parseGatewayAddress(gatewayAddr)
 	if parseErr != nil {
 		return "", 0, 0, fmt.Errorf("failed to parse gateway address for fallback: %w", parseErr)
 	}
 	nodeID = 1
+
 	return host, port, nodeID, nil
 }
 
 // waitForLeader waits for a leader to be elected, with timeout
 func (h *Handler) waitForLeader(registry CoordinatorRegistryInterface, timeout time.Duration) (leaderAddress string, err error) {
-
 	// Use the registry's efficient wait mechanism
 	leaderAddress, err = registry.WaitForLeader(timeout)
 	if err != nil {
@@ -455,7 +463,7 @@ func (h *Handler) parseGatewayAddress(address string) (host string, port int, er
 
 	port, err = strconv.Atoi(portStr)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid port in gateway address %s: %v", address, err)
+		return "", 0, fmt.Errorf("invalid port in gateway address %s: %w", address, err)
 	}
 
 	return hostStr, port, nil
@@ -469,6 +477,7 @@ func (h *Handler) parseAddress(address string, nodeID int32) (host string, port 
 		return "", 0, 0, err
 	}
 	nid = nodeID
+
 	return host, port, nid, nil
 }
 
@@ -487,6 +496,7 @@ func (h *Handler) getClientConnectableHost(coordinatorHost string) string {
 				// Both are IPs, return the actual IP address
 				return coordinatorHost
 			}
+
 			return host
 		}
 		// Fallback to the coordinator host IP itself

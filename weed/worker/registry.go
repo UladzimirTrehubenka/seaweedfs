@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ func (r *Registry) RegisterWorker(worker *types.WorkerData) error {
 
 	r.workers[worker.ID] = worker
 	r.updateStats()
+
 	return nil
 }
 
@@ -57,6 +59,7 @@ func (r *Registry) UnregisterWorker(workerID string) error {
 
 	delete(r.workers, workerID)
 	r.updateStats()
+
 	return nil
 }
 
@@ -66,6 +69,7 @@ func (r *Registry) GetWorker(workerID string) (*types.WorkerData, bool) {
 	defer r.mutex.RUnlock()
 
 	worker, exists := r.workers[workerID]
+
 	return worker, exists
 }
 
@@ -78,6 +82,7 @@ func (r *Registry) ListWorkers() []*types.WorkerData {
 	for _, worker := range r.workers {
 		workers = append(workers, worker)
 	}
+
 	return workers
 }
 
@@ -88,13 +93,11 @@ func (r *Registry) GetWorkersByCapability(capability types.TaskType) []*types.Wo
 
 	var workers []*types.WorkerData
 	for _, worker := range r.workers {
-		for _, cap := range worker.Capabilities {
-			if cap == capability {
-				workers = append(workers, worker)
-				break
-			}
+		if slices.Contains(worker.Capabilities, capability) {
+			workers = append(workers, worker)
 		}
 	}
+
 	return workers
 }
 
@@ -109,6 +112,7 @@ func (r *Registry) GetAvailableWorkers() []*types.WorkerData {
 			workers = append(workers, worker)
 		}
 	}
+
 	return workers
 }
 
@@ -122,13 +126,7 @@ func (r *Registry) GetBestWorkerForTask(taskType types.TaskType) *types.WorkerDa
 
 	for _, worker := range r.workers {
 		// Check if worker supports this task type
-		supportsTask := false
-		for _, cap := range worker.Capabilities {
-			if cap == taskType {
-				supportsTask = true
-				break
-			}
-		}
+		supportsTask := slices.Contains(worker.Capabilities, taskType)
 
 		if !supportsTask {
 			continue
@@ -161,6 +159,7 @@ func (r *Registry) UpdateWorkerHeartbeat(workerID string) error {
 	}
 
 	worker.LastHeartbeat = time.Now()
+
 	return nil
 }
 
@@ -182,6 +181,7 @@ func (r *Registry) UpdateWorkerLoad(workerID string, load int) error {
 	}
 
 	r.updateStats()
+
 	return nil
 }
 
@@ -197,6 +197,7 @@ func (r *Registry) UpdateWorkerStatus(workerID string, status string) error {
 
 	worker.Status = status
 	r.updateStats()
+
 	return nil
 }
 
@@ -229,6 +230,7 @@ func (r *Registry) GetStats() *types.RegistryStats {
 
 	// Create a copy of the stats to avoid race conditions
 	stats := *r.stats
+
 	return &stats
 }
 
@@ -287,6 +289,7 @@ func (r *Registry) GetWorkersByStatus(status string) []*types.WorkerData {
 			workers = append(workers, worker)
 		}
 	}
+
 	return workers
 }
 
@@ -294,6 +297,7 @@ func (r *Registry) GetWorkersByStatus(status string) []*types.WorkerData {
 func (r *Registry) GetWorkerCount() int {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
 	return len(r.workers)
 }
 
@@ -306,6 +310,7 @@ func (r *Registry) GetWorkerIDs() []string {
 	for id := range r.workers {
 		ids = append(ids, id)
 	}
+
 	return ids
 }
 
@@ -344,5 +349,6 @@ func GetDefaultRegistry() *Registry {
 	registryOnce.Do(func() {
 		defaultRegistry = NewRegistry()
 	})
+
 	return defaultRegistry
 }

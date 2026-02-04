@@ -12,14 +12,15 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
 	"github.com/seaweedfs/seaweedfs/weed/iam/ldap"
 	"github.com/seaweedfs/seaweedfs/weed/iam/oidc"
 	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
 	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // createTestJWTEndToEnd creates a test JWT token with the specified issuer, subject and signing key
@@ -36,6 +37,7 @@ func createTestJWTEndToEnd(t *testing.T, issuer, subject, signingKey string) str
 
 	tokenString, err := token.SignedString([]byte(signingKey))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -223,7 +225,7 @@ func TestS3CORSWithJWT(t *testing.T) {
 	setupS3ReadOnlyRole(ctx, iamManager)
 
 	// Test CORS preflight
-	req := httptest.NewRequest("OPTIONS", "/test-bucket/test-file.txt", http.NoBody)
+	req := httptest.NewRequest(http.MethodOptions, "/test-bucket/test-file.txt", http.NoBody)
 	req.Header.Set("Origin", "https://example.com")
 	req.Header.Set("Access-Control-Request-Method", "GET")
 	req.Header.Set("Access-Control-Request-Headers", "Authorization")
@@ -232,7 +234,7 @@ func TestS3CORSWithJWT(t *testing.T) {
 	s3Server.ServeHTTP(recorder, req)
 
 	// CORS preflight should succeed
-	assert.True(t, recorder.Code < 400, "CORS preflight should succeed, got %d: %s", recorder.Code, recorder.Body.String())
+	assert.Less(t, recorder.Code, 400, "CORS preflight should succeed, got %d: %s", recorder.Code, recorder.Body.String())
 
 	// Check CORS headers
 	assert.Contains(t, recorder.Header().Get("Access-Control-Allow-Origin"), "example.com")
@@ -268,7 +270,7 @@ func TestS3PerformanceWithIAM(t *testing.T) {
 	numRequests := 100
 	start := time.Now()
 
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		operation := S3Operation{
 			Method:    "GET",
 			Path:      fmt.Sprintf("/perf-bucket/file-%d.txt", i),
@@ -360,19 +362,20 @@ func setupCompleteS3IAMSystem(t *testing.T) (http.Handler, *integration.IAMManag
 		if errCode != s3err.ErrNone {
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte("Authentication failed"))
+
 			return
 		}
 
 		// Map HTTP method to S3 action for more realistic testing
 		var action Action
 		switch r.Method {
-		case "GET":
+		case http.MethodGet:
 			action = Action("s3:GetObject")
-		case "PUT":
+		case http.MethodPut:
 			action = Action("s3:PutObject")
-		case "DELETE":
+		case http.MethodDelete:
 			action = Action("s3:DeleteObject")
-		case "HEAD":
+		case http.MethodHead:
 			action = Action("s3:HeadObject")
 		default:
 			action = Action("s3:GetObject") // Default fallback
@@ -383,6 +386,7 @@ func setupCompleteS3IAMSystem(t *testing.T) (http.Handler, *integration.IAMManag
 		if authErrCode != s3err.ErrNone {
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte("Authorization failed"))
+
 			return
 		}
 
@@ -392,7 +396,7 @@ func setupCompleteS3IAMSystem(t *testing.T) (http.Handler, *integration.IAMManag
 
 	// Add CORS preflight handler for S3 bucket/object paths
 	router.PathPrefix("/{bucket}").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "OPTIONS" {
+		if r.Method == http.MethodOptions {
 			// Handle CORS preflight request
 			origin := r.Header.Get("Origin")
 			requestMethod := r.Header.Get("Access-Control-Request-Method")
@@ -408,6 +412,7 @@ func setupCompleteS3IAMSystem(t *testing.T) (http.Handler, *integration.IAMManag
 			}
 
 			w.WriteHeader(http.StatusOK)
+
 			return
 		}
 
@@ -476,7 +481,7 @@ func setupS3ReadOnlyRole(ctx context.Context, manager *integration.IAMManager) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -520,7 +525,7 @@ func setupS3AdminRole(ctx context.Context, manager *integration.IAMManager) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -564,7 +569,7 @@ func setupS3WriteRole(ctx context.Context, manager *integration.IAMManager) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -588,7 +593,7 @@ func setupS3IPRestrictedRole(ctx context.Context, manager *integration.IAMManage
 					"arn:aws:s3:::*",
 					"arn:aws:s3:::*/*",
 				},
-				Condition: map[string]map[string]interface{}{
+				Condition: map[string]map[string]any{
 					"IpAddress": {
 						"aws:SourceIp": []string{"192.168.1.0/24"},
 					},
@@ -613,7 +618,7 @@ func setupS3IPRestrictedRole(ctx context.Context, manager *integration.IAMManage
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -650,6 +655,7 @@ func executeS3OperationWithJWT(t *testing.T, s3Server http.Handler, operation S3
 		// If it's not a 403/401, it might be a different error (like not found)
 		// For testing purposes, we'll consider non-auth errors as "allowed" for now
 		t.Logf("Non-auth error: %s", recorder.Body.String())
+
 		return true
 	}
 
@@ -669,7 +675,7 @@ func TestS3AuthenticationDenied(t *testing.T) {
 		{
 			name: "no_authorization_header",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-auth", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-auth", nil)
 				// No Authorization header
 				return req
 			},
@@ -679,8 +685,9 @@ func TestS3AuthenticationDenied(t *testing.T) {
 		{
 			name: "empty_bearer_token",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-auth", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-auth", nil)
 				req.Header.Set("Authorization", "Bearer ")
+
 				return req
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -689,8 +696,9 @@ func TestS3AuthenticationDenied(t *testing.T) {
 		{
 			name: "invalid_jwt_token",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-auth", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-auth", nil)
 				req.Header.Set("Authorization", "Bearer invalid.jwt.token")
+
 				return req
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -699,8 +707,9 @@ func TestS3AuthenticationDenied(t *testing.T) {
 		{
 			name: "malformed_authorization_header",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-auth", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-auth", nil)
 				req.Header.Set("Authorization", "NotBearer sometoken")
+
 				return req
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -718,8 +727,9 @@ func TestS3AuthenticationDenied(t *testing.T) {
 				})
 				tokenString, _ := token.SignedString([]byte("test-signing-key"))
 
-				req := httptest.NewRequest("GET", "/test-auth", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-auth", nil)
 				req.Header.Set("Authorization", "Bearer "+tokenString)
+
 				return req
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -798,7 +808,7 @@ func TestS3IAMOnlyModeRejectsAnonymous(t *testing.T) {
 	wrappedHandler := iam.Auth(testHandler, "Write")
 
 	// Create an unauthenticated request
-	req := httptest.NewRequest("PUT", "/mybucket/test.txt", nil)
+	req := httptest.NewRequest(http.MethodPut, "/mybucket/test.txt", nil)
 	rr := httptest.NewRecorder()
 
 	wrappedHandler.ServeHTTP(rr, req)

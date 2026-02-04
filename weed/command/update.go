@@ -9,6 +9,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,14 +19,15 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/context/ctxhttp"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	swv "github.com/seaweedfs/seaweedfs/weed/util/version"
-	"golang.org/x/net/context/ctxhttp"
 )
 
-//copied from https://github.com/restic/restic/tree/master/internal/selfupdate
+// copied from https://github.com/restic/restic/tree/master/internal/selfupdate
 
 // Release collects data about a single release on GitHub.
 type Release struct {
@@ -88,6 +90,7 @@ func runUpdate(cmd *Command, args []string) bool {
 	if *updateOpt.dir != "" {
 		if err := util.TestFolderWritable(util.ResolvePath(*updateOpt.dir)); err != nil {
 			glog.Fatalf("Check Folder(-dir) Writable %s : %s", *updateOpt.dir, err)
+
 			return false
 		}
 	} else {
@@ -103,6 +106,7 @@ func runUpdate(cmd *Command, args []string) bool {
 	if runtime.GOOS == "windows" {
 		if target == path {
 			glog.Fatalf("On windows, name of the new weed shouldn't be same to the original name.")
+
 			return false
 		}
 	}
@@ -112,8 +116,10 @@ func runUpdate(cmd *Command, args []string) bool {
 	_, err := downloadRelease(context.Background(), target, *updateOpt.Version)
 	if err != nil {
 		glog.Errorf("unable to download weed: %v", err)
+
 		return false
 	}
+
 	return true
 }
 
@@ -130,6 +136,7 @@ func downloadRelease(ctx context.Context, target string, ver string) (version st
 		} else {
 			glog.V(0).Infof("no need to download the same version of weed ")
 		}
+
 		return currentVersion, nil
 	}
 
@@ -151,7 +158,7 @@ func downloadRelease(ctx context.Context, target string, ver string) (version st
 	}
 
 	suffix := fmt.Sprintf("%s_%s%s%s.%s", runtime.GOOS, runtime.GOARCH, fullSuffix, largeDiskSuffix, ext)
-	md5Filename := fmt.Sprintf("%s.md5", suffix)
+	md5Filename := suffix + ".md5"
 	_, md5Val, err := getGithubDataFile(ctx, rel.Assets, md5Filename)
 	if err != nil {
 		return "", err
@@ -167,7 +174,8 @@ func downloadRelease(ctx context.Context, target string, ver string) (version st
 	binaryMd5 := md5Ctx.Sum(nil)
 	if hex.EncodeToString(binaryMd5) != string(md5Val[0:32]) {
 		glog.Errorf("md5:'%s' '%s'", hex.EncodeToString(binaryMd5), string(md5Val[0:32]))
-		err = fmt.Errorf("binary md5sum doesn't match")
+		err = errors.New("binary md5sum doesn't match")
+
 		return "", err
 	}
 
@@ -234,16 +242,18 @@ func GitHubLatestRelease(ctx context.Context, ver string, owner, repo string) (R
 		for _, r := range releaseList {
 			if r.TagName == ver {
 				release = r
+
 				break
 			}
 		}
 	}
 
 	if release.TagName == "" {
-		return Release{}, fmt.Errorf("can not find the specific version")
+		return Release{}, errors.New("can not find the specific version")
 	}
 
 	release.Version = release.TagName
+
 	return release, nil
 }
 
@@ -280,6 +290,7 @@ func getGithubDataFile(ctx context.Context, assets []Asset, suffix string) (file
 		if strings.HasSuffix(a.Name, suffix) {
 			url = a.URL
 			filename = a.Name
+
 			break
 		}
 	}
@@ -326,7 +337,7 @@ func extractToFile(buf []byte, filename, target string) error {
 		}
 
 		if len(zrd.File) != 1 {
-			return fmt.Errorf("ZIP archive contains more than one file")
+			return errors.New("ZIP archive contains more than one file")
 		}
 
 		file, err := zrd.File[0].Open()
@@ -352,6 +363,7 @@ func extractToFile(buf []byte, filename, target string) error {
 	if err != nil {
 		_ = new.Close()
 		_ = os.Remove(new.Name())
+
 		return err
 	}
 	if err = new.Sync(); err != nil {
@@ -373,5 +385,6 @@ func extractToFile(buf []byte, filename, target string) error {
 	}
 
 	glog.V(0).Infof("saved %d bytes in %v\n", n, target)
+
 	return os.Chmod(target, mode)
 }

@@ -18,7 +18,7 @@ func ToParquetLevels(recordType *schema_pb.RecordType) (*ParquetLevels, error) {
 }
 
 func toFieldTypeLevels(fieldType *schema_pb.Type, startColumnIndex, definitionDepth int) (*ParquetLevels, error) {
-	switch fieldType.Kind.(type) {
+	switch fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		return toFieldTypeScalarLevels(fieldType.GetScalarType(), startColumnIndex, definitionDepth)
 	case *schema_pb.Type_RecordType:
@@ -26,11 +26,12 @@ func toFieldTypeLevels(fieldType *schema_pb.Type, startColumnIndex, definitionDe
 	case *schema_pb.Type_ListType:
 		return toFieldTypeListLevels(fieldType.GetListType(), startColumnIndex, definitionDepth)
 	}
-	return nil, fmt.Errorf("unknown field type: %T", fieldType.Kind)
+
+	return nil, fmt.Errorf("unknown field type: %T", fieldType.GetKind())
 }
 
 func toFieldTypeListLevels(listType *schema_pb.ListType, startColumnIndex, definitionDepth int) (*ParquetLevels, error) {
-	return toFieldTypeLevels(listType.ElementType, startColumnIndex, definitionDepth)
+	return toFieldTypeLevels(listType.GetElementType(), startColumnIndex, definitionDepth)
 }
 
 func toFieldTypeScalarLevels(scalarType schema_pb.ScalarType, startColumnIndex, definitionDepth int) (*ParquetLevels, error) {
@@ -46,14 +47,15 @@ func toRecordTypeLevels(recordType *schema_pb.RecordType, startColumnIndex, defi
 		definitionDepth:  definitionDepth,
 		levels:           make(map[string]*ParquetLevels),
 	}
-	for _, field := range recordType.Fields {
-		fieldTypeLevels, err := toFieldTypeLevels(field.Type, startColumnIndex, definitionDepth+1)
+	for _, field := range recordType.GetFields() {
+		fieldTypeLevels, err := toFieldTypeLevels(field.GetType(), startColumnIndex, definitionDepth+1)
 		if err != nil {
 			return nil, err
 		}
-		recordTypeLevels.levels[field.Name] = fieldTypeLevels
+		recordTypeLevels.levels[field.GetName()] = fieldTypeLevels
 		startColumnIndex = fieldTypeLevels.endColumnIndex
 	}
 	recordTypeLevels.endColumnIndex = startColumnIndex
+
 	return recordTypeLevels, nil
 }

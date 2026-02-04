@@ -65,6 +65,7 @@ func (h *SeaweedMQHandler) CreateTopicWithSchemas(name string, partitions int32,
 				return fmt.Errorf("configure topic with broker: %w", err)
 			}
 			glog.V(1).Infof("successfully configured topic %s with broker", name)
+
 			return nil
 		})
 		if err != nil {
@@ -83,6 +84,7 @@ func (h *SeaweedMQHandler) CreateTopicWithSchemas(name string, partitions int32,
 	h.InvalidateTopicExistsCache(name)
 
 	glog.V(1).Infof("Topic %s created successfully with %d partitions", name, partitions)
+
 	return nil
 }
 
@@ -120,6 +122,7 @@ func (h *SeaweedMQHandler) CreateTopicWithRecordType(name string, partitions int
 			}
 
 			glog.V(1).Infof("successfully configured topic %s with broker", name)
+
 			return nil
 		})
 
@@ -134,6 +137,7 @@ func (h *SeaweedMQHandler) CreateTopicWithRecordType(name string, partitions int
 	// No need to create in-memory topic info structure
 
 	glog.V(1).Infof("Topic %s created successfully with %d partitions using flat schema", name, partitions)
+
 	return nil
 }
 
@@ -151,7 +155,7 @@ func (h *SeaweedMQHandler) DeleteTopic(name string) error {
 	}
 
 	// Close all publisher sessions for this topic
-	for partitionID := int32(0); partitionID < topicInfo.Partitions; partitionID++ {
+	for partitionID := range int32(topicInfo.Partitions) {
 		if h.brokerClient != nil {
 			h.brokerClient.ClosePublisher(name, partitionID)
 		}
@@ -173,6 +177,7 @@ func (h *SeaweedMQHandler) TopicExists(name string) bool {
 	if entry, found := h.topicExistsCache[name]; found {
 		if time.Now().Before(entry.expiresAt) {
 			h.topicExistsCacheMu.RUnlock()
+
 			return entry.exists
 		}
 	}
@@ -221,9 +226,10 @@ func (h *SeaweedMQHandler) GetTopicInfo(name string) (*KafkaTopicInfo, bool) {
 		if err == nil && config != nil {
 			topicInfo := &KafkaTopicInfo{
 				Name:       name,
-				Partitions: config.PartitionCount,
-				CreatedAt:  config.CreatedAtNs,
+				Partitions: config.GetPartitionCount(),
+				CreatedAt:  config.GetCreatedAtNs(),
 			}
+
 			return topicInfo, true
 		}
 		glog.V(2).Infof("Failed to get topic configuration for %s from broker: %v", name, err)
@@ -273,6 +279,7 @@ func (h *SeaweedMQHandler) checkTopicInFiler(topicName string) bool {
 
 		_, err := client.LookupDirectoryEntry(context.Background(), request)
 		exists = (err == nil)
+
 		return nil // Don't propagate error, just check existence
 	})
 
@@ -303,11 +310,12 @@ func (h *SeaweedMQHandler) listTopicsFromFiler() []string {
 				break // End of stream or error
 			}
 
-			if resp.Entry != nil && resp.Entry.IsDirectory {
-				topics = append(topics, resp.Entry.Name)
-			} else if resp.Entry != nil {
+			if resp.GetEntry() != nil && resp.GetEntry().GetIsDirectory() {
+				topics = append(topics, resp.GetEntry().GetName())
+			} else if resp.GetEntry() != nil {
 			}
 		}
+
 		return nil
 	})
 

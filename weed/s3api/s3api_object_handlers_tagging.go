@@ -3,6 +3,7 @@ package s3api
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 // GetObjectTaggingHandler - GET object tagging
 // API reference: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectTagging.html
 func (s3a *S3ApiServer) GetObjectTaggingHandler(w http.ResponseWriter, r *http.Request) {
-
 	bucket, object := s3_constants.GetBucketAndObject(r)
 	glog.V(3).Infof("GetObjectTaggingHandler %s %s", bucket, object)
 
@@ -28,12 +28,14 @@ func (s3a *S3ApiServer) GetObjectTaggingHandler(w http.ResponseWriter, r *http.R
 	// Check if versioning is configured for the bucket (Enabled or Suspended)
 	versioningConfigured, err := s3a.isVersioningConfigured(bucket)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("GetObjectTaggingHandler: Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -54,13 +56,15 @@ func (s3a *S3ApiServer) GetObjectTaggingHandler(w http.ResponseWriter, r *http.R
 		if err != nil {
 			glog.Errorf("GetObjectTaggingHandler: Failed to get object version %s for %s/%s: %v", versionId, bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		// Check if this is a delete marker
 		if entry.Extended != nil {
-			if deleteMarker, exists := entry.Extended[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
+			if deleteMarker, exists := entry.GetExtended()[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 				return
 			}
 		}
@@ -71,24 +75,26 @@ func (s3a *S3ApiServer) GetObjectTaggingHandler(w http.ResponseWriter, r *http.R
 
 		tags, err := s3a.getTags(dir, name)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				glog.Errorf("GetObjectTaggingHandler %s: %v", r.URL, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
 			} else {
 				glog.Errorf("GetObjectTaggingHandler %s: %v", r.URL, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 			}
+
 			return
 		}
 
 		writeSuccessResponseXML(w, r, FromTags(tags))
+
 		return
 	}
 
 	// Extract tags from the entry's extended attributes
 	tags := make(map[string]string)
 	if entry.Extended != nil {
-		for k, v := range entry.Extended {
+		for k, v := range entry.GetExtended() {
 			if len(k) > len(S3TAG_PREFIX) && k[:len(S3TAG_PREFIX)] == S3TAG_PREFIX {
 				tags[k[len(S3TAG_PREFIX):]] = string(v)
 			}
@@ -96,13 +102,11 @@ func (s3a *S3ApiServer) GetObjectTaggingHandler(w http.ResponseWriter, r *http.R
 	}
 
 	writeSuccessResponseXML(w, r, FromTags(tags))
-
 }
 
 // PutObjectTaggingHandler Put object tagging
 // API reference: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObjectTagging.html
 func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.Request) {
-
 	bucket, object := s3_constants.GetBucketAndObject(r)
 	glog.V(3).Infof("PutObjectTaggingHandler %s %s", bucket, object)
 
@@ -111,11 +115,13 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 	if err != nil {
 		glog.Errorf("PutObjectTaggingHandler read input %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 	if err = xml.Unmarshal(input, tagging); err != nil {
 		glog.Errorf("PutObjectTaggingHandler Unmarshal %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 	tags := tagging.ToTags()
@@ -123,6 +129,7 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 	if err != nil {
 		glog.Errorf("PutObjectTaggingHandler ValidateTags error %s: %v", r.URL, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidTag)
+
 		return
 	}
 
@@ -132,12 +139,14 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 	// Check if versioning is configured for the bucket (Enabled or Suspended)
 	versioningConfigured, err := s3a.isVersioningConfigured(bucket)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("PutObjectTaggingHandler: Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -158,13 +167,15 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 		if err != nil {
 			glog.Errorf("PutObjectTaggingHandler: Failed to get object version %s for %s/%s: %v", versionId, bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		// Check if this is a delete marker
 		if entry.Extended != nil {
-			if deleteMarker, exists := entry.Extended[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
+			if deleteMarker, exists := entry.GetExtended()[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 				return
 			}
 		}
@@ -174,18 +185,20 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 		dir, name := target.DirAndName()
 
 		if err = s3a.setTags(dir, name, tags); err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				glog.Errorf("PutObjectTaggingHandler setTags %s: %v", r.URL, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
 			} else {
 				glog.Errorf("PutObjectTaggingHandler setTags %s: %v", r.URL, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 			}
+
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		s3err.PostLog(r, http.StatusOK, s3err.ErrNone)
+
 		return
 	}
 
@@ -205,7 +218,7 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 		// Extract version ID from the entry to determine where it's stored
 		var actualVersionId string
 		if entry.Extended != nil {
-			if versionIdBytes, exists := entry.Extended[s3_constants.ExtVersionIdKey]; exists {
+			if versionIdBytes, exists := entry.GetExtended()[s3_constants.ExtVersionIdKey]; exists {
 				actualVersionId = string(versionIdBytes)
 			}
 		}
@@ -220,9 +233,9 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 	}
 
 	// Remove old tags and add new ones
-	for k := range entry.Extended {
+	for k := range entry.GetExtended() {
 		if len(k) > len(S3TAG_PREFIX) && k[:len(S3TAG_PREFIX)] == S3TAG_PREFIX {
-			delete(entry.Extended, k)
+			delete(entry.GetExtended(), k)
 		}
 	}
 
@@ -243,12 +256,14 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 		if _, err := client.UpdateEntry(context.Background(), request); err != nil {
 			return err
 		}
+
 		return nil
 	})
 
 	if err != nil {
 		glog.Errorf("PutObjectTaggingHandler: failed to update entry: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -260,7 +275,6 @@ func (s3a *S3ApiServer) PutObjectTaggingHandler(w http.ResponseWriter, r *http.R
 // DeleteObjectTaggingHandler Delete object tagging
 // API reference: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjectTagging.html
 func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *http.Request) {
-
 	bucket, object := s3_constants.GetBucketAndObject(r)
 	glog.V(3).Infof("DeleteObjectTaggingHandler %s/%s", bucket, object)
 
@@ -270,12 +284,14 @@ func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *htt
 	// Check if versioning is configured for the bucket (Enabled or Suspended)
 	versioningConfigured, err := s3a.isVersioningConfigured(bucket)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("DeleteObjectTaggingHandler: Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -296,13 +312,15 @@ func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *htt
 		if err != nil {
 			glog.Errorf("DeleteObjectTaggingHandler: Failed to get object version %s for %s/%s: %v", versionId, bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		// Check if this is a delete marker
 		if entry.Extended != nil {
-			if deleteMarker, exists := entry.Extended[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
+			if deleteMarker, exists := entry.GetExtended()[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 				return
 			}
 		}
@@ -313,18 +331,20 @@ func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *htt
 
 		err := s3a.rmTags(dir, name)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				glog.Errorf("DeleteObjectTaggingHandler %s: %v", r.URL, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
 			} else {
 				glog.Errorf("DeleteObjectTaggingHandler %s: %v", r.URL, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 			}
+
 			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
 		s3err.PostLog(r, http.StatusNoContent, s3err.ErrNone)
+
 		return
 	}
 
@@ -344,7 +364,7 @@ func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *htt
 		// Extract version ID from the entry to determine where it's stored
 		var actualVersionId string
 		if entry.Extended != nil {
-			if versionIdBytes, exists := entry.Extended[s3_constants.ExtVersionIdKey]; exists {
+			if versionIdBytes, exists := entry.GetExtended()[s3_constants.ExtVersionIdKey]; exists {
 				actualVersionId = string(versionIdBytes)
 			}
 		}
@@ -360,9 +380,9 @@ func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *htt
 
 	// Remove all tags
 	hasDeletion := false
-	for k := range entry.Extended {
+	for k := range entry.GetExtended() {
 		if len(k) > len(S3TAG_PREFIX) && k[:len(S3TAG_PREFIX)] == S3TAG_PREFIX {
-			delete(entry.Extended, k)
+			delete(entry.GetExtended(), k)
 			hasDeletion = true
 		}
 	}
@@ -371,6 +391,7 @@ func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *htt
 		// No tags to delete - success
 		w.WriteHeader(http.StatusNoContent)
 		s3err.PostLog(r, http.StatusNoContent, s3err.ErrNone)
+
 		return
 	}
 
@@ -384,12 +405,14 @@ func (s3a *S3ApiServer) DeleteObjectTaggingHandler(w http.ResponseWriter, r *htt
 		if _, err := client.UpdateEntry(context.Background(), request); err != nil {
 			return err
 		}
+
 		return nil
 	})
 
 	if err != nil {
 		glog.Errorf("DeleteObjectTaggingHandler: failed to update entry: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 

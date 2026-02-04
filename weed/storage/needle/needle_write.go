@@ -15,12 +15,14 @@ func (n *Needle) Append(w backend.BackendStorageFile, version Version) (offset u
 	end, _, e := w.GetStat()
 	if e != nil {
 		err = fmt.Errorf("Cannot Read Current Volume Position: %w", e)
-		return
+
+		return offset, size, actualSize, err
 	}
 	offset = uint64(end)
 	if offset >= MaxPossibleVolumeSize && len(n.Data) != 0 {
 		err = fmt.Errorf("Volume Size %d Exceeded %d", offset, MaxPossibleVolumeSize)
-		return
+
+		return offset, size, actualSize, err
 	}
 	bytesBuffer := buffer_pool.SyncPoolGetBuffer()
 	defer func() {
@@ -34,7 +36,7 @@ func (n *Needle) Append(w backend.BackendStorageFile, version Version) (offset u
 
 	size, actualSize, err = writeNeedleByVersion(version, n, offset, bytesBuffer)
 	if err != nil {
-		return
+		return offset, size, actualSize, err
 	}
 
 	_, err = w.WriteAt(bytesBuffer.Bytes(), int64(offset))
@@ -46,7 +48,6 @@ func (n *Needle) Append(w backend.BackendStorageFile, version Version) (offset u
 }
 
 func WriteNeedleBlob(w backend.BackendStorageFile, dataSlice []byte, size Size, appendAtNs uint64, version Version) (offset uint64, err error) {
-
 	if end, _, e := w.GetStat(); e == nil {
 		defer func(w backend.BackendStorageFile, off int64) {
 			if err != nil {
@@ -57,8 +58,9 @@ func WriteNeedleBlob(w backend.BackendStorageFile, dataSlice []byte, size Size, 
 		}(w, end)
 		offset = uint64(end)
 	} else {
-		err = fmt.Errorf("Cannot Read Current Volume Position: %v", e)
-		return
+		err = fmt.Errorf("Cannot Read Current Volume Position: %w", e)
+
+		return offset, err
 	}
 
 	if version == Version3 {
@@ -67,11 +69,13 @@ func WriteNeedleBlob(w backend.BackendStorageFile, dataSlice []byte, size Size, 
 		// Ensure dataSlice has enough capacity for the timestamp
 		if tsOffset < 0 {
 			err = fmt.Errorf("invalid needle size %d results in negative timestamp offset %d", size, tsOffset)
-			return
+
+			return offset, err
 		}
 		if tsOffset+TimestampSize > len(dataSlice) {
 			err = fmt.Errorf("needle blob buffer too small: need %d bytes, have %d", tsOffset+TimestampSize, len(dataSlice))
-			return
+
+			return offset, err
 		}
 		util.Uint64toBytes(dataSlice[tsOffset:tsOffset+TimestampSize], appendAtNs)
 	}
@@ -80,8 +84,7 @@ func WriteNeedleBlob(w backend.BackendStorageFile, dataSlice []byte, size Size, 
 		_, err = w.WriteAt(dataSlice, int64(offset))
 	}
 
-	return
-
+	return offset, err
 }
 
 // prepareNeedleWrite encapsulates the common beginning logic for all versioned writeNeedle functions.
@@ -89,11 +92,13 @@ func prepareNeedleWrite(w backend.BackendStorageFile, n *Needle) (offset uint64,
 	end, _, e := w.GetStat()
 	if e != nil {
 		err = fmt.Errorf("Cannot Read Current Volume Position: %w", e)
+
 		return
 	}
 	offset = uint64(end)
 	if offset >= MaxPossibleVolumeSize && len(n.Data) != 0 {
 		err = fmt.Errorf("Volume Size %d Exceeded %d", offset, MaxPossibleVolumeSize)
+
 		return
 	}
 	bytesBuffer = buffer_pool.SyncPoolGetBuffer()
@@ -105,5 +110,6 @@ func prepareNeedleWrite(w backend.BackendStorageFile, n *Needle) (offset uint64,
 		}
 		buffer_pool.SyncPoolPutBuffer(bytesBuffer)
 	}
+
 	return
 }

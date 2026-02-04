@@ -4,10 +4,11 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/storage"
@@ -17,7 +18,7 @@ func (t *Topology) StartRefreshWritableVolumes(grpcDialOption grpc.DialOption, g
 	go func() {
 		for {
 			if t.IsLeader() {
-				freshThreshHold := time.Now().Unix() - 3*t.pulse //3 times of sleep interval
+				freshThreshHold := time.Now().Unix() - 3*t.pulse // 3 times of sleep interval
 				t.CollectDeadNodeAndFullVolumes(freshThreshHold, t.volumeSizeLimit, growThreshold)
 			}
 			time.Sleep(time.Duration(float32(t.pulse*1e3)*(1+rand.Float32())) * time.Millisecond)
@@ -63,14 +64,13 @@ func (t *Topology) SetVolumeCapacityFull(volumeInfo storage.VolumeInfo) bool {
 
 	for _, dn := range vidLocations.list {
 		if !volumeInfo.ReadOnly {
-
 			disk := dn.getOrCreateDisk(volumeInfo.DiskType)
 			disk.UpAdjustDiskUsageDelta(types.ToDiskType(volumeInfo.DiskType), &DiskUsageCounts{
 				activeVolumeCount: -1,
 			})
-
 		}
 	}
+
 	return true
 }
 

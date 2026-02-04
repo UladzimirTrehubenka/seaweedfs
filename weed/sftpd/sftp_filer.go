@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,13 +15,14 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	filer_pb "github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	weed_server "github.com/seaweedfs/seaweedfs/weed/server"
 	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -49,20 +51,24 @@ func (fs *SftpServer) getEntry(p string) (*filer_pb.Entry, error) {
 			if isNotExistError(err) {
 				return os.ErrNotExist
 			}
+
 			return err
 		}
-		if r.Entry == nil {
+		if r.GetEntry() == nil {
 			return fmt.Errorf("%s not found in %s", name, dir)
 		}
-		entry = r.Entry
+		entry = r.GetEntry()
+
 		return nil
 	})
 	if err != nil {
 		if isNotExistError(err) {
 			return nil, os.ErrNotExist
 		}
+
 		return nil, fmt.Errorf("lookup %s: %w", p, err)
 	}
+
 	return entry, nil
 }
 
@@ -70,23 +76,25 @@ func isNotExistError(err error) bool {
 	return strings.Contains(err.Error(), "not found") ||
 		strings.Contains(err.Error(), "no entry is found") ||
 		strings.Contains(err.Error(), "file does not exist") ||
-		err == os.ErrNotExist
+		errors.Is(err, os.ErrNotExist)
 }
 
 // updateEntry sends an UpdateEntryRequest for the given entry.
 func (fs *SftpServer) updateEntry(dir string, entry *filer_pb.Entry) error {
 	return fs.callWithClient(false, func(ctx context.Context, client filer_pb.SeaweedFilerClient) error {
 		_, err := client.UpdateEntry(ctx, &filer_pb.UpdateEntryRequest{Directory: dir, Entry: entry})
+
 		return err
 	})
 }
 
 // ==================== FilerClient Interface ====================
 
-func (fs *SftpServer) AdjustedUrl(location *filer_pb.Location) string { return location.Url }
+func (fs *SftpServer) AdjustedUrl(location *filer_pb.Location) string { return location.GetUrl() }
 func (fs *SftpServer) GetDataCenter() string                          { return fs.dataCenter }
 func (fs *SftpServer) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
 	addr := fs.filerAddr.ToGrpcAddress()
+
 	return pb.WithGrpcClient(streamingMode, util.RandomInt32(), func(conn *grpc.ClientConn) error {
 		return fn(filer_pb.NewSeaweedFilerClient(conn))
 	}, addr, false, fs.grpcDialOption)
@@ -94,6 +102,7 @@ func (fs *SftpServer) WithFilerClient(streamingMode bool, fn func(filer_pb.Seawe
 func (fs *SftpServer) withTimeoutContext(fn func(ctx context.Context) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
+
 	return fn(ctx)
 }
 
@@ -113,6 +122,7 @@ func (fs *SftpServer) dispatchCmd(r *sftp.Request) error {
 		if err != nil {
 			return err
 		}
+
 		return fs.renameEntry(absPath, absTarget)
 	case "Mkdir":
 		return fs.makeDir(absPath)
@@ -139,6 +149,7 @@ func (fs *SftpServer) readFile(r *sftp.Request) (io.ReaderAt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return NewSeaweedFileReaderAt(fs, entry), nil
 }
 
@@ -150,6 +161,7 @@ func (fs *SftpServer) newFileWriter(r *sftp.Request) (io.WriterAt, error) {
 	dir, _ := util.FullPath(absPath).DirAndName()
 	if err := fs.checkFilePermission(dir, "write"); err != nil {
 		glog.Errorf("Permission denied for %s", dir)
+
 		return nil, err
 	}
 	// Create a temporary file to buffer writes
@@ -184,11 +196,13 @@ func (fs *SftpServer) renameEntry(absPath, absTarget string) error {
 	}
 	oldDir, oldName := util.FullPath(absPath).DirAndName()
 	newDir, newName := util.FullPath(absTarget).DirAndName()
+
 	return fs.callWithClient(false, func(ctx context.Context, client filer_pb.SeaweedFilerClient) error {
 		_, err := client.AtomicRenameEntry(ctx, &filer_pb.AtomicRenameEntryRequest{
 			OldDirectory: oldDir, OldName: oldName,
 			NewDirectory: newDir, NewName: newName,
 		})
+
 		return err
 	})
 }
@@ -216,6 +230,7 @@ func (fs *SftpServer) setFileStatWithRequest(absPath string, r *sftp.Request) er
 	if r.AttrFlags().Size {
 		entry.Attributes.FileSize = uint64(r.Attributes().Size)
 	}
+
 	return fs.updateEntry(dir, entry)
 }
 
@@ -234,9 +249,11 @@ func (fs *SftpServer) listDir(r *sftp.Request) (sftp.ListerAt, error) {
 		if err != nil {
 			return nil, err
 		}
-		fi := &EnhancedFileInfo{FileInfo: FileInfoFromEntry(entry), uid: entry.Attributes.Uid, gid: entry.Attributes.Gid}
+		fi := &EnhancedFileInfo{FileInfo: FileInfoFromEntry(entry), uid: entry.GetAttributes().GetUid(), gid: entry.GetAttributes().GetGid()}
+
 		return listerat([]os.FileInfo{fi}), nil
 	}
+
 	return fs.listAllPages(absPath)
 }
 
@@ -254,6 +271,7 @@ func (fs *SftpServer) listAllPages(dirPath string) (sftp.ListerAt, error) {
 		}
 		last = page[len(page)-1].Name()
 	}
+
 	return listerat(all), nil
 }
 
@@ -266,27 +284,29 @@ func (fs *SftpServer) fetchDirectoryPage(dirPath, start string) ([]os.FileInfo, 
 		}
 		for {
 			r, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
-			if err != nil || r.Entry == nil {
+			if err != nil || r.GetEntry() == nil {
 				continue
 			}
-			p := path.Join(dirPath, r.Entry.Name)
+			p := path.Join(dirPath, r.GetEntry().GetName())
 			if err := fs.checkFilePermission(p, "list"); err != nil {
 				continue
 			}
-			list = append(list, &EnhancedFileInfo{FileInfo: FileInfoFromEntry(r.Entry), uid: r.Entry.Attributes.Uid, gid: r.Entry.Attributes.Gid})
+			list = append(list, &EnhancedFileInfo{FileInfo: FileInfoFromEntry(r.GetEntry()), uid: r.GetEntry().GetAttributes().GetUid(), gid: r.GetEntry().GetAttributes().GetGid()})
 		}
+
 		return nil
 	})
+
 	return list, err
 }
 
 // makeDir creates a new directory with proper permissions.
 func (fs *SftpServer) makeDir(absPath string) error {
 	if fs.user == nil {
-		return fmt.Errorf("cannot create directory: no user info")
+		return errors.New("cannot create directory: no user info")
 	}
 	dir, name := util.FullPath(absPath).DirAndName()
 	if err := fs.checkFilePermission(dir, "write"); err != nil {
@@ -310,6 +330,7 @@ func (fs *SftpServer) makeDir(absPath string) error {
 		}
 		entry.Extended["creator"] = []byte(fs.user.Username)
 	})
+
 	return err
 }
 
@@ -367,12 +388,12 @@ func (fs *SftpServer) putFile(filepath string, reader io.Reader, user *user.User
 				return fmt.Errorf("lookup file for attribute update: %w", err)
 			}
 
-			if lookupResp.Entry == nil {
+			if lookupResp.GetEntry() == nil {
 				return fmt.Errorf("file not found after upload: %s/%s", dir, filename)
 			}
 
 			// Update the entry with new uid/gid
-			entry := lookupResp.Entry
+			entry := lookupResp.GetEntry()
 			entry.Attributes.Uid = user.Uid
 			entry.Attributes.Gid = user.Gid
 
@@ -381,6 +402,7 @@ func (fs *SftpServer) putFile(filepath string, reader io.Reader, user *user.User
 				Directory: dir,
 				Entry:     entry,
 			})
+
 			return err
 		})
 
@@ -396,7 +418,7 @@ func (fs *SftpServer) putFile(filepath string, reader io.Reader, user *user.User
 // ==================== Common Arguments Helpers ====================
 
 func FileInfoFromEntry(e *filer_pb.Entry) FileInfo {
-	return FileInfo{name: e.Name, size: int64(e.Attributes.FileSize), mode: os.FileMode(e.Attributes.FileMode), modTime: time.Unix(e.Attributes.Mtime, 0), isDir: e.IsDirectory}
+	return FileInfo{name: e.GetName(), size: int64(e.GetAttributes().GetFileSize()), mode: os.FileMode(e.GetAttributes().GetFileMode()), modTime: time.Unix(e.GetAttributes().GetMtime(), 0), isDir: e.GetIsDirectory()}
 }
 
 func (fs *SftpServer) deleteEntry(p string, recursive bool) error {
@@ -404,14 +426,16 @@ func (fs *SftpServer) deleteEntry(p string, recursive bool) error {
 		return err
 	}
 	dir, name := util.FullPath(p).DirAndName()
+
 	return fs.callWithClient(false, func(ctx context.Context, client filer_pb.SeaweedFilerClient) error {
 		r, err := client.DeleteEntry(ctx, &filer_pb.DeleteEntryRequest{Directory: dir, Name: name, IsDeleteData: true, IsRecursive: recursive})
 		if err != nil {
 			return err
 		}
-		if r.Error != "" {
-			return fmt.Errorf("%s", r.Error)
+		if r.GetError() != "" {
+			return fmt.Errorf("%s", r.GetError())
 		}
+
 		return nil
 	})
 }
@@ -420,6 +444,7 @@ func (fs *SftpServer) deleteEntry(p string, recursive bool) error {
 
 type EnhancedFileInfo struct {
 	FileInfo
+
 	uid uint32
 	gid uint32
 }
@@ -430,7 +455,7 @@ type FileStat struct {
 	Gid uint32
 }
 
-func (fi *EnhancedFileInfo) Sys() interface{} {
+func (fi *EnhancedFileInfo) Sys() any {
 	return &FileStat{Uid: fi.uid, Gid: fi.gid}
 }
 

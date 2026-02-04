@@ -1,7 +1,9 @@
 package base
 
 import (
+	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"time"
@@ -76,8 +78,8 @@ func (c *BaseConfig) Validate() error {
 }
 
 // StructToMap converts any struct to a map using reflection
-func StructToMap(obj interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
+func StructToMap(obj any) map[string]any {
+	result := make(map[string]any)
 	val := reflect.ValueOf(obj)
 
 	// Handle pointer to struct
@@ -103,9 +105,8 @@ func StructToMap(obj interface{}) map[string]interface{} {
 		// Handle embedded structs recursively (before JSON tag check)
 		if field.Kind() == reflect.Struct && fieldType.Anonymous {
 			embeddedMap := StructToMap(field.Interface())
-			for k, v := range embeddedMap {
-				result[k] = v
-			}
+			maps.Copy(result, embeddedMap)
+
 			continue
 		}
 
@@ -122,16 +123,17 @@ func StructToMap(obj interface{}) map[string]interface{} {
 
 		result[jsonTag] = field.Interface()
 	}
+
 	return result
 }
 
 // MapToStruct loads data from map into struct using reflection
-func MapToStruct(data map[string]interface{}, obj interface{}) error {
+func MapToStruct(data map[string]any, obj any) error {
 	val := reflect.ValueOf(obj)
 
 	// Must be pointer to struct
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("obj must be pointer to struct")
+		return errors.New("obj must be pointer to struct")
 	}
 
 	val = val.Elem()
@@ -152,6 +154,7 @@ func MapToStruct(data map[string]interface{}, obj interface{}) error {
 			if err != nil {
 				return err
 			}
+
 			continue
 		}
 
@@ -169,7 +172,7 @@ func MapToStruct(data map[string]interface{}, obj interface{}) error {
 		if value, exists := data[jsonTag]; exists {
 			err := setFieldValue(field, value)
 			if err != nil {
-				return fmt.Errorf("failed to set field %s: %v", jsonTag, err)
+				return fmt.Errorf("failed to set field %s: %w", jsonTag, err)
 			}
 		}
 	}
@@ -194,11 +197,12 @@ func (c *BaseConfig) ToTaskPolicy() *worker_pb.TaskPolicy {
 // Note: Concrete implementations should override this to handle task-specific config
 func (c *BaseConfig) FromTaskPolicy(policy *worker_pb.TaskPolicy) error {
 	if policy == nil {
-		return fmt.Errorf("policy is nil")
+		return errors.New("policy is nil")
 	}
-	c.Enabled = policy.Enabled
-	c.MaxConcurrent = int(policy.MaxConcurrent)
-	c.ScanIntervalSeconds = int(policy.RepeatIntervalSeconds)
+	c.Enabled = policy.GetEnabled()
+	c.MaxConcurrent = int(policy.GetMaxConcurrent())
+	c.ScanIntervalSeconds = int(policy.GetRepeatIntervalSeconds())
+
 	return nil
 }
 
@@ -209,7 +213,7 @@ func (c *BaseConfig) ApplySchemaDefaults(schema *config.Schema) error {
 }
 
 // setFieldValue sets a field value with type conversion
-func setFieldValue(field reflect.Value, value interface{}) error {
+func setFieldValue(field reflect.Value, value any) error {
 	if value == nil {
 		return nil
 	}
@@ -221,6 +225,7 @@ func setFieldValue(field reflect.Value, value interface{}) error {
 	// Direct assignment if types match
 	if valueType.AssignableTo(fieldType) {
 		field.Set(valueVal)
+
 		return nil
 	}
 

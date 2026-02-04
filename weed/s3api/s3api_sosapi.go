@@ -101,6 +101,7 @@ func isSOSAPIObject(object string) bool {
 // by examining the User-Agent header.
 func isSOSAPIClient(r *http.Request) bool {
 	userAgent := r.Header.Get("User-Agent")
+
 	return strings.Contains(userAgent, sosAPIClientUserAgent)
 }
 
@@ -154,12 +155,12 @@ func (s3a *S3ApiServer) getCapacityInfo(ctx context.Context, bucket string) (cap
 	// getEntry communicates with filer, so errors here might mean filer connectivity issues or bucket not found
 	// If bucket not found, we probably shouldn't be here (checked in handler), but safe to ignore
 	if entry, getErr := s3a.getEntry(s3a.option.BucketsPath, bucket); getErr == nil && entry != nil {
-		quota = entry.Quota
+		quota = entry.GetQuota()
 	}
 
 	// 2. Get cluster topology from master
 	if len(s3a.option.Masters) == 0 {
-		return 0, 0, 0, fmt.Errorf("no master servers configured")
+		return 0, 0, 0, errors.New("no master servers configured")
 	}
 
 	masterMap := make(map[string]pb.ServerAddress)
@@ -174,26 +175,24 @@ func (s3a *S3ApiServer) getCapacityInfo(ctx context.Context, bucket string) (cap
 			return vErr
 		}
 
-		if resp.TopologyInfo == nil {
+		if resp.GetTopologyInfo() == nil {
 			return nil
 		}
 
 		// Calculate used size for the bucket by summing up volumes in the collection
-		used = collectBucketUsageFromTopology(resp.TopologyInfo, s3a.getCollectionName(bucket))
+		used = collectBucketUsageFromTopology(resp.GetTopologyInfo(), s3a.getCollectionName(bucket))
 
 		// Calculate cluster capacity if no quota
 		if quota > 0 {
 			capacity = quota
-			available = quota - used
-			if available < 0 {
-				available = 0
-			}
+			available = max(quota-used, 0)
 		} else {
 			// No quota - use cluster capacity
-			clusterTotal, clusterAvailable := calculateClusterCapacity(resp.TopologyInfo, resp.VolumeSizeLimitMb)
+			clusterTotal, clusterAvailable := calculateClusterCapacity(resp.GetTopologyInfo(), resp.GetVolumeSizeLimitMb())
 			capacity = clusterTotal
 			available = clusterAvailable
 		}
+
 		return nil
 	})
 
@@ -203,15 +202,15 @@ func (s3a *S3ApiServer) getCapacityInfo(ctx context.Context, bucket string) (cap
 // collectBucketUsageFromTopology sums up the size of all volumes belonging to the specified collection.
 func collectBucketUsageFromTopology(t *master_pb.TopologyInfo, collectionName string) (used int64) {
 	seenVolumes := make(map[uint32]bool)
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
-				for _, disk := range dn.DiskInfos {
-					for _, vi := range disk.VolumeInfos {
-						if vi.Collection == collectionName {
-							if !seenVolumes[vi.Id] {
-								used += int64(vi.Size)
-								seenVolumes[vi.Id] = true
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
+				for _, disk := range dn.GetDiskInfos() {
+					for _, vi := range disk.GetVolumeInfos() {
+						if vi.GetCollection() == collectionName {
+							if !seenVolumes[vi.GetId()] {
+								used += int64(vi.GetSize())
+								seenVolumes[vi.GetId()] = true
 							}
 						}
 					}
@@ -219,22 +218,24 @@ func collectBucketUsageFromTopology(t *master_pb.TopologyInfo, collectionName st
 			}
 		}
 	}
+
 	return
 }
 
 // calculateClusterCapacity sums up the total and available capacity of the entire cluster.
 func calculateClusterCapacity(t *master_pb.TopologyInfo, volumeSizeLimitMb uint64) (total, available int64) {
 	volumeSize := int64(volumeSizeLimitMb) * 1024 * 1024
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
-				for _, disk := range dn.DiskInfos {
-					total += int64(disk.MaxVolumeCount) * volumeSize
-					available += int64(disk.FreeVolumeCount) * volumeSize
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
+				for _, disk := range dn.GetDiskInfos() {
+					total += int64(disk.GetMaxVolumeCount()) * volumeSize
+					available += int64(disk.GetFreeVolumeCount()) * volumeSize
 				}
 			}
 		}
 	}
+
 	return
 }
 
@@ -253,6 +254,7 @@ func (s3a *S3ApiServer) handleSOSAPIGetObject(w http.ResponseWriter, r *http.Req
 			glog.Errorf("SOSAPI: failed to generate %s: %v", object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		}
+
 		return true
 	}
 
@@ -285,6 +287,7 @@ func (s3a *S3ApiServer) handleSOSAPIHeadObject(w http.ResponseWriter, r *http.Re
 			glog.Errorf("SOSAPI: failed to generate %s for HEAD: %v", object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		}
+
 		return true
 	}
 
@@ -310,6 +313,7 @@ func (s3a *S3ApiServer) generateSOSAPIContent(ctx context.Context, bucket, objec
 		if errCode == s3err.ErrNoSuchBucket {
 			return nil, filer_pb.ErrNotFound
 		}
+
 		return nil, fmt.Errorf("bucket config error: %v", errCode)
 	}
 

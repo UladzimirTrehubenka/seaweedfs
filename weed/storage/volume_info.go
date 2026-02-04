@@ -30,43 +30,45 @@ type VolumeInfo struct {
 
 func NewVolumeInfo(m *master_pb.VolumeInformationMessage) (vi VolumeInfo, err error) {
 	vi = VolumeInfo{
-		Id:                needle.VolumeId(m.Id),
-		Size:              m.Size,
-		Collection:        m.Collection,
-		FileCount:         int(m.FileCount),
-		DeleteCount:       int(m.DeleteCount),
-		DeletedByteCount:  m.DeletedByteCount,
-		ReadOnly:          m.ReadOnly,
-		Version:           needle.Version(m.Version),
-		CompactRevision:   m.CompactRevision,
-		ModifiedAtSecond:  m.ModifiedAtSecond,
-		RemoteStorageName: m.RemoteStorageName,
-		RemoteStorageKey:  m.RemoteStorageKey,
-		DiskType:          m.DiskType,
-		DiskId:            m.DiskId,
+		Id:                needle.VolumeId(m.GetId()),
+		Size:              m.GetSize(),
+		Collection:        m.GetCollection(),
+		FileCount:         int(m.GetFileCount()),
+		DeleteCount:       int(m.GetDeleteCount()),
+		DeletedByteCount:  m.GetDeletedByteCount(),
+		ReadOnly:          m.GetReadOnly(),
+		Version:           needle.Version(m.GetVersion()),
+		CompactRevision:   m.GetCompactRevision(),
+		ModifiedAtSecond:  m.GetModifiedAtSecond(),
+		RemoteStorageName: m.GetRemoteStorageName(),
+		RemoteStorageKey:  m.GetRemoteStorageKey(),
+		DiskType:          m.GetDiskType(),
+		DiskId:            m.GetDiskId(),
 	}
-	rp, e := super_block.NewReplicaPlacementFromByte(byte(m.ReplicaPlacement))
+	rp, e := super_block.NewReplicaPlacementFromByte(byte(m.GetReplicaPlacement()))
 	if e != nil {
 		return vi, e
 	}
 	vi.ReplicaPlacement = rp
-	vi.Ttl = needle.LoadTTLFromUint32(m.Ttl)
+	vi.Ttl = needle.LoadTTLFromUint32(m.GetTtl())
+
 	return vi, nil
 }
 
 func NewVolumeInfoFromShort(m *master_pb.VolumeShortInformationMessage) (vi VolumeInfo, err error) {
 	vi = VolumeInfo{
-		Id:         needle.VolumeId(m.Id),
-		Collection: m.Collection,
-		Version:    needle.Version(m.Version),
+		Id:         needle.VolumeId(m.GetId()),
+		Collection: m.GetCollection(),
+		Version:    needle.Version(m.GetVersion()),
 	}
-	rp, e := super_block.NewReplicaPlacementFromByte(byte(m.ReplicaPlacement))
+	rp, e := super_block.NewReplicaPlacementFromByte(byte(m.GetReplicaPlacement()))
 	if e != nil {
 		return vi, e
 	}
 	vi.ReplicaPlacement = rp
-	vi.Ttl = needle.LoadTTLFromUint32(m.Ttl)
-	vi.DiskType = m.DiskType
+	vi.Ttl = needle.LoadTTLFromUint32(m.GetTtl())
+	vi.DiskType = m.GetDiskType()
+
 	return vi, nil
 }
 

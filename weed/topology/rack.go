@@ -22,7 +22,8 @@ func NewRack(id string) *Rack {
 	r.diskUsages = newDiskUsages()
 	r.children = make(map[NodeId]Node)
 	r.capacityReservations = newCapacityReservations()
-	r.NodeImpl.value = r
+	r.value = r
+
 	return r
 }
 
@@ -33,6 +34,7 @@ func (r *Rack) FindDataNode(ip string, port int) *DataNode {
 			return dn
 		}
 	}
+
 	return nil
 }
 
@@ -43,6 +45,7 @@ func (r *Rack) FindDataNodeById(id string) *DataNode {
 	if c, ok := r.children[NodeId(id)]; ok {
 		return c.(*DataNode)
 	}
+
 	return nil
 }
 
@@ -69,6 +72,7 @@ func (r *Rack) GetOrCreateDataNode(ip string, port int, grpcPort int, publicUrl 
 		dn.GrpcPort = grpcPort
 		dn.PublicUrl = publicUrl
 		dn.LastSeen = time.Now().Unix()
+
 		return dn
 	}
 
@@ -84,6 +88,7 @@ func (r *Rack) GetOrCreateDataNode(ip string, port int, grpcPort int, publicUrl 
 				// reuse the same ip:port - don't incorrectly merge them.
 				if string(oldId) != ipPortId {
 					glog.Warningf("Volume server with id %s has ip:port %s which is used by node %s", nodeId, ipPortId, oldId)
+
 					continue
 				}
 				// Found a legacy node identified by ip:port, transition it to use the new explicit id
@@ -96,6 +101,7 @@ func (r *Rack) GetOrCreateDataNode(ip string, port int, grpcPort int, publicUrl 
 				dn.GrpcPort = grpcPort
 				dn.PublicUrl = publicUrl
 				dn.LastSeen = time.Now().Unix()
+
 				return dn
 			}
 		}
@@ -113,6 +119,7 @@ func (r *Rack) GetOrCreateDataNode(ip string, port int, grpcPort int, publicUrl 
 		disk.diskUsages.getOrCreateDisk(types.ToDiskType(diskType)).maxVolumeCount = int64(maxVolumeCount)
 		dn.LinkChildNode(disk)
 	}
+
 	return dn
 }
 
@@ -134,6 +141,7 @@ func (r *Rack) ToInfo() (info RackInfo) {
 	})
 
 	info.DataNodes = dns
+
 	return
 }
 
@@ -146,5 +154,6 @@ func (r *Rack) ToRackInfo() *master_pb.RackInfo {
 		dn := c.(*DataNode)
 		m.DataNodeInfos = append(m.DataNodeInfos, dn.ToDataNodeInfo())
 	}
+
 	return m
 }

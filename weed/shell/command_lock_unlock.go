@@ -31,7 +31,6 @@ func (c *commandLock) HasTag(CommandTag) bool {
 }
 
 func (c *commandLock) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	commandEnv.locker.RequestLock(util.DetectedHostAddress())
 
 	return nil
@@ -57,7 +56,6 @@ func (c *commandUnlock) HasTag(CommandTag) bool {
 }
 
 func (c *commandUnlock) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	commandEnv.locker.ReleaseLock()
 
 	return nil

@@ -46,7 +46,7 @@ func TestPrintClusterInfo(t *testing.T) {
 		got := buf.String()
 
 		if got != tc.want {
-			t.Errorf("for %v: got %v, want %v", tc.topology.Id, got, tc.want)
+			t.Errorf("for %v: got %v, want %v", tc.topology.GetId(), got, tc.want)
 		}
 	}
 }
@@ -90,7 +90,7 @@ func TestPrintVolumeInfo(t *testing.T) {
 		got := buf.String()
 
 		if got != tc.want {
-			t.Errorf("for %v: got %v, want %v", tc.topology.Id, got, tc.want)
+			t.Errorf("for %v: got %v, want %v", tc.topology.GetId(), got, tc.want)
 		}
 	}
 }
@@ -134,7 +134,7 @@ func TestPrintStorageInfo(t *testing.T) {
 		got := buf.String()
 
 		if got != tc.want {
-			t.Errorf("for %v: got %v, want %v", tc.topology.Id, got, tc.want)
+			t.Errorf("for %v: got %v, want %v", tc.topology.GetId(), got, tc.want)
 		}
 	}
 }
@@ -148,19 +148,19 @@ func TestPrintFilesInfo(t *testing.T) {
 		{
 			regularVolumeStats: RegularVolumeStats{
 				1: []*VolumeReplicaStats{
-					&VolumeReplicaStats{Id: "10.200.17.13:9001", VolumeId: 1, Files: 159, FilesDeleted: 8, TotalSize: 89762704},
-					&VolumeReplicaStats{Id: "10.200.17.13:9002", VolumeId: 1, Files: 159, FilesDeleted: 8, TotalSize: 89762704},
-					&VolumeReplicaStats{Id: "10.200.17.13:9008", VolumeId: 1, Files: 159, FilesDeleted: 8, TotalSize: 89762704},
+					{Id: "10.200.17.13:9001", VolumeId: 1, Files: 159, FilesDeleted: 8, TotalSize: 89762704},
+					{Id: "10.200.17.13:9002", VolumeId: 1, Files: 159, FilesDeleted: 8, TotalSize: 89762704},
+					{Id: "10.200.17.13:9008", VolumeId: 1, Files: 159, FilesDeleted: 8, TotalSize: 89762704},
 				},
 				2: []*VolumeReplicaStats{
-					&VolumeReplicaStats{Id: "10.200.17.13:9003", VolumeId: 2, Files: 192, FilesDeleted: 21, TotalSize: 93788632},
-					&VolumeReplicaStats{Id: "10.200.17.13:9004", VolumeId: 2, Files: 192, FilesDeleted: 21, TotalSize: 93788632},
-					&VolumeReplicaStats{Id: "10.200.17.13:9005", VolumeId: 2, Files: 192, FilesDeleted: 21, TotalSize: 93788632},
+					{Id: "10.200.17.13:9003", VolumeId: 2, Files: 192, FilesDeleted: 21, TotalSize: 93788632},
+					{Id: "10.200.17.13:9004", VolumeId: 2, Files: 192, FilesDeleted: 21, TotalSize: 93788632},
+					{Id: "10.200.17.13:9005", VolumeId: 2, Files: 192, FilesDeleted: 21, TotalSize: 93788632},
 				},
 				3: []*VolumeReplicaStats{
-					&VolumeReplicaStats{Id: "10.200.17.13:9001", VolumeId: 3, Files: 149, FilesDeleted: 0, TotalSize: 81643872},
-					&VolumeReplicaStats{Id: "10.200.17.13:9006", VolumeId: 3, Files: 149, FilesDeleted: 0, TotalSize: 81643872},
-					&VolumeReplicaStats{Id: "10.200.17.13:9009", VolumeId: 3, Files: 149, FilesDeleted: 0, TotalSize: 81643872},
+					{Id: "10.200.17.13:9001", VolumeId: 3, Files: 149, FilesDeleted: 0, TotalSize: 81643872},
+					{Id: "10.200.17.13:9006", VolumeId: 3, Files: 149, FilesDeleted: 0, TotalSize: 81643872},
+					{Id: "10.200.17.13:9009", VolumeId: 3, Files: 149, FilesDeleted: 0, TotalSize: 81643872},
 				},
 			},
 			humanize: false,
@@ -175,16 +175,16 @@ func TestPrintFilesInfo(t *testing.T) {
 		{
 			regularVolumeStats: RegularVolumeStats{
 				1: []*VolumeReplicaStats{
-					&VolumeReplicaStats{Id: "10.200.17.13:9001", VolumeId: 1, Files: 184, FilesDeleted: 33, TotalSize: 79187475},
-					&VolumeReplicaStats{Id: "10.200.17.13:9008", VolumeId: 1, Files: 184, FilesDeleted: 33, TotalSize: 79187475},
+					{Id: "10.200.17.13:9001", VolumeId: 1, Files: 184, FilesDeleted: 33, TotalSize: 79187475},
+					{Id: "10.200.17.13:9008", VolumeId: 1, Files: 184, FilesDeleted: 33, TotalSize: 79187475},
 				},
 				2: []*VolumeReplicaStats{
-					&VolumeReplicaStats{Id: "10.200.17.13:9004", VolumeId: 2, Files: 245, FilesDeleted: 4, TotalSize: 89501070},
-					&VolumeReplicaStats{Id: "10.200.17.13:9005", VolumeId: 2, Files: 245, FilesDeleted: 4, TotalSize: 89501070},
+					{Id: "10.200.17.13:9004", VolumeId: 2, Files: 245, FilesDeleted: 4, TotalSize: 89501070},
+					{Id: "10.200.17.13:9005", VolumeId: 2, Files: 245, FilesDeleted: 4, TotalSize: 89501070},
 				},
 				3: []*VolumeReplicaStats{
-					&VolumeReplicaStats{Id: "10.200.17.13:9006", VolumeId: 3, Files: 171, FilesDeleted: 12, TotalSize: 124049530},
-					&VolumeReplicaStats{Id: "10.200.17.13:9009", VolumeId: 3, Files: 171, FilesDeleted: 12, TotalSize: 124049530},
+					{Id: "10.200.17.13:9006", VolumeId: 3, Files: 171, FilesDeleted: 12, TotalSize: 124049530},
+					{Id: "10.200.17.13:9009", VolumeId: 3, Files: 171, FilesDeleted: 12, TotalSize: 124049530},
 				},
 			},
 			humanize: true,

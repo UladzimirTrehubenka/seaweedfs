@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 )
 
 func TestBalanceTopicPartitionOnBrokers(t *testing.T) {
-
 	brokers := cmap.New[*BrokerStats]()
 	broker1Stats := &BrokerStats{
 		TopicPartitionCount: 1,

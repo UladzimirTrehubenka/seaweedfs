@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 // TestBufferQueryability tests that data written to the buffer can be immediately queried
@@ -89,16 +90,16 @@ func TestBufferQueryability(t *testing.T) {
 	}
 
 	// Verify the data matches
-	if !bytes.Equal(retrievedEntry.Key, testKey) {
-		t.Errorf("Key mismatch: expected %s, got %s", string(testKey), string(retrievedEntry.Key))
+	if !bytes.Equal(retrievedEntry.GetKey(), testKey) {
+		t.Errorf("Key mismatch: expected %s, got %s", string(testKey), string(retrievedEntry.GetKey()))
 	}
 
-	if !bytes.Equal(retrievedEntry.Data, testValue) {
-		t.Errorf("Value mismatch: expected %s, got %s", string(testValue), string(retrievedEntry.Data))
+	if !bytes.Equal(retrievedEntry.GetData(), testValue) {
+		t.Errorf("Value mismatch: expected %s, got %s", string(testValue), string(retrievedEntry.GetData()))
 	}
 
-	if retrievedEntry.Offset != 1 {
-		t.Errorf("Offset mismatch: expected 1, got %d", retrievedEntry.Offset)
+	if retrievedEntry.GetOffset() != 1 {
+		t.Errorf("Offset mismatch: expected 1, got %d", retrievedEntry.GetOffset())
 	}
 
 	t.Logf("Buffer queryability test passed - data is immediately readable")
@@ -165,7 +166,7 @@ func TestMultipleEntriesQueryability(t *testing.T) {
 		entryCount++
 		pos += 4 + int(size)
 
-		t.Logf("Entry %d: Key=%s, Data=%s, Offset=%d", entryCount, string(entry.Key), string(entry.Data), entry.Offset)
+		t.Logf("Entry %d: Key=%s, Data=%s, Offset=%d", entryCount, string(entry.GetKey()), string(entry.GetData()), entry.GetOffset())
 	}
 
 	if entryCount != 3 {
@@ -232,15 +233,15 @@ func TestSchemaRegistryScenario(t *testing.T) {
 	}
 
 	// Verify schema value is preserved
-	if !bytes.Equal(retrievedEntry.Data, schemaValue) {
-		t.Errorf("Schema value lost! Expected: %s, Got: %s", string(schemaValue), string(retrievedEntry.Data))
+	if !bytes.Equal(retrievedEntry.GetData(), schemaValue) {
+		t.Errorf("Schema value lost! Expected: %s, Got: %s", string(schemaValue), string(retrievedEntry.GetData()))
 	}
 
-	if len(retrievedEntry.Data) != len(schemaValue) {
-		t.Errorf("Schema value length mismatch! Expected: %d, Got: %d", len(schemaValue), len(retrievedEntry.Data))
+	if len(retrievedEntry.GetData()) != len(schemaValue) {
+		t.Errorf("Schema value length mismatch! Expected: %d, Got: %d", len(schemaValue), len(retrievedEntry.GetData()))
 	}
 
-	t.Logf("Schema registry scenario test passed - schema value preserved: %d bytes", len(retrievedEntry.Data))
+	t.Logf("Schema registry scenario test passed - schema value preserved: %d bytes", len(retrievedEntry.GetData()))
 }
 
 // TestTimeBasedFirstReadBeforeEarliest ensures starting slightly before earliest memory

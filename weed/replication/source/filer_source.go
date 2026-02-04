@@ -35,6 +35,7 @@ type FilerSource struct {
 func (fs *FilerSource) Initialize(configuration util.Configuration, prefix string) error {
 	fs.dataCenter = configuration.GetString(prefix + "dataCenter")
 	fs.signature = util.RandomInt32()
+
 	return fs.DoInitialize(
 		"",
 		configuration.GetString(prefix+"grpcAddress"),
@@ -52,17 +53,16 @@ func (fs *FilerSource) DoInitialize(address, grpcAddress string, dir string, rea
 	fs.Dir = dir
 	fs.grpcDialOption = security.LoadClientTLS(util.GetViper(), "grpc.client")
 	fs.proxyByFiler = readChunkFromFiler
+
 	return nil
 }
 
 func (fs *FilerSource) LookupFileId(ctx context.Context, part string) (fileUrls []string, err error) {
-
 	vid2Locations := make(map[string]*filer_pb.Locations)
 
 	vid := volumeId(part)
 
 	err = fs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := client.LookupVolume(ctx, &filer_pb.LookupVolumeRequest{
 			VolumeIds: []string{vid},
 		})
@@ -70,28 +70,30 @@ func (fs *FilerSource) LookupFileId(ctx context.Context, part string) (fileUrls 
 			return err
 		}
 
-		vid2Locations = resp.LocationsMap
+		vid2Locations = resp.GetLocationsMap()
 
 		return nil
 	})
 
 	if err != nil {
 		glog.V(1).InfofCtx(ctx, "LookupFileId volume id %s: %v", vid, err)
-		return nil, fmt.Errorf("LookupFileId volume id %s: %v", vid, err)
+
+		return nil, fmt.Errorf("LookupFileId volume id %s: %w", vid, err)
 	}
 
 	locations := vid2Locations[vid]
 
-	if locations == nil || len(locations.Locations) == 0 {
+	if locations == nil || len(locations.GetLocations()) == 0 {
 		glog.V(1).InfofCtx(ctx, "LookupFileId locate volume id %s: %v", vid, err)
-		return nil, fmt.Errorf("LookupFileId locate volume id %s: %v", vid, err)
+
+		return nil, fmt.Errorf("LookupFileId locate volume id %s: %w", vid, err)
 	}
 
 	if !fs.proxyByFiler {
-		for _, loc := range locations.Locations {
-			fileUrl := fmt.Sprintf("http://%s/%s?readDeleted=true", loc.Url, part)
+		for _, loc := range locations.GetLocations() {
+			fileUrl := fmt.Sprintf("http://%s/%s?readDeleted=true", loc.GetUrl(), part)
 			// Prefer same data center
-			if fs.dataCenter != "" && fs.dataCenter == loc.DataCenter {
+			if fs.dataCenter != "" && fs.dataCenter == loc.GetDataCenter() {
 				fileUrls = append([]string{fileUrl}, fileUrls...)
 			} else {
 				fileUrls = append(fileUrls, fileUrl)
@@ -101,11 +103,10 @@ func (fs *FilerSource) LookupFileId(ctx context.Context, part string) (fileUrls 
 		fileUrls = append(fileUrls, fmt.Sprintf("http://%s/?proxyChunkId=%s", fs.address, part))
 	}
 
-	return
+	return fileUrls, err
 }
 
 func (fs *FilerSource) ReadPart(fileId string) (filename string, header http.Header, resp *http.Response, err error) {
-
 	if fs.proxyByFiler {
 		return util_http.DownloadFile("http://"+fs.address+"/?proxyChunkId="+fileId, "")
 	}
@@ -130,16 +131,15 @@ func (fs *FilerSource) ReadPart(fileId string) (filename string, header http.Hea
 var _ = filer_pb.FilerClient(&FilerSource{})
 
 func (fs *FilerSource) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
-
 	return pb.WithGrpcClient(streamingMode, fs.signature, func(grpcConnection *grpc.ClientConn) error {
 		client := filer_pb.NewSeaweedFilerClient(grpcConnection)
+
 		return fn(client)
 	}, fs.grpcAddress, false, fs.grpcDialOption)
-
 }
 
 func (fs *FilerSource) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 func (fs *FilerSource) GetDataCenter() string {
@@ -151,5 +151,6 @@ func volumeId(fileId string) string {
 	if lastCommaIndex > 0 {
 		return fileId[:lastCommaIndex]
 	}
+
 	return fileId
 }

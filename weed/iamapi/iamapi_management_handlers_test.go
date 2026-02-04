@@ -3,12 +3,12 @@ package iamapi
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 )
 
 func TestGetActionsUserPath(t *testing.T) {
-
 	policyDocument := policy_engine.PolicyDocument{
 		Version: "2012-10-17",
 		Statement: []policy_engine.PolicyStatement{
@@ -35,7 +35,6 @@ func TestGetActionsUserPath(t *testing.T) {
 }
 
 func TestGetActionsWildcardPath(t *testing.T) {
-
 	policyDocument := policy_engine.PolicyDocument{
 		Version: "2012-10-17",
 		Statement: []policy_engine.PolicyStatement{
@@ -69,6 +68,6 @@ func TestGetActionsInvalidAction(t *testing.T) {
 	}
 
 	_, err := GetActions(&policyDocument)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, "not a valid action: 'InvalidAction'", err.Error())
 }

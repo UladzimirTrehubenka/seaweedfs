@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/app"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/layout"
@@ -79,6 +81,7 @@ func (h *FileBrowserHandlers) ShowFileBrowser(c *gin.Context) {
 	browserData, err := h.adminServer.GetFileBrowser(path, lastFileName, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get file browser data: " + err.Error()})
+
 		return
 	}
 
@@ -96,6 +99,7 @@ func (h *FileBrowserHandlers) ShowFileBrowser(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -103,11 +107,12 @@ func (h *FileBrowserHandlers) ShowFileBrowser(c *gin.Context) {
 // DeleteFile handles file deletion API requests
 func (h *FileBrowserHandlers) DeleteFile(c *gin.Context) {
 	var request struct {
-		Path string `json:"path" binding:"required"`
+		Path string `binding:"required" json:"path"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
@@ -120,10 +125,12 @@ func (h *FileBrowserHandlers) DeleteFile(c *gin.Context) {
 			IsRecursive:          true,
 			IgnoreRecursiveError: false,
 		})
+
 		return err
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete file: " + err.Error()})
+
 		return
 	}
 
@@ -133,16 +140,18 @@ func (h *FileBrowserHandlers) DeleteFile(c *gin.Context) {
 // DeleteMultipleFiles handles multiple file deletion API requests
 func (h *FileBrowserHandlers) DeleteMultipleFiles(c *gin.Context) {
 	var request struct {
-		Paths []string `json:"paths" binding:"required"`
+		Paths []string `binding:"required" json:"paths"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
 	if len(request.Paths) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No paths provided"})
+
 		return
 	}
 
@@ -160,6 +169,7 @@ func (h *FileBrowserHandlers) DeleteMultipleFiles(c *gin.Context) {
 				IsRecursive:          true,
 				IgnoreRecursiveError: false,
 			})
+
 			return err
 		})
 
@@ -172,7 +182,7 @@ func (h *FileBrowserHandlers) DeleteMultipleFiles(c *gin.Context) {
 	}
 
 	// Prepare response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"deleted": deletedCount,
 		"failed":  failedCount,
 		"total":   len(request.Paths),
@@ -198,12 +208,13 @@ func (h *FileBrowserHandlers) DeleteMultipleFiles(c *gin.Context) {
 // CreateFolder handles folder creation requests
 func (h *FileBrowserHandlers) CreateFolder(c *gin.Context) {
 	var request struct {
-		Path       string `json:"path" binding:"required"`
-		FolderName string `json:"folder_name" binding:"required"`
+		Path       string `binding:"required" json:"path"`
+		FolderName string `binding:"required" json:"folder_name"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
@@ -211,6 +222,7 @@ func (h *FileBrowserHandlers) CreateFolder(c *gin.Context) {
 	folderName := strings.TrimSpace(request.FolderName)
 	if folderName == "" || strings.Contains(folderName, "/") || strings.Contains(folderName, "\\") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid folder name"})
+
 		return
 	}
 
@@ -237,10 +249,12 @@ func (h *FileBrowserHandlers) CreateFolder(c *gin.Context) {
 				},
 			},
 		})
+
 		return err
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create folder: " + err.Error()})
+
 		return
 	}
 
@@ -259,6 +273,7 @@ func (h *FileBrowserHandlers) UploadFile(c *gin.Context) {
 	err := c.Request.ParseMultipartForm(1 << 30) // 1GB max memory for large file uploads
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse multipart form: " + err.Error()})
+
 		return
 	}
 
@@ -266,10 +281,11 @@ func (h *FileBrowserHandlers) UploadFile(c *gin.Context) {
 	files := c.Request.MultipartForm.File["files"]
 	if len(files) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No files uploaded"})
+
 		return
 	}
 
-	var uploadResults []map[string]interface{}
+	var uploadResults []map[string]any
 	var failedUploads []string
 
 	// Process each uploaded file
@@ -278,6 +294,7 @@ func (h *FileBrowserHandlers) UploadFile(c *gin.Context) {
 		fileName := fileHeader.Filename
 		if fileName == "" {
 			failedUploads = append(failedUploads, "invalid filename")
+
 			continue
 		}
 
@@ -295,6 +312,7 @@ func (h *FileBrowserHandlers) UploadFile(c *gin.Context) {
 		file, err := fileHeader.Open()
 		if err != nil {
 			failedUploads = append(failedUploads, fmt.Sprintf("%s: %v", fileName, err))
+
 			continue
 		}
 
@@ -305,7 +323,7 @@ func (h *FileBrowserHandlers) UploadFile(c *gin.Context) {
 		if err != nil {
 			failedUploads = append(failedUploads, fmt.Sprintf("%s: %v", fileName, err))
 		} else {
-			uploadResults = append(uploadResults, map[string]interface{}{
+			uploadResults = append(uploadResults, map[string]any{
 				"name": fileName,
 				"size": fileHeader.Size,
 				"path": fullPath,
@@ -314,7 +332,7 @@ func (h *FileBrowserHandlers) UploadFile(c *gin.Context) {
 	}
 
 	// Prepare response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"uploaded": len(uploadResults),
 		"failed":   len(failedUploads),
 		"files":    uploadResults,
@@ -342,7 +360,7 @@ func (h *FileBrowserHandlers) uploadFileToFiler(filePath string, fileHeader *mul
 	// Get filer address from admin server
 	filerAddress := h.adminServer.GetFilerAddress()
 	if filerAddress == "" {
-		return fmt.Errorf("filer address not configured")
+		return errors.New("filer address not configured")
 	}
 
 	// Validate and sanitize the filer address
@@ -398,7 +416,7 @@ func (h *FileBrowserHandlers) uploadFileToFiler(filePath string, fileHeader *mul
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", uploadURL, &body)
+	req, err := http.NewRequest(http.MethodPost, uploadURL, &body)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -423,6 +441,7 @@ func (h *FileBrowserHandlers) uploadFileToFiler(filePath string, fileHeader *mul
 	// Check response
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		responseBody, _ := io.ReadAll(resp.Body)
+
 		return fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(responseBody))
 	}
 
@@ -432,7 +451,7 @@ func (h *FileBrowserHandlers) uploadFileToFiler(filePath string, fileHeader *mul
 // validateFilerAddress validates that the filer address is safe to use
 func (h *FileBrowserHandlers) validateFilerAddress(address string) error {
 	if address == "" {
-		return fmt.Errorf("filer address cannot be empty")
+		return errors.New("filer address cannot be empty")
 	}
 
 	// CRITICAL: Only allow the configured filer address to prevent SSRF
@@ -449,12 +468,12 @@ func (h *FileBrowserHandlers) validateFilerAddress(address string) error {
 
 	// Validate host is not empty
 	if host == "" {
-		return fmt.Errorf("host cannot be empty")
+		return errors.New("host cannot be empty")
 	}
 
 	// Validate port is numeric and in valid range
 	if port == "" {
-		return fmt.Errorf("port cannot be empty")
+		return errors.New("port cannot be empty")
 	}
 
 	portNum, err := strconv.Atoi(port)
@@ -463,7 +482,7 @@ func (h *FileBrowserHandlers) validateFilerAddress(address string) error {
 	}
 
 	if portNum < 1 || portNum > 65535 {
-		return fmt.Errorf("port number must be between 1 and 65535")
+		return errors.New("port number must be between 1 and 65535")
 	}
 
 	return nil
@@ -472,7 +491,7 @@ func (h *FileBrowserHandlers) validateFilerAddress(address string) error {
 // validateAndCleanFilePath validates and cleans the file path to prevent path traversal
 func (h *FileBrowserHandlers) validateAndCleanFilePath(filePath string) (string, error) {
 	if filePath == "" {
-		return "", fmt.Errorf("file path cannot be empty")
+		return "", errors.New("file path cannot be empty")
 	}
 
 	// Normalize Windows-style backslashes to forward slashes
@@ -489,12 +508,12 @@ func (h *FileBrowserHandlers) validateAndCleanFilePath(filePath string) (string,
 
 	// Prevent path traversal attacks
 	if strings.Contains(cleanPath, "..") {
-		return "", fmt.Errorf("path traversal not allowed")
+		return "", errors.New("path traversal not allowed")
 	}
 
 	// Additional validation: ensure path doesn't contain dangerous characters
 	if strings.ContainsAny(cleanPath, "\x00\r\n") {
-		return "", fmt.Errorf("path contains invalid characters")
+		return "", errors.New("path contains invalid characters")
 	}
 
 	return cleanPath, nil
@@ -504,7 +523,7 @@ func (h *FileBrowserHandlers) validateAndCleanFilePath(filePath string) (string,
 func (h *FileBrowserHandlers) fetchFileContent(filePath string, timeout time.Duration) (string, error) {
 	filerAddress := h.adminServer.GetFilerAddress()
 	if filerAddress == "" {
-		return "", fmt.Errorf("filer address not configured")
+		return "", errors.New("filer address not configured")
 	}
 
 	if err := h.validateFilerAddress(filerAddress); err != nil {
@@ -527,7 +546,7 @@ func (h *FileBrowserHandlers) fetchFileContent(filePath string, timeout time.Dur
 	// Safe: filerAddress validated by validateFilerAddress() to match configured filer
 	// Safe: cleanFilePath validated and cleaned by validateAndCleanFilePath() to prevent path traversal
 	client := h.newClientWithTimeout(timeout)
-	req, err := http.NewRequest("GET", fileURL, nil)
+	req, err := http.NewRequest(http.MethodGet, fileURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -543,6 +562,7 @@ func (h *FileBrowserHandlers) fetchFileContent(filePath string, timeout time.Dur
 		if err != nil {
 			return "", fmt.Errorf("filer returned status %d but failed to read response body: %w", resp.StatusCode, err)
 		}
+
 		return "", fmt.Errorf("filer returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -560,6 +580,7 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File path is required"})
+
 		return
 	}
 
@@ -567,12 +588,14 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 	filerAddress := h.adminServer.GetFilerAddress()
 	if filerAddress == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Filer address not configured"})
+
 		return
 	}
 
 	// Validate filer address to prevent SSRF
 	if err := h.validateFilerAddress(filerAddress); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid filer address configuration"})
+
 		return
 	}
 
@@ -580,6 +603,7 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 	cleanFilePath, err := h.validateAndCleanFilePath(filePath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file path: " + err.Error()})
+
 		return
 	}
 
@@ -588,6 +612,7 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 	downloadURL, err = h.httpClient.NormalizeHttpScheme(downloadURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to construct download URL: " + err.Error()})
+
 		return
 	}
 
@@ -596,9 +621,10 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 	// Safe: filerAddress validated by validateFilerAddress() to match configured filer
 	// Safe: cleanFilePath validated and cleaned by validateAndCleanFilePath() to prevent path traversal
 	// Use request context so download is cancelled when client disconnects
-	req, err := http.NewRequestWithContext(c.Request.Context(), "GET", downloadURL, nil)
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, downloadURL, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request: " + err.Error()})
+
 		return
 	}
 	client := h.newClientWithTimeout(5 * time.Minute) // Longer timeout for large file downloads
@@ -608,6 +634,7 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 	resp, err := client.Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to fetch file from filer: " + err.Error()})
+
 		return
 	}
 	defer resp.Body.Close()
@@ -616,9 +643,11 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			c.JSON(resp.StatusCode, gin.H{"error": fmt.Sprintf("Filer returned status %d but failed to read response body: %v", resp.StatusCode, err)})
+
 			return
 		}
 		c.JSON(resp.StatusCode, gin.H{"error": fmt.Sprintf("Filer returned status %d: %s", resp.StatusCode, string(body))})
+
 		return
 	}
 
@@ -637,7 +666,7 @@ func (h *FileBrowserHandlers) DownloadFile(c *gin.Context) {
 
 	// Set content length if available
 	if resp.ContentLength > 0 {
-		c.Header("Content-Length", fmt.Sprintf("%d", resp.ContentLength))
+		c.Header("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
 	}
 
 	// Stream the response body to the client
@@ -653,6 +682,7 @@ func (h *FileBrowserHandlers) ViewFile(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File path is required"})
+
 		return
 	}
 
@@ -667,29 +697,29 @@ func (h *FileBrowserHandlers) ViewFile(c *gin.Context) {
 			return err
 		}
 
-		entry := resp.Entry
+		entry := resp.GetEntry()
 		if entry == nil {
-			return fmt.Errorf("file not found")
+			return errors.New("file not found")
 		}
 
 		// Convert to FileEntry
 		var modTime time.Time
-		if entry.Attributes != nil && entry.Attributes.Mtime > 0 {
-			modTime = time.Unix(entry.Attributes.Mtime, 0)
+		if entry.GetAttributes() != nil && entry.GetAttributes().GetMtime() > 0 {
+			modTime = time.Unix(entry.GetAttributes().GetMtime(), 0)
 		}
 
 		var size int64
-		if entry.Attributes != nil {
-			size = int64(entry.Attributes.FileSize)
+		if entry.GetAttributes() != nil {
+			size = int64(entry.GetAttributes().GetFileSize())
 		}
 
 		// Determine MIME type with comprehensive extension support
-		mime := h.determineMimeType(entry.Name)
+		mime := h.determineMimeType(entry.GetName())
 
 		fileEntry = dash.FileEntry{
-			Name:        entry.Name,
+			Name:        entry.GetName(),
 			FullPath:    filePath,
-			IsDirectory: entry.IsDirectory,
+			IsDirectory: entry.GetIsDirectory(),
 			Size:        size,
 			ModTime:     modTime,
 			Mime:        mime,
@@ -699,6 +729,7 @@ func (h *FileBrowserHandlers) ViewFile(c *gin.Context) {
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get file metadata: " + err.Error()})
+
 		return
 	}
 
@@ -759,11 +790,12 @@ func (h *FileBrowserHandlers) GetFileProperties(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File path is required"})
+
 		return
 	}
 
 	// Get detailed file information from filer
-	var properties map[string]interface{}
+	var properties map[string]any
 	err := h.adminServer.WithFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		resp, err := client.LookupDirectoryEntry(context.Background(), &filer_pb.LookupDirectoryEntryRequest{
 			Directory: filepath.Dir(filePath),
@@ -773,74 +805,74 @@ func (h *FileBrowserHandlers) GetFileProperties(c *gin.Context) {
 			return err
 		}
 
-		entry := resp.Entry
+		entry := resp.GetEntry()
 		if entry == nil {
-			return fmt.Errorf("file not found")
+			return errors.New("file not found")
 		}
 
-		properties = make(map[string]interface{})
-		properties["name"] = entry.Name
+		properties = make(map[string]any)
+		properties["name"] = entry.GetName()
 		properties["full_path"] = filePath
-		properties["is_directory"] = entry.IsDirectory
+		properties["is_directory"] = entry.GetIsDirectory()
 
-		if entry.Attributes != nil {
-			properties["size"] = entry.Attributes.FileSize
-			properties["size_formatted"] = h.formatBytes(int64(entry.Attributes.FileSize))
+		if entry.GetAttributes() != nil {
+			properties["size"] = entry.GetAttributes().GetFileSize()
+			properties["size_formatted"] = h.formatBytes(int64(entry.GetAttributes().GetFileSize()))
 
-			if entry.Attributes.Mtime > 0 {
-				modTime := time.Unix(entry.Attributes.Mtime, 0)
+			if entry.GetAttributes().GetMtime() > 0 {
+				modTime := time.Unix(entry.GetAttributes().GetMtime(), 0)
 				properties["modified_time"] = modTime.Format("2006-01-02 15:04:05")
-				properties["modified_timestamp"] = entry.Attributes.Mtime
+				properties["modified_timestamp"] = entry.GetAttributes().GetMtime()
 			}
 
-			if entry.Attributes.Crtime > 0 {
-				createTime := time.Unix(entry.Attributes.Crtime, 0)
+			if entry.GetAttributes().GetCrtime() > 0 {
+				createTime := time.Unix(entry.GetAttributes().GetCrtime(), 0)
 				properties["created_time"] = createTime.Format("2006-01-02 15:04:05")
-				properties["created_timestamp"] = entry.Attributes.Crtime
+				properties["created_timestamp"] = entry.GetAttributes().GetCrtime()
 			}
 
-			properties["file_mode"] = dash.FormatFileMode(entry.Attributes.FileMode)
-			properties["file_mode_formatted"] = dash.FormatFileMode(entry.Attributes.FileMode)
-			properties["file_mode_octal"] = fmt.Sprintf("%o", entry.Attributes.FileMode)
-			properties["uid"] = entry.Attributes.Uid
-			properties["gid"] = entry.Attributes.Gid
-			properties["ttl_seconds"] = entry.Attributes.TtlSec
+			properties["file_mode"] = dash.FormatFileMode(entry.GetAttributes().GetFileMode())
+			properties["file_mode_formatted"] = dash.FormatFileMode(entry.GetAttributes().GetFileMode())
+			properties["file_mode_octal"] = fmt.Sprintf("%o", entry.GetAttributes().GetFileMode())
+			properties["uid"] = entry.GetAttributes().GetUid()
+			properties["gid"] = entry.GetAttributes().GetGid()
+			properties["ttl_seconds"] = entry.GetAttributes().GetTtlSec()
 
-			if entry.Attributes.TtlSec > 0 {
-				properties["ttl_formatted"] = fmt.Sprintf("%d seconds", entry.Attributes.TtlSec)
+			if entry.GetAttributes().GetTtlSec() > 0 {
+				properties["ttl_formatted"] = fmt.Sprintf("%d seconds", entry.GetAttributes().GetTtlSec())
 			}
 		}
 
 		// Get extended attributes
 		if entry.Extended != nil {
 			extended := make(map[string]string)
-			for key, value := range entry.Extended {
+			for key, value := range entry.GetExtended() {
 				extended[key] = string(value)
 			}
 			properties["extended"] = extended
 		}
 
 		// Get chunk information for files
-		if !entry.IsDirectory && len(entry.Chunks) > 0 {
-			chunks := make([]map[string]interface{}, 0, len(entry.Chunks))
-			for _, chunk := range entry.Chunks {
-				chunkInfo := map[string]interface{}{
-					"file_id":     chunk.FileId,
-					"offset":      chunk.Offset,
-					"size":        chunk.Size,
-					"modified_ts": chunk.ModifiedTsNs,
-					"e_tag":       chunk.ETag,
-					"source_fid":  chunk.SourceFileId,
+		if !entry.GetIsDirectory() && len(entry.GetChunks()) > 0 {
+			chunks := make([]map[string]any, 0, len(entry.GetChunks()))
+			for _, chunk := range entry.GetChunks() {
+				chunkInfo := map[string]any{
+					"file_id":     chunk.GetFileId(),
+					"offset":      chunk.GetOffset(),
+					"size":        chunk.GetSize(),
+					"modified_ts": chunk.GetModifiedTsNs(),
+					"e_tag":       chunk.GetETag(),
+					"source_fid":  chunk.GetSourceFileId(),
 				}
 				chunks = append(chunks, chunkInfo)
 			}
 			properties["chunks"] = chunks
-			properties["chunk_count"] = len(entry.Chunks)
+			properties["chunk_count"] = len(entry.GetChunks())
 		}
 
 		// Determine MIME type
-		if !entry.IsDirectory {
-			mime := h.determineMimeType(entry.Name)
+		if !entry.GetIsDirectory() {
+			mime := h.determineMimeType(entry.GetName())
 			properties["mime_type"] = mime
 		}
 
@@ -848,6 +880,7 @@ func (h *FileBrowserHandlers) GetFileProperties(c *gin.Context) {
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get file properties: " + err.Error()})
+
 		return
 	}
 
@@ -865,6 +898,7 @@ func (h *FileBrowserHandlers) formatBytes(bytes int64) string {
 		div *= unit
 		exp++
 	}
+
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
@@ -1020,6 +1054,7 @@ func (h *FileBrowserHandlers) isLikelyTextFile(filePath string, maxCheckSize int
 	// Validate filer address to prevent SSRF
 	if err := h.validateFilerAddress(filerAddress); err != nil {
 		glog.Errorf("Invalid filer address: %v", err)
+
 		return false
 	}
 
@@ -1033,6 +1068,7 @@ func (h *FileBrowserHandlers) isLikelyTextFile(filePath string, maxCheckSize int
 	fileURL, err = h.httpClient.NormalizeHttpScheme(fileURL)
 	if err != nil {
 		glog.Errorf("Failed to normalize URL scheme: %v", err)
+
 		return false
 	}
 
@@ -1040,9 +1076,10 @@ func (h *FileBrowserHandlers) isLikelyTextFile(filePath string, maxCheckSize int
 	// Safe: filerAddress validated by validateFilerAddress() to match configured filer
 	// Safe: cleanFilePath validated and cleaned by validateAndCleanFilePath() to prevent path traversal
 	client := h.newClientWithTimeout(10 * time.Second)
-	req, err := http.NewRequest("GET", fileURL, nil)
+	req, err := http.NewRequest(http.MethodGet, fileURL, nil)
 	if err != nil {
 		glog.Errorf("Failed to create request: %v", err)
+
 		return false
 	}
 	h.addFilerJwtAuthHeader(req)
@@ -1059,7 +1096,7 @@ func (h *FileBrowserHandlers) isLikelyTextFile(filePath string, maxCheckSize int
 	// Read first few bytes to check if it's text
 	buffer := make([]byte, min(maxCheckSize, 512))
 	n, err := resp.Body.Read(buffer)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return false
 	}
 
@@ -1093,14 +1130,6 @@ func (h *FileBrowserHandlers) isPrintableText(data []byte) bool {
 	return float64(printable)/float64(len(data)) > 0.95
 }
 
-// Helper function for min
-func min(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // setupFilerJwtAuth generates a JWT token and adds it to the request Authorization header if configured.
 func (h *FileBrowserHandlers) setupFilerJwtAuth(req *http.Request, keyPath, expiresPath, operation string) {
 	// Load security configuration
@@ -1125,7 +1154,7 @@ func (h *FileBrowserHandlers) setupFilerJwtAuth(req *http.Request, keyPath, expi
 
 	// Add JWT Token to Authorization Header
 	if jwtToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", string(jwtToken)))
+		req.Header.Set("Authorization", "Bearer "+string(jwtToken))
 		glog.V(4).Infof("Added JWT authorization header for %s", operation)
 	}
 }

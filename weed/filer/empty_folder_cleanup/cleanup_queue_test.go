@@ -327,7 +327,7 @@ func TestCleanupQueue_Concurrent(t *testing.T) {
 
 	// Concurrent adds
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			q.Add("/buckets/b1/folder"+string(rune('A'+i%26)), now.Add(time.Duration(i)*time.Millisecond))
 		}
 		done <- true
@@ -335,7 +335,7 @@ func TestCleanupQueue_Concurrent(t *testing.T) {
 
 	// Concurrent removes
 	go func() {
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			q.Remove("/buckets/b1/folder" + string(rune('A'+i%26)))
 		}
 		done <- true
@@ -343,7 +343,7 @@ func TestCleanupQueue_Concurrent(t *testing.T) {
 
 	// Concurrent pops
 	go func() {
-		for i := 0; i < 30; i++ {
+		for range 30 {
 			q.Pop()
 		}
 		done <- true
@@ -351,7 +351,7 @@ func TestCleanupQueue_Concurrent(t *testing.T) {
 
 	// Concurrent reads
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			q.Len()
 			q.Contains("/buckets/b1/folderA")
 			q.ShouldProcess()
@@ -360,7 +360,7 @@ func TestCleanupQueue_Concurrent(t *testing.T) {
 	}()
 
 	// Wait for all goroutines
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		<-done
 	}
 

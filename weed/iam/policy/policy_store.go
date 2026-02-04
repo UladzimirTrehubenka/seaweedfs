@@ -3,15 +3,18 @@ package policy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"google.golang.org/grpc"
 )
 
 // MemoryPolicyStore implements PolicyStore using in-memory storage
@@ -30,11 +33,11 @@ func NewMemoryPolicyStore() *MemoryPolicyStore {
 // StorePolicy stores a policy document in memory (filerAddress ignored for memory store)
 func (s *MemoryPolicyStore) StorePolicy(ctx context.Context, filerAddress string, name string, policy *PolicyDocument) error {
 	if name == "" {
-		return fmt.Errorf("policy name cannot be empty")
+		return errors.New("policy name cannot be empty")
 	}
 
 	if policy == nil {
-		return fmt.Errorf("policy cannot be nil")
+		return errors.New("policy cannot be nil")
 	}
 
 	s.mutex.Lock()
@@ -42,13 +45,14 @@ func (s *MemoryPolicyStore) StorePolicy(ctx context.Context, filerAddress string
 
 	// Deep copy the policy to prevent external modifications
 	s.policies[name] = copyPolicyDocument(policy)
+
 	return nil
 }
 
 // GetPolicy retrieves a policy document from memory (filerAddress ignored for memory store)
 func (s *MemoryPolicyStore) GetPolicy(ctx context.Context, filerAddress string, name string) (*PolicyDocument, error) {
 	if name == "" {
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 
 	s.mutex.RLock()
@@ -66,13 +70,14 @@ func (s *MemoryPolicyStore) GetPolicy(ctx context.Context, filerAddress string, 
 // DeletePolicy deletes a policy document from memory (filerAddress ignored for memory store)
 func (s *MemoryPolicyStore) DeletePolicy(ctx context.Context, filerAddress string, name string) error {
 	if name == "" {
-		return fmt.Errorf("policy name cannot be empty")
+		return errors.New("policy name cannot be empty")
 	}
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	delete(s.policies, name)
+
 	return nil
 }
 
@@ -136,10 +141,8 @@ func copyPolicyDocument(original *PolicyDocument) *PolicyDocument {
 
 		// Copy condition map (shallow copy for now)
 		if stmt.Condition != nil {
-			copied.Statement[i].Condition = make(map[string]map[string]interface{})
-			for k, v := range stmt.Condition {
-				copied.Statement[i].Condition[k] = v
-			}
+			copied.Statement[i].Condition = make(map[string]map[string]any)
+			maps.Copy(copied.Statement[i].Condition, stmt.Condition)
 		}
 	}
 
@@ -154,7 +157,7 @@ type FilerPolicyStore struct {
 }
 
 // NewFilerPolicyStore creates a new filer-based policy store
-func NewFilerPolicyStore(config map[string]interface{}, filerAddressProvider func() string) (*FilerPolicyStore, error) {
+func NewFilerPolicyStore(config map[string]any, filerAddressProvider func() string) (*FilerPolicyStore, error) {
 	store := &FilerPolicyStore{
 		basePath:             "/etc/iam/policies", // Default path for policy storage - aligned with /etc/ convention
 		filerAddressProvider: filerAddressProvider,
@@ -179,19 +182,19 @@ func (s *FilerPolicyStore) StorePolicy(ctx context.Context, filerAddress string,
 		filerAddress = s.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return fmt.Errorf("filer address is required for FilerPolicyStore")
+		return errors.New("filer address is required for FilerPolicyStore")
 	}
 	if name == "" {
-		return fmt.Errorf("policy name cannot be empty")
+		return errors.New("policy name cannot be empty")
 	}
 	if policy == nil {
-		return fmt.Errorf("policy cannot be nil")
+		return errors.New("policy cannot be nil")
 	}
 
 	// Serialize policy to JSON
 	policyData, err := json.MarshalIndent(policy, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to serialize policy: %v", err)
+		return fmt.Errorf("failed to serialize policy: %w", err)
 	}
 
 	policyPath := s.getPolicyPath(name)
@@ -217,7 +220,7 @@ func (s *FilerPolicyStore) StorePolicy(ctx context.Context, filerAddress string,
 		glog.V(3).Infof("Storing policy %s at %s", name, policyPath)
 		_, err := client.CreateEntry(ctx, request)
 		if err != nil {
-			return fmt.Errorf("failed to store policy %s: %v", name, err)
+			return fmt.Errorf("failed to store policy %s: %w", name, err)
 		}
 
 		return nil
@@ -231,10 +234,10 @@ func (s *FilerPolicyStore) GetPolicy(ctx context.Context, filerAddress string, n
 		filerAddress = s.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return nil, fmt.Errorf("filer address is required for FilerPolicyStore")
+		return nil, errors.New("filer address is required for FilerPolicyStore")
 	}
 	if name == "" {
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 
 	var policyData []byte
@@ -247,14 +250,15 @@ func (s *FilerPolicyStore) GetPolicy(ctx context.Context, filerAddress string, n
 		glog.V(3).Infof("Looking up policy %s", name)
 		response, err := client.LookupDirectoryEntry(ctx, request)
 		if err != nil {
-			return fmt.Errorf("policy not found: %v", err)
+			return fmt.Errorf("policy not found: %w", err)
 		}
 
-		if response.Entry == nil {
-			return fmt.Errorf("policy not found")
+		if response.GetEntry() == nil {
+			return errors.New("policy not found")
 		}
 
-		policyData = response.Entry.Content
+		policyData = response.GetEntry().GetContent()
+
 		return nil
 	})
 
@@ -265,7 +269,7 @@ func (s *FilerPolicyStore) GetPolicy(ctx context.Context, filerAddress string, n
 	// Deserialize policy from JSON
 	var policy PolicyDocument
 	if err := json.Unmarshal(policyData, &policy); err != nil {
-		return nil, fmt.Errorf("failed to deserialize policy: %v", err)
+		return nil, fmt.Errorf("failed to deserialize policy: %w", err)
 	}
 
 	return &policy, nil
@@ -278,10 +282,10 @@ func (s *FilerPolicyStore) DeletePolicy(ctx context.Context, filerAddress string
 		filerAddress = s.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return fmt.Errorf("filer address is required for FilerPolicyStore")
+		return errors.New("filer address is required for FilerPolicyStore")
 	}
 	if name == "" {
-		return fmt.Errorf("policy name cannot be empty")
+		return errors.New("policy name cannot be empty")
 	}
 
 	return s.withFilerClient(filerAddress, func(client filer_pb.SeaweedFilerClient) error {
@@ -300,16 +304,18 @@ func (s *FilerPolicyStore) DeletePolicy(ctx context.Context, filerAddress string
 			if strings.Contains(err.Error(), "not found") {
 				return nil
 			}
-			return fmt.Errorf("failed to delete policy %s: %v", name, err)
+
+			return fmt.Errorf("failed to delete policy %s: %w", name, err)
 		}
 
 		// Check response error
-		if resp.Error != "" {
+		if resp.GetError() != "" {
 			// Ignore "not found" errors - policy may already be deleted
-			if strings.Contains(resp.Error, "not found") {
+			if strings.Contains(resp.GetError(), "not found") {
 				return nil
 			}
-			return fmt.Errorf("failed to delete policy %s: %s", name, resp.Error)
+
+			return fmt.Errorf("failed to delete policy %s: %s", name, resp.GetError())
 		}
 
 		return nil
@@ -323,7 +329,7 @@ func (s *FilerPolicyStore) ListPolicies(ctx context.Context, filerAddress string
 		filerAddress = s.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return nil, fmt.Errorf("filer address is required for FilerPolicyStore")
+		return nil, errors.New("filer address is required for FilerPolicyStore")
 	}
 
 	var policyNames []string
@@ -340,7 +346,7 @@ func (s *FilerPolicyStore) ListPolicies(ctx context.Context, filerAddress string
 
 		stream, err := client.ListEntries(ctx, request)
 		if err != nil {
-			return fmt.Errorf("failed to list policies: %v", err)
+			return fmt.Errorf("failed to list policies: %w", err)
 		}
 
 		for {
@@ -349,12 +355,12 @@ func (s *FilerPolicyStore) ListPolicies(ctx context.Context, filerAddress string
 				break // End of stream or error
 			}
 
-			if resp.Entry == nil || resp.Entry.IsDirectory {
+			if resp.GetEntry() == nil || resp.GetEntry().GetIsDirectory() {
 				continue
 			}
 
 			// Extract policy name from filename
-			filename := resp.Entry.Name
+			filename := resp.GetEntry().GetName()
 			if strings.HasPrefix(filename, "policy_") && strings.HasSuffix(filename, ".json") {
 				// Remove "policy_" prefix and ".json" suffix
 				policyName := strings.TrimSuffix(strings.TrimPrefix(filename, "policy_"), ".json")
@@ -377,7 +383,7 @@ func (s *FilerPolicyStore) ListPolicies(ctx context.Context, filerAddress string
 // withFilerClient executes a function with a filer client
 func (s *FilerPolicyStore) withFilerClient(filerAddress string, fn func(client filer_pb.SeaweedFilerClient) error) error {
 	if filerAddress == "" {
-		return fmt.Errorf("filer address is required for FilerPolicyStore")
+		return errors.New("filer address is required for FilerPolicyStore")
 	}
 
 	// Use the pb.WithGrpcFilerClient helper similar to existing SeaweedFS code

@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -8,10 +9,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -30,6 +32,7 @@ func (k *AwsSqsInput) GetName() string {
 func (k *AwsSqsInput) Initialize(configuration util.Configuration, prefix string) error {
 	glog.V(0).Infof("replication.notification.aws_sqs.region: %v", configuration.GetString(prefix+"region"))
 	glog.V(0).Infof("replication.notification.aws_sqs.sqs_queue_name: %v", configuration.GetString(prefix+"sqs_queue_name"))
+
 	return k.initialize(
 		configuration.GetString(prefix+"aws_access_key_id"),
 		configuration.GetString(prefix+"aws_secret_access_key"),
@@ -39,7 +42,6 @@ func (k *AwsSqsInput) Initialize(configuration util.Configuration, prefix string
 }
 
 func (k *AwsSqsInput) initialize(awsAccessKeyId, awsSecretAccessKey, region, queueName string) (err error) {
-
 	config := &aws.Config{
 		Region:                        aws.String(region),
 		S3DisableContentMD5Validation: aws.Bool(true),
@@ -58,10 +60,12 @@ func (k *AwsSqsInput) initialize(awsAccessKeyId, awsSecretAccessKey, region, que
 		QueueName: aws.String(queueName),
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == sqs.ErrCodeQueueDoesNotExist {
+		var aerr awserr.Error
+		if errors.As(err, &aerr) {
 			return fmt.Errorf("unable to find queue %s", queueName)
 		}
-		return fmt.Errorf("get queue %s url: %v", queueName, err)
+
+		return fmt.Errorf("get queue %s url: %w", queueName, err)
 	}
 
 	k.queueUrl = *result.QueueUrl
@@ -70,7 +74,6 @@ func (k *AwsSqsInput) initialize(awsAccessKeyId, awsSecretAccessKey, region, que
 }
 
 func (k *AwsSqsInput) ReceiveMessage() (key string, message *filer_pb.EventNotification, onSuccessFn func(), onFailureFn func(), err error) {
-
 	// receive message
 	result, err := k.svc.ReceiveMessage(&sqs.ReceiveMessageInput{
 		AttributeNames: []*string{
@@ -85,11 +88,12 @@ func (k *AwsSqsInput) ReceiveMessage() (key string, message *filer_pb.EventNotif
 		WaitTimeSeconds:     aws.Int64(20),
 	})
 	if err != nil {
-		err = fmt.Errorf("receive message from sqs %s: %v", k.queueUrl, err)
-		return
+		err = fmt.Errorf("receive message from sqs %s: %w", k.queueUrl, err)
+
+		return key, message, onSuccessFn, onFailureFn, err
 	}
 	if len(result.Messages) == 0 {
-		return
+		return key, message, onSuccessFn, onFailureFn, err
 	}
 
 	// process the message
@@ -101,7 +105,8 @@ func (k *AwsSqsInput) ReceiveMessage() (key string, message *filer_pb.EventNotif
 	err = proto.Unmarshal([]byte(text), message)
 	if err != nil {
 		err = fmt.Errorf("unmarshal message from sqs %s: %w", k.queueUrl, err)
-		return
+
+		return key, message, onSuccessFn, onFailureFn, err
 	}
 	// delete the message
 	_, err = k.svc.DeleteMessage(&sqs.DeleteMessageInput{
@@ -113,5 +118,5 @@ func (k *AwsSqsInput) ReceiveMessage() (key string, message *filer_pb.EventNotif
 		glog.V(1).Infof("delete message from sqs %s: %v", k.queueUrl, err)
 	}
 
-	return
+	return key, message, onSuccessFn, onFailureFn, err
 }

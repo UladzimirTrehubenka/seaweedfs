@@ -5,6 +5,7 @@ import (
 	"time"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
@@ -14,7 +15,7 @@ func AllocateTopicPartitions(brokers cmap.ConcurrentMap[string, *BrokerStats], p
 	// divide the ring into partitions
 	now := time.Now().UnixNano()
 	rangeSize := MaxPartitionCount / partitionCount
-	for i := int32(0); i < partitionCount; i++ {
+	for i := range partitionCount {
 		assignment := &mq_pb.BrokerPartitionAssignment{
 			Partition: &schema_pb.Partition{
 				RingSize:   MaxPartitionCount,
@@ -32,6 +33,7 @@ func AllocateTopicPartitions(brokers cmap.ConcurrentMap[string, *BrokerStats], p
 	EnsureAssignmentsToActiveBrokers(brokers, 1, assignments)
 
 	glog.V(0).Infof("allocate topic partitions %d: %v", len(assignments), assignments)
+
 	return
 }
 
@@ -43,10 +45,11 @@ func pickBrokers(brokers cmap.ConcurrentMap[string, *BrokerStats], count int32) 
 		candidates = append(candidates, brokerStatsItem.Key)
 	}
 	pickedBrokers := make([]string, 0, count)
-	for i := int32(0); i < count; i++ {
+	for range count {
 		p := rand.IntN(len(candidates))
 		pickedBrokers = append(pickedBrokers, candidates[p])
 	}
+
 	return pickedBrokers
 }
 
@@ -69,7 +72,7 @@ func pickBrokersExcluded(brokers []string, count int, excludedLeadBroker string,
 
 	// shuffle the picked brokers
 	count = len(pickedBrokers)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		j := rand.IntN(count)
 		pickedBrokers[i], pickedBrokers[j] = pickedBrokers[j], pickedBrokers[i]
 	}
@@ -89,30 +92,30 @@ func EnsureAssignmentsToActiveBrokers(activeBrokers cmap.ConcurrentMap[string, *
 	for _, assignment := range assignments {
 		// count how many brokers are needed
 		count := 0
-		if assignment.LeaderBroker == "" {
+		if assignment.GetLeaderBroker() == "" {
 			count++
-		} else if _, found := activeBrokers.Get(assignment.LeaderBroker); !found {
+		} else if _, found := activeBrokers.Get(assignment.GetLeaderBroker()); !found {
 			assignment.LeaderBroker = ""
 			count++
 		}
-		if assignment.FollowerBroker == "" {
+		if assignment.GetFollowerBroker() == "" {
 			count++
-		} else if _, found := activeBrokers.Get(assignment.FollowerBroker); !found {
+		} else if _, found := activeBrokers.Get(assignment.GetFollowerBroker()); !found {
 			assignment.FollowerBroker = ""
 			count++
 		}
 
 		if count > 0 {
-			pickedBrokers := pickBrokersExcluded(candidates, count, assignment.LeaderBroker, assignment.FollowerBroker)
+			pickedBrokers := pickBrokersExcluded(candidates, count, assignment.GetLeaderBroker(), assignment.GetFollowerBroker())
 			i := 0
-			if assignment.LeaderBroker == "" {
+			if assignment.GetLeaderBroker() == "" {
 				if i < len(pickedBrokers) {
 					assignment.LeaderBroker = pickedBrokers[i]
 					i++
 					hasChanges = true
 				}
 			}
-			if assignment.FollowerBroker == "" {
+			if assignment.GetFollowerBroker() == "" {
 				if i < len(pickedBrokers) {
 					assignment.FollowerBroker = pickedBrokers[i]
 					i++
@@ -120,9 +123,9 @@ func EnsureAssignmentsToActiveBrokers(activeBrokers cmap.ConcurrentMap[string, *
 				}
 			}
 		}
-
 	}
 
 	glog.V(4).Infof("EnsureAssignmentsToActiveBrokers: activeBrokers: %v, followerCount: %d, assignments: %v hasChanges: %v", activeBrokers.Count(), followerCount, assignments, hasChanges)
-	return
+
+	return hasChanges
 }

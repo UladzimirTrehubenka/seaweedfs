@@ -14,7 +14,7 @@ import (
 )
 
 func (ms *MasterServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) {
-	infos := make(map[string]interface{})
+	infos := make(map[string]any)
 	infos["Up Time"] = time.Since(startTime).Truncate(time.Second).String()
 	infos["Max Volume Id"] = ms.Topo.GetMaxVolumeId()
 
@@ -24,9 +24,9 @@ func (ms *MasterServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) 
 	if ms.Topo.RaftServer != nil {
 		args := struct {
 			Version           string
-			Topology          interface{}
+			Topology          any
 			RaftServer        raft.Server
-			Stats             map[string]interface{}
+			Stats             map[string]any
 			Counters          *stats.ServerStats
 			VolumeSizeLimitMB uint32
 		}{
@@ -41,9 +41,9 @@ func (ms *MasterServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) 
 	} else if ms.Topo.HashicorpRaft != nil {
 		args := struct {
 			Version           string
-			Topology          interface{}
+			Topology          any
 			RaftServer        *hashicorpRaft.Raft
-			Stats             map[string]interface{}
+			Stats             map[string]any
 			Counters          *stats.ServerStats
 			VolumeSizeLimitMB uint32
 		}{

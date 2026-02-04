@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 )
 
@@ -213,7 +214,7 @@ func TestMiddlewareConsistentBehavior(t *testing.T) {
 			middleware := NewMiddleware(bucketChecker, configGetter, fallbackConfig)
 
 			// Create preflight request
-			req := httptest.NewRequest("OPTIONS", "/testbucket/testobject", nil)
+			req := httptest.NewRequest(http.MethodOptions, "/testbucket/testobject", nil)
 			req = mux.SetURLVars(req, map[string]string{
 				"bucket": "testbucket",
 				"object": "testobject",

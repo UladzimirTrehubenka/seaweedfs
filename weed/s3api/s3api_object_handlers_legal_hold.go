@@ -30,6 +30,7 @@ func (s3a *S3ApiServer) PutObjectLegalHoldHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		glog.Errorf("PutObjectLegalHoldHandler: failed to parse legal hold config: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
@@ -37,6 +38,7 @@ func (s3a *S3ApiServer) PutObjectLegalHoldHandler(w http.ResponseWriter, r *http
 	if err := ValidateLegalHold(legalHold); err != nil {
 		glog.Errorf("PutObjectLegalHoldHandler: invalid legal hold config: %v", err)
 		s3err.WriteErrorResponse(w, r, mapValidationErrorToS3Error(err))
+
 		return
 	}
 
@@ -47,10 +49,12 @@ func (s3a *S3ApiServer) PutObjectLegalHoldHandler(w http.ResponseWriter, r *http
 		// Handle specific error cases
 		if errors.Is(err, ErrObjectNotFound) || errors.Is(err, ErrVersionNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -87,16 +91,19 @@ func (s3a *S3ApiServer) GetObjectLegalHoldHandler(w http.ResponseWriter, r *http
 		// Handle specific error cases
 		if errors.Is(err, ErrObjectNotFound) || errors.Is(err, ErrVersionNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		if errors.Is(err, ErrNoLegalHoldConfiguration) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchObjectLegalHold)
+
 			return
 		}
 
 		glog.Errorf("GetObjectLegalHoldHandler: failed to get legal hold: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -105,6 +112,7 @@ func (s3a *S3ApiServer) GetObjectLegalHoldHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		glog.Errorf("GetObjectLegalHoldHandler: failed to marshal legal hold: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -115,11 +123,13 @@ func (s3a *S3ApiServer) GetObjectLegalHoldHandler(w http.ResponseWriter, r *http
 	// Write XML response
 	if _, err := w.Write([]byte(xml.Header)); err != nil {
 		glog.Errorf("GetObjectLegalHoldHandler: failed to write XML header: %v", err)
+
 		return
 	}
 
 	if _, err := w.Write(legalHoldXML); err != nil {
 		glog.Errorf("GetObjectLegalHoldHandler: failed to write legal hold XML: %v", err)
+
 		return
 	}
 

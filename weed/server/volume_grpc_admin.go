@@ -23,19 +23,17 @@ import (
 )
 
 func (vs *VolumeServer) DeleteCollection(ctx context.Context, req *volume_server_pb.DeleteCollectionRequest) (*volume_server_pb.DeleteCollectionResponse, error) {
-
 	resp := &volume_server_pb.DeleteCollectionResponse{}
 
-	err := vs.store.DeleteCollection(req.Collection)
+	err := vs.store.DeleteCollection(req.GetCollection())
 
 	if err != nil {
-		glog.Errorf("delete collection %s: %v", req.Collection, err)
+		glog.Errorf("delete collection %s: %v", req.GetCollection(), err)
 	} else {
 		glog.V(2).Infof("delete collection %v", req)
 	}
 
 	return resp, err
-
 }
 
 func (vs *VolumeServer) AllocateVolume(ctx context.Context, req *volume_server_pb.AllocateVolumeRequest) (*volume_server_pb.AllocateVolumeResponse, error) {
@@ -46,15 +44,15 @@ func (vs *VolumeServer) AllocateVolume(ctx context.Context, req *volume_server_p
 	}
 
 	err := vs.store.AddVolume(
-		needle.VolumeId(req.VolumeId),
-		req.Collection,
+		needle.VolumeId(req.GetVolumeId()),
+		req.GetCollection(),
 		vs.needleMapKind,
-		req.Replication,
-		req.Ttl,
-		req.Preallocate,
-		needle.Version(req.Version),
-		req.MemoryMapMaxSizeMb,
-		types.ToDiskType(req.DiskType),
+		req.GetReplication(),
+		req.GetTtl(),
+		req.GetPreallocate(),
+		needle.Version(req.GetVersion()),
+		req.GetMemoryMapMaxSizeMb(),
+		types.ToDiskType(req.GetDiskType()),
 		vs.ldbTimout,
 	)
 
@@ -65,14 +63,12 @@ func (vs *VolumeServer) AllocateVolume(ctx context.Context, req *volume_server_p
 	}
 
 	return resp, err
-
 }
 
 func (vs *VolumeServer) VolumeMount(ctx context.Context, req *volume_server_pb.VolumeMountRequest) (*volume_server_pb.VolumeMountResponse, error) {
-
 	resp := &volume_server_pb.VolumeMountResponse{}
 
-	err := vs.store.MountVolume(needle.VolumeId(req.VolumeId))
+	err := vs.store.MountVolume(needle.VolumeId(req.GetVolumeId()))
 
 	if err != nil {
 		glog.Errorf("volume mount %v: %v", req, err)
@@ -81,14 +77,12 @@ func (vs *VolumeServer) VolumeMount(ctx context.Context, req *volume_server_pb.V
 	}
 
 	return resp, err
-
 }
 
 func (vs *VolumeServer) VolumeUnmount(ctx context.Context, req *volume_server_pb.VolumeUnmountRequest) (*volume_server_pb.VolumeUnmountResponse, error) {
-
 	resp := &volume_server_pb.VolumeUnmountResponse{}
 
-	err := vs.store.UnmountVolume(needle.VolumeId(req.VolumeId))
+	err := vs.store.UnmountVolume(needle.VolumeId(req.GetVolumeId()))
 
 	if err != nil {
 		glog.Errorf("volume unmount %v: %v", req, err)
@@ -97,7 +91,6 @@ func (vs *VolumeServer) VolumeUnmount(ctx context.Context, req *volume_server_pb
 	}
 
 	return resp, err
-
 }
 
 func (vs *VolumeServer) VolumeDelete(ctx context.Context, req *volume_server_pb.VolumeDeleteRequest) (*volume_server_pb.VolumeDeleteResponse, error) {
@@ -107,7 +100,7 @@ func (vs *VolumeServer) VolumeDelete(ctx context.Context, req *volume_server_pb.
 		return resp, err
 	}
 
-	err := vs.store.DeleteVolume(needle.VolumeId(req.VolumeId), req.OnlyEmpty)
+	err := vs.store.DeleteVolume(needle.VolumeId(req.GetVolumeId()), req.GetOnlyEmpty())
 
 	if err != nil {
 		glog.Errorf("volume delete %v: %v", req, err)
@@ -116,7 +109,6 @@ func (vs *VolumeServer) VolumeDelete(ctx context.Context, req *volume_server_pb.
 	}
 
 	return resp, err
-
 }
 
 func (vs *VolumeServer) VolumeConfigure(ctx context.Context, req *volume_server_pb.VolumeConfigureRequest) (*volume_server_pb.VolumeConfigureResponse, error) {
@@ -127,39 +119,42 @@ func (vs *VolumeServer) VolumeConfigure(ctx context.Context, req *volume_server_
 	}
 
 	// check replication format
-	if _, err := super_block.NewReplicaPlacementFromString(req.Replication); err != nil {
+	if _, err := super_block.NewReplicaPlacementFromString(req.GetReplication()); err != nil {
 		resp.Error = fmt.Sprintf("volume configure replication %v: %v", req, err)
+
 		return resp, nil
 	}
 
 	// unmount
-	if err := vs.store.UnmountVolume(needle.VolumeId(req.VolumeId)); err != nil {
+	if err := vs.store.UnmountVolume(needle.VolumeId(req.GetVolumeId())); err != nil {
 		glog.Errorf("volume configure unmount %v: %v", req, err)
 		resp.Error = fmt.Sprintf("volume configure unmount %v: %v", req, err)
+
 		return resp, nil
 	}
 
 	// modify the volume info file
-	if err := vs.store.ConfigureVolume(needle.VolumeId(req.VolumeId), req.Replication); err != nil {
+	if err := vs.store.ConfigureVolume(needle.VolumeId(req.GetVolumeId()), req.GetReplication()); err != nil {
 		glog.Errorf("volume configure %v: %v", req, err)
 		resp.Error = fmt.Sprintf("volume configure %v: %v", req, err)
 		// Try to re-mount to restore the volume state
-		if mountErr := vs.store.MountVolume(needle.VolumeId(req.VolumeId)); mountErr != nil {
+		if mountErr := vs.store.MountVolume(needle.VolumeId(req.GetVolumeId())); mountErr != nil {
 			glog.Errorf("volume configure failed to restore mount %v: %v", req, mountErr)
 			resp.Error += fmt.Sprintf(". Also failed to restore mount: %v", mountErr)
 		}
+
 		return resp, nil
 	}
 
 	// mount
-	if err := vs.store.MountVolume(needle.VolumeId(req.VolumeId)); err != nil {
+	if err := vs.store.MountVolume(needle.VolumeId(req.GetVolumeId())); err != nil {
 		glog.Errorf("volume configure mount %v: %v", req, err)
 		resp.Error = fmt.Sprintf("volume configure mount %v: %v", req, err)
+
 		return resp, nil
 	}
 
 	return resp, nil
-
 }
 
 func (vs *VolumeServer) VolumeMarkReadonly(ctx context.Context, req *volume_server_pb.VolumeMarkReadonlyRequest) (*volume_server_pb.VolumeMarkReadonlyResponse, error) {
@@ -169,9 +164,9 @@ func (vs *VolumeServer) VolumeMarkReadonly(ctx context.Context, req *volume_serv
 		return resp, err
 	}
 
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return nil, fmt.Errorf("volume %d not found", req.VolumeId)
+		return nil, fmt.Errorf("volume %d not found", req.GetVolumeId())
 	}
 
 	// step 1: stop master from redirecting traffic here
@@ -182,7 +177,7 @@ func (vs *VolumeServer) VolumeMarkReadonly(ctx context.Context, req *volume_serv
 	// rare case 1.5: it will be unlucky if heartbeat happened between step 1 and 2.
 
 	// step 2: mark local volume as readonly
-	err := vs.store.MarkVolumeReadonly(needle.VolumeId(req.VolumeId), req.GetPersist())
+	err := vs.store.MarkVolumeReadonly(needle.VolumeId(req.GetVolumeId()), req.GetPersist())
 
 	if err != nil {
 		glog.Errorf("volume mark readonly %v: %v", req, err)
@@ -211,13 +206,16 @@ func (vs *VolumeServer) notifyMasterVolumeReadonly(v *storage.Volume, isReadOnly
 			IsReadonly:       isReadOnly,
 		})
 		if err != nil {
-			return fmt.Errorf("set volume %d to read only on master: %v", v.Id, err)
+			return fmt.Errorf("set volume %d to read only on master: %w", v.Id, err)
 		}
+
 		return nil
 	}); grpcErr != nil {
 		glog.V(0).Infof("connect to %s: %v", vs.GetMaster(context.Background()), grpcErr)
-		return fmt.Errorf("grpc VolumeMarkReadonly with master %s: %v", vs.GetMaster(context.Background()), grpcErr)
+
+		return fmt.Errorf("grpc VolumeMarkReadonly with master %s: %w", vs.GetMaster(context.Background()), grpcErr)
 	}
+
 	return nil
 }
 
@@ -228,12 +226,12 @@ func (vs *VolumeServer) VolumeMarkWritable(ctx context.Context, req *volume_serv
 		return resp, err
 	}
 
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return nil, fmt.Errorf("volume %d not found", req.VolumeId)
+		return nil, fmt.Errorf("volume %d not found", req.GetVolumeId())
 	}
 
-	err := vs.store.MarkVolumeWritable(needle.VolumeId(req.VolumeId))
+	err := vs.store.MarkVolumeWritable(needle.VolumeId(req.GetVolumeId()))
 
 	if err != nil {
 		glog.Errorf("volume mark writable %v: %v", req, err)
@@ -250,15 +248,14 @@ func (vs *VolumeServer) VolumeMarkWritable(ctx context.Context, req *volume_serv
 }
 
 func (vs *VolumeServer) VolumeStatus(ctx context.Context, req *volume_server_pb.VolumeStatusRequest) (*volume_server_pb.VolumeStatusResponse, error) {
-
 	resp := &volume_server_pb.VolumeStatusResponse{}
 
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return nil, fmt.Errorf("not found volume id %d", req.VolumeId)
+		return nil, fmt.Errorf("not found volume id %d", req.GetVolumeId())
 	}
 	if v.DataBackend == nil {
-		return nil, fmt.Errorf("volume %d data backend not found", req.VolumeId)
+		return nil, fmt.Errorf("volume %d data backend not found", req.GetVolumeId())
 	}
 
 	volumeSize, _, _ := v.DataBackend.GetStat()
@@ -271,7 +268,6 @@ func (vs *VolumeServer) VolumeStatus(ctx context.Context, req *volume_server_pb.
 }
 
 func (vs *VolumeServer) VolumeServerStatus(ctx context.Context, req *volume_server_pb.VolumeServerStatusRequest) (*volume_server_pb.VolumeServerStatusResponse, error) {
-
 	resp := &volume_server_pb.VolumeServerStatusResponse{
 		State:        vs.store.State.Pb,
 		MemoryStatus: stats.MemStat(),
@@ -287,27 +283,23 @@ func (vs *VolumeServer) VolumeServerStatus(ctx context.Context, req *volume_serv
 	}
 
 	return resp, nil
-
 }
 
 func (vs *VolumeServer) VolumeServerLeave(ctx context.Context, req *volume_server_pb.VolumeServerLeaveRequest) (*volume_server_pb.VolumeServerLeaveResponse, error) {
-
 	resp := &volume_server_pb.VolumeServerLeaveResponse{}
 
 	vs.StopHeartbeat()
 
 	return resp, nil
-
 }
 
 func (vs *VolumeServer) VolumeNeedleStatus(ctx context.Context, req *volume_server_pb.VolumeNeedleStatusRequest) (*volume_server_pb.VolumeNeedleStatusResponse, error) {
-
 	resp := &volume_server_pb.VolumeNeedleStatusResponse{}
 
-	volumeId := needle.VolumeId(req.VolumeId)
+	volumeId := needle.VolumeId(req.GetVolumeId())
 
 	n := &needle.Needle{
-		Id: types.NeedleId(req.NeedleId),
+		Id: types.NeedleId(req.GetNeedleId()),
 	}
 
 	var count int
@@ -316,7 +308,7 @@ func (vs *VolumeServer) VolumeNeedleStatus(ctx context.Context, req *volume_serv
 	if !hasVolume {
 		_, hasEcVolume := vs.store.FindEcVolume(volumeId)
 		if !hasEcVolume {
-			return nil, fmt.Errorf("volume not found %d", req.VolumeId)
+			return nil, fmt.Errorf("volume not found %d", req.GetVolumeId())
 		}
 		count, err = vs.store.ReadEcShardNeedle(volumeId, n, nil)
 	} else {
@@ -337,44 +329,48 @@ func (vs *VolumeServer) VolumeNeedleStatus(ctx context.Context, req *volume_serv
 	if n.HasTtl() {
 		resp.Ttl = n.Ttl.String()
 	}
-	return resp, nil
 
+	return resp, nil
 }
 
 func (vs *VolumeServer) Ping(ctx context.Context, req *volume_server_pb.PingRequest) (resp *volume_server_pb.PingResponse, pingErr error) {
 	resp = &volume_server_pb.PingResponse{
 		StartTimeNs: time.Now().UnixNano(),
 	}
-	if req.TargetType == cluster.FilerType {
-		pingErr = pb.WithFilerClient(false, 0, pb.ServerAddress(req.Target), vs.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+	if req.GetTargetType() == cluster.FilerType {
+		pingErr = pb.WithFilerClient(false, 0, pb.ServerAddress(req.GetTarget()), vs.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			pingResp, err := client.Ping(ctx, &filer_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
-	if req.TargetType == cluster.VolumeServerType {
-		pingErr = pb.WithVolumeServerClient(false, pb.ServerAddress(req.Target), vs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
+	if req.GetTargetType() == cluster.VolumeServerType {
+		pingErr = pb.WithVolumeServerClient(false, pb.ServerAddress(req.GetTarget()), vs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
 			pingResp, err := client.Ping(ctx, &volume_server_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
-	if req.TargetType == cluster.MasterType {
-		pingErr = pb.WithMasterClient(false, pb.ServerAddress(req.Target), vs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
+	if req.GetTargetType() == cluster.MasterType {
+		pingErr = pb.WithMasterClient(false, pb.ServerAddress(req.GetTarget()), vs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 			pingResp, err := client.Ping(ctx, &master_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
 	if pingErr != nil {
-		pingErr = fmt.Errorf("ping %s %s: %v", req.TargetType, req.Target, pingErr)
+		pingErr = fmt.Errorf("ping %s %s: %w", req.GetTargetType(), req.GetTarget(), pingErr)
 	}
 	resp.StopTimeNs = time.Now().UnixNano()
-	return
+
+	return resp, pingErr
 }

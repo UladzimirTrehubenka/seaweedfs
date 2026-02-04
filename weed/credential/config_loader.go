@@ -21,6 +21,7 @@ func LoadCredentialConfiguration() (*CredentialConfig, error) {
 	loaded := util.LoadConfiguration("credential", false)
 	if !loaded {
 		glog.V(1).Info("No credential.toml found, credential store disabled")
+
 		return nil, nil
 	}
 
@@ -45,6 +46,7 @@ func LoadCredentialConfiguration() (*CredentialConfig, error) {
 
 	if enabledStore == "" {
 		glog.V(1).Info("No credential store enabled in credential.toml")
+
 		return nil, nil
 	}
 
@@ -77,6 +79,7 @@ func MergeCredentialConfig(cmdLineStore string, cmdLineConfig util.Configuration
 	// If command line credential store is specified, use it
 	if cmdLineStore != "" {
 		glog.V(0).Infof("Using command line credential configuration: store=%s", cmdLineStore)
+
 		return GetCredentialStoreConfig(cmdLineStore, cmdLineConfig, cmdLinePrefix), nil
 	}
 
@@ -126,7 +129,7 @@ func NewCredentialManagerWithDefaults(explicitStore CredentialStoreTypeName) (*C
 	// Create the credential manager
 	credentialManager, err := NewCredentialManager(storeName, config, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize credential manager with store '%s': %v", storeName, err)
+		return nil, fmt.Errorf("failed to initialize credential manager with store '%s': %w", storeName, err)
 	}
 
 	return credentialManager, nil

@@ -139,6 +139,7 @@ func TestCoordinatorRegistry_HealthyGateways(t *testing.T) {
 	for i := 1; i < len(healthy); i++ {
 		if healthy[i-1] >= healthy[i] {
 			t.Errorf("Healthy gateways should be sorted: %v", healthy)
+
 			break
 		}
 	}

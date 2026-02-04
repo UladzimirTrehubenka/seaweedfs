@@ -19,16 +19,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/metadata"
+
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/util/request_id"
 	"github.com/seaweedfs/seaweedfs/weed/util/version"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 
 	"google.golang.org/grpc"
 
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
@@ -37,7 +39,7 @@ import (
 
 var serverStats *stats.ServerStats
 var startTime = time.Now()
-var writePool = sync.Pool{New: func() interface{} {
+var writePool = sync.Pool{New: func() any {
 	return bufio.NewWriterSize(nil, 128*1024)
 },
 }
@@ -57,12 +59,13 @@ func bodyAllowedForStatus(status int) bool {
 	case status == http.StatusNotModified:
 		return false
 	}
+
 	return true
 }
 
-func writeJson(w http.ResponseWriter, r *http.Request, httpStatus int, obj interface{}) (err error) {
+func writeJson(w http.ResponseWriter, r *http.Request, httpStatus int, obj any) (err error) {
 	if !bodyAllowedForStatus(httpStatus) {
-		return
+		return err
 	}
 
 	var bytes []byte
@@ -74,7 +77,7 @@ func writeJson(w http.ResponseWriter, r *http.Request, httpStatus int, obj inter
 		}
 	}
 	if err != nil {
-		return
+		return err
 	}
 
 	if httpStatus >= 400 {
@@ -87,53 +90,54 @@ func writeJson(w http.ResponseWriter, r *http.Request, httpStatus int, obj inter
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(httpStatus)
 		if httpStatus == http.StatusNotModified {
-			return
+			return err
 		}
 		_, err = w.Write(bytes)
 	} else {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.WriteHeader(httpStatus)
 		if httpStatus == http.StatusNotModified {
-			return
+			return err
 		}
 		if _, err = w.Write([]uint8(callback)); err != nil {
-			return
+			return err
 		}
 		if _, err = w.Write([]uint8("(")); err != nil {
-			return
+			return err
 		}
 		fmt.Fprint(w, string(bytes))
 		if _, err = w.Write([]uint8(")")); err != nil {
-			return
+			return err
 		}
 	}
 
-	return
+	return err
 }
 
 // wrapper for writeJson - just logs errors
-func writeJsonQuiet(w http.ResponseWriter, r *http.Request, httpStatus int, obj interface{}) {
+func writeJsonQuiet(w http.ResponseWriter, r *http.Request, httpStatus int, obj any) {
 	if err := writeJson(w, r, httpStatus, obj); err != nil {
 		glog.V(0).Infof("error writing JSON status %s %d: %v", r.URL, httpStatus, err)
 		glog.V(1).Infof("JSON content: %+v", obj)
 	}
 }
 func writeJsonError(w http.ResponseWriter, r *http.Request, httpStatus int, err error) {
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["error"] = err.Error()
 	glog.V(1).Infof("error JSON response status %d: %s", httpStatus, m["error"])
 	writeJsonQuiet(w, r, httpStatus, m)
 }
 
-func debug(params ...interface{}) {
+func debug(params ...any) {
 	glog.V(4).Infoln(params...)
 }
 
 func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption) {
 	ctx := r.Context()
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	if r.Method != http.MethodPost {
 		writeJsonError(w, r, http.StatusMethodNotAllowed, errors.New("Only submit via POST!"))
+
 		return
 	}
 
@@ -143,6 +147,7 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 	pu, pe := needle.ParseUpload(r, 256*1024*1024, bytesBuffer)
 	if pe != nil {
 		writeJsonError(w, r, http.StatusBadRequest, pe)
+
 		return
 	}
 
@@ -153,6 +158,7 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 		count, pe = strconv.ParseUint(r.FormValue("count"), 10, 32)
 		if pe != nil {
 			writeJsonError(w, r, http.StatusBadRequest, pe)
+
 			return
 		}
 	}
@@ -168,6 +174,7 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 	assignResult, ae := operation.Assign(ctx, masterFn, grpcDialOption, ar)
 	if ae != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, ae)
+
 		return
 	}
 
@@ -189,11 +196,13 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 	uploader, err := operation.NewUploader()
 	if err != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, err)
+
 		return
 	}
 	uploadResult, err := uploader.UploadData(ctx, pu.Data, uploadOption)
 	if err != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, err)
+
 		return
 	}
 
@@ -203,6 +212,7 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 	m["size"] = pu.OriginalDataSize
 	m["eTag"] = uploadResult.ETag
 	writeJsonQuiet(w, r, http.StatusCreated, m)
+
 	return
 }
 
@@ -225,7 +235,8 @@ func parseURLPath(path string) (vid, fid, filename, ext string, isVolumeIdOnly b
 		commaIndex := strings.LastIndex(path[sepIndex:], ",")
 		if commaIndex <= 0 {
 			vid, isVolumeIdOnly = path[sepIndex+1:], true
-			return
+
+			return vid, fid, filename, ext, isVolumeIdOnly
 		}
 		dotIndex := strings.LastIndex(path[sepIndex:], ".")
 		vid = path[sepIndex+1 : commaIndex]
@@ -236,23 +247,24 @@ func parseURLPath(path string) (vid, fid, filename, ext string, isVolumeIdOnly b
 			ext = path[dotIndex:]
 		}
 	}
-	return
+
+	return vid, fid, filename, ext, isVolumeIdOnly
 }
 
 func statsHealthHandler(w http.ResponseWriter, r *http.Request) {
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["Version"] = version.Version()
 	writeJsonQuiet(w, r, http.StatusOK, m)
 }
 func statsCounterHandler(w http.ResponseWriter, r *http.Request) {
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["Version"] = version.Version()
 	m["Counters"] = serverStats
 	writeJsonQuiet(w, r, http.StatusOK, m)
 }
 
 func statsMemoryHandler(w http.ResponseWriter, r *http.Request) {
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["Version"] = version.Version()
 	m["Memory"] = stats.MemStat()
 	writeJsonQuiet(w, r, http.StatusOK, m)
@@ -314,23 +326,27 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 			glog.Errorf("ProcessRangeRequest: %v", err)
 			w.Header().Del("Content-Length")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+
 			return fmt.Errorf("ProcessRangeRequest: %w", err)
 		}
 		if err = writeFn(bufferedWriter); err != nil {
 			glog.Errorf("ProcessRangeRequest: %v", err)
 			w.Header().Del("Content-Length")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+
 			return fmt.Errorf("ProcessRangeRequest: %w", err)
 		}
+
 		return nil
 	}
 
-	//the rest is dealing with partial content request
-	//mostly copy from src/pkg/net/http/fs.go
+	// the rest is dealing with partial content request
+	// mostly copy from src/pkg/net/http/fs.go
 	ranges, err := parseRange(rangeReq, totalSize)
 	if err != nil {
 		glog.Errorf("ProcessRangeRequest headers: %+v err: %v", w.Header(), err)
 		http.Error(w, err.Error(), http.StatusRequestedRangeNotSatisfiable)
+
 		return fmt.Errorf("ProcessRangeRequest header: %w", err)
 	}
 	if sumRangesSize(ranges) > totalSize {
@@ -364,6 +380,7 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 			glog.Errorf("ProcessRangeRequest range[0]: %+v err: %v", w.Header(), err)
 			w.Header().Del("Content-Length")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+
 			return fmt.Errorf("ProcessRangeRequest: %w", err)
 		}
 		w.WriteHeader(http.StatusPartialContent)
@@ -373,6 +390,7 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 			// Cannot call http.Error() here because WriteHeader was already called
 			return fmt.Errorf("ProcessRangeRequest range[0]: %w", err)
 		}
+
 		return nil
 	}
 
@@ -382,13 +400,15 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 	for i, ra := range ranges {
 		if ra.start > totalSize {
 			http.Error(w, "Out of Range", http.StatusRequestedRangeNotSatisfiable)
+
 			return fmt.Errorf("out of range: %w", err)
 		}
 		writeFn, err := prepareWriteFn(ra.start, ra.length)
 		if err != nil {
 			glog.Errorf("ProcessRangeRequest range[%d] err: %v", i, err)
 			http.Error(w, "Internal Error", http.StatusInternalServerError)
-			return fmt.Errorf("ProcessRangeRequest range[%d] err: %v", i, err)
+
+			return fmt.Errorf("ProcessRangeRequest range[%d] err: %w", i, err)
 		}
 		writeFnByRange[i] = writeFn
 	}
@@ -403,15 +423,18 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 			part, e := mw.CreatePart(ra.mimeHeader(mimeType, totalSize))
 			if e != nil {
 				pw.CloseWithError(e)
+
 				return
 			}
 			writeFn := writeFnByRange[i]
 			if writeFn == nil {
 				pw.CloseWithError(e)
+
 				return
 			}
 			if e = writeFn(part); e != nil {
 				pw.CloseWithError(e)
+
 				return
 			}
 		}
@@ -427,6 +450,7 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 		// Cannot call http.Error() here because WriteHeader was already called
 		return fmt.Errorf("ProcessRangeRequest err: %w", err)
 	}
+
 	return nil
 }
 

@@ -80,7 +80,7 @@ func TestSSES3EndToEndSmallFile(t *testing.T) {
 			// This tests the IV retrieval path for inline files
 
 			// First, deserialize metadata from storage
-			retrievedKeyData := mockEntry.Extended[s3_constants.SeaweedFSSSES3Key]
+			retrievedKeyData := mockEntry.GetExtended()[s3_constants.SeaweedFSSSES3Key]
 			retrievedKey, err := DeserializeSSES3Metadata(retrievedKeyData, keyManager)
 			if err != nil {
 				t.Fatalf("Failed to deserialize SSE-S3 metadata: %v", err)
@@ -238,6 +238,7 @@ func TestSSES3EndToEndChunkedFile(t *testing.T) {
 		decryptedReader, err := CreateSSES3DecryptedReader(bytes.NewReader(chunkData), deserializedKey, deserializedKey.IV)
 		if err != nil {
 			t.Errorf("Failed to decrypt chunk %d: %v", i, err)
+
 			continue
 		}
 

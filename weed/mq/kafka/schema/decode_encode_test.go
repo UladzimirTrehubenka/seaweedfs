@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	"github.com/linkedin/goavro/v2"
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestSchemaDecodeEncode_Avro tests comprehensive Avro decode/encode workflow
@@ -31,7 +32,7 @@ func TestSchemaDecodeEncode_Avro(t *testing.T) {
 		name       string
 		schemaID   int32
 		schemaJSON string
-		testData   map[string]interface{}
+		testData   map[string]any
 	}{
 		{
 			name:     "Simple User Record",
@@ -45,10 +46,10 @@ func TestSchemaDecodeEncode_Avro(t *testing.T) {
 					{"name": "email", "type": ["null", "string"], "default": null}
 				]
 			}`,
-			testData: map[string]interface{}{
+			testData: map[string]any{
 				"id":    int32(123),
 				"name":  "John Doe",
-				"email": map[string]interface{}{"string": "john@example.com"},
+				"email": map[string]any{"string": "john@example.com"},
 			},
 		},
 		{
@@ -64,11 +65,11 @@ func TestSchemaDecodeEncode_Avro(t *testing.T) {
 					{"name": "metadata", "type": {"type": "map", "values": "string"}}
 				]
 			}`,
-			testData: map[string]interface{}{
+			testData: map[string]any{
 				"order_id": "ORD-001",
-				"items":    []interface{}{"item1", "item2", "item3"},
+				"items":    []any{"item1", "item2", "item3"},
 				"total":    99.99,
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"source":   "web",
 					"campaign": "summer2024",
 				},
@@ -86,9 +87,9 @@ func TestSchemaDecodeEncode_Avro(t *testing.T) {
 					{"name": "timestamp", "type": "long"}
 				]
 			}`,
-			testData: map[string]interface{}{
+			testData: map[string]any{
 				"event_id":  "evt-123",
-				"payload":   map[string]interface{}{"int": int32(42)},
+				"payload":   map[string]any{"int": int32(42)},
 				"timestamp": int64(1640995200000),
 			},
 		},
@@ -118,7 +119,7 @@ func TestSchemaDecodeEncode_Avro(t *testing.T) {
 			assert.NotNil(t, decoded.RecordValue)
 
 			// Verify decoded fields match original data
-			verifyDecodedFields(t, tc.testData, decoded.RecordValue.Fields)
+			verifyDecodedFields(t, tc.testData, decoded.RecordValue.GetFields())
 
 			// Test re-encoding (round-trip)
 			reconstructed, err := manager.EncodeMessage(decoded.RecordValue, decoded.SchemaID, decoded.SchemaFormat)
@@ -153,7 +154,7 @@ func TestSchemaDecodeEncode_JSONSchema(t *testing.T) {
 		name       string
 		schemaID   int32
 		schemaJSON string
-		testData   map[string]interface{}
+		testData   map[string]any
 	}{
 		{
 			name:     "Product Schema",
@@ -172,12 +173,12 @@ func TestSchemaDecodeEncode_JSONSchema(t *testing.T) {
 				},
 				"required": ["product_id", "name", "price"]
 			}`,
-			testData: map[string]interface{}{
+			testData: map[string]any{
 				"product_id": "PROD-123",
 				"name":       "Awesome Widget",
 				"price":      29.99,
 				"in_stock":   true,
-				"tags":       []interface{}{"electronics", "gadget"},
+				"tags":       []any{"electronics", "gadget"},
 			},
 		},
 		{
@@ -204,11 +205,11 @@ func TestSchemaDecodeEncode_JSONSchema(t *testing.T) {
 					"order_date": {"type": "string", "format": "date"}
 				}
 			}`,
-			testData: map[string]interface{}{
-				"customer": map[string]interface{}{
+			testData: map[string]any{
+				"customer": map[string]any{
 					"id":   float64(456), // JSON numbers are float64
 					"name": "Jane Smith",
-					"address": map[string]interface{}{
+					"address": map[string]any{
 						"street": "123 Main St",
 						"city":   "Anytown",
 						"zip":    "12345",
@@ -289,8 +290,8 @@ func TestSchemaDecodeEncode_Protobuf(t *testing.T) {
 	assert.NotNil(t, decoded.RecordValue)
 
 	// Verify the decoded fields
-	assert.Contains(t, decoded.RecordValue.Fields, "name")
-	assert.Contains(t, decoded.RecordValue.Fields, "id")
+	assert.Contains(t, decoded.RecordValue.GetFields(), "name")
+	assert.Contains(t, decoded.RecordValue.GetFields(), "id")
 }
 
 // TestSchemaDecodeEncode_ErrorHandling tests various error conditions
@@ -365,7 +366,7 @@ func TestSchemaDecodeEncode_CachePerformance(t *testing.T) {
 	registerSchemaInMock(t, registry, schemaID, schemaJSON)
 
 	// Create test data
-	testData := map[string]interface{}{"value": "test"}
+	testData := map[string]any{"value": "test"}
 	codec, err := goavro.NewCodec(schemaJSON)
 	require.NoError(t, err)
 	avroBinary, err := codec.BinaryFromNative(nil, testData)
@@ -387,9 +388,9 @@ func TestSchemaDecodeEncode_CachePerformance(t *testing.T) {
 
 	// Check cache stats
 	decoders, schemas, subjects := manager.GetCacheStats()
-	assert.True(t, decoders > 0)
-	assert.True(t, schemas > 0)
-	assert.True(t, subjects >= 0)
+	assert.Positive(t, decoders)
+	assert.Positive(t, schemas)
+	assert.GreaterOrEqual(t, subjects, 0)
 }
 
 // Helper functions
@@ -415,7 +416,7 @@ func createMockSchemaRegistryForDecodeTest(t *testing.T) *httptest.Server {
 					w.WriteHeader(http.StatusNotFound)
 					w.Write([]byte(`{"error_code": 40403, "message": "Schema not found"}`))
 				}
-			} else if r.Method == "POST" && r.URL.Path == "/register-schema" {
+			} else if r.Method == http.MethodPost && r.URL.Path == "/register-schema" {
 				// Custom endpoint for test registration
 				var req struct {
 					SchemaID int32  `json:"schema_id"`
@@ -448,10 +449,11 @@ func createConfluentEnvelope(schemaID int32, data []byte) []byte {
 	envelope[0] = 0x00 // Magic byte
 	binary.BigEndian.PutUint32(envelope[1:5], uint32(schemaID))
 	copy(envelope[5:], data)
+
 	return envelope
 }
 
-func verifyDecodedFields(t *testing.T, expected map[string]interface{}, actual map[string]*schema_pb.Value) {
+func verifyDecodedFields(t *testing.T, expected map[string]any, actual map[string]*schema_pb.Value) {
 	for key, expectedValue := range expected {
 		actualValue, exists := actual[key]
 		require.True(t, exists, "Field %s should exist", key)
@@ -470,11 +472,11 @@ func verifyDecodedFields(t *testing.T, expected map[string]interface{}, actual m
 			assert.Equal(t, v, actualValue.GetDoubleValue(), "Field %s should match", key)
 		case bool:
 			assert.Equal(t, v, actualValue.GetBoolValue(), "Field %s should match", key)
-		case []interface{}:
+		case []any:
 			listValue := actualValue.GetListValue()
 			require.NotNil(t, listValue, "Field %s should be a list", key)
-			assert.Equal(t, len(v), len(listValue.Values), "List %s should have correct length", key)
-		case map[string]interface{}:
+			assert.Len(t, listValue.GetValues(), len(v), "List %s should have correct length", key)
+		case map[string]any:
 			// Check if this is an Avro union type (single key-value pair with type name)
 			if len(v) == 1 {
 				for unionType, unionValue := range v {
@@ -485,7 +487,7 @@ func verifyDecodedFields(t *testing.T, expected map[string]interface{}, actual m
 							// Union values are now stored as records with the union type as field name
 							recordValue := actualValue.GetRecordValue()
 							require.NotNil(t, recordValue, "Field %s should be a union record", key)
-							unionField := recordValue.Fields[unionType]
+							unionField := recordValue.GetFields()[unionType]
 							require.NotNil(t, unionField, "Union field %s should exist", unionType)
 							assert.Equal(t, intVal, unionField.GetInt32Value(), "Field %s should match", key)
 						}
@@ -493,7 +495,7 @@ func verifyDecodedFields(t *testing.T, expected map[string]interface{}, actual m
 						if strVal, ok := unionValue.(string); ok {
 							recordValue := actualValue.GetRecordValue()
 							require.NotNil(t, recordValue, "Field %s should be a union record", key)
-							unionField := recordValue.Fields[unionType]
+							unionField := recordValue.GetFields()[unionType]
 							require.NotNil(t, unionField, "Union field %s should exist", unionType)
 							assert.Equal(t, strVal, unionField.GetStringValue(), "Field %s should match", key)
 						}
@@ -501,7 +503,7 @@ func verifyDecodedFields(t *testing.T, expected map[string]interface{}, actual m
 						if longVal, ok := unionValue.(int64); ok {
 							recordValue := actualValue.GetRecordValue()
 							require.NotNil(t, recordValue, "Field %s should be a union record", key)
-							unionField := recordValue.Fields[unionType]
+							unionField := recordValue.GetFields()[unionType]
 							require.NotNil(t, unionField, "Union field %s should exist", unionType)
 							assert.Equal(t, longVal, unionField.GetInt64Value(), "Field %s should match", key)
 						}
@@ -509,29 +511,30 @@ func verifyDecodedFields(t *testing.T, expected map[string]interface{}, actual m
 						// If not a recognized union type, treat as regular nested record
 						recordValue := actualValue.GetRecordValue()
 						require.NotNil(t, recordValue, "Field %s should be a record", key)
-						verifyDecodedFields(t, v, recordValue.Fields)
+						verifyDecodedFields(t, v, recordValue.GetFields())
 					}
+
 					break // Only one iteration for single-key map
 				}
 			} else {
 				// Handle regular maps/objects
 				recordValue := actualValue.GetRecordValue()
 				require.NotNil(t, recordValue, "Field %s should be a record", key)
-				verifyDecodedFields(t, v, recordValue.Fields)
+				verifyDecodedFields(t, v, recordValue.GetFields())
 			}
 		}
 	}
 }
 
 func verifyRecordValuesEqual(t *testing.T, expected, actual *schema_pb.RecordValue) {
-	require.Equal(t, len(expected.Fields), len(actual.Fields), "Record should have same number of fields")
+	require.Len(t, actual.GetFields(), len(expected.GetFields()), "Record should have same number of fields")
 
-	for key, expectedValue := range expected.Fields {
-		actualValue, exists := actual.Fields[key]
+	for key, expectedValue := range expected.GetFields() {
+		actualValue, exists := actual.GetFields()[key]
 		require.True(t, exists, "Field %s should exist", key)
 
 		// Compare values based on type
-		switch expectedValue.Kind.(type) {
+		switch expectedValue.GetKind().(type) {
 		case *schema_pb.Value_StringValue:
 			assert.Equal(t, expectedValue.GetStringValue(), actualValue.GetStringValue())
 		case *schema_pb.Value_Int64Value:
@@ -543,9 +546,9 @@ func verifyRecordValuesEqual(t *testing.T, expected, actual *schema_pb.RecordVal
 		case *schema_pb.Value_ListValue:
 			expectedList := expectedValue.GetListValue()
 			actualList := actualValue.GetListValue()
-			require.Equal(t, len(expectedList.Values), len(actualList.Values))
-			for i, expectedItem := range expectedList.Values {
-				verifyValuesEqual(t, expectedItem, actualList.Values[i])
+			require.Len(t, actualList.GetValues(), len(expectedList.GetValues()))
+			for i, expectedItem := range expectedList.GetValues() {
+				verifyValuesEqual(t, expectedItem, actualList.GetValues()[i])
 			}
 		case *schema_pb.Value_RecordValue:
 			verifyRecordValuesEqual(t, expectedValue.GetRecordValue(), actualValue.GetRecordValue())
@@ -554,7 +557,7 @@ func verifyRecordValuesEqual(t *testing.T, expected, actual *schema_pb.RecordVal
 }
 
 func verifyValuesEqual(t *testing.T, expected, actual *schema_pb.Value) {
-	switch expected.Kind.(type) {
+	switch expected.GetKind().(type) {
 	case *schema_pb.Value_StringValue:
 		assert.Equal(t, expected.GetStringValue(), actual.GetStringValue())
 	case *schema_pb.Value_Int64Value:

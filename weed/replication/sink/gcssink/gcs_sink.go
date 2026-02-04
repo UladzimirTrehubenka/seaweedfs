@@ -7,10 +7,11 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
-	"github.com/seaweedfs/seaweedfs/weed/replication/repl_util"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
+
+	"github.com/seaweedfs/seaweedfs/weed/replication/repl_util"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -45,6 +46,7 @@ func (g *GcsSink) IsIncremental() bool {
 
 func (g *GcsSink) Initialize(configuration util.Configuration, prefix string) error {
 	g.isIncremental = configuration.GetBool(prefix + "is_incremental")
+
 	return g.initialize(
 		configuration.GetString(prefix+"google_application_credentials"),
 		configuration.GetString(prefix+"bucket"),
@@ -71,19 +73,19 @@ func (g *GcsSink) initialize(google_application_credentials, bucketName, dir str
 			googleCredentialsPath := util.ResolvePath(google_application_credentials)
 			data, err = os.ReadFile(googleCredentialsPath)
 			if err != nil {
-				return fmt.Errorf("failed to read credentials file %s: %v", googleCredentialsPath, err)
+				return fmt.Errorf("failed to read credentials file %s: %w", googleCredentialsPath, err)
 			}
 		}
 		creds, err := google.CredentialsFromJSON(context.Background(), data, storage.ScopeFullControl)
 		if err != nil {
-			return fmt.Errorf("failed to parse credentials: %v", err)
+			return fmt.Errorf("failed to parse credentials: %w", err)
 		}
 		httpClient := oauth2.NewClient(context.Background(), creds.TokenSource)
 		clientOpts = append(clientOpts, option.WithHTTPClient(httpClient), option.WithoutAuthentication())
 	}
 	client, err := storage.NewClient(context.Background(), clientOpts...)
 	if err != nil {
-		return fmt.Errorf("failed to create client with credentials \"%s\" env \"%s\": %v",
+		return fmt.Errorf("failed to create client with credentials \"%s\" env \"%s\": %w",
 			google_application_credentials, os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"), err)
 	}
 
@@ -93,22 +95,19 @@ func (g *GcsSink) initialize(google_application_credentials, bucketName, dir str
 }
 
 func (g *GcsSink) DeleteEntry(key string, isDirectory, deleteIncludeChunks bool, signatures []int32) error {
-
 	if isDirectory {
 		key = key + "/"
 	}
 
 	if err := g.client.Bucket(g.bucket).Object(key).Delete(context.Background()); err != nil {
-		return fmt.Errorf("gcs delete %s/%s: %v", g.bucket, key, err)
+		return fmt.Errorf("gcs delete %s/%s: %w", g.bucket, key, err)
 	}
 
 	return nil
-
 }
 
 func (g *GcsSink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int32) error {
-
-	if entry.IsDirectory {
+	if entry.GetIsDirectory() {
 		return nil
 	}
 
@@ -120,11 +119,12 @@ func (g *GcsSink) CreateEntry(key string, entry *filer_pb.Entry, signatures []in
 
 	writeFunc := func(data []byte) error {
 		_, writeErr := wc.Write(data)
+
 		return writeErr
 	}
 
-	if len(entry.Content) > 0 {
-		return writeFunc(entry.Content)
+	if len(entry.GetContent()) > 0 {
+		return writeFunc(entry.GetContent())
 	}
 
 	if err := repl_util.CopyFromChunkViews(chunkViews, g.filerSource, writeFunc); err != nil {
@@ -132,7 +132,6 @@ func (g *GcsSink) CreateEntry(key string, entry *filer_pb.Entry, signatures []in
 	}
 
 	return nil
-
 }
 
 func (g *GcsSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParentPath string, newEntry *filer_pb.Entry, deleteIncludeChunks bool, signatures []int32) (foundExistingEntry bool, err error) {

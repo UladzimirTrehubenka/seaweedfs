@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/dustin/go-humanize"
 	"github.com/dustin/go-humanize/english"
+
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
@@ -103,8 +105,9 @@ func (c *commandClusterStatus) Do(args []string, commandEnv *CommandEnv, writer 
 
 func (sp *ClusterStatusPrinter) uint64(n uint64) string {
 	if !sp.humanize {
-		return fmt.Sprintf("%d", n)
+		return strconv.FormatUint(n, 10)
 	}
+
 	return humanize.Comma(int64(n))
 }
 
@@ -114,12 +117,13 @@ func (sp *ClusterStatusPrinter) int(n int) string {
 
 func (sp *ClusterStatusPrinter) uint64Plural(n uint64, str string) string {
 	if !sp.humanize {
-		return fmt.Sprintf("%s(s)", str)
+		return str + "(s)"
 	}
 	uin := math.MaxInt
 	if n < math.MaxInt {
 		uin = int(n)
 	}
+
 	return english.PluralWord(int(uin), str, "")
 }
 
@@ -131,7 +135,8 @@ func (sp *ClusterStatusPrinter) bytes(b uint64) string {
 	if !sp.humanize {
 		return fmt.Sprintf("%d %s", b, sp.plural(int(b), "byte"))
 	}
-	return fmt.Sprintf("%s", humanize.Bytes(b))
+
+	return humanize.Bytes(b)
 }
 
 func (sp *ClusterStatusPrinter) uint64Ratio(a, b uint64) string {
@@ -142,7 +147,8 @@ func (sp *ClusterStatusPrinter) uint64Ratio(a, b uint64) string {
 	if !sp.humanize {
 		return fmt.Sprintf("%.02f", p)
 	}
-	return fmt.Sprintf("%s", humanize.FtoaWithDigits(p, 2))
+
+	return humanize.FtoaWithDigits(p, 2)
 }
 
 func (sp *ClusterStatusPrinter) intRatio(a, b int) string {
@@ -157,7 +163,8 @@ func (sp *ClusterStatusPrinter) uint64Pct(a, b uint64) string {
 	if !sp.humanize {
 		return fmt.Sprintf("%.02f%%", p)
 	}
-	return fmt.Sprintf("%s%%", humanize.FtoaWithDigits(p, 2))
+
+	return humanize.FtoaWithDigits(p, 2) + "%"
 }
 
 func (sp *ClusterStatusPrinter) intPct(a, b int) string {
@@ -196,19 +203,19 @@ func (sp *ClusterStatusPrinter) loadFileStats(commandEnv *CommandEnv) error {
 	var progressTotal, progressDone uint64
 	ewg := NewErrorWaitGroup(sp.maxParallelization)
 
-	for _, dci := range sp.topology.DataCenterInfos {
-		for _, ri := range dci.RackInfos {
-			for _, dni := range ri.DataNodeInfos {
-				for _, d := range dni.DiskInfos {
+	for _, dci := range sp.topology.GetDataCenterInfos() {
+		for _, ri := range dci.GetRackInfos() {
+			for _, dni := range ri.GetDataNodeInfos() {
+				for _, d := range dni.GetDiskInfos() {
 					mu.Lock()
-					progressTotal += uint64(len(d.VolumeInfos))
+					progressTotal += uint64(len(d.GetVolumeInfos()))
 					mu.Unlock()
-					for _, v := range d.VolumeInfos {
+					for _, v := range d.GetVolumeInfos() {
 						ewg.Add(func() error {
 							// Collect regular volume stats
-							err := operation.WithVolumeServerClient(false, pb.NewServerAddressWithGrpcPort(dni.Id, int(dni.GrpcPort)), commandEnv.option.GrpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
+							err := operation.WithVolumeServerClient(false, pb.NewServerAddressWithGrpcPort(dni.GetId(), int(dni.GetGrpcPort())), commandEnv.option.GrpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 								resp, reqErr := volumeServerClient.VolumeStatus(context.Background(), &volume_server_pb.VolumeStatusRequest{
-									VolumeId: uint32(v.Id),
+									VolumeId: uint32(v.GetId()),
 								})
 								if reqErr != nil {
 									return reqErr
@@ -217,18 +224,19 @@ func (sp *ClusterStatusPrinter) loadFileStats(commandEnv *CommandEnv) error {
 								mu.Lock()
 								defer mu.Unlock()
 								if resp != nil {
-									if _, ok := sp.regularVolumeStats[v.Id]; !ok {
-										sp.regularVolumeStats[v.Id] = []*VolumeReplicaStats{}
+									if _, ok := sp.regularVolumeStats[v.GetId()]; !ok {
+										sp.regularVolumeStats[v.GetId()] = []*VolumeReplicaStats{}
 									}
-									sp.regularVolumeStats[v.Id] = append(sp.regularVolumeStats[v.Id], &VolumeReplicaStats{
-										Id:           dni.Id,
-										VolumeId:     v.Id,
-										Files:        resp.FileCount,
-										FilesDeleted: resp.FileDeletedCount,
-										TotalSize:    resp.VolumeSize,
+									sp.regularVolumeStats[v.GetId()] = append(sp.regularVolumeStats[v.GetId()], &VolumeReplicaStats{
+										Id:           dni.GetId(),
+										VolumeId:     v.GetId(),
+										Files:        resp.GetFileCount(),
+										FilesDeleted: resp.GetFileDeletedCount(),
+										TotalSize:    resp.GetVolumeSize(),
 									})
 								}
 								progressDone++
+
 								return nil
 							})
 							if err != nil {
@@ -238,6 +246,7 @@ func (sp *ClusterStatusPrinter) loadFileStats(commandEnv *CommandEnv) error {
 							mu.Lock()
 							sp.write("collecting file stats: %s     \r", sp.uint64Pct(progressDone, progressTotal))
 							mu.Unlock()
+
 							return nil
 						})
 					}
@@ -248,21 +257,22 @@ func (sp *ClusterStatusPrinter) loadFileStats(commandEnv *CommandEnv) error {
 
 	err := ewg.Wait()
 	sp.write("")
+
 	return err
 }
 
 func (sp *ClusterStatusPrinter) printClusterInfo() {
-	dcs := len(sp.topology.DataCenterInfos)
+	dcs := len(sp.topology.GetDataCenterInfos())
 
 	racks := 0
 	nodes := 0
 	disks := 0
-	for _, dci := range sp.topology.DataCenterInfos {
-		racks += len(dci.RackInfos)
-		for _, ri := range dci.RackInfos {
-			for _, dni := range ri.DataNodeInfos {
+	for _, dci := range sp.topology.GetDataCenterInfos() {
+		racks += len(dci.GetRackInfos())
+		for _, ri := range dci.GetRackInfos() {
+			for _, dni := range ri.GetDataNodeInfos() {
 				nodes++
-				disks += len(dni.DiskInfos)
+				disks += len(dni.GetDiskInfos())
 			}
 		}
 	}
@@ -273,7 +283,7 @@ func (sp *ClusterStatusPrinter) printClusterInfo() {
 	}
 
 	sp.write("cluster:")
-	sp.write("\tid:       %s", sp.topology.Id)
+	sp.write("\tid:       %s", sp.topology.GetId())
 	sp.write("\tstatus:   %s", status)
 	sp.write("\tnodes:    %s", sp.int(nodes))
 	sp.write("\ttopology: %s %s, %s %s on %s %s",
@@ -281,7 +291,6 @@ func (sp *ClusterStatusPrinter) printClusterInfo() {
 		sp.int(disks), sp.plural(disks, "disk"),
 		sp.int(racks), sp.plural(racks, "rack"))
 	sp.write("")
-
 }
 
 func (sp *ClusterStatusPrinter) printVolumeInfo() {
@@ -292,23 +301,23 @@ func (sp *ClusterStatusPrinter) printVolumeInfo() {
 
 	var replicas, roReplicas, rwReplicas, ecShards int
 
-	for _, dci := range sp.topology.DataCenterInfos {
-		for _, ri := range dci.RackInfos {
-			for _, dni := range ri.DataNodeInfos {
-				for _, di := range dni.DiskInfos {
-					maxVolumes += uint64(di.MaxVolumeCount)
-					for _, vi := range di.VolumeInfos {
-						vid := needle.VolumeId(vi.Id)
+	for _, dci := range sp.topology.GetDataCenterInfos() {
+		for _, ri := range dci.GetRackInfos() {
+			for _, dni := range ri.GetDataNodeInfos() {
+				for _, di := range dni.GetDiskInfos() {
+					maxVolumes += uint64(di.GetMaxVolumeCount())
+					for _, vi := range di.GetVolumeInfos() {
+						vid := needle.VolumeId(vi.GetId())
 						volumeIds[vid] = true
 						replicas++
-						if vi.ReadOnly {
+						if vi.GetReadOnly() {
 							roReplicas++
 						} else {
 							rwReplicas++
 						}
 					}
-					for _, eci := range di.EcShardInfos {
-						vid := needle.VolumeId(eci.Id)
+					for _, eci := range di.GetEcShardInfos() {
+						vid := needle.VolumeId(eci.GetId())
 						ecVolumeIds[vid] = true
 						ecShards += erasure_coding.GetShardCount(eci)
 					}
@@ -336,7 +345,6 @@ func (sp *ClusterStatusPrinter) printVolumeInfo() {
 		sp.int(ecShards), sp.plural(ecShards, "shard"),
 		sp.intRatio(ecShards, ecVolumes))
 	sp.write("")
-
 }
 
 func (sp *ClusterStatusPrinter) printStorageInfo() {
@@ -344,25 +352,24 @@ func (sp *ClusterStatusPrinter) printStorageInfo() {
 	perEcVolumeSize := map[needle.VolumeId]uint64{}
 	var rawVolumeSize, rawEcVolumeSize uint64
 
-	for _, dci := range sp.topology.DataCenterInfos {
-		for _, ri := range dci.RackInfos {
-			for _, dni := range ri.DataNodeInfos {
-				for _, di := range dni.DiskInfos {
-					for _, vi := range di.VolumeInfos {
-						vid := needle.VolumeId(vi.Id)
-						perVolumeSize[vid] = vi.Size
-						rawVolumeSize += vi.Size
+	for _, dci := range sp.topology.GetDataCenterInfos() {
+		for _, ri := range dci.GetRackInfos() {
+			for _, dni := range ri.GetDataNodeInfos() {
+				for _, di := range dni.GetDiskInfos() {
+					for _, vi := range di.GetVolumeInfos() {
+						vid := needle.VolumeId(vi.GetId())
+						perVolumeSize[vid] = vi.GetSize()
+						rawVolumeSize += vi.GetSize()
 					}
-					for _, eci := range di.EcShardInfos {
-						vid := needle.VolumeId(eci.Id)
+					for _, eci := range di.GetEcShardInfos() {
+						vid := needle.VolumeId(eci.GetId())
 						var size uint64
-						for _, ss := range eci.ShardSizes {
+						for _, ss := range eci.GetShardSizes() {
 							size += uint64(ss)
 						}
 						perEcVolumeSize[vid] += size
 						rawEcVolumeSize += size
 					}
-
 				}
 			}
 		}

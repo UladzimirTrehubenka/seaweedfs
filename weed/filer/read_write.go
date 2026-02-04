@@ -3,6 +3,7 @@ package filer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -10,7 +11,6 @@ import (
 )
 
 func ReadEntry(masterClient *wdclient.MasterClient, filerClient filer_pb.SeaweedFilerClient, dir, name string, byteBuffer *bytes.Buffer) error {
-
 	request := &filer_pb.LookupDirectoryEntryRequest{
 		Directory: dir,
 		Name:      name,
@@ -19,13 +19,13 @@ func ReadEntry(masterClient *wdclient.MasterClient, filerClient filer_pb.Seaweed
 	if err != nil {
 		return err
 	}
-	if len(respLookupEntry.Entry.Content) > 0 {
-		_, err = byteBuffer.Write(respLookupEntry.Entry.Content)
+	if len(respLookupEntry.GetEntry().GetContent()) > 0 {
+		_, err = byteBuffer.Write(respLookupEntry.GetEntry().GetContent())
+
 		return err
 	}
 
-	return StreamContent(masterClient, byteBuffer, respLookupEntry.Entry.GetChunks(), 0, int64(FileSize(respLookupEntry.Entry)))
-
+	return StreamContent(masterClient, byteBuffer, respLookupEntry.GetEntry().GetChunks(), 0, int64(FileSize(respLookupEntry.GetEntry())))
 }
 
 func ReadInsideFiler(filerClient filer_pb.SeaweedFilerClient, dir, name string) (content []byte, err error) {
@@ -37,42 +37,26 @@ func ReadInsideFiler(filerClient filer_pb.SeaweedFilerClient, dir, name string) 
 	if err != nil {
 		return
 	}
-	content = respLookupEntry.Entry.Content
+	content = respLookupEntry.GetEntry().GetContent()
+
 	return
 }
 
 func SaveInsideFiler(client filer_pb.SeaweedFilerClient, dir, name string, content []byte) error {
-
 	resp, err := filer_pb.LookupEntry(context.Background(), client, &filer_pb.LookupDirectoryEntryRequest{
 		Directory: dir,
 		Name:      name,
 	})
 
-	if err == filer_pb.ErrNotFound {
-		err = filer_pb.CreateEntry(context.Background(), client, &filer_pb.CreateEntryRequest{
-			Directory: dir,
-			Entry: &filer_pb.Entry{
-				Name:        name,
-				IsDirectory: false,
-				Attributes: &filer_pb.FuseAttributes{
-					Mtime:    time.Now().Unix(),
-					Crtime:   time.Now().Unix(),
-					FileMode: uint32(0644),
-					FileSize: uint64(len(content)),
-				},
-				Content: content,
-			},
-			SkipCheckParentDirectory: false,
-		})
-	} else if err == nil {
-		entry := resp.Entry
+	switch {
+	case errors.Is(err, filer_pb.ErrNotFound):
+		err = filer_pb.CreateEntry(context.Background(), client, &filer_pb.CreateEntryRequest{Directory: dir, Entry: &filer_pb.Entry{Name: name, IsDirectory: false, Attributes: &filer_pb.FuseAttributes{Mtime: time.Now().Unix(), Crtime: time.Now().Unix(), FileMode: uint32(0644), FileSize: uint64(len(content))}, Content: content}, SkipCheckParentDirectory: false})
+	case err == nil:
+		entry := resp.GetEntry()
 		entry.Content = content
 		entry.Attributes.Mtime = time.Now().Unix()
 		entry.Attributes.FileSize = uint64(len(content))
-		err = filer_pb.UpdateEntry(context.Background(), client, &filer_pb.UpdateEntryRequest{
-			Directory: dir,
-			Entry:     entry,
-		})
+		err = filer_pb.UpdateEntry(context.Background(), client, &filer_pb.UpdateEntryRequest{Directory: dir, Entry: entry})
 	}
 
 	return err

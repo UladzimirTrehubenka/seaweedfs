@@ -2,6 +2,7 @@ package topology
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -33,13 +34,15 @@ func (t *Topology) batchVacuumVolumeCheck(grpcDialOption grpc.DialOption, vid ne
 				if err != nil {
 					atomic.AddInt32(&errCount, 1)
 					ch <- -1
+
 					return err
 				}
-				if resp.GarbageRatio >= garbageThreshold {
+				if resp.GetGarbageRatio() >= garbageThreshold {
 					ch <- index
 				} else {
 					ch <- -1
 				}
+
 				return nil
 			})
 			if err != nil {
@@ -62,6 +65,7 @@ func (t *Topology) batchVacuumVolumeCheck(grpcDialOption grpc.DialOption, vid ne
 			return vacuumLocationList, false
 		}
 	}
+
 	return vacuumLocationList, errCount == 0 && len(vacuumLocationList.list) > 0
 }
 
@@ -87,15 +91,16 @@ func (t *Topology) batchVacuumVolumeCompact(grpcDialOption grpc.DialOption, vl *
 				for {
 					resp, recvErr := stream.Recv()
 					if recvErr != nil {
-						if recvErr == io.EOF {
+						if errors.Is(recvErr, io.EOF) {
 							break
 						} else {
 							return recvErr
 						}
 					}
 					glog.V(0).Infof("%d vacuum %d on %s processed %d bytes, loadAvg %.02f%%",
-						index, vid, url, resp.ProcessedBytes, resp.LoadAvg_1M*100)
+						index, vid, url, resp.GetProcessedBytes(), resp.GetLoadAvg_1M()*100)
 				}
+
 				return nil
 			})
 			if err != nil {
@@ -120,6 +125,7 @@ func (t *Topology) batchVacuumVolumeCompact(grpcDialOption grpc.DialOption, vl *
 			return false
 		}
 	}
+
 	return isVacuumSuccess
 }
 
@@ -134,13 +140,14 @@ func (t *Topology) batchVacuumVolumeCommit(grpcDialOption grpc.DialOption, vl *V
 				VolumeId: uint32(vid),
 			})
 			if resp != nil {
-				if resp.IsReadOnly {
+				if resp.GetIsReadOnly() {
 					isReadOnly = true
 				}
-				if resp.VolumeSize > t.volumeSizeLimit {
+				if resp.GetVolumeSize() > t.volumeSizeLimit {
 					isFullCapacity = true
 				}
 			}
+
 			return err
 		})
 		if err != nil {
@@ -151,13 +158,14 @@ func (t *Topology) batchVacuumVolumeCommit(grpcDialOption grpc.DialOption, vl *V
 		}
 	}
 
-	//we should check the status of all replicas
+	// we should check the status of all replicas
 	if len(locationList.list) > len(vacuumLocationList.list) {
 		for _, dn := range locationList.list {
 			isFound := false
 			for _, dnVaccum := range vacuumLocationList.list {
 				if dn.id == dnVaccum.id {
 					isFound = true
+
 					break
 				}
 			}
@@ -167,18 +175,19 @@ func (t *Topology) batchVacuumVolumeCommit(grpcDialOption grpc.DialOption, vl *V
 						VolumeId: uint32(vid),
 					})
 					if resp != nil {
-						if resp.IsReadOnly {
+						if resp.GetIsReadOnly() {
 							isReadOnly = true
 						}
-						if resp.VolumeSize > t.volumeSizeLimit {
+						if resp.GetVolumeSize() > t.volumeSizeLimit {
 							isFullCapacity = true
 						}
 					}
+
 					return err
 				})
 				if err != nil {
 					glog.Errorf("Error when checking volume %d status on %s: %v", vid, dn.Url(), err)
-					//we mark volume read-only, since the volume state is unknown
+					// we mark volume read-only, since the volume state is unknown
 					isReadOnly = true
 				}
 			}
@@ -186,8 +195,7 @@ func (t *Topology) batchVacuumVolumeCommit(grpcDialOption grpc.DialOption, vl *V
 	}
 
 	if isCommitSuccess {
-
-		//record vacuum time of volume
+		// record vacuum time of volume
 		vl.accessLock.Lock()
 		vl.vacuumedVolumes[vid] = time.Now()
 		vl.accessLock.Unlock()
@@ -196,6 +204,7 @@ func (t *Topology) batchVacuumVolumeCommit(grpcDialOption grpc.DialOption, vl *V
 			vl.SetVolumeAvailable(dn, vid, isReadOnly, isFullCapacity)
 		}
 	}
+
 	return isCommitSuccess
 }
 
@@ -206,6 +215,7 @@ func (t *Topology) batchVacuumVolumeCleanup(grpcDialOption grpc.DialOption, vl *
 			_, err := volumeServerClient.VacuumVolumeCleanup(context.Background(), &volume_server_pb.VacuumVolumeCleanupRequest{
 				VolumeId: uint32(vid),
 			})
+
 			return err
 		})
 		if err != nil {
@@ -217,11 +227,11 @@ func (t *Topology) batchVacuumVolumeCleanup(grpcDialOption grpc.DialOption, vl *
 }
 
 func (t *Topology) Vacuum(grpcDialOption grpc.DialOption, garbageThreshold float64, maxParallelVacuumPerServer int, volumeId uint32, collection string, preallocate int64, automatic bool) {
-
 	// if there is vacuum going on, return immediately
 	swapped := atomic.CompareAndSwapInt64(&t.vacuumLockCounter, 0, 1)
 	if !swapped {
 		glog.V(0).Infof("Vacuum is already running")
+
 		return
 	}
 	defer atomic.StoreInt64(&t.vacuumLockCounter, 0)
@@ -256,13 +266,13 @@ func (t *Topology) Vacuum(grpcDialOption grpc.DialOption, garbageThreshold float
 		}
 		if automatic && t.isDisableVacuum {
 			glog.V(0).Infof("Vacuum is disabled")
+
 			break
 		}
 	}
 }
 
 func (t *Topology) vacuumOneVolumeLayout(grpcDialOption grpc.DialOption, volumeLayout *VolumeLayout, c *Collection, garbageThreshold float64, maxParallelVacuumPerServer int, preallocate int64, automatic bool) {
-
 	volumeLayout.accessLock.RLock()
 	todoVolumeMap := make(map[needle.VolumeId]*VolumeLocationList)
 	for vid, locationList := range volumeLayout.vid2location {
@@ -295,11 +305,13 @@ func (t *Topology) vacuumOneVolumeLayout(grpcDialOption grpc.DialOption, volumeL
 				limiterLock.Unlock()
 				if quota <= 0 {
 					hasEnoughQuota = false
+
 					break
 				}
 			}
 			if !hasEnoughQuota {
 				pendingVolumeMap[vid] = locationList
+
 				continue
 			}
 
@@ -335,7 +347,6 @@ func (t *Topology) vacuumOneVolumeLayout(grpcDialOption grpc.DialOption, volumeL
 	}
 
 	wg.Wait()
-
 }
 
 func (t *Topology) vacuumOneVolumeId(grpcDialOption grpc.DialOption, volumeLayout *VolumeLayout, c *Collection, garbageThreshold float64, locationList *VolumeLocationList, vid needle.VolumeId, preallocate int64) {
@@ -349,6 +360,7 @@ func (t *Topology) vacuumOneVolumeId(grpcDialOption grpc.DialOption, volumeLayou
 	}
 	if !isEnoughCopies {
 		glog.Warningf("skip vacuuming: not enough copies for volume:%d", vid)
+
 		return
 	}
 

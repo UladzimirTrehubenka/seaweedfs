@@ -35,6 +35,7 @@ func (s *SuperBlock) BlockSize() int {
 	case needle.Version2, needle.Version3:
 		return SuperBlockSize + int(s.ExtraSize)
 	}
+
 	return SuperBlockSize
 }
 

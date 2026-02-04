@@ -1,6 +1,8 @@
 package balance
 
 import (
+	"slices"
+
 	"github.com/seaweedfs/seaweedfs/weed/worker/tasks/base"
 	"github.com/seaweedfs/seaweedfs/weed/worker/types"
 )
@@ -25,11 +27,8 @@ func Scheduling(task *types.TaskInput, runningTasks []*types.TaskInput, availabl
 	// Check if we have available workers
 	availableWorkerCount := 0
 	for _, worker := range availableWorkers {
-		for _, capability := range worker.Capabilities {
-			if capability == types.TaskTypeBalance {
-				availableWorkerCount++
-				break
-			}
+		if slices.Contains(worker.Capabilities, types.TaskTypeBalance) {
+			availableWorkerCount++
 		}
 	}
 

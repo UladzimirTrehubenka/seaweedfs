@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -87,7 +88,7 @@ func validateSSEKMSCopyRequirements(srcMetadata map[string][]byte, headers http.
 		if keyID != "" && !isValidKMSKeyID(keyID) {
 			return &CopyValidationError{
 				Code:    s3err.ErrKMSKeyNotFound,
-				Message: fmt.Sprintf("Invalid KMS key ID format: %s", keyID),
+				Message: "Invalid KMS key ID format: " + keyID,
 			}
 		}
 	}
@@ -173,7 +174,7 @@ func validateSSECCopyHeaderCompleteness(headers http.Header) error {
 	if algorithm != "AES256" {
 		return &CopyValidationError{
 			Code:    s3err.ErrInvalidRequest,
-			Message: fmt.Sprintf("Unsupported SSE-C algorithm: %s", algorithm),
+			Message: "Unsupported SSE-C algorithm: " + algorithm,
 		}
 	}
 
@@ -211,7 +212,7 @@ func validateSSECHeaderCompleteness(headers http.Header) error {
 	if algorithm != "AES256" {
 		return &CopyValidationError{
 			Code:    s3err.ErrInvalidRequest,
-			Message: fmt.Sprintf("Unsupported SSE-C algorithm: %s", algorithm),
+			Message: "Unsupported SSE-C algorithm: " + algorithm,
 		}
 	}
 
@@ -237,8 +238,9 @@ func validateEncryptionContext(contextHeader string) error {
 	// Implementation would decode base64 and parse JSON
 	// For now, just check it's not empty
 	if contextHeader == "" {
-		return fmt.Errorf("encryption context cannot be empty")
+		return errors.New("encryption context cannot be empty")
 	}
+
 	return nil
 }
 
@@ -289,8 +291,10 @@ func ValidateCopyDestination(dstBucket, dstObject string) error {
 
 // MapCopyValidationError maps validation errors to appropriate S3 error codes
 func MapCopyValidationError(err error) s3err.ErrorCode {
-	if validationErr, ok := err.(*CopyValidationError); ok {
+	validationErr := &CopyValidationError{}
+	if errors.As(err, &validationErr) {
 		return validationErr.Code
 	}
+
 	return s3err.ErrInvalidRequest
 }

@@ -11,8 +11,9 @@ import (
 	"strings"
 	"sync"
 
-	util "github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/spf13/viper"
+
+	util "github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 var (
@@ -27,6 +28,7 @@ type HTTPClient struct {
 
 func (httpClient *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 	req.URL.Scheme = httpClient.GetHttpScheme()
+
 	return httpClient.Client.Do(req)
 }
 
@@ -35,6 +37,7 @@ func (httpClient *HTTPClient) Get(url string) (resp *http.Response, err error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return httpClient.Client.Get(url)
 }
 
@@ -43,6 +46,7 @@ func (httpClient *HTTPClient) Post(url, contentType string, body io.Reader) (res
 	if err != nil {
 		return nil, err
 	}
+
 	return httpClient.Client.Post(url, contentType, body)
 }
 
@@ -51,6 +55,7 @@ func (httpClient *HTTPClient) PostForm(url string, data url.Values) (resp *http.
 	if err != nil {
 		return nil, err
 	}
+
 	return httpClient.Client.PostForm(url, data)
 }
 
@@ -59,6 +64,7 @@ func (httpClient *HTTPClient) Head(url string) (resp *http.Response, err error) 
 	if err != nil {
 		return nil, err
 	}
+
 	return httpClient.Client.Head(url)
 }
 func (httpClient *HTTPClient) CloseIdleConnections() {
@@ -73,13 +79,14 @@ func (httpClient *HTTPClient) GetHttpScheme() string {
 	if httpClient.expectHttpsScheme {
 		return "https"
 	}
+
 	return "http"
 }
 
 func (httpClient *HTTPClient) NormalizeHttpScheme(rawURL string) (string, error) {
 	expectedScheme := httpClient.GetHttpScheme()
 
-	if !(strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://")) {
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		return expectedScheme + "://" + rawURL, nil
 	}
 
@@ -91,6 +98,7 @@ func (httpClient *HTTPClient) NormalizeHttpScheme(rawURL string) (string, error)
 	if expectedScheme != parsedURL.Scheme {
 		parsedURL.Scheme = expectedScheme
 	}
+
 	return parsedURL.String(), nil
 }
 
@@ -140,16 +148,19 @@ func NewHttpClient(clientName ClientName, opts ...HttpClientOpt) (*HTTPClient, e
 	for _, opt := range opts {
 		opt(&httpClient)
 	}
+
 	return &httpClient, nil
 }
 
 func getStringOptionFromSecurityConfiguration(clientName ClientName, stringOptionName string) string {
 	util.LoadSecurityConfiguration()
+
 	return viper.GetString(fmt.Sprintf("https.%s.%s", clientName.LowerCaseString(), stringOptionName))
 }
 
 func getBoolOptionFromSecurityConfiguration(clientName ClientName, boolOptionName string) bool {
 	util.LoadSecurityConfiguration()
+
 	return viper.GetBool(fmt.Sprintf("https.%s.%s", clientName.LowerCaseString(), boolOptionName))
 }
 
@@ -163,8 +174,10 @@ func getFileContentFromSecurityConfiguration(clientName ClientName, fileType str
 		if err != nil {
 			return nil, fileName, err
 		}
+
 		return fileContent, fileName, err
 	}
+
 	return nil, "", nil
 }
 
@@ -177,10 +190,12 @@ func getClientCertPair(clientName ClientName) (*tls.Certificate, error) {
 	if certFileName != "" && keyFileName != "" {
 		clientCert, err := tls.LoadX509KeyPair(certFileName, keyFileName)
 		if err != nil {
-			return nil, fmt.Errorf("error loading client certificate and key: %s", err)
+			return nil, fmt.Errorf("error loading client certificate and key: %w", err)
 		}
+
 		return &clientCert, nil
 	}
+
 	return nil, fmt.Errorf("error loading key pair: key `%s` and certificate `%s`", keyFileName, certFileName)
 }
 
@@ -198,5 +213,6 @@ func createHTTPClientCertPool(certContent []byte, fileName string) (*x509.CertPo
 	if !ok {
 		return nil, fmt.Errorf("error processing certificate in %s", fileName)
 	}
+
 	return certPool, nil
 }

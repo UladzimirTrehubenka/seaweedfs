@@ -14,12 +14,14 @@ type TestBaseConfig struct {
 
 type TestTaskConfig struct {
 	TestBaseConfig
+
 	TaskSpecificField    float64 `json:"task_specific_field"`
 	AnotherSpecificField string  `json:"another_specific_field"`
 }
 
 type TestNestedConfig struct {
 	TestBaseConfig
+
 	NestedStruct struct {
 		NestedField string `json:"nested_field"`
 	} `json:"nested_struct"`
@@ -41,7 +43,7 @@ func TestStructToMap_WithEmbeddedStruct(t *testing.T) {
 	result := StructToMap(config)
 
 	// Verify all fields are present
-	expectedFields := map[string]interface{}{
+	expectedFields := map[string]any{
 		"enabled":                true,
 		"scan_interval_seconds":  1800,
 		"max_concurrent":         3,
@@ -112,7 +114,7 @@ func TestStructToMap_WithNestedStruct(t *testing.T) {
 
 func TestMapToStruct_WithEmbeddedStruct(t *testing.T) {
 	// Test data with all fields including embedded struct fields
-	data := map[string]interface{}{
+	data := map[string]any{
 		"enabled":                true,
 		"scan_interval_seconds":  2400,
 		"max_concurrent":         5,
@@ -152,7 +154,7 @@ func TestMapToStruct_WithEmbeddedStruct(t *testing.T) {
 
 func TestMapToStruct_PartialData(t *testing.T) {
 	// Test with only some fields present (simulating form data)
-	data := map[string]interface{}{
+	data := map[string]any{
 		"enabled":             false,
 		"max_concurrent":      2,
 		"task_specific_field": 0.30,
@@ -259,7 +261,7 @@ func TestStructToMap_NilPointer(t *testing.T) {
 }
 
 func TestMapToStruct_InvalidInput(t *testing.T) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"enabled": "not_a_bool", // Wrong type
 	}
 
@@ -272,7 +274,7 @@ func TestMapToStruct_InvalidInput(t *testing.T) {
 }
 
 func TestMapToStruct_NonPointer(t *testing.T) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"enabled": true,
 	}
 
@@ -296,14 +298,13 @@ func BenchmarkStructToMap(b *testing.B) {
 		AnotherSpecificField: "benchmark_test",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = StructToMap(config)
 	}
 }
 
 func BenchmarkMapToStruct(b *testing.B) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"enabled":                true,
 		"scan_interval_seconds":  1800,
 		"max_concurrent":         3,
@@ -311,8 +312,7 @@ func BenchmarkMapToStruct(b *testing.B) {
 		"another_specific_field": "benchmark_test",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		config := &TestTaskConfig{}
 		_ = MapToStruct(data, config)
 	}
@@ -329,8 +329,7 @@ func BenchmarkRoundTrip(b *testing.B) {
 		AnotherSpecificField: "benchmark_test",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		dataMap := StructToMap(original)
 		roundTrip := &TestTaskConfig{}
 		_ = MapToStruct(dataMap, roundTrip)

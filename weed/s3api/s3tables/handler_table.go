@@ -15,43 +15,49 @@ import (
 
 // handleCreateTable creates a new table in a namespace
 func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Request, filerClient FilerClient) error {
-
 	var req CreateTableRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	namespaceName, err := validateNamespace(req.Namespace)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.Name == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "name is required")
-		return fmt.Errorf("name is required")
+
+		return errors.New("name is required")
 	}
 
 	if req.Format == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "format is required")
-		return fmt.Errorf("format is required")
+
+		return errors.New("format is required")
 	}
 
 	// Validate format
 	if req.Format != "ICEBERG" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "only ICEBERG format is supported")
-		return fmt.Errorf("invalid format")
+
+		return errors.New("invalid format")
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -59,6 +65,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 	tableName, err := validateTableName(req.Name)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -73,6 +80,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 		if err := json.Unmarshal(data, &namespaceMetadata); err != nil {
 			return fmt.Errorf("failed to unmarshal namespace metadata: %w", err)
 		}
+
 		return nil
 	})
 
@@ -82,6 +90,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to check namespace: %v", err))
 		}
+
 		return err
 	}
 
@@ -102,7 +111,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 				return fmt.Errorf("failed to unmarshal bucket metadata: %w", err)
 			}
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket metadata: %v", err)
+			return fmt.Errorf("failed to fetch bucket metadata: %w", err)
 		}
 
 		// Fetch namespace policy if it exists
@@ -110,7 +119,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 		if err == nil {
 			namespacePolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch namespace policy: %v", err)
+			return fmt.Errorf("failed to fetch namespace policy: %w", err)
 		}
 
 		// Fetch bucket policy if it exists
@@ -118,7 +127,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 		if err == nil {
 			bucketPolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket policy: %v", err)
+			return fmt.Errorf("failed to fetch bucket policy: %w", err)
 		}
 		if tags, err := h.readTags(r.Context(), client, bucketPath); err != nil {
 			return err
@@ -131,6 +140,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to fetch policies: %v", err))
+
 		return err
 	}
 
@@ -157,6 +167,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 
 	if !nsAllowed && !bucketAllowed {
 		h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "not authorized to create table in this namespace")
+
 		return ErrAccessDenied
 	}
 
@@ -165,14 +176,17 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 	// Check if table already exists
 	err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		_, err := h.getExtendedAttribute(r.Context(), client, tablePath, ExtendedKeyMetadata)
+
 		return err
 	})
 
 	if err == nil {
 		h.writeError(w, http.StatusConflict, ErrCodeTableAlreadyExists, fmt.Sprintf("table %s already exists", tableName))
-		return fmt.Errorf("table already exists")
+
+		return errors.New("table already exists")
 	} else if !errors.Is(err, filer_pb.ErrNotFound) && !errors.Is(err, ErrAttributeNotFound) {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to check table: %v", err))
+
 		return err
 	}
 
@@ -196,6 +210,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to marshal table metadata")
+
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
@@ -232,6 +247,7 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to create table")
+
 		return err
 	}
 
@@ -243,15 +259,16 @@ func (h *S3TablesHandler) handleCreateTable(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
 // handleGetTable gets details of a table
 func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request, filerClient FilerClient) error {
-
 	var req GetTableRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -263,27 +280,32 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 		bucketName, namespace, tableName, err = parseTableFromARN(req.TableARN)
 		if err != nil {
 			h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 			return err
 		}
 	} else if req.TableBucketARN != "" && len(req.Namespace) > 0 && req.Name != "" {
 		bucketName, err = parseBucketNameFromARN(req.TableBucketARN)
 		if err != nil {
 			h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 			return err
 		}
 		namespace, err = validateNamespace(req.Namespace)
 		if err != nil {
 			h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 			return err
 		}
 		tableName, err = validateTableName(req.Name)
 		if err != nil {
 			h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 			return err
 		}
 	} else {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "either tableARN or (tableBucketARN, namespace, name) is required")
-		return fmt.Errorf("missing required parameters")
+
+		return errors.New("missing required parameters")
 	}
 
 	tablePath := GetTablePath(bucketName, namespace, tableName)
@@ -297,6 +319,7 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 		if err := json.Unmarshal(data, &metadata); err != nil {
 			return fmt.Errorf("failed to unmarshal table metadata: %w", err)
 		}
+
 		return nil
 	})
 
@@ -306,6 +329,7 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to get table: %v", err))
 		}
+
 		return err
 	}
 
@@ -326,7 +350,7 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 				return fmt.Errorf("failed to unmarshal bucket metadata: %w", err)
 			}
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket metadata: %v", err)
+			return fmt.Errorf("failed to fetch bucket metadata: %w", err)
 		}
 
 		// Fetch table policy if it exists
@@ -334,7 +358,7 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 		if err == nil {
 			tablePolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch table policy: %v", err)
+			return fmt.Errorf("failed to fetch table policy: %w", err)
 		}
 		if tags, err := h.readTags(r.Context(), client, tablePath); err != nil {
 			return err
@@ -347,7 +371,7 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 		if err == nil {
 			bucketPolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket policy: %v", err)
+			return fmt.Errorf("failed to fetch bucket policy: %w", err)
 		}
 		if tags, err := h.readTags(r.Context(), client, bucketPath); err != nil {
 			return err
@@ -360,6 +384,7 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to fetch policies: %v", err))
+
 		return err
 	}
 
@@ -385,6 +410,7 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 
 	if !tableAllowed && !bucketAllowed {
 		h.writeError(w, http.StatusNotFound, ErrCodeNoSuchTable, fmt.Sprintf("table %s not found", tableName))
+
 		return ErrAccessDenied
 	}
 
@@ -403,26 +429,29 @@ func (h *S3TablesHandler) handleGetTable(w http.ResponseWriter, r *http.Request,
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
 // handleListTables lists all tables in a namespace or bucket
 func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Request, filerClient FilerClient) error {
-
 	var req ListTablesRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -434,6 +463,7 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 	const maxTablesLimit = 1000
 	if maxTables > maxTablesLimit {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "MaxTables exceeds maximum allowed value")
+
 		return fmt.Errorf("invalid maxTables value: %d", maxTables)
 	}
 
@@ -444,6 +474,7 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 		namespaceName, err = validateNamespace(req.Namespace)
 		if err != nil {
 			h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 			return err
 		}
 	}
@@ -478,7 +509,7 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 			if err == nil {
 				namespacePolicy = string(policyData)
 			} else if !errors.Is(err, ErrAttributeNotFound) {
-				return fmt.Errorf("failed to fetch namespace policy: %v", err)
+				return fmt.Errorf("failed to fetch namespace policy: %w", err)
 			}
 
 			// Fetch bucket metadata and policy
@@ -488,14 +519,14 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 					return fmt.Errorf("failed to unmarshal bucket metadata: %w", err)
 				}
 			} else if !errors.Is(err, ErrAttributeNotFound) {
-				return fmt.Errorf("failed to fetch bucket metadata: %v", err)
+				return fmt.Errorf("failed to fetch bucket metadata: %w", err)
 			}
 
 			policyData, err = h.getExtendedAttribute(r.Context(), client, bucketPath, ExtendedKeyPolicy)
 			if err == nil {
 				bucketPolicy = string(policyData)
 			} else if !errors.Is(err, ErrAttributeNotFound) {
-				return fmt.Errorf("failed to fetch bucket policy: %v", err)
+				return fmt.Errorf("failed to fetch bucket policy: %w", err)
 			}
 			if tags, err := h.readTags(r.Context(), client, bucketPath); err != nil {
 				return err
@@ -543,7 +574,7 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 			if err == nil {
 				bucketPolicy = string(policyData)
 			} else if !errors.Is(err, ErrAttributeNotFound) {
-				return fmt.Errorf("failed to fetch bucket policy: %v", err)
+				return fmt.Errorf("failed to fetch bucket policy: %w", err)
 			}
 			if tags, err := h.readTags(r.Context(), client, bucketPath); err != nil {
 				return err
@@ -563,6 +594,7 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 
 			tables, paginationToken, err = h.listTablesInAllNamespaces(r, client, bucketName, req.Prefix, req.ContinuationToken, maxTables)
 		}
+
 		return err
 	})
 
@@ -573,9 +605,11 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 			paginationToken = ""
 		} else if isAuthError(err) {
 			h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "Access Denied")
+
 			return err
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to list tables: %v", err))
+
 			return err
 		}
 	}
@@ -586,12 +620,14 @@ func (h *S3TablesHandler) handleListTables(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
 // listTablesInNamespaceWithClient lists tables in a specific namespace
 func (h *S3TablesHandler) listTablesInNamespaceWithClient(r *http.Request, client filer_pb.SeaweedFilerClient, bucketName, namespaceName, prefix, continuationToken string, maxTables int) ([]TableSummary, string, error) {
 	namespacePath := GetNamespacePath(bucketName, namespaceName)
+
 	return h.listTablesWithClient(r, client, namespacePath, bucketName, namespaceName, prefix, continuationToken, maxTables)
 }
 
@@ -615,39 +651,40 @@ func (h *S3TablesHandler) listTablesWithClient(r *http.Request, client filer_pb.
 		for {
 			entry, respErr := resp.Recv()
 			if respErr != nil {
-				if respErr == io.EOF {
+				if errors.Is(respErr, io.EOF) {
 					break
 				}
+
 				return nil, "", respErr
 			}
-			if entry.Entry == nil {
+			if entry.GetEntry() == nil {
 				continue
 			}
 
 			// Skip the start item if it was included in the previous page
-			if len(tables) == 0 && continuationToken != "" && entry.Entry.Name == continuationToken {
+			if len(tables) == 0 && continuationToken != "" && entry.GetEntry().GetName() == continuationToken {
 				continue
 			}
 
 			hasMore = true
-			lastFileName = entry.Entry.Name
+			lastFileName = entry.GetEntry().GetName()
 
-			if !entry.Entry.IsDirectory {
+			if !entry.GetEntry().GetIsDirectory() {
 				continue
 			}
 
 			// Skip hidden entries
-			if strings.HasPrefix(entry.Entry.Name, ".") {
+			if strings.HasPrefix(entry.GetEntry().GetName(), ".") {
 				continue
 			}
 
 			// Apply prefix filter
-			if prefix != "" && !strings.HasPrefix(entry.Entry.Name, prefix) {
+			if prefix != "" && !strings.HasPrefix(entry.GetEntry().GetName(), prefix) {
 				continue
 			}
 
 			// Read table metadata from extended attribute
-			data, ok := entry.Entry.Extended[ExtendedKeyMetadata]
+			data, ok := entry.GetEntry().GetExtended()[ExtendedKeyMetadata]
 			if !ok {
 				continue
 			}
@@ -661,10 +698,10 @@ func (h *S3TablesHandler) listTablesWithClient(r *http.Request, client filer_pb.
 			// before calling this function. This filter is removed to allow policy-based sharing.
 			// The caller has already been verified to have ListTables permission for this namespace/bucket.
 
-			tableARN := h.generateTableARN(metadata.OwnerAccountID, bucketName, namespaceName+"/"+entry.Entry.Name)
+			tableARN := h.generateTableARN(metadata.OwnerAccountID, bucketName, namespaceName+"/"+entry.GetEntry().GetName())
 
 			tables = append(tables, TableSummary{
-				Name:       entry.Entry.Name,
+				Name:       entry.GetEntry().GetName(),
 				TableARN:   tableARN,
 				Namespace:  []string{namespaceName},
 				CreatedAt:  metadata.CreatedAt,
@@ -684,6 +721,7 @@ func (h *S3TablesHandler) listTablesWithClient(r *http.Request, client filer_pb.
 	if len(tables) < maxTables {
 		lastFileName = ""
 	}
+
 	return tables, lastFileName, nil
 }
 
@@ -720,23 +758,24 @@ func (h *S3TablesHandler) listTablesInAllNamespaces(r *http.Request, client file
 		for {
 			entry, respErr := resp.Recv()
 			if respErr != nil {
-				if respErr == io.EOF {
+				if errors.Is(respErr, io.EOF) {
 					break
 				}
+
 				return nil, "", respErr
 			}
-			if entry.Entry == nil {
+			if entry.GetEntry() == nil {
 				continue
 			}
 
 			hasMore = true
-			lastNamespace = entry.Entry.Name
+			lastNamespace = entry.GetEntry().GetName()
 
-			if !entry.Entry.IsDirectory || strings.HasPrefix(entry.Entry.Name, ".") {
+			if !entry.GetEntry().GetIsDirectory() || strings.HasPrefix(entry.GetEntry().GetName(), ".") {
 				continue
 			}
 
-			namespace := entry.Entry.Name
+			namespace := entry.GetEntry().GetName()
 			tableNameFilter := ""
 			if namespace == continuationNamespace {
 				tableNameFilter = startTableName
@@ -745,6 +784,7 @@ func (h *S3TablesHandler) listTablesInAllNamespaces(r *http.Request, client file
 			nsTables, nsToken, err := h.listTablesInNamespaceWithClient(r, client, bucketName, namespace, prefix, tableNameFilter, maxTables-len(tables))
 			if err != nil {
 				glog.Warningf("S3Tables: failed to list tables in namespace %s/%s: %v", bucketName, namespace, err)
+
 				continue
 			}
 
@@ -760,6 +800,7 @@ func (h *S3TablesHandler) listTablesInAllNamespaces(r *http.Request, client file
 					// If we hit the limit exactly at the end of a namespace, the next token should be the next namespace
 					paginationToken = namespace // This will start from the NEXT namespace in the outer loop
 				}
+
 				return tables, paginationToken, nil
 			}
 		}
@@ -774,33 +815,37 @@ func (h *S3TablesHandler) listTablesInAllNamespaces(r *http.Request, client file
 
 // handleDeleteTable deletes a table from a namespace
 func (h *S3TablesHandler) handleDeleteTable(w http.ResponseWriter, r *http.Request, filerClient FilerClient) error {
-
 	var req DeleteTableRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" || len(req.Namespace) == 0 || req.Name == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN, namespace, and name are required")
-		return fmt.Errorf("missing required parameters")
+
+		return errors.New("missing required parameters")
 	}
 
 	namespaceName, err := validateNamespace(req.Namespace)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	tableName, err := validateTableName(req.Name)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -879,6 +924,7 @@ func (h *S3TablesHandler) handleDeleteTable(w http.ResponseWriter, r *http.Reque
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to check table: %v", err))
 		}
+
 		return err
 	}
 
@@ -904,6 +950,7 @@ func (h *S3TablesHandler) handleDeleteTable(w http.ResponseWriter, r *http.Reque
 	})
 	if !tableAllowed && !bucketAllowed {
 		h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "not authorized to delete table")
+
 		return NewAuthError("DeleteTable", principal, "not authorized to delete table")
 	}
 
@@ -914,10 +961,12 @@ func (h *S3TablesHandler) handleDeleteTable(w http.ResponseWriter, r *http.Reque
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to delete table")
+
 		return err
 	}
 
 	h.writeJSON(w, http.StatusOK, nil)
+
 	return nil
 }
 
@@ -926,29 +975,34 @@ func (h *S3TablesHandler) handleUpdateTable(w http.ResponseWriter, r *http.Reque
 	var req UpdateTableRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" || len(req.Namespace) == 0 || req.Name == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN, namespace, and name are required")
-		return fmt.Errorf("missing required parameters")
+
+		return errors.New("missing required parameters")
 	}
 
 	namespaceName, err := validateNamespace(req.Namespace)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	tableName, err := validateTableName(req.Name)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -1014,6 +1068,7 @@ func (h *S3TablesHandler) handleUpdateTable(w http.ResponseWriter, r *http.Reque
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, err.Error())
 		}
+
 		return err
 	}
 
@@ -1042,12 +1097,14 @@ func (h *S3TablesHandler) handleUpdateTable(w http.ResponseWriter, r *http.Reque
 
 	if !tableAllowed && !bucketAllowed {
 		h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "not authorized to update table")
+
 		return NewAuthError("UpdateTable", principal, "not authorized to update table")
 	}
 
 	// Check version token if provided
 	if req.VersionToken != "" && req.VersionToken != metadata.VersionToken {
 		h.writeError(w, http.StatusConflict, ErrCodeConflict, "Version token mismatch")
+
 		return ErrVersionTokenMismatch
 	}
 
@@ -1082,6 +1139,7 @@ func (h *S3TablesHandler) handleUpdateTable(w http.ResponseWriter, r *http.Reque
 	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to marshal metadata")
+
 		return err
 	}
 
@@ -1091,6 +1149,7 @@ func (h *S3TablesHandler) handleUpdateTable(w http.ResponseWriter, r *http.Reque
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to update metadata")
+
 		return err
 	}
 
@@ -1099,5 +1158,6 @@ func (h *S3TablesHandler) handleUpdateTable(w http.ResponseWriter, r *http.Reque
 		MetadataLocation: metadata.MetadataLocation,
 		VersionToken:     metadata.VersionToken,
 	})
+
 	return nil
 }

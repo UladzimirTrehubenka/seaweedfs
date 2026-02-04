@@ -2,9 +2,12 @@ package balance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
@@ -15,12 +18,12 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/worker/types"
 	"github.com/seaweedfs/seaweedfs/weed/worker/types/base"
-	"google.golang.org/grpc"
 )
 
 // BalanceTask implements the Task interface
 type BalanceTask struct {
 	*base.BaseTask
+
 	server     string
 	volumeID   uint32
 	collection string
@@ -40,33 +43,33 @@ func NewBalanceTask(id string, server string, volumeID uint32, collection string
 // Execute implements the Task interface
 func (t *BalanceTask) Execute(ctx context.Context, params *worker_pb.TaskParams) error {
 	if params == nil {
-		return fmt.Errorf("task parameters are required")
+		return errors.New("task parameters are required")
 	}
 
 	balanceParams := params.GetBalanceParams()
 	if balanceParams == nil {
-		return fmt.Errorf("balance parameters are required")
+		return errors.New("balance parameters are required")
 	}
 
 	// Get source and destination from unified arrays
-	if len(params.Sources) == 0 {
-		return fmt.Errorf("source is required for balance task")
+	if len(params.GetSources()) == 0 {
+		return errors.New("source is required for balance task")
 	}
-	if len(params.Targets) == 0 {
-		return fmt.Errorf("target is required for balance task")
+	if len(params.GetTargets()) == 0 {
+		return errors.New("target is required for balance task")
 	}
 
-	sourceNode := params.Sources[0].Node
-	destNode := params.Targets[0].Node
+	sourceNode := params.GetSources()[0].GetNode()
+	destNode := params.GetTargets()[0].GetNode()
 
 	if sourceNode == "" {
-		return fmt.Errorf("source node is required for balance task")
+		return errors.New("source node is required for balance task")
 	}
 	if destNode == "" {
-		return fmt.Errorf("destination node is required for balance task")
+		return errors.New("destination node is required for balance task")
 	}
 
-	t.GetLogger().WithFields(map[string]interface{}{
+	t.GetLogger().WithFields(map[string]any{
 		"volume_id":   t.volumeID,
 		"source":      sourceNode,
 		"destination": destNode,
@@ -81,7 +84,7 @@ func (t *BalanceTask) Execute(ctx context.Context, params *worker_pb.TaskParams)
 	t.ReportProgress(10.0)
 	t.GetLogger().Info("Marking volume readonly for move")
 	if err := t.markVolumeReadonly(sourceServer, volumeId); err != nil {
-		return fmt.Errorf("failed to mark volume readonly: %v", err)
+		return fmt.Errorf("failed to mark volume readonly: %w", err)
 	}
 
 	// Step 2: Copy volume to destination
@@ -89,14 +92,14 @@ func (t *BalanceTask) Execute(ctx context.Context, params *worker_pb.TaskParams)
 	t.GetLogger().Info("Copying volume to destination")
 	lastAppendAtNs, err := t.copyVolume(sourceServer, targetServer, volumeId)
 	if err != nil {
-		return fmt.Errorf("failed to copy volume: %v", err)
+		return fmt.Errorf("failed to copy volume: %w", err)
 	}
 
 	// Step 3: Mount volume on target and mark it readonly
 	t.ReportProgress(60.0)
 	t.GetLogger().Info("Mounting volume on target server")
 	if err := t.mountVolume(targetServer, volumeId); err != nil {
-		return fmt.Errorf("failed to mount volume on target: %v", err)
+		return fmt.Errorf("failed to mount volume on target: %w", err)
 	}
 
 	// Step 4: Tail for updates
@@ -110,35 +113,37 @@ func (t *BalanceTask) Execute(ctx context.Context, params *worker_pb.TaskParams)
 	t.ReportProgress(90.0)
 	t.GetLogger().Info("Deleting volume from source server")
 	if err := t.deleteVolume(sourceServer, volumeId); err != nil {
-		return fmt.Errorf("failed to delete volume from source: %v", err)
+		return fmt.Errorf("failed to delete volume from source: %w", err)
 	}
 
 	t.ReportProgress(100.0)
 	glog.Infof("Balance task completed successfully: volume %d moved from %s to %s",
 		t.volumeID, t.server, destNode)
+
 	return nil
 }
 
 // Validate implements the UnifiedTask interface
 func (t *BalanceTask) Validate(params *worker_pb.TaskParams) error {
 	if params == nil {
-		return fmt.Errorf("task parameters are required")
+		return errors.New("task parameters are required")
 	}
 
 	balanceParams := params.GetBalanceParams()
 	if balanceParams == nil {
-		return fmt.Errorf("balance parameters are required")
+		return errors.New("balance parameters are required")
 	}
 
-	if params.VolumeId != t.volumeID {
-		return fmt.Errorf("volume ID mismatch: expected %d, got %d", t.volumeID, params.VolumeId)
+	if params.GetVolumeId() != t.volumeID {
+		return fmt.Errorf("volume ID mismatch: expected %d, got %d", t.volumeID, params.GetVolumeId())
 	}
 
 	// Validate that at least one source matches our server
 	found := false
-	for _, source := range params.Sources {
-		if source.Node == t.server {
+	for _, source := range params.GetSources() {
+		if source.GetNode() == t.server {
 			found = true
+
 			break
 		}
 	}
@@ -169,6 +174,7 @@ func (t *BalanceTask) markVolumeReadonly(server pb.ServerAddress, volumeId needl
 			_, err := client.VolumeMarkReadonly(context.Background(), &volume_server_pb.VolumeMarkReadonlyRequest{
 				VolumeId: uint32(volumeId),
 			})
+
 			return err
 		})
 }
@@ -190,18 +196,19 @@ func (t *BalanceTask) copyVolume(sourceServer, targetServer pb.ServerAddress, vo
 			for {
 				resp, recvErr := stream.Recv()
 				if recvErr != nil {
-					if recvErr == io.EOF {
+					if errors.Is(recvErr, io.EOF) {
 						break
 					}
+
 					return recvErr
 				}
 
-				if resp.LastAppendAtNs != 0 {
-					lastAppendAtNs = resp.LastAppendAtNs
+				if resp.GetLastAppendAtNs() != 0 {
+					lastAppendAtNs = resp.GetLastAppendAtNs()
 				} else {
 					// Report copy progress
 					glog.V(1).Infof("Volume %d copy progress: %s", volumeId,
-						util.BytesToHumanReadable(uint64(resp.ProcessedBytes)))
+						util.BytesToHumanReadable(uint64(resp.GetProcessedBytes())))
 				}
 			}
 
@@ -218,6 +225,7 @@ func (t *BalanceTask) mountVolume(server pb.ServerAddress, volumeId needle.Volum
 			_, err := client.VolumeMount(context.Background(), &volume_server_pb.VolumeMountRequest{
 				VolumeId: uint32(volumeId),
 			})
+
 			return err
 		})
 }
@@ -232,6 +240,7 @@ func (t *BalanceTask) tailVolume(sourceServer, targetServer pb.ServerAddress, vo
 				IdleTimeoutSeconds: 60, // 1 minute timeout
 				SourceVolumeServer: string(sourceServer),
 			})
+
 			return err
 		})
 }
@@ -243,6 +252,7 @@ func (t *BalanceTask) unmountVolume(server pb.ServerAddress, volumeId needle.Vol
 			_, err := client.VolumeUnmount(context.Background(), &volume_server_pb.VolumeUnmountRequest{
 				VolumeId: uint32(volumeId),
 			})
+
 			return err
 		})
 }
@@ -255,6 +265,7 @@ func (t *BalanceTask) deleteVolume(server pb.ServerAddress, volumeId needle.Volu
 				VolumeId:  uint32(volumeId),
 				OnlyEmpty: false,
 			})
+
 			return err
 		})
 }

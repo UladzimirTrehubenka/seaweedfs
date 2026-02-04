@@ -2,15 +2,17 @@ package sts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
 )
 
 // TestSecurityIssuerToProviderMapping tests the security fix that ensures JWT tokens
@@ -111,6 +113,7 @@ func createTestJWT(t *testing.T, issuer, subject string) string {
 
 	tokenString, err := token.SignedString([]byte("test-signing-key"))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -129,7 +132,7 @@ func (m *MockIdentityProviderWithIssuer) GetIssuer() string {
 	return m.issuer
 }
 
-func (m *MockIdentityProviderWithIssuer) Initialize(config interface{}) error {
+func (m *MockIdentityProviderWithIssuer) Initialize(config any) error {
 	return nil
 }
 
@@ -139,12 +142,12 @@ func (m *MockIdentityProviderWithIssuer) Authenticate(ctx context.Context, token
 		// This looks like a JWT - parse it to get the subject
 		parsedToken, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
 		if err != nil {
-			return nil, fmt.Errorf("invalid JWT token")
+			return nil, errors.New("invalid JWT token")
 		}
 
 		claims, ok := parsedToken.Claims.(jwt.MapClaims)
 		if !ok {
-			return nil, fmt.Errorf("invalid claims")
+			return nil, errors.New("invalid claims")
 		}
 
 		issuer, _ := claims["iss"].(string)
@@ -171,7 +174,7 @@ func (m *MockIdentityProviderWithIssuer) Authenticate(ctx context.Context, token
 		}, nil
 	}
 
-	return nil, fmt.Errorf("invalid token")
+	return nil, errors.New("invalid token")
 }
 
 func (m *MockIdentityProviderWithIssuer) GetUserInfo(ctx context.Context, userID string) (*providers.ExternalIdentity, error) {
@@ -189,5 +192,6 @@ func (m *MockIdentityProviderWithIssuer) ValidateToken(ctx context.Context, toke
 			Issuer:  m.issuer,
 		}, nil
 	}
-	return nil, fmt.Errorf("invalid token")
+
+	return nil, errors.New("invalid token")
 }

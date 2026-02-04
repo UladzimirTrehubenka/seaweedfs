@@ -2,7 +2,7 @@ package util
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	UnsupportedCompression = fmt.Errorf("unsupported compression")
+	UnsupportedCompression = errors.New("unsupported compression")
 )
 
 func MaybeGzipData(input []byte) []byte {
@@ -24,17 +24,20 @@ func MaybeGzipData(input []byte) []byte {
 	if len(gzipped)*10 > len(input)*9 {
 		return input
 	}
+
 	return gzipped
 }
 
 func MaybeDecompressData(input []byte) []byte {
 	uncompressed, err := DecompressData(input)
 	if err != nil {
-		if err != UnsupportedCompression {
+		if !errors.Is(err, UnsupportedCompression) {
 			glog.Errorf("decompressed data: %v", err)
 		}
+
 		return input
 	}
+
 	return uncompressed
 }
 
@@ -44,6 +47,7 @@ func GzipData(input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return w.Bytes(), nil
 }
 
@@ -53,6 +57,7 @@ func ungzipData(input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return w.Bytes(), nil
 }
 
@@ -72,6 +77,7 @@ func IsGzippedContent(data []byte) bool {
 	if len(data) < 2 {
 		return false
 	}
+
 	return data[0] == 31 && data[1] == 139
 }
 
@@ -99,7 +105,6 @@ func IsZstdContent(data []byte) bool {
 /*
 * Default not to compressed since compression can be done on client side.
  */func IsCompressableFileType(ext, mtype string) (shouldBeCompressed, iAmSure bool) {
-
 	// text
 	if strings.HasPrefix(mtype, "text/") {
 		return true, true
@@ -142,8 +147,8 @@ func IsZstdContent(data []byte) bool {
 		}
 	}
 
-	if strings.HasPrefix(mtype, "audio/") {
-		switch strings.TrimPrefix(mtype, "audio/") {
+	if after, ok := strings.CutPrefix(mtype, "audio/"); ok {
+		switch after {
 		case "wave", "wav", "x-wav", "x-pn-wav":
 			return true, true
 		}

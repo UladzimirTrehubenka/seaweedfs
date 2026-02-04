@@ -19,7 +19,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Sid:    "AllowOIDC",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAnyValue:StringEquals": {
 							"oidc:roles": []string{"Dev.SeaweedFS.TestBucket.ReadWrite", "Dev.SeaweedFS.Admin"},
 						},
@@ -33,7 +33,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "web-identity-user",
 			Action:    "sts:AssumeRoleWithWebIdentity",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"Dev.SeaweedFS.Admin", "OtherRole"},
 			},
 		}
@@ -46,7 +46,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "web-identity-user",
 			Action:    "sts:AssumeRoleWithWebIdentity",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"OtherRole1", "OtherRole2"},
 			},
 		}
@@ -59,7 +59,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "web-identity-user",
 			Action:    "sts:AssumeRoleWithWebIdentity",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{},
 			},
 		}
@@ -76,7 +76,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Sid:    "AllowOIDCAll",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:StringEquals": {
 							"oidc:roles": []string{"RoleA", "RoleB", "RoleC"},
 						},
@@ -90,7 +90,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "web-identity-user",
 			Action:    "sts:AssumeRoleWithWebIdentity",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"RoleA", "RoleB"},
 			},
 		}
@@ -103,7 +103,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "web-identity-user",
 			Action:    "sts:AssumeRoleWithWebIdentity",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{"RoleA", "RoleD"},
 			},
 		}
@@ -116,7 +116,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "web-identity-user",
 			Action:    "sts:AssumeRoleWithWebIdentity",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"oidc:roles": []string{},
 			},
 		}
@@ -133,7 +133,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Sid:    "AllowNumericAll",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRole"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:NumericEquals": {
 							"aws:MultiFactorAuthAge": []string{"3600", "7200"},
 						},
@@ -147,7 +147,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:MultiFactorAuthAge": []string{},
 			},
 		}
@@ -164,7 +164,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Sid:    "AllowBoolAll",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRole"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:Bool": {
 							"aws:SecureTransport": "true",
 						},
@@ -178,8 +178,8 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
-				"aws:SecureTransport": []interface{}{},
+			RequestContext: map[string]any{
+				"aws:SecureTransport": []any{},
 			},
 		}
 		resultEmpty, err := engine.EvaluateTrustPolicy(context.Background(), policy, evalCtxEmpty)
@@ -195,7 +195,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Sid:    "AllowDateAll",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRole"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:DateGreaterThan": {
 							"aws:CurrentTime": "2020-01-01T00:00:00Z",
 						},
@@ -209,8 +209,8 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
-				"aws:CurrentTime": []interface{}{},
+			RequestContext: map[string]any{
+				"aws:CurrentTime": []any{},
 			},
 		}
 		resultEmpty, err := engine.EvaluateTrustPolicy(context.Background(), policy, evalCtxEmpty)
@@ -226,7 +226,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Sid:    "AllowDateStrings",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRole"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:DateGreaterThan": {
 							"aws:CurrentTime": "2020-01-01T00:00:00Z",
 						},
@@ -239,7 +239,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:CurrentTime": []string{"2021-01-01T00:00:00Z", "2022-01-01T00:00:00Z"},
 			},
 		}
@@ -256,7 +256,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Sid:    "AllowBoolStrings",
 					Effect: "Allow",
 					Action: []string{"sts:AssumeRole"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:Bool": {
 							"aws:SecureTransport": "true",
 						},
@@ -269,7 +269,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:SecureTransport": []string{"true", "true"},
 			},
 		}
@@ -287,7 +287,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"arn:aws:s3:::bucket/*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"StringEqualsIgnoreCase": {
 							"s3:prefix": "${aws:username}/",
 						},
@@ -303,7 +303,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/ALICE/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"s3:prefix":    "ALICE/",
 				"aws:username": "alice",
 			},
@@ -323,7 +323,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"arn:aws:s3:::bucket/*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"StringLike": {
 							"s3:prefix": "Project/*",
 						},
@@ -340,7 +340,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/Project/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"s3:prefix": "Project/data",
 			},
 		}
@@ -353,7 +353,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/project/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"s3:prefix": "project/data", // lowercase 'p'
 			},
 		}
@@ -371,7 +371,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"sts:AssumeRole"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:NumericNotEquals": {
 							"aws:MultiFactorAuthAge": []string{"3600", "7200"},
 						},
@@ -388,7 +388,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:MultiFactorAuthAge": []string{"3600", "1800"},
 			},
 		}
@@ -401,7 +401,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:MultiFactorAuthAge": []string{"1800", "900"},
 			},
 		}
@@ -419,7 +419,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"sts:AssumeRole"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:DateNotEquals": {
 							"aws:CurrentTime": []string{"2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z"},
 						},
@@ -436,7 +436,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "sts:AssumeRole",
 			Resource:  "arn:aws:iam::role/test-role",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:CurrentTime": []string{"2024-01-01T00:00:00Z", "2024-01-03T00:00:00Z"},
 			},
 		}
@@ -454,7 +454,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAllValues:IpAddress": {
 							"aws:SourceIp": []string{"192.168.1.0/24", "10.0.0.1"},
 						},
@@ -471,7 +471,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:SourceIp": []string{"192.168.1.10", "10.0.0.1"},
 			},
 		}
@@ -484,7 +484,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:SourceIp": []string{"192.168.1.10", "172.16.0.1"},
 			},
 		}
@@ -501,7 +501,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"ForAnyValue:IpAddress": {
 							"aws:SourceIp": []string{"192.168.1.0/24"},
 						},
@@ -516,7 +516,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:SourceIp": []string{"192.168.1.10", "172.16.0.1"},
 			},
 		}
@@ -534,7 +534,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"IpAddress": {
 							"aws:SourceIp": "192.168.1.1",
 						},
@@ -550,7 +550,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:SourceIp": "192.168.1.1",
 			},
 		}
@@ -562,7 +562,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:SourceIp": "10.0.0.1",
 			},
 		}
@@ -580,7 +580,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"Bool": {
 							"aws:SecureTransport": []string{"true", "false"},
 						},
@@ -596,7 +596,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"aws:SecureTransport": "true",
 			},
 		}
@@ -614,7 +614,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"StringEqualsIgnoreCase": {
 							"s3:x-amz-server-side-encryption": []string{"AES256", "aws:kms"},
 						},
@@ -630,7 +630,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"s3:x-amz-server-side-encryption": "aes256",
 			},
 		}
@@ -648,7 +648,7 @@ func TestConditionSetOperators(t *testing.T) {
 					Effect:   "Allow",
 					Action:   []string{"s3:GetObject"},
 					Resource: []string{"*"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"IpAddress": {
 							"custom:VpcIp": "10.0.0.0/16",
 						},
@@ -664,7 +664,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"custom:VpcIp": "10.0.5.1",
 			},
 		}
@@ -676,7 +676,7 @@ func TestConditionSetOperators(t *testing.T) {
 			Principal: "user",
 			Action:    "s3:GetObject",
 			Resource:  "arn:aws:s3:::bucket/file.txt",
-			RequestContext: map[string]interface{}{
+			RequestContext: map[string]any{
 				"custom:VpcIp": "192.168.1.1",
 			},
 		}

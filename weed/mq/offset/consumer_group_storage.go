@@ -3,6 +3,7 @@ package offset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -69,6 +70,7 @@ func (f *FilerConsumerGroupOffsetStorage) SaveConsumerGroupOffset(t topic.Topic,
 		OffsetType:  schema_pb.OffsetType_EXACT_OFFSET.String(),
 		CommittedAt: time.Now().UnixMilli(),
 	}
+
 	return f.SaveConsumerGroupPosition(t, p, consumerGroup, position)
 }
 
@@ -76,8 +78,8 @@ func (f *FilerConsumerGroupOffsetStorage) SaveConsumerGroupOffset(t topic.Topic,
 // Stores as JSON: /topics/{namespace}/{topic}/{version}/{partition}/consumers/{consumer_group}.offset
 func (f *FilerConsumerGroupOffsetStorage) SaveConsumerGroupPosition(t topic.Topic, p topic.Partition, consumerGroup string, position *ConsumerGroupPosition) error {
 	partitionDir := topic.PartitionDir(t, p)
-	consumersDir := fmt.Sprintf("%s/consumers", partitionDir)
-	offsetFileName := fmt.Sprintf("%s.offset", consumerGroup)
+	consumersDir := partitionDir + "/consumers"
+	offsetFileName := consumerGroup + ".offset"
 
 	// Marshal position to JSON
 	jsonBytes, err := json.Marshal(position)
@@ -97,14 +99,15 @@ func (f *FilerConsumerGroupOffsetStorage) LoadConsumerGroupOffset(t topic.Topic,
 	if err != nil {
 		return -1, err
 	}
+
 	return position.Value, nil
 }
 
 // LoadConsumerGroupPosition loads the committed position for a consumer group
 func (f *FilerConsumerGroupOffsetStorage) LoadConsumerGroupPosition(t topic.Topic, p topic.Partition, consumerGroup string) (*ConsumerGroupPosition, error) {
 	partitionDir := topic.PartitionDir(t, p)
-	consumersDir := fmt.Sprintf("%s/consumers", partitionDir)
-	offsetFileName := fmt.Sprintf("%s.offset", consumerGroup)
+	consumersDir := partitionDir + "/consumers"
+	offsetFileName := consumerGroup + ".offset"
 
 	var position *ConsumerGroupPosition
 	err := f.filerClientAccessor.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
@@ -132,7 +135,7 @@ func (f *FilerConsumerGroupOffsetStorage) LoadConsumerGroupPosition(t topic.Topi
 // ListConsumerGroups returns all consumer groups for a topic partition
 func (f *FilerConsumerGroupOffsetStorage) ListConsumerGroups(t topic.Topic, p topic.Partition) ([]string, error) {
 	partitionDir := topic.PartitionDir(t, p)
-	consumersDir := fmt.Sprintf("%s/consumers", partitionDir)
+	consumersDir := partitionDir + "/consumers"
 	var consumerGroups []string
 
 	err := f.filerClientAccessor.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
@@ -147,22 +150,24 @@ func (f *FilerConsumerGroupOffsetStorage) ListConsumerGroups(t topic.Topic, p to
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
+
 				return err
 			}
 
-			entry := resp.Entry
-			if entry != nil && !entry.IsDirectory && entry.Name != "" {
+			entry := resp.GetEntry()
+			if entry != nil && !entry.GetIsDirectory() && entry.GetName() != "" {
 				// Check if this is a consumer group offset file (ends with .offset)
-				if len(entry.Name) > 7 && entry.Name[len(entry.Name)-7:] == ".offset" {
+				if len(entry.GetName()) > 7 && entry.GetName()[len(entry.GetName())-7:] == ".offset" {
 					// Extract consumer group name (remove .offset suffix)
-					consumerGroup := entry.Name[:len(entry.Name)-7]
+					consumerGroup := entry.GetName()[:len(entry.GetName())-7]
 					consumerGroups = append(consumerGroups, consumerGroup)
 				}
 			}
 		}
+
 		return nil
 	})
 
@@ -172,8 +177,8 @@ func (f *FilerConsumerGroupOffsetStorage) ListConsumerGroups(t topic.Topic, p to
 // DeleteConsumerGroupOffset removes the offset file for a consumer group
 func (f *FilerConsumerGroupOffsetStorage) DeleteConsumerGroupOffset(t topic.Topic, p topic.Partition, consumerGroup string) error {
 	partitionDir := topic.PartitionDir(t, p)
-	consumersDir := fmt.Sprintf("%s/consumers", partitionDir)
-	offsetFileName := fmt.Sprintf("%s.offset", consumerGroup)
+	consumersDir := partitionDir + "/consumers"
+	offsetFileName := consumerGroup + ".offset"
 
 	return f.filerClientAccessor.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		return filer_pb.DoRemove(context.Background(), client, consumersDir, offsetFileName, false, false, false, false, nil)

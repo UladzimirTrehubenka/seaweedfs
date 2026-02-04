@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/mail"
 	"time"
@@ -56,11 +57,11 @@ type ExternalIdentity struct {
 // Validate validates the external identity structure
 func (e *ExternalIdentity) Validate() error {
 	if e.UserID == "" {
-		return fmt.Errorf("user ID is required")
+		return errors.New("user ID is required")
 	}
 
 	if e.Provider == "" {
-		return fmt.Errorf("provider is required")
+		return errors.New("provider is required")
 	}
 
 	if e.Email != "" {
@@ -125,6 +126,7 @@ func (c *TokenClaims) GetClaimString(key string) (string, bool) {
 			return str, true
 		}
 	}
+
 	return "", false
 }
 
@@ -141,12 +143,14 @@ func (c *TokenClaims) GetClaimStringSlice(key string) ([]string, bool) {
 					result = append(result, str)
 				}
 			}
+
 			return result, len(result) > 0
 		case string:
 			// Single string can be treated as slice
 			return []string{v}, true
 		}
 	}
+
 	return nil, false
 }
 
@@ -196,6 +200,7 @@ type MappingRule struct {
 func (r *MappingRule) Matches(claims *TokenClaims) bool {
 	if r.Claim == "" || r.Value == "" {
 		glog.V(3).Infof("Rule invalid: claim=%s, value=%s", r.Claim, r.Value)
+
 		return false
 	}
 
@@ -209,16 +214,19 @@ func (r *MappingRule) Matches(claims *TokenClaims) bool {
 				glog.V(3).Infof("Checking if '%s' matches rule value '%s'", val, r.Value)
 				if r.matchValue(val) {
 					glog.V(3).Infof("Match found: '%s' matches '%s'", val, r.Value)
+
 					return true
 				}
 			}
 		} else {
 			glog.V(3).Infof("Claim '%s' not found in any format", r.Claim)
 		}
+
 		return false
 	}
 
 	glog.V(3).Infof("Claim '%s' found as string: '%s'", r.Claim, claimValue)
+
 	return r.matchValue(claimValue)
 }
 
@@ -227,5 +235,6 @@ func (r *MappingRule) Matches(claims *TokenClaims) bool {
 func (r *MappingRule) matchValue(value string) bool {
 	matched := policy.AwsWildcardMatch(r.Value, value)
 	glog.V(3).Infof("AWS IAM pattern match result: '%s' matches '%s' = %t", value, r.Value, matched)
+
 	return matched
 }

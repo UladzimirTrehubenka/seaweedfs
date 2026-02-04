@@ -5,10 +5,11 @@ import (
 	"time"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+	"github.com/shirou/gopsutil/v4/cpu"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"github.com/shirou/gopsutil/v4/cpu"
 )
 
 // LocalTopicManager manages topics on local broker
@@ -41,6 +42,7 @@ func (manager *LocalTopicManager) StartIdlePartitionCleanup(ctx context.Context,
 			select {
 			case <-ctx.Done():
 				glog.V(1).Info("Idle partition cleanup stopped")
+
 				return
 			case <-manager.cleanupTimer.C:
 				manager.cleanupIdlePartitions(idleTimeout)
@@ -64,7 +66,7 @@ func (manager *LocalTopicManager) cleanupIdlePartitions(idleTimeout time.Duratio
 
 			if partition.ShouldCleanup(idleTimeout) {
 				glog.V(1).Infof("Cleaning up idle partition %s (idle for %v, publishers=%d, subscribers=%d)",
-					partition.Partition.String(),
+					partition.String(),
 					partition.GetIdleDuration(),
 					partition.Publishers.Size(),
 					partition.Subscribers.Size())
@@ -115,6 +117,7 @@ func (manager *LocalTopicManager) GetLocalPartition(topic Topic, partition Parti
 		return nil
 	}
 	result := localTopic.findPartition(partition)
+
 	return result
 }
 
@@ -128,6 +131,7 @@ func (manager *LocalTopicManager) RemoveLocalPartition(topic Topic, partition Pa
 	if !ok {
 		return false
 	}
+
 	return localTopic.removePartition(partition)
 }
 
@@ -136,6 +140,7 @@ func (manager *LocalTopicManager) ClosePublishers(topic Topic, unixTsNs int64) (
 	if !ok {
 		return false
 	}
+
 	return localTopic.closePartitionPublishers(unixTsNs)
 }
 
@@ -144,6 +149,7 @@ func (manager *LocalTopicManager) CloseSubscribers(topic Topic, unixTsNs int64) 
 	if !ok {
 		return false
 	}
+
 	return localTopic.closePartitionSubscribers(unixTsNs)
 }
 
@@ -153,12 +159,14 @@ func (manager *LocalTopicManager) ListTopicsInMemory() []Topic {
 	for item := range manager.topics.IterBuffered() {
 		topics = append(topics, item.Val.Topic)
 	}
+
 	return topics
 }
 
 // TopicExistsInMemory checks if a topic exists in memory (not flushed data)
 func (manager *LocalTopicManager) TopicExistsInMemory(topic Topic) bool {
 	_, exists := manager.topics.Get(topic.String())
+
 	return exists
 }
 
@@ -186,7 +194,7 @@ func (manager *LocalTopicManager) CollectStats(duration time.Duration) *mq_pb.Br
 					Namespace: string(localTopic.Namespace),
 					Name:      localTopic.Name,
 				},
-				Partition:       localPartition.Partition.ToPbPartition(),
+				Partition:       localPartition.ToPbPartition(),
 				PublisherCount:  int32(localPartition.Publishers.Size()),
 				SubscriberCount: int32(localPartition.Subscribers.Size()),
 				Follower:        localPartition.Follower,
@@ -196,7 +204,6 @@ func (manager *LocalTopicManager) CollectStats(duration time.Duration) *mq_pb.Br
 	})
 
 	return stats
-
 }
 
 func (manager *LocalTopicManager) WaitUntilNoPublishers(topic Topic) {

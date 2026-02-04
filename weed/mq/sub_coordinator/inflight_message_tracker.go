@@ -62,6 +62,7 @@ func (imt *InflightMessageTracker) AcknowledgeMessage(key []byte, tsNs int64) bo
 	delete(imt.messages, string(key))
 	// Remove the specific timestamp from the ring buffer.
 	imt.timestamps.AckTimestamp(tsNs)
+
 	return true
 }
 
@@ -74,6 +75,7 @@ func (imt *InflightMessageTracker) IsInflight(key []byte) bool {
 	imt.mu.Lock()
 	defer imt.mu.Unlock()
 	_, found := imt.messages[string(key)]
+
 	return found
 }
 
@@ -85,6 +87,7 @@ func (imt *InflightMessageTracker) Cleanup() int {
 	count := len(imt.messages)
 	// Clear all in-flight messages
 	imt.messages = make(map[string]int64)
+
 	return count
 }
 
@@ -114,6 +117,7 @@ func newBuffer(capacity int) []*TimestampStatus {
 	for i := range buffer {
 		buffer[i] = &TimestampStatus{}
 	}
+
 	return buffer
 }
 
@@ -123,7 +127,7 @@ func (rb *RingBuffer) EnflightTimestamp(timestamp int64) {
 		rb.size++
 	} else {
 		newBuf := newBuffer(2 * len(rb.buffer))
-		for i := 0; i < rb.size; i++ {
+		for i := range rb.size {
 			newBuf[i] = rb.buffer[(rb.head+len(rb.buffer)-rb.size+i)%len(rb.buffer)]
 		}
 		rb.buffer = newBuf

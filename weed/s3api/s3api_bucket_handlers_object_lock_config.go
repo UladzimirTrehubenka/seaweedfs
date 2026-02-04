@@ -29,6 +29,7 @@ func (s3a *S3ApiServer) PutObjectLockConfigurationHandler(w http.ResponseWriter,
 			// This matches AWS S3 behavior and s3-tests expectations (409 Conflict)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInvalidBucketState)
 		}
+
 		return
 	}
 
@@ -37,6 +38,7 @@ func (s3a *S3ApiServer) PutObjectLockConfigurationHandler(w http.ResponseWriter,
 	if err != nil {
 		glog.Errorf("PutObjectLockConfigurationHandler: failed to parse object lock config: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
@@ -44,6 +46,7 @@ func (s3a *S3ApiServer) PutObjectLockConfigurationHandler(w http.ResponseWriter,
 	if err := ValidateObjectLockConfiguration(config); err != nil {
 		glog.Errorf("PutObjectLockConfigurationHandler: invalid object lock config: %v", err)
 		s3err.WriteErrorResponse(w, r, mapValidationErrorToS3Error(err))
+
 		return
 	}
 
@@ -51,12 +54,14 @@ func (s3a *S3ApiServer) PutObjectLockConfigurationHandler(w http.ResponseWriter,
 	errCode := s3a.updateBucketConfig(bucket, func(bucketConfig *BucketConfig) error {
 		// Set the cached Object Lock configuration
 		bucketConfig.ObjectLockConfig = config
+
 		return nil
 	})
 
 	if errCode != s3err.ErrNone {
 		glog.Errorf("PutObjectLockConfigurationHandler: failed to set object lock config: %v", errCode)
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -79,6 +84,7 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 	if errCode != s3err.ErrNone {
 		glog.Errorf("GetObjectLockConfigurationHandler: failed to get bucket config: %v", errCode)
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -94,6 +100,7 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 		if err != nil {
 			glog.Errorf("GetObjectLockConfigurationHandler: failed to marshal cached Object Lock config: %v", err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 			return
 		}
 
@@ -102,10 +109,12 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte(xml.Header)); err != nil {
 			glog.Errorf("GetObjectLockConfigurationHandler: failed to write XML header: %v", err)
+
 			return
 		}
 		if _, err := w.Write(marshaledXML); err != nil {
 			glog.Errorf("GetObjectLockConfigurationHandler: failed to write config XML: %v", err)
+
 			return
 		}
 
@@ -113,6 +122,7 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 		stats_collect.RecordBucketActiveTime(bucket)
 
 		glog.V(3).Infof("GetObjectLockConfigurationHandler: successfully retrieved cached object lock config for %s", bucket)
+
 		return
 	}
 
@@ -124,10 +134,12 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 		if errors.Is(err, filer_pb.ErrNotFound) {
 			glog.V(1).Infof("GetObjectLockConfigurationHandler: bucket %s not found while reloading entry", bucket)
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("GetObjectLockConfigurationHandler: failed to reload bucket entry: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -150,6 +162,7 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 		if err != nil {
 			glog.Errorf("GetObjectLockConfigurationHandler: failed to marshal Object Lock config: %v", err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 			return
 		}
 
@@ -157,10 +170,12 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte(xml.Header)); err != nil {
 			glog.Errorf("GetObjectLockConfigurationHandler: failed to write XML header: %v", err)
+
 			return
 		}
 		if _, err := w.Write(marshaledXML); err != nil {
 			glog.Errorf("GetObjectLockConfigurationHandler: failed to write config XML: %v", err)
+
 			return
 		}
 
@@ -168,6 +183,7 @@ func (s3a *S3ApiServer) GetObjectLockConfigurationHandler(w http.ResponseWriter,
 		stats_collect.RecordBucketActiveTime(bucket)
 
 		glog.V(3).Infof("GetObjectLockConfigurationHandler: successfully retrieved object lock config from fresh entry for %s", bucket)
+
 		return
 	}
 

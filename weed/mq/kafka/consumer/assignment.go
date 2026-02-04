@@ -1,6 +1,7 @@
 package consumer
 
 import (
+	"slices"
 	"sort"
 )
 
@@ -59,18 +60,13 @@ func (r *RangeAssignmentStrategy) Assign(members []*GroupMember, topicPartitions
 		}
 
 		// Sort partitions for consistent assignment
-		sort.Slice(partitions, func(i, j int) bool {
-			return partitions[i] < partitions[j]
-		})
+		slices.Sort(partitions)
 
 		// Find members subscribed to this topic
 		topicMembers := make([]*GroupMember, 0)
 		for _, member := range sortedMembers {
-			for _, subscribedTopic := range member.Subscription {
-				if subscribedTopic == topic {
-					topicMembers = append(topicMembers, member)
-					break
-				}
+			if slices.Contains(member.Subscription, topic) {
+				topicMembers = append(topicMembers, member)
 			}
 		}
 
@@ -163,6 +159,7 @@ func (rr *RoundRobinAssignmentStrategy) Assign(members []*GroupMember, topicPart
 		if allAssignments[i].Topic != allAssignments[j].Topic {
 			return allAssignments[i].Topic < allAssignments[j].Topic
 		}
+
 		return allAssignments[i].Partition < allAssignments[j].Partition
 	})
 
@@ -177,13 +174,7 @@ func (rr *RoundRobinAssignmentStrategy) Assign(members []*GroupMember, topicPart
 			member := sortedMembers[memberIndex]
 
 			// Check if this member is subscribed to the topic
-			subscribed := false
-			for _, topic := range member.Subscription {
-				if topic == assignment.Topic {
-					subscribed = true
-					break
-				}
-			}
+			subscribed := slices.Contains(member.Subscription, assignment.Topic)
 
 			if subscribed {
 				assignments[member.ID] = append(assignments[member.ID], assignment)
@@ -295,5 +286,6 @@ func (group *ConsumerGroup) GetSubscribedTopics() []string {
 	}
 
 	sort.Strings(topics)
+
 	return topics
 }

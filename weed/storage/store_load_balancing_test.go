@@ -22,7 +22,7 @@ func newTestStore(t *testing.T, numDirs int) *Store {
 	var minFreeSpaces []util.MinFreeSpace
 	var diskTypes []types.DiskType
 
-	for i := 0; i < numDirs; i++ {
+	for i := range numDirs {
 		dir := filepath.Join(tempDir, "dir"+strconv.Itoa(i))
 		os.MkdirAll(dir, 0755)
 		dirs = append(dirs, dir)
@@ -93,7 +93,7 @@ func TestLocalVolumesLen(t *testing.T) {
 			}
 
 			// Add volumes
-			for i := 0; i < tc.totalVolumes; i++ {
+			for i := range tc.totalVolumes {
 				vol := &Volume{
 					Id:         needle.VolumeId(i + 1),
 					volumeInfo: &volume_server_pb.VolumeInfo{},
@@ -185,14 +185,14 @@ func TestVolumeLoadBalancing(t *testing.T) {
 				vidCounter := 1000 + locIdx*100 // unique volume IDs per location
 
 				// Add local volumes
-				for i := 0; i < setup.localVolumes; i++ {
+				for range setup.localVolumes {
 					vol := createTestVolume(needle.VolumeId(vidCounter), false)
 					location.SetVolume(vol.Id, vol)
 					vidCounter++
 				}
 
 				// Add remote volumes
-				for i := 0; i < setup.remoteVolumes; i++ {
+				for range setup.remoteVolumes {
 					vol := createTestVolume(needle.VolumeId(vidCounter), true)
 					location.SetVolume(vol.Id, vol)
 					vidCounter++
@@ -215,6 +215,7 @@ func TestVolumeLoadBalancing(t *testing.T) {
 				for locIdx, location := range store.Locations {
 					if _, found := location.FindVolume(volumeId); found {
 						actualLoc = locIdx
+
 						break
 					}
 				}

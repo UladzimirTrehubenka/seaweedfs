@@ -25,6 +25,7 @@ func NewTaskLogHandler(baseLogDir string) *TaskLogHandler {
 	if err := os.MkdirAll(baseLogDir, 0755); err != nil {
 		glog.Warningf("Failed to create base task log directory %s: %v", baseLogDir, err)
 	}
+
 	return &TaskLogHandler{
 		baseLogDir: baseLogDir,
 	}
@@ -33,16 +34,16 @@ func NewTaskLogHandler(baseLogDir string) *TaskLogHandler {
 // HandleLogRequest processes a task log request and returns the response
 func (h *TaskLogHandler) HandleLogRequest(request *worker_pb.TaskLogRequest) *worker_pb.TaskLogResponse {
 	response := &worker_pb.TaskLogResponse{
-		TaskId:   request.TaskId,
-		WorkerId: request.WorkerId,
+		TaskId:   request.GetTaskId(),
+		WorkerId: request.GetWorkerId(),
 		Success:  false,
 	}
 
 	// Find the task log directory
-	logDir, err := h.findTaskLogDirectory(request.TaskId)
+	logDir, err := h.findTaskLogDirectory(request.GetTaskId())
 	if err != nil {
 		response.ErrorMessage = fmt.Sprintf("Task log directory not found: %v", err)
-		glog.Warningf("Task log request failed for %s: %v", request.TaskId, err)
+		glog.Warningf("Task log request failed for %s: %v", request.GetTaskId(), err)
 
 		// Add diagnostic information to help debug the issue
 		response.LogEntries = []*worker_pb.TaskLogEntry{
@@ -55,7 +56,7 @@ func (h *TaskLogHandler) HandleLogRequest(request *worker_pb.TaskLogRequest) *wo
 			{
 				Timestamp: time.Now().Unix(),
 				Level:     "INFO",
-				Message:   fmt.Sprintf("This usually means the task was never executed on this worker or logs were cleaned up. Base log directory: %s", h.baseLogDir),
+				Message:   "This usually means the task was never executed on this worker or logs were cleaned up. Base log directory: " + h.baseLogDir,
 				Fields:    map[string]string{"source": "task_log_handler"},
 			},
 		}
@@ -64,11 +65,12 @@ func (h *TaskLogHandler) HandleLogRequest(request *worker_pb.TaskLogRequest) *wo
 	}
 
 	// Read metadata if requested
-	if request.IncludeMetadata {
+	if request.GetIncludeMetadata() {
 		metadata, err := h.readTaskMetadata(logDir)
 		if err != nil {
 			response.ErrorMessage = fmt.Sprintf("Failed to read task metadata: %v", err)
-			glog.Warningf("Failed to read metadata for task %s: %v", request.TaskId, err)
+			glog.Warningf("Failed to read metadata for task %s: %v", request.GetTaskId(), err)
+
 			return response
 		}
 		response.Metadata = metadata
@@ -78,14 +80,16 @@ func (h *TaskLogHandler) HandleLogRequest(request *worker_pb.TaskLogRequest) *wo
 	logEntries, err := h.readTaskLogEntries(logDir, request)
 	if err != nil {
 		response.ErrorMessage = fmt.Sprintf("Failed to read task logs: %v", err)
-		glog.Warningf("Failed to read logs for task %s: %v", request.TaskId, err)
+		glog.Warningf("Failed to read logs for task %s: %v", request.GetTaskId(), err)
+
 		return response
 	}
 
 	response.LogEntries = logEntries
 	response.Success = true
 
-	glog.V(1).Infof("Successfully retrieved %d log entries for task %s", len(logEntries), request.TaskId)
+	glog.V(1).Infof("Successfully retrieved %d log entries for task %s", len(logEntries), request.GetTaskId())
+
 	return response
 }
 
@@ -167,15 +171,15 @@ func (h *TaskLogHandler) readTaskLogEntries(logDir string, request *worker_pb.Ta
 
 	for _, entry := range entries {
 		// Filter by log level
-		if request.LogLevel != "" && !strings.EqualFold(entry.Level, request.LogLevel) {
+		if request.GetLogLevel() != "" && !strings.EqualFold(entry.Level, request.GetLogLevel()) {
 			continue
 		}
 
 		// Filter by time range
-		if request.StartTime > 0 && entry.Timestamp.Unix() < request.StartTime {
+		if request.GetStartTime() > 0 && entry.Timestamp.Unix() < request.GetStartTime() {
 			continue
 		}
-		if request.EndTime > 0 && entry.Timestamp.Unix() > request.EndTime {
+		if request.GetEndTime() > 0 && entry.Timestamp.Unix() > request.GetEndTime() {
 			continue
 		}
 
@@ -183,9 +187,9 @@ func (h *TaskLogHandler) readTaskLogEntries(logDir string, request *worker_pb.Ta
 	}
 
 	// Limit entries if requested
-	if request.MaxEntries > 0 && len(filteredEntries) > int(request.MaxEntries) {
+	if request.GetMaxEntries() > 0 && len(filteredEntries) > int(request.GetMaxEntries()) {
 		// Take the most recent entries
-		start := len(filteredEntries) - int(request.MaxEntries)
+		start := len(filteredEntries) - int(request.GetMaxEntries())
 		filteredEntries = filteredEntries[start:]
 	}
 
@@ -254,5 +258,6 @@ func (h *TaskLogHandler) CleanupOldLogs(maxTasks int) error {
 	}
 
 	tempLogger.cleanupOldLogs()
+
 	return nil
 }

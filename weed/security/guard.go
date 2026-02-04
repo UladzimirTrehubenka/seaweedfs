@@ -59,17 +59,20 @@ func NewGuard(whiteList []string, signingKey string, expiresAfterSec int, readSi
 		ReadExpiresAfterSec: readExpiresAfterSec,
 	}
 	g.UpdateWhiteList(whiteList)
+
 	return g
 }
 
 func (g *Guard) WhiteList(f http.HandlerFunc) http.HandlerFunc {
 	if !g.isWriteActive {
-		//if no security needed, just skip all checking
+		// if no security needed, just skip all checking
 		return f
 	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := g.checkWhiteList(w, r); err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
+
 			return
 		}
 		f(w, r)
@@ -122,6 +125,7 @@ func (g *Guard) checkWhiteList(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	glog.V(0).Infof("Not in whitelist: %s (original RemoteAddr: %s)", host, r.RemoteAddr)
+
 	return fmt.Errorf("Not in whitelist: %s", host)
 }
 

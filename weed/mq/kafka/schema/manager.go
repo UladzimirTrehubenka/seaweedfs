@@ -1,7 +1,9 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -107,7 +109,7 @@ func (m *Manager) DecodeMessage(messageBytes []byte) (*DecodedMessage, error) {
 	// Step 1: Check if message is schematized
 	envelope, isSchematized := ParseConfluentEnvelope(messageBytes)
 	if !isSchematized {
-		return nil, fmt.Errorf("message is not schematized")
+		return nil, errors.New("message is not schematized")
 	}
 
 	// Step 2: Validate envelope
@@ -263,6 +265,7 @@ func (m *Manager) getAvroDecoder(schemaID uint32, schemaStr string) (*AvroDecode
 	m.decoderMu.RLock()
 	if decoder, exists := m.avroDecoders[schemaID]; exists {
 		m.decoderMu.RUnlock()
+
 		return decoder, nil
 	}
 	m.decoderMu.RUnlock()
@@ -287,6 +290,7 @@ func (m *Manager) getProtobufDecoder(schemaID uint32, schemaStr string) (*Protob
 	m.decoderMu.RLock()
 	if decoder, exists := m.protobufDecoders[schemaID]; exists {
 		m.decoderMu.RUnlock()
+
 		return decoder, nil
 	}
 	m.decoderMu.RUnlock()
@@ -326,6 +330,7 @@ func (m *Manager) getJSONSchemaDecoder(schemaID uint32, schemaStr string) (*JSON
 	m.decoderMu.RLock()
 	if decoder, exists := m.jsonSchemaDecoders[schemaID]; exists {
 		m.decoderMu.RUnlock()
+
 		return decoder, nil
 	}
 	m.decoderMu.RUnlock()
@@ -350,11 +355,11 @@ func (m *Manager) createMetadata(envelope *ConfluentEnvelope, cachedSchema *Cach
 
 	// Add schema registry information
 	metadata["schema_subject"] = cachedSchema.Subject
-	metadata["schema_version"] = fmt.Sprintf("%d", cachedSchema.Version)
+	metadata["schema_version"] = strconv.Itoa(cachedSchema.Version)
 	metadata["registry_url"] = m.registryClient.baseURL
 
 	// Add decoding information
-	metadata["decoded_at"] = fmt.Sprintf("%d", cachedSchema.CachedAt.Unix())
+	metadata["decoded_at"] = strconv.FormatInt(cachedSchema.CachedAt.Unix(), 10)
 	metadata["validation_mode"] = fmt.Sprintf("%d", m.config.ValidationMode)
 
 	return metadata
@@ -369,7 +374,7 @@ func (m *Manager) IsSchematized(messageBytes []byte) bool {
 func (m *Manager) GetSchemaInfo(messageBytes []byte) (uint32, Format, error) {
 	envelope, ok := ParseConfluentEnvelope(messageBytes)
 	if !ok {
-		return 0, FormatUnknown, fmt.Errorf("not a schematized message")
+		return 0, FormatUnknown, errors.New("not a schematized message")
 	}
 
 	// Get basic schema info from cache or registry
@@ -414,6 +419,7 @@ func (m *Manager) GetCacheStats() (decoders, schemas, subjects int) {
 	m.decoderMu.RUnlock()
 
 	schemas, subjects, _ = m.registryClient.GetCacheStats()
+
 	return
 }
 
@@ -522,7 +528,7 @@ func (m *Manager) encodeJSONSchemaMessage(recordValue *schema_pb.RecordValue, sc
 }
 
 // populateProtobufMessage populates a Protobuf message from a Go map
-func (m *Manager) populateProtobufMessage(msg protoreflect.Message, data map[string]interface{}, desc protoreflect.MessageDescriptor) error {
+func (m *Manager) populateProtobufMessage(msg protoreflect.Message, data map[string]any, desc protoreflect.MessageDescriptor) error {
 	for key, value := range data {
 		// Find the field descriptor
 		fieldDesc := desc.Fields().ByName(protoreflect.Name(key))
@@ -533,7 +539,7 @@ func (m *Manager) populateProtobufMessage(msg protoreflect.Message, data map[str
 
 		// Handle map fields specially
 		if fieldDesc.IsMap() {
-			if mapData, ok := value.(map[string]interface{}); ok {
+			if mapData, ok := value.(map[string]any); ok {
 				mapValue := msg.Mutable(fieldDesc).Map()
 				for mk, mv := range mapData {
 					// Convert map key (always string for our schema)
@@ -547,6 +553,7 @@ func (m *Manager) populateProtobufMessage(msg protoreflect.Message, data map[str
 					}
 					mapValue.Set(mapKey, mvProto)
 				}
+
 				continue
 			}
 		}
@@ -564,7 +571,7 @@ func (m *Manager) populateProtobufMessage(msg protoreflect.Message, data map[str
 }
 
 // goValueToProtoValue converts a Go value to a Protobuf Value
-func (m *Manager) goValueToProtoValue(value interface{}, fieldDesc protoreflect.FieldDescriptor) (protoreflect.Value, error) {
+func (m *Manager) goValueToProtoValue(value any, fieldDesc protoreflect.FieldDescriptor) (protoreflect.Value, error) {
 	if value == nil {
 		return protoreflect.Value{}, nil
 	}
@@ -611,12 +618,13 @@ func (m *Manager) goValueToProtoValue(value interface{}, fieldDesc protoreflect.
 			return protoreflect.ValueOfEnum(protoreflect.EnumNumber(i)), nil
 		}
 	case protoreflect.MessageKind:
-		if nestedMap, ok := value.(map[string]interface{}); ok {
+		if nestedMap, ok := value.(map[string]any); ok {
 			// Handle nested messages
 			nestedMsg := dynamicpb.NewMessage(fieldDesc.Message())
 			if err := m.populateProtobufMessage(nestedMsg, nestedMap, fieldDesc.Message()); err != nil {
 				return protoreflect.Value{}, err
 			}
+
 			return protoreflect.ValueOfMessage(nestedMsg), nil
 		}
 	}
@@ -625,16 +633,16 @@ func (m *Manager) goValueToProtoValue(value interface{}, fieldDesc protoreflect.
 }
 
 // recordValueToMap converts a RecordValue back to a Go map for encoding
-func recordValueToMap(recordValue *schema_pb.RecordValue) map[string]interface{} {
+func recordValueToMap(recordValue *schema_pb.RecordValue) map[string]any {
 	return recordValueToMapWithAvroContext(recordValue, false)
 }
 
 // recordValueToMapWithAvroContext converts a RecordValue back to a Go map for encoding
 // with optional Avro union format preservation
-func recordValueToMapWithAvroContext(recordValue *schema_pb.RecordValue, preserveAvroUnions bool) map[string]interface{} {
-	result := make(map[string]interface{})
+func recordValueToMapWithAvroContext(recordValue *schema_pb.RecordValue, preserveAvroUnions bool) map[string]any {
+	result := make(map[string]any)
 
-	for key, value := range recordValue.Fields {
+	for key, value := range recordValue.GetFields() {
 		result[key] = schemaValueToGoValueWithAvroContext(value, preserveAvroUnions)
 	}
 
@@ -642,14 +650,14 @@ func recordValueToMapWithAvroContext(recordValue *schema_pb.RecordValue, preserv
 }
 
 // schemaValueToGoValue converts a schema Value back to a Go value
-func schemaValueToGoValue(value *schema_pb.Value) interface{} {
+func schemaValueToGoValue(value *schema_pb.Value) any {
 	return schemaValueToGoValueWithAvroContext(value, false)
 }
 
 // schemaValueToGoValueWithAvroContext converts a schema Value back to a Go value
 // with optional Avro union format preservation
-func schemaValueToGoValueWithAvroContext(value *schema_pb.Value, preserveAvroUnions bool) interface{} {
-	switch v := value.Kind.(type) {
+func schemaValueToGoValueWithAvroContext(value *schema_pb.Value, preserveAvroUnions bool) any {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_BoolValue:
 		return v.BoolValue
 	case *schema_pb.Value_Int32Value:
@@ -665,10 +673,11 @@ func schemaValueToGoValueWithAvroContext(value *schema_pb.Value, preserveAvroUni
 	case *schema_pb.Value_BytesValue:
 		return v.BytesValue
 	case *schema_pb.Value_ListValue:
-		result := make([]interface{}, len(v.ListValue.Values))
-		for i, item := range v.ListValue.Values {
+		result := make([]any, len(v.ListValue.GetValues()))
+		for i, item := range v.ListValue.GetValues() {
 			result[i] = schemaValueToGoValueWithAvroContext(item, preserveAvroUnions)
 		}
+
 		return result
 	case *schema_pb.Value_RecordValue:
 		recordMap := recordValueToMapWithAvroContext(v.RecordValue, preserveAvroUnions)
@@ -682,7 +691,7 @@ func schemaValueToGoValueWithAvroContext(value *schema_pb.Value, preserveAvroUni
 		return recordMap
 	case *schema_pb.Value_TimestampValue:
 		// Convert back to time if needed, or return as int64
-		return v.TimestampValue.TimestampMicros
+		return v.TimestampValue.GetTimestampMicros()
 	default:
 		// Default to string representation
 		return fmt.Sprintf("%v", value)
@@ -693,11 +702,11 @@ func schemaValueToGoValueWithAvroContext(value *schema_pb.Value, preserveAvroUni
 func isAvroUnionRecord(record *schema_pb.RecordValue) bool {
 	// A record represents an Avro union if it has exactly one field
 	// and the field name is an Avro type name
-	if len(record.Fields) != 1 {
+	if len(record.GetFields()) != 1 {
 		return false
 	}
 
-	for key := range record.Fields {
+	for key := range record.GetFields() {
 		return isAvroUnionTypeName(key)
 	}
 
@@ -710,6 +719,7 @@ func isAvroUnionTypeName(name string) bool {
 	case "null", "boolean", "int", "long", "float", "double", "bytes", "string":
 		return true
 	}
+
 	return false
 }
 

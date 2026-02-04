@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"maps"
 	"sync"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -8,7 +9,7 @@ import (
 )
 
 // ConfigUpdateFunc is a function type for updating task configurations
-type ConfigUpdateFunc func(configPersistence interface{}) error
+type ConfigUpdateFunc func(configPersistence any) error
 
 // ConfigUpdateRegistry manages config update functions for all task types
 type ConfigUpdateRegistry struct {
@@ -29,6 +30,7 @@ func GetGlobalConfigUpdateRegistry() *ConfigUpdateRegistry {
 		}
 		glog.V(1).Infof("Created global config update registry")
 	})
+
 	return globalConfigUpdateRegistry
 }
 
@@ -41,12 +43,10 @@ func (r *ConfigUpdateRegistry) RegisterConfigUpdater(taskType types.TaskType, up
 }
 
 // UpdateAllConfigs updates configurations for all registered task types
-func (r *ConfigUpdateRegistry) UpdateAllConfigs(configPersistence interface{}) {
+func (r *ConfigUpdateRegistry) UpdateAllConfigs(configPersistence any) {
 	r.mutex.RLock()
 	updaters := make(map[types.TaskType]ConfigUpdateFunc)
-	for k, v := range r.updaters {
-		updaters[k] = v
-	}
+	maps.Copy(updaters, r.updaters)
 	r.mutex.RUnlock()
 
 	for taskType, updateFunc := range updaters {

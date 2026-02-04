@@ -57,6 +57,7 @@ func (fs *FilerSink) Initialize(configuration util.Configuration, prefix string)
 	fs.isIncremental = configuration.GetBool(prefix + "is_incremental")
 	fs.dataCenter = configuration.GetString(prefix + "dataCenter")
 	fs.signature = util.RandomInt32()
+
 	return fs.DoInitialize(
 		"",
 		configuration.GetString(prefix+"grpcAddress"),
@@ -88,26 +89,26 @@ func (fs *FilerSink) DoInitialize(address, grpcAddress string, dir string,
 	fs.grpcDialOption = grpcDialOption
 	fs.writeChunkByFiler = writeChunkByFiler
 	fs.executor = util.NewLimitedConcurrentExecutor(32)
+
 	return nil
 }
 
 func (fs *FilerSink) DeleteEntry(key string, isDirectory, deleteIncludeChunks bool, signatures []int32) error {
-
 	dir, name := util.FullPath(key).DirAndName()
 
 	glog.V(4).Infof("delete entry: %v", key)
 	err := filer_pb.Remove(context.Background(), fs, dir, name, deleteIncludeChunks, true, true, true, signatures)
 	if err != nil {
 		glog.V(0).Infof("delete entry %s: %v", key, err)
-		return fmt.Errorf("delete entry %s: %v", key, err)
+
+		return fmt.Errorf("delete entry %s: %w", key, err)
 	}
+
 	return nil
 }
 
 func (fs *FilerSink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int32) error {
-
 	return fs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		dir, name := util.FullPath(key).DirAndName()
 
 		// look up existing entry
@@ -117,12 +118,14 @@ func (fs *FilerSink) CreateEntry(key string, entry *filer_pb.Entry, signatures [
 		}
 		// glog.V(1).Infof("lookup: %v", lookupRequest)
 		if resp, err := filer_pb.LookupEntry(context.Background(), client, lookupRequest); err == nil {
-			if filer.ETag(resp.Entry) == filer.ETag(entry) {
+			if filer.ETag(resp.GetEntry()) == filer.ETag(entry) {
 				glog.V(3).Infof("already replicated %s", key)
+
 				return nil
 			}
-			if resp.Entry.Attributes != nil && resp.Entry.Attributes.Mtime >= entry.Attributes.Mtime {
+			if resp.GetEntry().GetAttributes() != nil && resp.GetEntry().GetAttributes().GetMtime() >= entry.GetAttributes().GetMtime() {
 				glog.V(3).Infof("skip overwriting %s", key)
+
 				return nil
 			}
 		}
@@ -132,6 +135,7 @@ func (fs *FilerSink) CreateEntry(key string, entry *filer_pb.Entry, signatures [
 		if err != nil {
 			// only warning here since the source chunk may have been deleted already
 			glog.Warningf("replicate entry chunks %s: %v", key, err)
+
 			return nil
 		}
 
@@ -141,12 +145,12 @@ func (fs *FilerSink) CreateEntry(key string, entry *filer_pb.Entry, signatures [
 			Directory: dir,
 			Entry: &filer_pb.Entry{
 				Name:        name,
-				IsDirectory: entry.IsDirectory,
-				Attributes:  entry.Attributes,
-				Extended:    entry.Extended,
+				IsDirectory: entry.GetIsDirectory(),
+				Attributes:  entry.GetAttributes(),
+				Extended:    entry.GetExtended(),
 				Chunks:      replicatedChunks,
-				Content:     entry.Content,
-				RemoteEntry: entry.RemoteEntry,
+				Content:     entry.GetContent(),
+				RemoteEntry: entry.GetRemoteEntry(),
 			},
 			IsFromOtherCluster: true,
 			Signatures:         signatures,
@@ -155,7 +159,8 @@ func (fs *FilerSink) CreateEntry(key string, entry *filer_pb.Entry, signatures [
 		glog.V(3).Infof("create: %v", request)
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			glog.V(0).Infof("create entry %s: %v", key, err)
-			return fmt.Errorf("create entry %s: %v", key, err)
+
+			return fmt.Errorf("create entry %s: %w", key, err)
 		}
 
 		return nil
@@ -163,13 +168,11 @@ func (fs *FilerSink) CreateEntry(key string, entry *filer_pb.Entry, signatures [
 }
 
 func (fs *FilerSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParentPath string, newEntry *filer_pb.Entry, deleteIncludeChunks bool, signatures []int32) (foundExistingEntry bool, err error) {
-
 	dir, name := util.FullPath(key).DirAndName()
 
 	// read existing entry
 	var existingEntry *filer_pb.Entry
 	err = fs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.LookupDirectoryEntryRequest{
 			Directory: dir,
 			Name:      name,
@@ -179,21 +182,22 @@ func (fs *FilerSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParent
 		resp, err := filer_pb.LookupEntry(context.Background(), client, request)
 		if err != nil {
 			glog.V(0).Infof("lookup %s: %v", key, err)
+
 			return err
 		}
 
-		existingEntry = resp.Entry
+		existingEntry = resp.GetEntry()
 
 		return nil
 	})
 
 	if err != nil {
-		return false, fmt.Errorf("lookup %s: %v", key, err)
+		return false, fmt.Errorf("lookup %s: %w", key, err)
 	}
 
 	glog.V(4).Infof("oldEntry %+v, newEntry %+v, existingEntry: %+v", oldEntry, newEntry, existingEntry)
 
-	if existingEntry.Attributes.Mtime > newEntry.Attributes.Mtime {
+	if existingEntry.GetAttributes().GetMtime() > newEntry.GetAttributes().GetMtime() {
 		// skip if already changed
 		// this usually happens when the messages are not ordered
 		glog.V(2).Infof("late updates %s", key)
@@ -201,7 +205,7 @@ func (fs *FilerSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParent
 		// find out what changed
 		deletedChunks, newChunks, err := compareChunks(context.Background(), filer.LookupFn(fs), oldEntry, newEntry)
 		if err != nil {
-			return true, fmt.Errorf("replicate %s compare chunks error: %v", key, err)
+			return true, fmt.Errorf("replicate %s compare chunks error: %w", key, err)
 		}
 
 		// delete the chunks that are deleted from the source
@@ -214,20 +218,20 @@ func (fs *FilerSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParent
 		replicatedChunks, err := fs.replicateChunks(newChunks, key)
 		if err != nil {
 			glog.Warningf("replicate entry chunks %s: %v", key, err)
+
 			return true, nil
 		}
 		existingEntry.Chunks = append(existingEntry.GetChunks(), replicatedChunks...)
-		existingEntry.Attributes = newEntry.Attributes
-		existingEntry.Extended = newEntry.Extended
-		existingEntry.HardLinkId = newEntry.HardLinkId
-		existingEntry.HardLinkCounter = newEntry.HardLinkCounter
-		existingEntry.Content = newEntry.Content
-		existingEntry.RemoteEntry = newEntry.RemoteEntry
+		existingEntry.Attributes = newEntry.GetAttributes()
+		existingEntry.Extended = newEntry.GetExtended()
+		existingEntry.HardLinkId = newEntry.GetHardLinkId()
+		existingEntry.HardLinkCounter = newEntry.GetHardLinkCounter()
+		existingEntry.Content = newEntry.GetContent()
+		existingEntry.RemoteEntry = newEntry.GetRemoteEntry()
 	}
 
 	// save updated meta data
 	return true, fs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.UpdateEntryRequest{
 			Directory:          newParentPath,
 			Entry:              existingEntry,
@@ -236,12 +240,11 @@ func (fs *FilerSink) UpdateEntry(key string, oldEntry *filer_pb.Entry, newParent
 		}
 
 		if _, err := client.UpdateEntry(context.Background(), request); err != nil {
-			return fmt.Errorf("update existingEntry %s: %v", key, err)
+			return fmt.Errorf("update existingEntry %s: %w", key, err)
 		}
 
 		return nil
 	})
-
 }
 func compareChunks(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, oldEntry, newEntry *filer_pb.Entry) (deletedChunks, newChunks []*filer_pb.FileChunk, err error) {
 	aData, aMeta, aErr := filer.ResolveChunkManifest(ctx, lookupFileIdFn, oldEntry.GetChunks(), 0, math.MaxInt64)

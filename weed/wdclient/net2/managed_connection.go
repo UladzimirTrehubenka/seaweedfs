@@ -56,7 +56,6 @@ func NewManagedConn(
 	handle resource_pool.ManagedHandle,
 	pool ConnectionPool,
 	options ConnectionOptions) ManagedConn {
-
 	addr := NetworkAddress{
 		Network: network,
 		Address: address,
@@ -72,12 +71,14 @@ func NewManagedConn(
 
 func (c *managedConnImpl) rawConn() (net.Conn, error) {
 	h, err := c.handle.Handle()
+
 	return h.(net.Conn), err
 }
 
 // See ManagedConn for documentation.
 func (c *managedConnImpl) RawConn() net.Conn {
 	h, _ := c.handle.Handle()
+
 	return h.(net.Conn)
 }
 
@@ -127,8 +128,9 @@ func (c *managedConnImpl) Read(b []byte) (n int, err error) {
 		} else {
 			remoteAddr = "(nil)"
 		}
-		err = fmt.Errorf("Read error from host: %s <-> %s: %v", localAddr, remoteAddr, err)
+		err = fmt.Errorf("Read error from host: %s <-> %s: %w", localAddr, remoteAddr, err)
 	}
+
 	return
 }
 
@@ -147,6 +149,7 @@ func (c *managedConnImpl) Write(b []byte) (n int, err error) {
 	if err != nil {
 		err = fmt.Errorf("Write error: %w", err)
 	}
+
 	return
 }
 
@@ -158,12 +161,14 @@ func (c *managedConnImpl) Close() error {
 // See net.Conn for documentation
 func (c *managedConnImpl) LocalAddr() net.Addr {
 	conn, _ := c.rawConn()
+
 	return conn.LocalAddr()
 }
 
 // See net.Conn for documentation
 func (c *managedConnImpl) RemoteAddr() net.Addr {
 	conn, _ := c.rawConn()
+
 	return conn.RemoteAddr()
 }
 

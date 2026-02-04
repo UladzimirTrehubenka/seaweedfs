@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -104,11 +105,11 @@ func (at *ActiveTopology) ApplyActualStorageChange(nodeID string, diskID uint32,
 
 	diskKey := fmt.Sprintf("%s:%d", nodeID, diskID)
 	if disk, exists := at.disks[diskKey]; exists && disk.DiskInfo != nil && disk.DiskInfo.DiskInfo != nil {
-		oldCount := disk.DiskInfo.DiskInfo.VolumeCount
+		oldCount := disk.DiskInfo.DiskInfo.GetVolumeCount()
 		disk.DiskInfo.DiskInfo.VolumeCount += volumeCountChange
 
 		glog.V(2).Infof("Applied actual storage change on disk %s: volume_count %d -> %d (change: %+d)",
-			diskKey, oldCount, disk.DiskInfo.DiskInfo.VolumeCount, volumeCountChange)
+			diskKey, oldCount, disk.DiskInfo.DiskInfo.GetVolumeCount(), volumeCountChange)
 	}
 }
 
@@ -116,10 +117,10 @@ func (at *ActiveTopology) ApplyActualStorageChange(nodeID string, diskID uint32,
 func (at *ActiveTopology) AddPendingTask(spec TaskSpec) error {
 	// Validation
 	if len(spec.Sources) == 0 {
-		return fmt.Errorf("at least one source is required")
+		return errors.New("at least one source is required")
 	}
 	if len(spec.Destinations) == 0 {
-		return fmt.Errorf("at least one destination is required")
+		return errors.New("at least one destination is required")
 	}
 
 	at.mutex.Lock()
@@ -213,11 +214,12 @@ func (at *ActiveTopology) RestoreMaintenanceTask(taskID string, volumeID uint32,
 		Destinations:  destinations,
 	}
 
-	if status == TaskStatusInProgress {
+	switch status {
+	case TaskStatusInProgress:
 		at.assignedTasks[taskID] = task
-	} else if status == TaskStatusPending {
+	case TaskStatusPending:
 		at.pendingTasks[taskID] = task
-	} else {
+	default:
 		return nil // Ignore other statuses for topology tracking
 	}
 
@@ -263,15 +265,18 @@ func (at *ActiveTopology) calculateSourceStorageImpact(taskType TaskType, cleanu
 		switch cleanupType {
 		case CleanupVolumeReplica:
 			impact, _ := CalculateTaskStorageImpact(TaskTypeErasureCoding, volumeSize)
+
 			return impact
 		case CleanupECShards:
 			return CalculateECShardCleanupImpact(volumeSize)
 		default:
 			impact, _ := CalculateTaskStorageImpact(TaskTypeErasureCoding, volumeSize)
+
 			return impact
 		}
 	default:
 		impact, _ := CalculateTaskStorageImpact(taskType, volumeSize)
+
 		return impact
 	}
 }

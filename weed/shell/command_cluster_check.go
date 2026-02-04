@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -38,7 +39,6 @@ func (c *commandClusterCheck) HasTag(CommandTag) bool {
 }
 
 func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	clusterPsCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	if err = clusterPsCommand.Parse(args); err != nil {
 		return nil
@@ -49,13 +49,13 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(writer, "Topology volumeSizeLimit:%d MB%s\n", volumeSizeLimitMb, diskInfosToString(topologyInfo.DiskInfos))
+	fmt.Fprintf(writer, "Topology volumeSizeLimit:%d MB%s\n", volumeSizeLimitMb, diskInfosToString(topologyInfo.GetDiskInfos()))
 
-	if len(topologyInfo.DiskInfos) == 0 {
-		return fmt.Errorf("no disk type defined")
+	if len(topologyInfo.GetDiskInfos()) == 0 {
+		return errors.New("no disk type defined")
 	}
-	for diskType, diskInfo := range topologyInfo.DiskInfos {
-		if diskInfo.MaxVolumeCount == 0 {
+	for diskType, diskInfo := range topologyInfo.GetDiskInfos() {
+		if diskInfo.GetMaxVolumeCount() == 0 {
 			return fmt.Errorf("no volume available for \"%s\" disk type", diskType)
 		}
 	}
@@ -68,26 +68,27 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 			FilerGroup: *commandEnv.option.FilerGroup,
 		})
 
-		for _, node := range resp.ClusterNodes {
-			filers = append(filers, pb.ServerAddress(node.Address))
+		for _, node := range resp.GetClusterNodes() {
+			filers = append(filers, pb.ServerAddress(node.GetAddress()))
 		}
+
 		return err
 	})
 	if err != nil {
-		return
+		return err
 	}
 	fmt.Fprintf(writer, "the cluster has %d filers: %+v\n", len(filers), filers)
 
 	if len(filers) > 0 {
-		genericDiskInfo, genericDiskInfoOk := topologyInfo.DiskInfos[""]
-		hddDiskInfo, hddDiskInfoOk := topologyInfo.DiskInfos[types.HddType]
+		genericDiskInfo, genericDiskInfoOk := topologyInfo.GetDiskInfos()[""]
+		hddDiskInfo, hddDiskInfoOk := topologyInfo.GetDiskInfos()[types.HddType.String()]
 
 		if !genericDiskInfoOk && !hddDiskInfoOk {
-			return fmt.Errorf("filer metadata logs need generic or hdd disk type to be defined")
+			return errors.New("filer metadata logs need generic or hdd disk type to be defined")
 		}
 
-		if (genericDiskInfoOk && genericDiskInfo.MaxVolumeCount == 0) || (hddDiskInfoOk && hddDiskInfo.MaxVolumeCount == 0) {
-			return fmt.Errorf("filer metadata logs need generic or hdd volumes to be available")
+		if (genericDiskInfoOk && genericDiskInfo.GetMaxVolumeCount() == 0) || (hddDiskInfoOk && hddDiskInfo.GetMaxVolumeCount() == 0) {
+			return errors.New("filer metadata logs need generic or hdd volumes to be available")
 		}
 	}
 
@@ -97,9 +98,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 	if err != nil {
 		return err
 	}
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
 				volumeServers = append(volumeServers, pb.NewServerAddressFromDataNode(dn))
 			}
 		}
@@ -120,8 +121,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 					TargetType: cluster.VolumeServerType,
 				})
 				if err == nil {
-					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+					printTiming(writer, pong.GetStartTimeNs(), pong.GetRemoteTimeNs(), pong.GetStopTimeNs())
 				}
+
 				return err
 			})
 			if err != nil {
@@ -143,8 +145,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 					TargetType: cluster.MasterType,
 				})
 				if err == nil {
-					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+					printTiming(writer, pong.GetStartTimeNs(), pong.GetRemoteTimeNs(), pong.GetStopTimeNs())
 				}
+
 				return err
 			})
 			if err != nil {
@@ -163,8 +166,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 					TargetType: cluster.MasterType,
 				})
 				if err == nil {
-					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+					printTiming(writer, pong.GetStartTimeNs(), pong.GetRemoteTimeNs(), pong.GetStopTimeNs())
 				}
+
 				return err
 			})
 			if err != nil {
@@ -183,8 +187,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 					TargetType: cluster.MasterType,
 				})
 				if err == nil {
-					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+					printTiming(writer, pong.GetStartTimeNs(), pong.GetRemoteTimeNs(), pong.GetStopTimeNs())
 				}
+
 				return err
 			})
 			if err != nil {
@@ -203,8 +208,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 					TargetType: cluster.VolumeServerType,
 				})
 				if err == nil {
-					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+					printTiming(writer, pong.GetStartTimeNs(), pong.GetRemoteTimeNs(), pong.GetStopTimeNs())
 				}
+
 				return err
 			})
 			if err != nil {
@@ -226,8 +232,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 					TargetType: cluster.VolumeServerType,
 				})
 				if err == nil {
-					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+					printTiming(writer, pong.GetStartTimeNs(), pong.GetRemoteTimeNs(), pong.GetStopTimeNs())
 				}
+
 				return err
 			})
 			if err != nil {
@@ -246,8 +253,9 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 					TargetType: cluster.FilerType,
 				})
 				if err == nil {
-					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+					printTiming(writer, pong.GetStartTimeNs(), pong.GetRemoteTimeNs(), pong.GetStopTimeNs())
 				}
+
 				return err
 			})
 			if err != nil {

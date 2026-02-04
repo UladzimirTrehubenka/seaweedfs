@@ -78,7 +78,7 @@ func TestCreateConfluentEnvelopeWithProtobufIndexes(t *testing.T) {
 			envelope := CreateConfluentEnvelope(tc.format, tc.schemaID, tc.indexes, tc.payload)
 
 			// Verify basic structure
-			require.True(t, len(envelope) >= 5, "Envelope should be at least 5 bytes")
+			require.GreaterOrEqual(t, len(envelope), 5, "Envelope should be at least 5 bytes")
 			assert.Equal(t, byte(0x00), envelope[0], "Magic byte should be 0x00")
 
 			// Extract and verify schema ID
@@ -152,7 +152,7 @@ func TestVarintEdgeCases(t *testing.T) {
 	t.Run("max_varint_length", func(t *testing.T) {
 		// Create a varint that's too long (more than 10 bytes)
 		tooLongVarint := make([]byte, 11)
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			tooLongVarint[i] = 0x80 // All continuation bits
 		}
 		tooLongVarint[10] = 0x01 // Final byte

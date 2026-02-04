@@ -44,10 +44,7 @@ func (m *MockSeaweedClient) GetRecords(topic string, partition int32, fromOffset
 		return nil, nil
 	}
 
-	endOffset := fromOffset + int64(maxRecords)
-	if endOffset > int64(len(allRecords)) {
-		endOffset = int64(len(allRecords))
-	}
+	endOffset := min(fromOffset+int64(maxRecords), int64(len(allRecords)))
 
 	return allRecords[fromOffset:endOffset], nil
 }
@@ -127,25 +124,25 @@ func BenchmarkSeaweedSMQRecord_GetMethods(b *testing.B) {
 	b.ResetTimer()
 
 	b.Run("GetKey", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = record.GetKey()
 		}
 	})
 
 	b.Run("GetValue", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = record.GetValue()
 		}
 	})
 
 	b.Run("GetTimestamp", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = record.GetTimestamp()
 		}
 	})
 
 	b.Run("GetOffset", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = record.GetOffset()
 		}
 	})

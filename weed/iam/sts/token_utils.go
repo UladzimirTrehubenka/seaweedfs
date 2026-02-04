@@ -6,10 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/utils"
 )
 
@@ -30,13 +32,14 @@ func NewTokenGenerator(signingKey []byte, issuer string) *TokenGenerator {
 // GenerateSessionToken creates a signed JWT session token (legacy method for compatibility)
 func (t *TokenGenerator) GenerateSessionToken(sessionId string, expiresAt time.Time) (string, error) {
 	claims := NewSTSSessionClaims(sessionId, t.issuer, expiresAt)
+
 	return t.GenerateJWTWithClaims(claims)
 }
 
 // GenerateJWTWithClaims creates a signed JWT token with comprehensive session claims
 func (t *TokenGenerator) GenerateJWTWithClaims(claims *STSSessionClaims) (string, error) {
 	if claims == nil {
-		return "", fmt.Errorf("claims cannot be nil")
+		return "", errors.New("claims cannot be nil")
 	}
 
 	// Ensure issuer is set from token generator
@@ -45,15 +48,17 @@ func (t *TokenGenerator) GenerateJWTWithClaims(claims *STSSessionClaims) (string
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
 	return token.SignedString(t.signingKey)
 }
 
 // ValidateSessionToken validates and extracts claims from a session token
 func (t *TokenGenerator) ValidateSessionToken(tokenString string) (*SessionTokenClaims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
+
 		return t.signingKey, nil
 	})
 
@@ -62,23 +67,23 @@ func (t *TokenGenerator) ValidateSessionToken(tokenString string) (*SessionToken
 	}
 
 	if !token.Valid {
-		return nil, fmt.Errorf(ErrTokenNotValid)
+		return nil, errors.New(ErrTokenNotValid)
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, fmt.Errorf(ErrInvalidTokenClaims)
+		return nil, errors.New(ErrInvalidTokenClaims)
 	}
 
 	// Verify issuer
 	if iss, ok := claims[JWTClaimIssuer].(string); !ok || iss != t.issuer {
-		return nil, fmt.Errorf(ErrInvalidIssuer)
+		return nil, errors.New(ErrInvalidIssuer)
 	}
 
 	// Extract session ID
 	sessionId, ok := claims[JWTClaimSubject].(string)
 	if !ok {
-		return nil, fmt.Errorf(ErrMissingSessionID)
+		return nil, errors.New(ErrMissingSessionID)
 	}
 
 	return &SessionTokenClaims{
@@ -91,10 +96,11 @@ func (t *TokenGenerator) ValidateSessionToken(tokenString string) (*SessionToken
 // ValidateJWTWithClaims validates and extracts comprehensive session claims from a JWT token
 func (t *TokenGenerator) ValidateJWTWithClaims(tokenString string) (*STSSessionClaims, error) {
 	// 1. Parse into MapClaims to capture ALL claims including custom ones
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
+
 		return t.signingKey, nil
 	})
 
@@ -103,29 +109,29 @@ func (t *TokenGenerator) ValidateJWTWithClaims(tokenString string) (*STSSessionC
 	}
 
 	if !token.Valid {
-		return nil, fmt.Errorf(ErrTokenNotValid)
+		return nil, errors.New(ErrTokenNotValid)
 	}
 
 	mapClaims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, fmt.Errorf(ErrInvalidTokenClaims)
+		return nil, errors.New(ErrInvalidTokenClaims)
 	}
 
 	// 2. Decode into STSSessionClaims using JSON round-trip to respect tags
 	jsonBytes, err := json.Marshal(mapClaims)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal claims: %v", err)
+		return nil, fmt.Errorf("failed to marshal claims: %w", err)
 	}
 
 	claims := &STSSessionClaims{}
 	if err := json.Unmarshal(jsonBytes, claims); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal claims: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal claims: %w", err)
 	}
 
 	// 3. Ensure RequestContext contains all claims for policy evaluation
 	// This preserves custom claims (like jwt:preferred_username) that are not in the struct
 	if claims.RequestContext == nil {
-		claims.RequestContext = make(map[string]interface{})
+		claims.RequestContext = make(map[string]any)
 	}
 	for k, v := range mapClaims {
 		// Add valid claim values to RequestContext
@@ -137,17 +143,17 @@ func (t *TokenGenerator) ValidateJWTWithClaims(tokenString string) (*STSSessionC
 
 	// Validate issuer
 	if claims.Issuer != t.issuer {
-		return nil, fmt.Errorf(ErrInvalidIssuer)
+		return nil, errors.New(ErrInvalidIssuer)
 	}
 
 	// Validate that required fields are present
 	if claims.SessionId == "" {
-		return nil, fmt.Errorf(ErrMissingSessionID)
+		return nil, errors.New(ErrMissingSessionID)
 	}
 
 	// Additional validation using the claims' own validation method
 	if !claims.IsValid() {
-		return nil, fmt.Errorf(ErrTokenNotValid)
+		return nil, errors.New(ErrTokenNotValid)
 	}
 
 	return claims, nil
@@ -197,6 +203,7 @@ func (c *CredentialGenerator) GenerateTemporaryCredentials(sessionId string, exp
 func (c *CredentialGenerator) generateAccessKeyId(sessionId string) (string, error) {
 	// Create a deterministic but unique access key ID based on session
 	hash := sha256.Sum256([]byte("access-key:" + sessionId))
+
 	return "AKIA" + hex.EncodeToString(hash[:8]), nil // AWS format: AKIA + 16 chars
 }
 
@@ -209,6 +216,7 @@ func (c *CredentialGenerator) generateSecretAccessKey(sessionId string) (string,
 	// 2. During signature verification, ToSessionInfo() regenerates credentials from JWT
 	// 3. Both must generate the same secret key for signature verification to succeed
 	hash := sha256.Sum256([]byte("secret-key:" + sessionId))
+
 	return base64.StdEncoding.EncodeToString(hash[:]), nil
 }
 
@@ -216,6 +224,7 @@ func (c *CredentialGenerator) generateSecretAccessKey(sessionId string) (string,
 func (c *CredentialGenerator) generateSessionTokenId(sessionId string) (string, error) {
 	// Create session token with session ID embedded
 	hash := sha256.Sum256([]byte("session-token:" + sessionId))
+
 	return "ST" + hex.EncodeToString(hash[:16]), nil // Custom format
 }
 
@@ -237,7 +246,8 @@ func GenerateAssumedRoleArn(roleArn, sessionName string) string {
 	roleName := utils.ExtractRoleNameFromArn(roleArn)
 	if roleName == "" {
 		// This should not happen if validation is done properly upstream
-		return fmt.Sprintf("arn:aws:sts::assumed-role/INVALID-ARN/%s", sessionName)
+		return "arn:aws:sts::assumed-role/INVALID-ARN/" + sessionName
 	}
+
 	return fmt.Sprintf("arn:aws:sts::assumed-role/%s/%s", roleName, sessionName)
 }

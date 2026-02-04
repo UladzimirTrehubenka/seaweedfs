@@ -115,6 +115,7 @@ func abs(x int64) int64 {
 	if x < 0 {
 		return -x
 	}
+
 	return x
 }
 
@@ -223,6 +224,7 @@ func createOldFormatVersionId(ts int64) string {
 // Helper to create new format version ID from timestamp
 func createNewFormatVersionId(ts int64) string {
 	inverted := uint64(math.MaxInt64 - ts)
+
 	return sprintf16x(inverted) + "0000000000000000"
 }
 
@@ -241,6 +243,7 @@ func sprintf(format string, v uint64) string {
 		}
 		v >>= 4
 	}
+
 	return string(result)
 }
 
@@ -252,7 +255,7 @@ func TestOldFormatBackwardCompatibility(t *testing.T) {
 	// Create 5 old format version IDs with known timestamps
 	baseTs := int64(1700000000000000000)
 	versions := make([]string, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		ts := baseTs + int64(i)*int64(time.Minute) // each 1 minute apart
 		versions[i] = createOldFormatVersionId(ts)
 	}
@@ -266,7 +269,7 @@ func TestOldFormatBackwardCompatibility(t *testing.T) {
 
 	// Verify sorting: versions[4] is newest, versions[0] is oldest
 	// compareVersionIds(newer, older) should return negative
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		newer := versions[i+1]
 		older := versions[i]
 		result := compareVersionIds(newer, older)
@@ -290,7 +293,7 @@ func TestNewFormatSorting(t *testing.T) {
 	// Create 5 new format version IDs with known timestamps
 	baseTs := int64(1700000000000000000)
 	versions := make([]string, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		ts := baseTs + int64(i)*int64(time.Minute) // each 1 minute apart
 		versions[i] = createNewFormatVersionId(ts)
 	}
@@ -303,7 +306,7 @@ func TestNewFormatSorting(t *testing.T) {
 	}
 
 	// Verify sorting: versions[4] is newest, versions[0] is oldest
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		newer := versions[i+1]
 		older := versions[i]
 		result := compareVersionIds(newer, older)
@@ -328,14 +331,14 @@ func TestMixedFormatTransition(t *testing.T) {
 
 	// First 3 versions created with old format (before upgrade)
 	oldVersions := make([]string, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ts := baseTs + int64(i)*int64(time.Minute)
 		oldVersions[i] = createOldFormatVersionId(ts)
 	}
 
 	// Next 3 versions created with new format (after upgrade)
 	newVersions := make([]string, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ts := baseTs + int64(3+i)*int64(time.Minute) // continue from where old left off
 		newVersions[i] = createNewFormatVersionId(ts)
 	}
@@ -344,7 +347,7 @@ func TestMixedFormatTransition(t *testing.T) {
 	allVersions := append(oldVersions, newVersions...)
 
 	// Verify mixed formats
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if isNewFormatVersionId(allVersions[i]) {
 			t.Errorf("allVersions[%d] should be old format", i)
 		}
@@ -356,7 +359,7 @@ func TestMixedFormatTransition(t *testing.T) {
 	}
 
 	// Verify sorting works correctly across the format boundary
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		newer := allVersions[i+1]
 		older := allVersions[i]
 		result := compareVersionIds(newer, older)

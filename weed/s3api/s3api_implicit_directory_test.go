@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"errors"
 	"io"
 	"testing"
 
@@ -206,7 +207,7 @@ func TestHasChildrenLogic(t *testing.T) {
 			hasChildren := false
 			if tt.listError == nil && tt.listResponse != nil {
 				hasChildren = true
-			} else if tt.listError == io.EOF {
+			} else if errors.Is(tt.listError, io.EOF) {
 				hasChildren = false
 			}
 

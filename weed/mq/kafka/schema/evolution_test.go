@@ -227,7 +227,7 @@ func TestSchemaEvolutionChecker_AvroFullCompatibility(t *testing.T) {
 		result, err := checker.CheckCompatibility(oldSchema, newSchema, FormatAvro, CompatibilityFull)
 		require.NoError(t, err)
 		assert.False(t, result.Compatible)
-		assert.True(t, len(result.Issues) > 0)
+		assert.NotEmpty(t, result.Issues)
 	})
 }
 
@@ -429,12 +429,13 @@ func TestSchemaEvolutionChecker_SuggestEvolution(t *testing.T) {
 
 		suggestions, err := checker.SuggestEvolution(oldSchema, newSchema, FormatAvro, CompatibilityBackward)
 		require.NoError(t, err)
-		assert.True(t, len(suggestions) > 0)
+		assert.NotEmpty(t, suggestions)
 		// Should suggest not removing fields
 		found := false
 		for _, suggestion := range suggestions {
 			if strings.Contains(suggestion, "deprecating") {
 				found = true
+
 				break
 			}
 		}
@@ -473,13 +474,13 @@ func TestSchemaEvolutionChecker_ExtractFields(t *testing.T) {
 	checker := NewSchemaEvolutionChecker()
 
 	t.Run("Extract Avro fields", func(t *testing.T) {
-		schema := map[string]interface{}{
-			"fields": []interface{}{
-				map[string]interface{}{
+		schema := map[string]any{
+			"fields": []any{
+				map[string]any{
 					"name": "id",
 					"type": "int",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"name":    "name",
 					"type":    "string",
 					"default": "",
@@ -492,12 +493,12 @@ func TestSchemaEvolutionChecker_ExtractFields(t *testing.T) {
 		assert.Contains(t, fields, "id")
 		assert.Contains(t, fields, "name")
 		assert.Equal(t, "int", fields["id"]["type"])
-		assert.Equal(t, "", fields["name"]["default"])
+		assert.Empty(t, fields["name"]["default"])
 	})
 
 	t.Run("Extract JSON Schema required fields", func(t *testing.T) {
-		schema := map[string]interface{}{
-			"required": []interface{}{"id", "name"},
+		schema := map[string]any{
+			"required": []any{"id", "name"},
 		}
 
 		required := checker.extractJSONSchemaRequired(schema)
@@ -507,10 +508,10 @@ func TestSchemaEvolutionChecker_ExtractFields(t *testing.T) {
 	})
 
 	t.Run("Extract JSON Schema properties", func(t *testing.T) {
-		schema := map[string]interface{}{
-			"properties": map[string]interface{}{
-				"id":   map[string]interface{}{"type": "integer"},
-				"name": map[string]interface{}{"type": "string"},
+		schema := map[string]any{
+			"properties": map[string]any{
+				"id":   map[string]any{"type": "integer"},
+				"name": map[string]any{"type": "string"},
 			},
 		}
 
@@ -546,8 +547,7 @@ func BenchmarkSchemaCompatibilityCheck(b *testing.B) {
 		]
 	}`
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := checker.CheckCompatibility(oldSchema, newSchema, FormatAvro, CompatibilityBackward)
 		if err != nil {
 			b.Fatal(err)

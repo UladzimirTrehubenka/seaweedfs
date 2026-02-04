@@ -5,6 +5,7 @@ import (
 	"time"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer_client"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
@@ -31,12 +32,13 @@ func NewConsumerGroup(t *schema_pb.Topic, reblanceSeconds int32, filerClientAcce
 	}
 	if conf, err := cg.filerClientAccessor.ReadTopicConfFromFiler(cg.topic); err == nil {
 		var partitions []topic.Partition
-		for _, assignment := range conf.BrokerPartitionAssignments {
-			partitions = append(partitions, topic.FromPbPartition(assignment.Partition))
+		for _, assignment := range conf.GetBrokerPartitionAssignments() {
+			partitions = append(partitions, topic.FromPbPartition(assignment.GetPartition()))
 		}
 		cg.Market = NewMarket(partitions, time.Duration(reblanceSeconds)*time.Second)
 	} else {
 		glog.V(0).Infof("fail to read topic conf from filer: %v", err)
+
 		return nil
 	}
 
@@ -47,24 +49,26 @@ func NewConsumerGroup(t *schema_pb.Topic, reblanceSeconds int32, filerClientAcce
 				cgi, found := cg.ConsumerGroupInstances.Get(string(adjustment.consumer))
 				if !found {
 					glog.V(0).Infof("consumer group instance %s not found", adjustment.consumer)
+
 					continue
 				}
 				if adjustment.isAssign {
 					if conf, err := cg.filerClientAccessor.ReadTopicConfFromFiler(cg.topic); err == nil {
-						for _, assignment := range conf.BrokerPartitionAssignments {
-							if adjustment.partition.Equals(topic.FromPbPartition(assignment.Partition)) {
+						for _, assignment := range conf.GetBrokerPartitionAssignments() {
+							if adjustment.partition.Equals(topic.FromPbPartition(assignment.GetPartition())) {
 								cgi.ResponseChan <- &mq_pb.SubscriberToSubCoordinatorResponse{
 									Message: &mq_pb.SubscriberToSubCoordinatorResponse_Assignment_{
 										Assignment: &mq_pb.SubscriberToSubCoordinatorResponse_Assignment{
 											PartitionAssignment: &mq_pb.BrokerPartitionAssignment{
 												Partition:      adjustment.partition.ToPbPartition(),
-												LeaderBroker:   assignment.LeaderBroker,
-												FollowerBroker: assignment.FollowerBroker,
+												LeaderBroker:   assignment.GetLeaderBroker(),
+												FollowerBroker: assignment.GetFollowerBroker(),
 											},
 										},
 									},
 								}
 								glog.V(0).Infof("send assignment %v to %s", adjustment.partition, adjustment.consumer)
+
 								break
 							}
 						}
@@ -92,7 +96,7 @@ func (cg *ConsumerGroup) AckAssignment(cgi *ConsumerGroupInstance, assignment *m
 	fmt.Printf("ack assignment %v\n", assignment)
 	cg.Market.ConfirmAdjustment(&Adjustment{
 		consumer:  cgi.InstanceId,
-		partition: topic.FromPbPartition(assignment.Partition),
+		partition: topic.FromPbPartition(assignment.GetPartition()),
 		isAssign:  true,
 	})
 }
@@ -100,7 +104,7 @@ func (cg *ConsumerGroup) AckUnAssignment(cgi *ConsumerGroupInstance, assignment 
 	fmt.Printf("ack unassignment %v\n", assignment)
 	cg.Market.ConfirmAdjustment(&Adjustment{
 		consumer:  cgi.InstanceId,
-		partition: topic.FromPbPartition(assignment.Partition),
+		partition: topic.FromPbPartition(assignment.GetPartition()),
 		isAssign:  false,
 	})
 }

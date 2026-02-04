@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/app"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/layout"
@@ -37,6 +38,7 @@ func (h *ServiceAccountHandlers) ShowServiceAccounts(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to render service accounts template: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
+
 		return
 	}
 
@@ -53,6 +55,7 @@ func (h *ServiceAccountHandlers) GetServiceAccounts(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to get service accounts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get service accounts"})
+
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"service_accounts": accounts})
@@ -63,11 +66,13 @@ func (h *ServiceAccountHandlers) CreateServiceAccount(c *gin.Context) {
 	var req dash.CreateServiceAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
 	if req.ParentUser == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ParentUser is required"})
+
 		return
 	}
 
@@ -75,6 +80,7 @@ func (h *ServiceAccountHandlers) CreateServiceAccount(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("Failed to create service account for user %s: %v", req.ParentUser, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create service account"})
+
 		return
 	}
 
@@ -89,6 +95,7 @@ func (h *ServiceAccountHandlers) GetServiceAccountDetails(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Service account ID is required"})
+
 		return
 	}
 
@@ -101,6 +108,7 @@ func (h *ServiceAccountHandlers) GetServiceAccountDetails(c *gin.Context) {
 			glog.Errorf("Failed to get service account details for %s: %v", id, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get service account details"})
 		}
+
 		return
 	}
 
@@ -112,12 +120,14 @@ func (h *ServiceAccountHandlers) UpdateServiceAccount(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Service account ID is required"})
+
 		return
 	}
 
 	var req dash.UpdateServiceAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
@@ -130,6 +140,7 @@ func (h *ServiceAccountHandlers) UpdateServiceAccount(c *gin.Context) {
 			glog.Errorf("Failed to update service account %s: %v", id, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update service account"})
 		}
+
 		return
 	}
 
@@ -144,6 +155,7 @@ func (h *ServiceAccountHandlers) DeleteServiceAccount(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Service account ID is required"})
+
 		return
 	}
 
@@ -156,6 +168,7 @@ func (h *ServiceAccountHandlers) DeleteServiceAccount(c *gin.Context) {
 			glog.Errorf("Failed to delete service account %s: %v", id, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete service account"})
 		}
+
 		return
 	}
 
@@ -175,6 +188,7 @@ func (h *ServiceAccountHandlers) getServiceAccountsData(c *gin.Context) dash.Ser
 	accounts, err := h.adminServer.GetServiceAccounts(c.Request.Context(), "")
 	if err != nil {
 		glog.Errorf("Failed to get service accounts: %v", err)
+
 		return dash.ServiceAccountsData{
 			Username:        username,
 			ServiceAccounts: []dash.ServiceAccount{},

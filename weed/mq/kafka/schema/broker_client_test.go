@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	"github.com/linkedin/goavro/v2"
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestBrokerClient_SchematizedMessage tests publishing schematized messages
@@ -49,7 +50,7 @@ func TestBrokerClient_SchematizedMessage(t *testing.T) {
 		registerBrokerTestSchema(t, registry, schemaID, schemaJSON)
 
 		// Create test data
-		testData := map[string]interface{}{
+		testData := map[string]any{
 			"id":    "test-123",
 			"value": int32(42),
 		}
@@ -70,8 +71,8 @@ func TestBrokerClient_SchematizedMessage(t *testing.T) {
 		assert.Equal(t, FormatAvro, decoded.SchemaFormat)
 
 		// Verify decoded fields
-		idField := decoded.RecordValue.Fields["id"]
-		valueField := decoded.RecordValue.Fields["value"]
+		idField := decoded.RecordValue.GetFields()["id"]
+		valueField := decoded.RecordValue.GetFields()["value"]
 		assert.Equal(t, "test-123", idField.GetStringValue())
 		// Note: Integer decoding has known issues in current Avro implementation
 		if valueField.GetInt64Value() != 42 {
@@ -107,27 +108,27 @@ func TestBrokerClient_SchematizedMessage(t *testing.T) {
 		assert.NotNil(t, recordType)
 
 		// Note: RecordType inference has known limitations in current implementation
-		if len(recordType.Fields) != 3 {
-			t.Logf("Known issue: RecordType has %d fields instead of expected 3", len(recordType.Fields))
+		if len(recordType.GetFields()) != 3 {
+			t.Logf("Known issue: RecordType has %d fields instead of expected 3", len(recordType.GetFields()))
 			// For now, just verify we got at least some fields
-			assert.Greater(t, len(recordType.Fields), 0, "Should have at least one field")
+			assert.NotEmpty(t, recordType.GetFields(), "Should have at least one field")
 		} else {
 			// Verify field types if inference worked correctly
 			fieldMap := make(map[string]*schema_pb.Field)
-			for _, field := range recordType.Fields {
-				fieldMap[field.Name] = field
+			for _, field := range recordType.GetFields() {
+				fieldMap[field.GetName()] = field
 			}
 
 			if nameField := fieldMap["name"]; nameField != nil {
-				assert.Equal(t, schema_pb.ScalarType_STRING, nameField.Type.GetScalarType())
+				assert.Equal(t, schema_pb.ScalarType_STRING, nameField.GetType().GetScalarType())
 			}
 
 			if ageField := fieldMap["age"]; ageField != nil {
-				assert.Equal(t, schema_pb.ScalarType_INT32, ageField.Type.GetScalarType())
+				assert.Equal(t, schema_pb.ScalarType_INT32, ageField.GetType().GetScalarType())
 			}
 
 			if activeField := fieldMap["active"]; activeField != nil {
-				assert.Equal(t, schema_pb.ScalarType_BOOL, activeField.Type.GetScalarType())
+				assert.Equal(t, schema_pb.ScalarType_BOOL, activeField.GetType().GetScalarType())
 			}
 		}
 	})
@@ -221,7 +222,7 @@ func TestBrokerClient_Integration(t *testing.T) {
 		// Create Avro message
 		codec, err := goavro.NewCodec(avroSchema)
 		require.NoError(t, err)
-		avroData := map[string]interface{}{"content": "avro message"}
+		avroData := map[string]any{"content": "avro message"}
 		avroBinary, err := codec.BinaryFromNative(nil, avroData)
 		require.NoError(t, err)
 		avroEnvelope := createBrokerTestEnvelope(avroSchemaID, avroBinary)
@@ -239,7 +240,7 @@ func TestBrokerClient_Integration(t *testing.T) {
 		}`
 		registerBrokerTestSchema(t, registry, jsonSchemaID, jsonSchema)
 
-		jsonData := map[string]interface{}{"message": "json message"}
+		jsonData := map[string]any{"message": "json message"}
 		jsonBytes, err := json.Marshal(jsonData)
 		require.NoError(t, err)
 		jsonEnvelope := createBrokerTestEnvelope(jsonSchemaID, jsonBytes)
@@ -263,7 +264,7 @@ func TestBrokerClient_Integration(t *testing.T) {
 		// Create test message
 		codec, err := goavro.NewCodec(schemaJSON)
 		require.NoError(t, err)
-		testData := map[string]interface{}{"data": "cached"}
+		testData := map[string]any{"data": "cached"}
 		avroBinary, err := codec.BinaryFromNative(nil, testData)
 		require.NoError(t, err)
 		envelope := createBrokerTestEnvelope(schemaID, avroBinary)
@@ -282,8 +283,8 @@ func TestBrokerClient_Integration(t *testing.T) {
 
 		// Check cache stats
 		decoders, schemas, _ := manager.GetCacheStats()
-		assert.True(t, decoders > 0)
-		assert.True(t, schemas > 0)
+		assert.Positive(t, decoders)
+		assert.Positive(t, schemas)
 	})
 }
 
@@ -310,7 +311,7 @@ func createBrokerTestRegistry(t *testing.T) *httptest.Server {
 					w.WriteHeader(http.StatusNotFound)
 					w.Write([]byte(`{"error_code": 40403, "message": "Schema not found"}`))
 				}
-			} else if r.Method == "POST" && r.URL.Path == "/register-schema" {
+			} else if r.Method == http.MethodPost && r.URL.Path == "/register-schema" {
 				var req struct {
 					SchemaID int32  `json:"schema_id"`
 					Schema   string `json:"schema"`
@@ -342,5 +343,6 @@ func createBrokerTestEnvelope(schemaID int32, data []byte) []byte {
 	envelope[0] = 0x00 // Magic byte
 	binary.BigEndian.PutUint32(envelope[1:5], uint32(schemaID))
 	copy(envelope[5:], data)
+
 	return envelope
 }

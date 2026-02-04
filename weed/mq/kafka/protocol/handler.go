@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,6 +92,7 @@ func generateNodeID(gatewayAddress string) int32 {
 // clients see the same broker/coordinator node ID across all APIs.
 func (h *Handler) GetNodeID() int32 {
 	gatewayAddr := h.GetGatewayAddress()
+
 	return generateNodeID(gatewayAddr)
 }
 
@@ -245,6 +248,7 @@ func (h *Handler) getTopicSchemaFormat(topic string) string {
 	if config, exists := h.topicSchemaConfigs[topic]; exists {
 		return config.ValueSchemaFormat.String()
 	}
+
 	return "" // Empty string means schemaless or format unknown
 }
 
@@ -348,7 +352,7 @@ func NewSeaweedMQBrokerHandlerWithDefaults(masters string, filerGroup string, cl
 	// Use the shared filer client accessor from SeaweedMQHandler
 	sharedFilerAccessor := smqHandler.GetFilerClientAccessor()
 	if sharedFilerAccessor == nil {
-		return nil, fmt.Errorf("no shared filer client accessor available from SMQ handler")
+		return nil, errors.New("no shared filer client accessor available from SMQ handler")
 	}
 
 	// Create consumer offset storage (for OffsetCommit/OffsetFetch protocol)
@@ -418,6 +422,7 @@ func (h *Handler) Close() error {
 	if h.seaweedMQHandler != nil {
 		return h.seaweedMQHandler.Close()
 	}
+
 	return nil
 }
 
@@ -494,11 +499,13 @@ func (h *Handler) GetConnectionContext() *integration.ConnectionContext {
 	// Try to find any active connection context
 	// In most cases (single connection, or low concurrency), this will return the correct context
 	var connCtx *ConnectionContext
-	h.connContexts.Range(func(key, value interface{}) bool {
+	h.connContexts.Range(func(key, value any) bool {
 		if ctx, ok := value.(*ConnectionContext); ok {
 			connCtx = ctx
+
 			return false // Stop iteration after finding first context
 		}
+
 		return true
 	})
 
@@ -632,6 +639,7 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 						if writeErr := h.writeResponseWithHeader(w, readyResp.correlationID, readyResp.apiKey, readyResp.apiVersion, readyResp.response, timeoutConfig.WriteTimeout); writeErr != nil {
 							glog.Errorf("[%s] Response writer WRITE ERROR correlation=%d: %v - EXITING", connectionID, readyResp.correlationID, writeErr)
 							correlationQueueMu.Unlock()
+
 							return
 						}
 					}
@@ -644,6 +652,7 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 			case <-ctx.Done():
 				// Context cancelled, exit immediately to prevent deadlock
 				glog.V(2).Infof("[%s] Response writer: context cancelled, exiting", connectionID)
+
 				return
 			}
 		}
@@ -714,11 +723,13 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 							glog.V(3).Infof("[%s] Control plane: sent drained response correlation=%d", connectionID, req.correlationID)
 						case <-time.After(1 * time.Second):
 							glog.Warningf("[%s] Control plane: timeout sending drained response correlation=%d, discarding", connectionID, req.correlationID)
+
 							return
 						}
 					default:
 						// Channel empty, safe to exit
 						glog.V(4).Infof("[%s] Control plane: drain complete, exiting", connectionID)
+
 						return
 					}
 				}
@@ -791,11 +802,13 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 							// Response sent - no logging
 						case <-time.After(1 * time.Second):
 							glog.Warningf("[%s] Data plane: timeout sending drained response correlation=%d, discarding", connectionID, req.correlationID)
+
 							return
 						}
 					default:
 						// Channel empty, safe to exit
 						glog.V(2).Infof("[%s] Data plane: drain complete, exiting", connectionID)
+
 						return
 					}
 				}
@@ -842,7 +855,8 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 			if err == io.EOF {
 				return nil
 			}
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			var netErr net.Error
+			if errors.As(err, &netErr) {
 				// Track consecutive timeouts to detect stale connections
 				consecutiveTimeouts++
 				if consecutiveTimeouts >= maxConsecutiveTimeouts {
@@ -851,6 +865,7 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 				// Idle timeout while waiting for next request; keep connection open
 				continue
 			}
+
 			return fmt.Errorf("read message size: %w", err)
 		}
 
@@ -865,6 +880,7 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 			errorResponse := BuildErrorResponse(0, ErrorCodeMessageTooLarge) // correlation ID 0 since we can't parse it yet
 			if writeErr := h.writeResponseWithCorrelationID(w, 0, errorResponse, timeoutConfig.WriteTimeout); writeErr != nil {
 			}
+
 			return fmt.Errorf("message size %d exceeds limit", size)
 		}
 
@@ -878,12 +894,13 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 		defer mem.Free(messageBuf)
 		if _, err := io.ReadFull(r, messageBuf); err != nil {
 			_ = HandleTimeoutError(err, "read") // errorCode
+
 			return fmt.Errorf("read message: %w", err)
 		}
 
 		// Parse at least the basic header to get API key and correlation ID
 		if len(messageBuf) < 8 {
-			return fmt.Errorf("message too short")
+			return errors.New("message too short")
 		}
 
 		apiKey := binary.BigEndian.Uint16(messageBuf[0:2])
@@ -960,13 +977,13 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 				// Basic header parsing fallback (original logic)
 				bodyOffset := 8
 				if len(messageBuf) < bodyOffset+2 {
-					return fmt.Errorf("invalid header: missing client_id length")
+					return errors.New("invalid header: missing client_id length")
 				}
 				clientIDLen := int16(binary.BigEndian.Uint16(messageBuf[bodyOffset : bodyOffset+2]))
 				bodyOffset += 2
 				if clientIDLen >= 0 {
 					if len(messageBuf) < bodyOffset+int(clientIDLen) {
-						return fmt.Errorf("invalid header: client_id truncated")
+						return errors.New("invalid header: client_id truncated")
 					}
 					bodyOffset += int(clientIDLen)
 				}
@@ -980,13 +997,13 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 					// Fall back to basic parsing rather than failing
 					bodyOffset := 8
 					if len(messageBuf) < bodyOffset+2 {
-						return fmt.Errorf("invalid header: missing client_id length")
+						return errors.New("invalid header: missing client_id length")
 					}
 					clientIDLen := int16(binary.BigEndian.Uint16(messageBuf[bodyOffset : bodyOffset+2]))
 					bodyOffset += 2
 					if clientIDLen >= 0 {
 						if len(messageBuf) < bodyOffset+int(clientIDLen) {
-							return fmt.Errorf("invalid header: client_id truncated")
+							return errors.New("invalid header: client_id truncated")
 						}
 						bodyOffset += int(clientIDLen)
 					}
@@ -1038,6 +1055,7 @@ func (h *Handler) HandleConn(ctx context.Context, conn net.Conn) error {
 		case <-time.After(10 * time.Second):
 			// Channel full for too long - this shouldn't happen with proper backpressure
 			glog.Errorf("[%s] Failed to queue correlation=%d - channel full (10s timeout)", connectionID, correlationID)
+
 			return fmt.Errorf("request queue full: correlation=%d", correlationID)
 		}
 	}
@@ -1188,7 +1206,6 @@ func (h *Handler) handleApiVersions(correlationID uint32, apiVersion uint16) ([]
 			response = append(response, byte(api.MaxVersion>>8), byte(api.MaxVersion)) // max_version (2 bytes)
 			response = append(response, 0x00)                                          // Per-element tagged fields (varint: empty)
 		}
-
 	} else {
 		// NON-FLEXIBLE FORMAT: Regular array with fixed 4-byte length
 		response = append(response, 0, 0, 0, byte(len(SupportedApiKeys))) // Array length (4 bytes)
@@ -1321,7 +1338,7 @@ func (h *Handler) HandleMetadataV0(correlationID uint32, requestBody []byte) ([]
 		response = append(response, partitionsBytes...)
 
 		// Create partition entries for each partition
-		for partitionID := int32(0); partitionID < partitionCount; partitionID++ {
+		for partitionID := range partitionCount {
 			// partition: error_code(2) + partition_id(4) + leader(4)
 			response = append(response, 0, 0) // error_code
 
@@ -1344,6 +1361,7 @@ func (h *Handler) HandleMetadataV0(correlationID uint32, requestBody []byte) ([]
 
 	for range topicsToReturn {
 	}
+
 	return response, nil
 }
 
@@ -1456,7 +1474,7 @@ func (h *Handler) HandleMetadataV1(correlationID uint32, requestBody []byte) ([]
 		response = append(response, partitionsBytes...)
 
 		// Create partition entries for each partition
-		for partitionID := int32(0); partitionID < partitionCount; partitionID++ {
+		for partitionID := range partitionCount {
 			// partition: error_code(2) + partition_id(4) + leader_id(4) + replicas(ARRAY) + isr(ARRAY)
 			response = append(response, 0, 0) // error_code
 
@@ -1584,7 +1602,7 @@ func (h *Handler) HandleMetadataV2(correlationID uint32, requestBody []byte) ([]
 		binary.Write(&buf, binary.BigEndian, partitionCount)
 
 		// Create partition entries for each partition
-		for partitionID := int32(0); partitionID < partitionCount; partitionID++ {
+		for partitionID := range partitionCount {
 			binary.Write(&buf, binary.BigEndian, int16(0))    // ErrorCode
 			binary.Write(&buf, binary.BigEndian, partitionID) // PartitionIndex
 			binary.Write(&buf, binary.BigEndian, nodeID)      // LeaderID
@@ -1711,7 +1729,7 @@ func (h *Handler) HandleMetadataV3V4(correlationID uint32, requestBody []byte) (
 		binary.Write(&buf, binary.BigEndian, partitionCount)
 
 		// Create partition entries for each partition
-		for partitionID := int32(0); partitionID < partitionCount; partitionID++ {
+		for partitionID := range partitionCount {
 			binary.Write(&buf, binary.BigEndian, int16(0))    // ErrorCode
 			binary.Write(&buf, binary.BigEndian, partitionID) // PartitionIndex
 			binary.Write(&buf, binary.BigEndian, nodeID)      // LeaderID
@@ -1726,17 +1744,7 @@ func (h *Handler) HandleMetadataV3V4(correlationID uint32, requestBody []byte) (
 		}
 	}
 
-	response := buf.Bytes()
-
-	// Detailed logging for Metadata response
-	maxDisplay := len(response)
-	if maxDisplay > 50 {
-		maxDisplay = 50
-	}
-	if len(response) > 100 {
-	}
-
-	return response, nil
+	return buf.Bytes(), nil
 }
 
 // HandleMetadataV5V6 implements Metadata API v5/v6 with OfflineReplicas field
@@ -1890,7 +1898,7 @@ func (h *Handler) handleMetadataV5ToV8(correlationID uint32, requestBody []byte,
 		binary.Write(&buf, binary.BigEndian, partitionCount)
 
 		// Create partition entries for each partition
-		for partitionID := int32(0); partitionID < partitionCount; partitionID++ {
+		for partitionID := range partitionCount {
 			binary.Write(&buf, binary.BigEndian, int16(0))    // ErrorCode
 			binary.Write(&buf, binary.BigEndian, partitionID) // PartitionIndex
 			binary.Write(&buf, binary.BigEndian, nodeID)      // LeaderID
@@ -1918,17 +1926,7 @@ func (h *Handler) handleMetadataV5ToV8(correlationID uint32, requestBody []byte,
 		binary.Write(&buf, binary.BigEndian, int32(-2147483648)) // All operations allowed (bit mask)
 	}
 
-	response := buf.Bytes()
-
-	// Detailed logging for Metadata response
-	maxDisplay := len(response)
-	if maxDisplay > 50 {
-		maxDisplay = 50
-	}
-	if len(response) > 100 {
-	}
-
-	return response, nil
+	return buf.Bytes(), nil
 }
 
 func (h *Handler) parseMetadataTopics(requestBody []byte) []string {
@@ -1956,6 +1954,7 @@ func (h *Handler) parseMetadataTopics(requestBody []byte) []string {
 			topics = append(topics, string(requestBody[offset:offset+nameLen]))
 			offset += nameLen
 		}
+
 		return topics
 	}
 
@@ -1983,18 +1982,13 @@ func (h *Handler) parseMetadataTopics(requestBody []byte) []string {
 		topics = append(topics, string(requestBody[offset:offset+nameLen]))
 		offset += nameLen
 	}
+
 	return topics
 }
 
 func (h *Handler) handleListOffsets(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// Parse minimal request to understand what's being asked (header already stripped)
 	offset := 0
-
-	maxBytes := len(requestBody)
-	if maxBytes > 64 {
-		maxBytes = 64
-	}
 
 	// v1+ has replica_id(4)
 	if apiVersion >= 1 {
@@ -2015,7 +2009,7 @@ func (h *Handler) handleListOffsets(correlationID uint32, apiVersion uint16, req
 	}
 
 	if len(requestBody) < offset+4 {
-		return nil, fmt.Errorf("ListOffsets request missing topics count")
+		return nil, errors.New("ListOffsets request missing topics count")
 	}
 
 	topicsCount := binary.BigEndian.Uint32(requestBody[offset : offset+4])
@@ -2145,34 +2139,29 @@ func (h *Handler) handleListOffsets(correlationID uint32, apiVersion uint16, req
 	} else {
 	}
 
-	if len(response) > 0 {
-		respPreview := len(response)
-		if respPreview > 32 {
-			respPreview = 32
-		}
-	}
 	return response, nil
-
 }
 
 func (h *Handler) handleCreateTopics(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	if len(requestBody) < 2 {
-		return nil, fmt.Errorf("CreateTopics request too short")
+		return nil, errors.New("CreateTopics request too short")
 	}
 
 	// Parse based on API version
 	switch apiVersion {
 	case 0, 1:
 		response, err := h.handleCreateTopicsV0V1(correlationID, requestBody)
+
 		return response, err
 	case 2, 3, 4:
 		// kafka-go sends v2-4 in regular format, not compact
 		response, err := h.handleCreateTopicsV2To4(correlationID, requestBody)
+
 		return response, err
 	case 5:
 		// v5+ uses flexible format with compact arrays
 		response, err := h.handleCreateTopicsV2Plus(correlationID, apiVersion, requestBody)
+
 		return response, err
 	default:
 		return nil, fmt.Errorf("unsupported CreateTopics API version: %d", apiVersion)
@@ -2183,7 +2172,7 @@ func (h *Handler) handleCreateTopics(correlationID uint32, apiVersion uint16, re
 func (h *Handler) handleCreateTopicsV2To4(correlationID uint32, requestBody []byte) ([]byte, error) {
 	// Auto-detect format: kafka-go sends regular format, tests send compact format
 	if len(requestBody) < 1 {
-		return nil, fmt.Errorf("CreateTopics v2-4 request too short")
+		return nil, errors.New("CreateTopics v2-4 request too short")
 	}
 
 	// Detect format by checking first byte
@@ -2205,13 +2194,14 @@ func (h *Handler) handleCreateTopicsV2To4(correlationID uint32, requestBody []by
 	if isCompactFormat {
 		// Delegate to the compact format handler
 		response, err := h.handleCreateTopicsV2Plus(correlationID, 2, requestBody)
+
 		return response, err
 	}
 
 	// Handle regular format
 	offset := 0
 	if len(requestBody) < offset+4 {
-		return nil, fmt.Errorf("CreateTopics v2-4 request too short for topics array")
+		return nil, errors.New("CreateTopics v2-4 request too short for topics array")
 	}
 
 	topicsCount := binary.BigEndian.Uint32(requestBody[offset : offset+4])
@@ -2223,44 +2213,44 @@ func (h *Handler) handleCreateTopicsV2To4(correlationID uint32, requestBody []by
 		partitions  uint32
 		replication uint16
 	}, 0, topicsCount)
-	for i := uint32(0); i < topicsCount; i++ {
+	for range topicsCount {
 		if len(requestBody) < offset+2 {
-			return nil, fmt.Errorf("CreateTopics v2-4: truncated topic name length")
+			return nil, errors.New("CreateTopics v2-4: truncated topic name length")
 		}
 		nameLen := binary.BigEndian.Uint16(requestBody[offset : offset+2])
 		offset += 2
 		if len(requestBody) < offset+int(nameLen) {
-			return nil, fmt.Errorf("CreateTopics v2-4: truncated topic name")
+			return nil, errors.New("CreateTopics v2-4: truncated topic name")
 		}
 		topicName := string(requestBody[offset : offset+int(nameLen)])
 		offset += int(nameLen)
 
 		if len(requestBody) < offset+4 {
-			return nil, fmt.Errorf("CreateTopics v2-4: truncated num_partitions")
+			return nil, errors.New("CreateTopics v2-4: truncated num_partitions")
 		}
 		numPartitions := binary.BigEndian.Uint32(requestBody[offset : offset+4])
 		offset += 4
 
 		if len(requestBody) < offset+2 {
-			return nil, fmt.Errorf("CreateTopics v2-4: truncated replication_factor")
+			return nil, errors.New("CreateTopics v2-4: truncated replication_factor")
 		}
 		replication := binary.BigEndian.Uint16(requestBody[offset : offset+2])
 		offset += 2
 
 		// Assignments array (array of partition assignments) - skip contents
 		if len(requestBody) < offset+4 {
-			return nil, fmt.Errorf("CreateTopics v2-4: truncated assignments count")
+			return nil, errors.New("CreateTopics v2-4: truncated assignments count")
 		}
 		assignments := binary.BigEndian.Uint32(requestBody[offset : offset+4])
 		offset += 4
-		for j := uint32(0); j < assignments; j++ {
+		for range assignments {
 			// partition_id (int32) + replicas (array int32)
 			if len(requestBody) < offset+4 {
-				return nil, fmt.Errorf("CreateTopics v2-4: truncated assignment partition id")
+				return nil, errors.New("CreateTopics v2-4: truncated assignment partition id")
 			}
 			offset += 4
 			if len(requestBody) < offset+4 {
-				return nil, fmt.Errorf("CreateTopics v2-4: truncated replicas count")
+				return nil, errors.New("CreateTopics v2-4: truncated replicas count")
 			}
 			replicasCount := binary.BigEndian.Uint32(requestBody[offset : offset+4])
 			offset += 4
@@ -2270,20 +2260,20 @@ func (h *Handler) handleCreateTopicsV2To4(correlationID uint32, requestBody []by
 
 		// Configs array (array of (name,value) strings) - skip contents
 		if len(requestBody) < offset+4 {
-			return nil, fmt.Errorf("CreateTopics v2-4: truncated configs count")
+			return nil, errors.New("CreateTopics v2-4: truncated configs count")
 		}
 		configs := binary.BigEndian.Uint32(requestBody[offset : offset+4])
 		offset += 4
-		for j := uint32(0); j < configs; j++ {
+		for range configs {
 			// name (string)
 			if len(requestBody) < offset+2 {
-				return nil, fmt.Errorf("CreateTopics v2-4: truncated config name length")
+				return nil, errors.New("CreateTopics v2-4: truncated config name length")
 			}
 			nameLen := binary.BigEndian.Uint16(requestBody[offset : offset+2])
 			offset += 2 + int(nameLen)
 			// value (nullable string)
 			if len(requestBody) < offset+2 {
-				return nil, fmt.Errorf("CreateTopics v2-4: truncated config value length")
+				return nil, errors.New("CreateTopics v2-4: truncated config value length")
 			}
 			valueLen := int16(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
 			offset += 2
@@ -2352,9 +2342,8 @@ func (h *Handler) handleCreateTopicsV2To4(correlationID uint32, requestBody []by
 }
 
 func (h *Handler) handleCreateTopicsV0V1(correlationID uint32, requestBody []byte) ([]byte, error) {
-
 	if len(requestBody) < 4 {
-		return nil, fmt.Errorf("CreateTopics v0/v1 request too short")
+		return nil, errors.New("CreateTopics v0/v1 request too short")
 	}
 
 	offset := 0
@@ -2525,7 +2514,7 @@ func (h *Handler) handleCreateTopicsV2Plus(correlationID uint32, apiVersion uint
 	}
 	topics := make([]topicSpec, 0, topicsCount)
 
-	for i := uint32(0); i < topicsCount; i++ {
+	for i := range topicsCount {
 		// Topic name (compact string)
 		name, consumed, err := DecodeFlexibleString(requestBody[offset:])
 		if err != nil {
@@ -2564,7 +2553,7 @@ func (h *Handler) handleCreateTopicsV2Plus(correlationID uint32, apiVersion uint
 		offset += consumed
 
 		// Skip assignment entries (partition_id + replicas array)
-		for j := uint32(0); j < assignCount; j++ {
+		for j := range assignCount {
 			// partition_id (int32)
 			if len(requestBody) < offset+4 {
 				return nil, fmt.Errorf("CreateTopics v%d: truncated assignment[%d] partition_id", apiVersion, j)
@@ -2599,7 +2588,7 @@ func (h *Handler) handleCreateTopicsV2Plus(correlationID uint32, apiVersion uint
 		}
 		offset += consumed
 
-		for j := uint32(0); j < cfgCount; j++ {
+		for j := range cfgCount {
 			// name (compact string)
 			_, consumed, err := DecodeFlexibleString(requestBody[offset:])
 			if err != nil {
@@ -2812,7 +2801,7 @@ func (h *Handler) handleDeleteTopics(correlationID uint32, requestBody []byte) (
 	// Request format: client_id + timeout(4) + topics_array
 
 	if len(requestBody) < 6 { // client_id_size(2) + timeout(4)
-		return nil, fmt.Errorf("DeleteTopics request too short")
+		return nil, errors.New("DeleteTopics request too short")
 	}
 
 	// Skip client_id
@@ -2820,7 +2809,7 @@ func (h *Handler) handleDeleteTopics(correlationID uint32, requestBody []byte) (
 	offset := 2 + int(clientIDSize)
 
 	if len(requestBody) < offset+8 { // timeout(4) + topics_count(4)
-		return nil, fmt.Errorf("DeleteTopics request missing data")
+		return nil, errors.New("DeleteTopics request missing data")
 	}
 
 	// Skip timeout
@@ -2866,7 +2855,7 @@ func (h *Handler) handleDeleteTopics(correlationID uint32, requestBody []byte) (
 
 		// Check if topic exists and delete it
 		var errorCode uint16 = 0
-		var errorMessage string = ""
+		var errorMessage = ""
 
 		// Use SeaweedMQ integration
 		if !h.seaweedMQHandler.TopicExists(topicName) {
@@ -2926,6 +2915,7 @@ func (h *Handler) validateAPIVersion(apiKey, apiVersion uint16) error {
 			return fmt.Errorf("unsupported API version %d for API key %d (supported: %d-%d)",
 				apiVersion, apiKey, minVer, maxVer)
 		}
+
 		return nil
 	}
 
@@ -2935,12 +2925,12 @@ func (h *Handler) validateAPIVersion(apiKey, apiVersion uint16) error {
 // buildUnsupportedVersionResponse creates a proper Kafka error response
 func (h *Handler) buildUnsupportedVersionResponse(correlationID uint32, apiKey, apiVersion uint16) ([]byte, error) {
 	errorMsg := fmt.Sprintf("Unsupported version %d for API key", apiVersion)
+
 	return BuildErrorResponseWithMessage(correlationID, ErrorCodeUnsupportedVersion, errorMsg), nil
 }
 
 // handleMetadata routes to the appropriate version-specific handler
 func (h *Handler) handleMetadata(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	var response []byte
 	var err error
 
@@ -2969,6 +2959,7 @@ func (h *Handler) handleMetadata(correlationID uint32, apiVersion uint16, reques
 	if err != nil {
 	} else {
 	}
+
 	return response, err
 }
 
@@ -3020,11 +3011,11 @@ func getAPIName(apiKey APIKey) string {
 
 // handleDescribeConfigs handles DescribeConfigs API requests (API key 32)
 func (h *Handler) handleDescribeConfigs(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// Parse request to extract resources
 	resources, err := h.parseDescribeConfigsRequest(requestBody, apiVersion)
 	if err != nil {
 		glog.Errorf("DescribeConfigs parsing error: %v", err)
+
 		return nil, fmt.Errorf("failed to parse DescribeConfigs request: %w", err)
 	}
 
@@ -3090,6 +3081,7 @@ func (h *Handler) handleDescribeConfigs(correlationID uint32, apiVersion uint16,
 					if cfgs[i].Name == "cleanup.policy" {
 						cfgs[i].Value = "compact"
 						replaced = true
+
 						break
 					}
 				}
@@ -3313,7 +3305,7 @@ func (h *Handler) EnableSchemaManagement(config schema.ManagerConfig) error {
 // EnableBrokerIntegration enables mq.broker integration for schematized messages
 func (h *Handler) EnableBrokerIntegration(brokers []string) error {
 	if !h.IsSchemaEnabled() {
-		return fmt.Errorf("schema management must be enabled before broker integration")
+		return errors.New("schema management must be enabled before broker integration")
 	}
 
 	brokerClient := schema.NewBrokerClient(schema.BrokerClientConfig{
@@ -3322,6 +3314,7 @@ func (h *Handler) EnableBrokerIntegration(brokers []string) error {
 	})
 
 	h.brokerClient = brokerClient
+
 	return nil
 }
 
@@ -3350,6 +3343,7 @@ func (h *Handler) GetDefaultPartitions() int32 {
 	if h.defaultPartitions <= 0 {
 		return 4 // Fallback default
 	}
+
 	return h.defaultPartitions
 }
 
@@ -3359,6 +3353,7 @@ func (h *Handler) IsSchemaEnabled() bool {
 	if !h.useSchema && h.schemaRegistryURL != "" {
 		h.tryInitializeSchemaManagement()
 	}
+
 	return h.useSchema && h.schemaManager != nil
 }
 
@@ -3376,7 +3371,6 @@ func (h *Handler) tryInitializeSchemaManagement() {
 	if err := h.EnableSchemaManagement(schemaConfig); err != nil {
 		return
 	}
-
 }
 
 // IsBrokerIntegrationEnabled returns true if broker integration is enabled
@@ -3392,7 +3386,7 @@ func (h *Handler) commitOffsetToSMQ(key ConsumerOffsetKey, offsetValue int64, me
 	}
 
 	// No SMQ offset storage - only use consumer offset storage
-	return fmt.Errorf("offset storage not initialized")
+	return errors.New("offset storage not initialized")
 }
 
 // fetchOffsetFromSMQ fetches offset using SMQ storage
@@ -3403,7 +3397,7 @@ func (h *Handler) fetchOffsetFromSMQ(key ConsumerOffsetKey) (int64, string, erro
 	}
 
 	// SMQ offset storage removed - no fallback
-	return -1, "", fmt.Errorf("offset storage not initialized")
+	return -1, "", errors.New("offset storage not initialized")
 }
 
 // DescribeConfigsResource represents a resource in a DescribeConfigs request
@@ -3416,7 +3410,7 @@ type DescribeConfigsResource struct {
 // parseDescribeConfigsRequest parses a DescribeConfigs request body
 func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uint16) ([]DescribeConfigsResource, error) {
 	if len(requestBody) < 1 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	offset := 0
@@ -3443,7 +3437,7 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 	} else {
 		// Regular array: length is int32
 		if len(requestBody) < 4 {
-			return nil, fmt.Errorf("request too short for regular array")
+			return nil, errors.New("request too short for regular array")
 		}
 		resourcesLength = binary.BigEndian.Uint32(requestBody[offset : offset+4])
 		offset += 4
@@ -3456,9 +3450,9 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 
 	resources := make([]DescribeConfigsResource, 0, resourcesLength)
 
-	for i := uint32(0); i < resourcesLength; i++ {
+	for range resourcesLength {
 		if offset+1 > len(requestBody) {
-			return nil, fmt.Errorf("insufficient data for resource type")
+			return nil, errors.New("insufficient data for resource type")
 		}
 
 		// Resource type (1 byte)
@@ -3478,7 +3472,7 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 		} else {
 			// Regular string: length is int16
 			if offset+2 > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for resource name length")
+				return nil, errors.New("insufficient data for resource name length")
 			}
 			nameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
 			offset += 2
@@ -3489,7 +3483,7 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 			}
 
 			if offset+nameLength > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for resource name")
+				return nil, errors.New("insufficient data for resource name")
 			}
 			resourceName = string(requestBody[offset : offset+nameLength])
 			offset += nameLength
@@ -3508,7 +3502,7 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 
 			// Parse each config name as compact string (if not null)
 			if configNamesCount > 0 {
-				for j := uint32(0); j < configNamesCount; j++ {
+				for j := range configNamesCount {
 					configName, consumed, err := DecodeFlexibleString(requestBody[offset:])
 					if err != nil {
 						return nil, fmt.Errorf("decode config name[%d] compact string: %w", j, err)
@@ -3520,7 +3514,7 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 		} else {
 			// Regular array: length is int32
 			if offset+4 > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for config names length")
+				return nil, errors.New("insufficient data for config names length")
 			}
 			configNamesLength := int32(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 			offset += 4
@@ -3537,9 +3531,9 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 			}
 
 			configNames = make([]string, 0, configNamesLength)
-			for j := int32(0); j < configNamesLength; j++ {
+			for range configNamesLength {
 				if offset+2 > len(requestBody) {
-					return nil, fmt.Errorf("insufficient data for config name length")
+					return nil, errors.New("insufficient data for config name length")
 				}
 				configNameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
 				offset += 2
@@ -3550,7 +3544,7 @@ func (h *Handler) parseDescribeConfigsRequest(requestBody []byte, apiVersion uin
 				}
 
 				if offset+configNameLength > len(requestBody) {
-					return nil, fmt.Errorf("insufficient data for config name")
+					return nil, errors.New("insufficient data for config name")
 				}
 				configName := string(requestBody[offset : offset+configNameLength])
 				offset += configNameLength
@@ -3686,6 +3680,7 @@ func (h *Handler) getTopicConfigs(topicName string, requestedConfigs []string) [
 				filteredConfigs = append(filteredConfigs, config)
 			}
 		}
+
 		return filteredConfigs
 	}
 
@@ -3694,6 +3689,7 @@ func (h *Handler) getTopicConfigs(topicName string, requestedConfigs []string) [
 	for _, config := range allConfigs {
 		configs = append(configs, config)
 	}
+
 	return configs
 }
 
@@ -3739,6 +3735,7 @@ func (h *Handler) getBrokerConfigs(requestedConfigs []string) []ConfigEntry {
 				filteredConfigs = append(filteredConfigs, config)
 			}
 		}
+
 		return filteredConfigs
 	}
 
@@ -3747,6 +3744,7 @@ func (h *Handler) getBrokerConfigs(requestedConfigs []string) []ConfigEntry {
 	for _, config := range allConfigs {
 		configs = append(configs, config)
 	}
+
 	return configs
 }
 
@@ -3847,13 +3845,13 @@ func (h *Handler) registerSchemasViaBrokerAPI(topicName string, valueRecordType 
 
 	// Require SeaweedMQ integration to access broker
 	if h.seaweedMQHandler == nil {
-		return fmt.Errorf("no SeaweedMQ handler available for broker access")
+		return errors.New("no SeaweedMQ handler available for broker access")
 	}
 
 	// Get broker addresses
 	brokerAddresses := h.seaweedMQHandler.GetBrokerAddresses()
 	if len(brokerAddresses) == 0 {
-		return fmt.Errorf("no broker addresses available")
+		return errors.New("no broker addresses available")
 	}
 
 	// Use the first available broker
@@ -3892,6 +3890,7 @@ func (h *Handler) registerSchemasViaBrokerAPI(topicName string, valueRecordType 
 				KeyColumns:        keyColumns,
 				SchemaFormat:      schemaFormat,
 			})
+
 			return err
 		}
 
@@ -3907,12 +3906,13 @@ func (h *Handler) registerSchemasViaBrokerAPI(topicName string, valueRecordType 
 		schemaFormat := h.getTopicSchemaFormat(topicName)
 		_, err = client.ConfigureTopic(context.Background(), &mq_pb.ConfigureTopicRequest{
 			Topic:             seaweedTopic,
-			PartitionCount:    getResp.PartitionCount,
+			PartitionCount:    getResp.GetPartitionCount(),
 			MessageRecordType: flatSchema,
 			KeyColumns:        keyColumns,
-			Retention:         getResp.Retention,
+			Retention:         getResp.GetRetention(),
 			SchemaFormat:      schemaFormat,
 		})
+
 		return err
 	})
 }
@@ -3920,16 +3920,10 @@ func (h *Handler) registerSchemasViaBrokerAPI(topicName string, valueRecordType 
 // handleInitProducerId handles InitProducerId API requests (API key 22)
 // This API is used to initialize a producer for transactional or idempotent operations
 func (h *Handler) handleInitProducerId(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// InitProducerId Request Format (varies by version):
 	// v0-v1: transactional_id(NULLABLE_STRING) + transaction_timeout_ms(INT32)
 	// v2+: transactional_id(NULLABLE_STRING) + transaction_timeout_ms(INT32) + producer_id(INT64) + producer_epoch(INT16)
 	// v4+: Uses flexible format with tagged fields
-
-	maxBytes := len(requestBody)
-	if maxBytes > 64 {
-		maxBytes = 64
-	}
 
 	offset := 0
 
@@ -3938,7 +3932,7 @@ func (h *Handler) handleInitProducerId(correlationID uint32, apiVersion uint16, 
 	if apiVersion >= 4 {
 		// Flexible version - use compact nullable string
 		if len(requestBody) < offset+1 {
-			return nil, fmt.Errorf("InitProducerId request too short for transactional_id")
+			return nil, errors.New("InitProducerId request too short for transactional_id")
 		}
 
 		length := int(requestBody[offset])
@@ -3951,7 +3945,7 @@ func (h *Handler) handleInitProducerId(correlationID uint32, apiVersion uint16, 
 			// Non-null string (length is encoded as length+1 in compact format)
 			actualLength := length - 1
 			if len(requestBody) < offset+actualLength {
-				return nil, fmt.Errorf("InitProducerId request transactional_id too short")
+				return nil, errors.New("InitProducerId request transactional_id too short")
 			}
 			if actualLength > 0 {
 				id := string(requestBody[offset : offset+actualLength])
@@ -3966,7 +3960,7 @@ func (h *Handler) handleInitProducerId(correlationID uint32, apiVersion uint16, 
 	} else {
 		// Non-flexible version - use regular nullable string
 		if len(requestBody) < offset+2 {
-			return nil, fmt.Errorf("InitProducerId request too short for transactional_id length")
+			return nil, errors.New("InitProducerId request too short for transactional_id length")
 		}
 
 		length := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
@@ -3977,7 +3971,7 @@ func (h *Handler) handleInitProducerId(correlationID uint32, apiVersion uint16, 
 			transactionalId = nil
 		} else {
 			if len(requestBody) < offset+length {
-				return nil, fmt.Errorf("InitProducerId request transactional_id too short")
+				return nil, errors.New("InitProducerId request transactional_id too short")
 			}
 			if length > 0 {
 				id := string(requestBody[offset : offset+length])
@@ -3994,7 +3988,7 @@ func (h *Handler) handleInitProducerId(correlationID uint32, apiVersion uint16, 
 
 	// Parse transaction_timeout_ms (INT32)
 	if len(requestBody) < offset+4 {
-		return nil, fmt.Errorf("InitProducerId request too short for transaction_timeout_ms")
+		return nil, errors.New("InitProducerId request too short for transaction_timeout_ms")
 	}
 	_ = binary.BigEndian.Uint32(requestBody[offset : offset+4]) // transactionTimeoutMs
 	offset += 4
@@ -4036,17 +4030,12 @@ func (h *Handler) handleInitProducerId(correlationID uint32, apiVersion uint16, 
 		response = append(response, 0x00) // Empty response body tagged fields
 	}
 
-	respPreview := len(response)
-	if respPreview > 32 {
-		respPreview = 32
-	}
 	return response, nil
 }
 
 // createTopicWithSchemaSupport creates a topic with optional schema integration
 // This function creates topics with schema support when schema management is enabled
 func (h *Handler) createTopicWithSchemaSupport(topicName string, partitions int32) error {
-
 	// For system topics like _schemas, __consumer_offsets, etc., use default schema
 	if isSystemTopic(topicName) {
 		return h.createTopicWithDefaultFlexibleSchema(topicName, partitions)
@@ -4054,7 +4043,6 @@ func (h *Handler) createTopicWithSchemaSupport(topicName string, partitions int3
 
 	// Check if Schema Registry URL is configured
 	if h.schemaRegistryURL != "" {
-
 		// Try to initialize schema management if not already done
 		if h.schemaManager == nil {
 			h.tryInitializeSchemaManagement()
@@ -4096,6 +4084,7 @@ func (h *Handler) createTopicWithDefaultFlexibleSchema(topicName string, partiti
 	// Schema Registry uses _schemas to STORE schemas, so it can't have schema management itself
 
 	glog.V(1).Infof("Creating system topic %s as PLAIN topic (no schema management)", topicName)
+
 	return h.seaweedMQHandler.CreateTopic(topicName, partitions)
 }
 
@@ -4103,7 +4092,7 @@ func (h *Handler) createTopicWithDefaultFlexibleSchema(topicName string, partiti
 // Returns key and value RecordTypes if schemas are found
 func (h *Handler) fetchSchemaForTopic(topicName string) (*schema_pb.RecordType, *schema_pb.RecordType, error) {
 	if h.schemaManager == nil {
-		return nil, nil, fmt.Errorf("schema manager not available")
+		return nil, nil, errors.New("schema manager not available")
 	}
 
 	var keyRecordType *schema_pb.RecordType
@@ -4120,7 +4109,6 @@ func (h *Handler) fetchSchemaForTopic(topicName string) (*schema_pb.RecordType, 
 		}
 		// Not found or connection error - continue to check key schema
 	} else if cachedSchema != nil {
-
 		// Convert schema to RecordType
 		recordType, err := h.convertSchemaToRecordType(cachedSchema.Schema, cachedSchema.LatestID)
 		if err == nil {
@@ -4140,7 +4128,6 @@ func (h *Handler) fetchSchemaForTopic(topicName string) (*schema_pb.RecordType, 
 		}
 		// Not found or connection error - key schema is optional
 	} else if cachedKeySchema != nil {
-
 		// Convert schema to RecordType
 		recordType, err := h.convertSchemaToRecordType(cachedKeySchema.Schema, cachedKeySchema.LatestID)
 		if err == nil {
@@ -4216,6 +4203,7 @@ func (h *Handler) convertSchemaToRecordType(schemaStr string, schemaID uint32) (
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Avro decoder: %w", err)
 		}
+
 		return decoder.InferRecordType()
 
 	case schema.FormatJSONSchema:
@@ -4224,12 +4212,13 @@ func (h *Handler) convertSchemaToRecordType(schemaStr string, schemaID uint32) (
 		if err != nil {
 			return nil, fmt.Errorf("failed to create JSON Schema decoder: %w", err)
 		}
+
 		return decoder.InferRecordType()
 
 	case schema.FormatProtobuf:
 		// For Protobuf, we need the binary descriptor, not string
 		// This is a limitation - Protobuf schemas in Schema Registry are typically stored as binary descriptors
-		return nil, fmt.Errorf("Protobuf schema conversion from string not supported - requires binary descriptor")
+		return nil, errors.New("Protobuf schema conversion from string not supported - requires binary descriptor")
 
 	default:
 		return nil, fmt.Errorf("unsupported schema format: %v", cachedSchema.Format)
@@ -4246,10 +4235,8 @@ func isSystemTopic(topicName string) bool {
 		"_confluent-metrics",
 	}
 
-	for _, systemTopic := range systemTopics {
-		if topicName == systemTopic {
-			return true
-		}
+	if slices.Contains(systemTopics, topicName) {
+		return true
 	}
 
 	// Check for topics starting with underscore (common system topic pattern)
@@ -4261,6 +4248,7 @@ func (h *Handler) getConnectionContextFromRequest(ctx context.Context) *Connecti
 	if connCtx, ok := ctx.Value(connContextKey).(*ConnectionContext); ok {
 		return connCtx
 	}
+
 	return nil
 }
 
@@ -4280,6 +4268,7 @@ func (h *Handler) getOrCreatePartitionReader(ctx context.Context, connCtx *Conne
 	if actual, loaded := connCtx.partitionReaders.LoadOrStore(key, reader); loaded {
 		// Another goroutine created it first, close ours and use theirs
 		reader.close()
+
 		return actual.(*partitionReader)
 	}
 
@@ -4293,10 +4282,11 @@ func cleanupPartitionReaders(connCtx *ConnectionContext) {
 		return
 	}
 
-	connCtx.partitionReaders.Range(func(key, value interface{}) bool {
+	connCtx.partitionReaders.Range(func(key, value any) bool {
 		if reader, ok := value.(*partitionReader); ok {
 			reader.close()
 		}
+
 		return true // Continue iteration
 	})
 

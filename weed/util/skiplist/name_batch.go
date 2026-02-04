@@ -4,8 +4,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
 type NameBatch struct {
@@ -15,6 +16,7 @@ type NameBatch struct {
 
 func (nb *NameBatch) ContainsName(name string) (found bool) {
 	_, found = nb.names[name]
+
 	return
 }
 func (nb *NameBatch) WriteName(name string) {
@@ -50,6 +52,7 @@ func (nb *NameBatch) ListNames(startFrom string, visitNamesFn func(name string) 
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -65,17 +68,19 @@ func LoadNameBatch(data []byte) *NameBatch {
 		err := proto.Unmarshal(data, t)
 		if err != nil {
 			glog.Errorf("unmarshal into NameBatchData{} : %v", err)
+
 			return nil
 		}
 	}
 	nb := NewNameBatch()
-	for _, n := range t.Names {
+	for _, n := range t.GetNames() {
 		name := string(n)
 		if nb.key == "" || strings.Compare(nb.key, name) > 0 {
 			nb.key = name
 		}
 		nb.names[name] = struct{}{}
 	}
+
 	return nb
 }
 
@@ -85,6 +90,7 @@ func (nb *NameBatch) ToBytes() []byte {
 		t.Names = append(t.Names, []byte(n))
 	}
 	data, _ := proto.Marshal(t)
+
 	return data
 }
 
@@ -99,5 +105,6 @@ func (nb *NameBatch) SplitBy(name string) (x, y *NameBatch) {
 			y.WriteName(n)
 		}
 	}
+
 	return
 }

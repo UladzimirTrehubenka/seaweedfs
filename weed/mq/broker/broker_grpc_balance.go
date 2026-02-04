@@ -11,11 +11,13 @@ func (b *MessageQueueBroker) BalanceTopics(ctx context.Context, request *mq_pb.B
 	if !b.isLockOwner() {
 		proxyErr := b.withBrokerClient(false, pb.ServerAddress(b.lockAsBalancer.LockOwner()), func(client mq_pb.SeaweedMessagingClient) error {
 			resp, err = client.BalanceTopics(ctx, request)
+
 			return nil
 		})
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
+
 		return resp, err
 	}
 

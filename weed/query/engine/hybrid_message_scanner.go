@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,8 @@ import (
 	"time"
 
 	"github.com/parquet-go/parquet-go"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/mq"
 	"github.com/seaweedfs/seaweedfs/weed/mq/logstore"
@@ -27,7 +31,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util/chunk_cache"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/protobuf/proto"
 )
 
 // HybridMessageScanner scans from ALL data sources:
@@ -52,7 +55,7 @@ type HybridMessageScanner struct {
 func NewHybridMessageScanner(filerClient filer_pb.FilerClient, brokerClient BrokerClientInterface, namespace, topicName string, engine *SQLEngine) (*HybridMessageScanner, error) {
 	// Check if filerClient is available
 	if filerClient == nil {
-		return nil, fmt.Errorf("filerClient is required but not available")
+		return nil, errors.New("filerClient is required but not available")
 	}
 
 	// Create topic reference
@@ -64,10 +67,10 @@ func NewHybridMessageScanner(filerClient filer_pb.FilerClient, brokerClient Brok
 	// Get flat schema from broker client
 	recordType, _, schemaFormat, err := brokerClient.GetTopicSchema(context.Background(), namespace, topicName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get topic record type: %v", err)
+		return nil, fmt.Errorf("failed to get topic record type: %w", err)
 	}
 
-	if recordType == nil || len(recordType.Fields) == 0 {
+	if recordType == nil || len(recordType.GetFields()) == 0 {
 		// For topics without schema, create a minimal schema with system fields and _value
 		recordType = schema.RecordTypeBegin().
 			WithField(SW_COLUMN_NAME_TIMESTAMP, schema.TypeInt64).
@@ -77,9 +80,9 @@ func NewHybridMessageScanner(filerClient filer_pb.FilerClient, brokerClient Brok
 	} else {
 		// Create a copy of the recordType to avoid modifying the original
 		recordTypeCopy := &schema_pb.RecordType{
-			Fields: make([]*schema_pb.Field, len(recordType.Fields)),
+			Fields: make([]*schema_pb.Field, len(recordType.GetFields())),
 		}
-		copy(recordTypeCopy.Fields, recordType.Fields)
+		copy(recordTypeCopy.GetFields(), recordType.GetFields())
 
 		// Add system columns that MQ adds to all records
 		recordType = schema.NewRecordTypeBuilder(recordTypeCopy).
@@ -91,7 +94,7 @@ func NewHybridMessageScanner(filerClient filer_pb.FilerClient, brokerClient Brok
 	// Convert to Parquet levels for efficient reading
 	parquetLevels, err := schema.ToParquetLevels(recordType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Parquet levels: %v", err)
+		return nil, fmt.Errorf("failed to create Parquet levels: %w", err)
 	}
 
 	return &HybridMessageScanner{
@@ -179,6 +182,7 @@ func (h *HybridMessageScanner) getTimestampRangeFromStats(fileStats *ParquetFile
 	if fileStats.MinTimestampNs != 0 || fileStats.MaxTimestampNs != 0 {
 		return fileStats.MinTimestampNs, fileStats.MaxTimestampNs, true
 	}
+
 	return 0, 0, false
 }
 
@@ -187,7 +191,7 @@ func (h *HybridMessageScanner) schemaValueToNs(v *schema_pb.Value) (int64, bool)
 	if v == nil {
 		return 0, false
 	}
-	switch k := v.Kind.(type) {
+	switch k := v.GetKind().(type) {
 	case *schema_pb.Value_Int64Value:
 		return k.Int64Value, true
 	case *schema_pb.Value_Int32Value:
@@ -223,15 +227,16 @@ func (h StreamingMergeHeap) Less(i, j int) bool {
 
 func (h StreamingMergeHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
-func (h *StreamingMergeHeap) Push(x interface{}) {
+func (h *StreamingMergeHeap) Push(x any) {
 	*h = append(*h, x.(*StreamingMergeItem))
 }
 
-func (h *StreamingMergeHeap) Pop() interface{} {
+func (h *StreamingMergeHeap) Pop() any {
 	old := *h
 	n := len(old)
 	item := old[n-1]
 	*h = old[0 : n-1]
+
 	return item
 }
 
@@ -243,6 +248,7 @@ func (h *StreamingMergeHeap) Pop() interface{} {
 // 3. Handles schema evolution transparently
 func (hms *HybridMessageScanner) Scan(ctx context.Context, options HybridScanOptions) ([]HybridScanResult, error) {
 	results, _, err := hms.ScanWithStats(ctx, options)
+
 	return results, err
 }
 
@@ -254,7 +260,7 @@ func (hms *HybridMessageScanner) ScanWithStats(ctx context.Context, options Hybr
 	// Get all partitions for this topic via MQ broker discovery
 	partitions, err := hms.discoverTopicPartitions(ctx)
 	if err != nil {
-		return nil, stats, fmt.Errorf("failed to discover partitions for topic %s: %v", hms.topic.String(), err)
+		return nil, stats, fmt.Errorf("failed to discover partitions for topic %s: %w", hms.topic.String(), err)
 	}
 
 	stats.PartitionsScanned = len(partitions)
@@ -262,7 +268,7 @@ func (hms *HybridMessageScanner) ScanWithStats(ctx context.Context, options Hybr
 	for _, partition := range partitions {
 		partitionResults, partitionStats, err := hms.scanPartitionHybridWithStats(ctx, partition, options)
 		if err != nil {
-			return nil, stats, fmt.Errorf("failed to scan partition %v: %v", partition, err)
+			return nil, stats, fmt.Errorf("failed to scan partition %v: %w", partition, err)
 		}
 
 		results = append(results, partitionResults...)
@@ -323,6 +329,7 @@ func (hms *HybridMessageScanner) ScanWithStats(ctx context.Context, options Hybr
 // scanUnflushedData queries brokers for unflushed in-memory data using buffer_start deduplication
 func (hms *HybridMessageScanner) scanUnflushedData(ctx context.Context, partition topic.Partition, options HybridScanOptions) ([]HybridScanResult, error) {
 	results, _, err := hms.scanUnflushedDataWithStats(ctx, partition, options)
+
 	return results, err
 }
 
@@ -346,6 +353,7 @@ func (hms *HybridMessageScanner) scanUnflushedDataWithStats(ctx context.Context,
 		// Log error but don't fail the query - continue with disk data only
 		// Reset queried flag on error
 		stats.BrokerBufferQueried = false
+
 		return results, stats, nil
 	}
 
@@ -356,9 +364,9 @@ func (hms *HybridMessageScanner) scanUnflushedDataWithStats(ctx context.Context,
 	for _, logEntry := range unflushedEntries {
 		// Pre-decode DataMessage for reuse in both control check and conversion
 		var dataMessage *mq_pb.DataMessage
-		if len(logEntry.Data) > 0 {
+		if len(logEntry.GetData()) > 0 {
 			dataMessage = &mq_pb.DataMessage{}
-			if err := proto.Unmarshal(logEntry.Data, dataMessage); err != nil {
+			if err := proto.Unmarshal(logEntry.GetData(), dataMessage); err != nil {
 				dataMessage = nil // Failed to decode, treat as raw data
 			}
 		}
@@ -369,10 +377,10 @@ func (hms *HybridMessageScanner) scanUnflushedDataWithStats(ctx context.Context,
 		}
 
 		// Skip messages outside time range
-		if options.StartTimeNs > 0 && logEntry.TsNs < options.StartTimeNs {
+		if options.StartTimeNs > 0 && logEntry.GetTsNs() < options.StartTimeNs {
 			continue
 		}
-		if options.StopTimeNs > 0 && logEntry.TsNs > options.StopTimeNs {
+		if options.StopTimeNs > 0 && logEntry.GetTsNs() > options.StopTimeNs {
 			continue
 		}
 
@@ -388,14 +396,14 @@ func (hms *HybridMessageScanner) scanUnflushedDataWithStats(ctx context.Context,
 		}
 
 		// Extract system columns for result
-		timestamp := recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value()
-		key := recordValue.Fields[SW_COLUMN_NAME_KEY].GetBytesValue()
+		timestamp := recordValue.GetFields()[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value()
+		key := recordValue.GetFields()[SW_COLUMN_NAME_KEY].GetBytesValue()
 
 		// Apply column projection
 		values := make(map[string]*schema_pb.Value)
 		if len(options.Columns) == 0 {
 			// Select all columns (excluding system columns from user view)
-			for name, value := range recordValue.Fields {
+			for name, value := range recordValue.GetFields() {
 				if name != SW_COLUMN_NAME_TIMESTAMP && name != SW_COLUMN_NAME_KEY {
 					values[name] = value
 				}
@@ -403,7 +411,7 @@ func (hms *HybridMessageScanner) scanUnflushedDataWithStats(ctx context.Context,
 		} else {
 			// Select specified columns only
 			for _, columnName := range options.Columns {
-				if value, exists := recordValue.Fields[columnName]; exists {
+				if value, exists := recordValue.GetFields()[columnName]; exists {
 					values[columnName] = value
 				}
 			}
@@ -440,8 +448,8 @@ func (hms *HybridMessageScanner) scanUnflushedDataWithStats(ctx context.Context,
 func (hms *HybridMessageScanner) convertDataMessageToRecord(msg *mq_pb.DataMessage) (*schema_pb.RecordValue, string, error) {
 	// Parse the message data as RecordValue
 	recordValue := &schema_pb.RecordValue{}
-	if err := proto.Unmarshal(msg.Value, recordValue); err != nil {
-		return nil, "", fmt.Errorf("failed to unmarshal message data: %v", err)
+	if err := proto.Unmarshal(msg.GetValue(), recordValue); err != nil {
+		return nil, "", fmt.Errorf("failed to unmarshal message data: %w", err)
 	}
 
 	// Add system columns
@@ -451,50 +459,42 @@ func (hms *HybridMessageScanner) convertDataMessageToRecord(msg *mq_pb.DataMessa
 
 	// Add timestamp
 	recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{
-		Kind: &schema_pb.Value_Int64Value{Int64Value: msg.TsNs},
+		Kind: &schema_pb.Value_Int64Value{Int64Value: msg.GetTsNs()},
 	}
 
-	return recordValue, string(msg.Key), nil
+	return recordValue, string(msg.GetKey()), nil
 }
 
 // discoverTopicPartitions discovers the actual partitions for this topic by scanning the filesystem
 // This finds real partition directories like v2025-09-01-07-16-34/0000-0630/
 func (hms *HybridMessageScanner) discoverTopicPartitions(ctx context.Context) ([]topic.Partition, error) {
 	if hms.filerClient == nil {
-		return nil, fmt.Errorf("filerClient not available for partition discovery")
+		return nil, errors.New("filerClient not available for partition discovery")
 	}
 
 	var allPartitions []topic.Partition
-	var err error
-
-	// Scan the topic directory for actual partition versions (timestamped directories)
-	// List all version directories in the topic directory
-	err = filer_pb.ReadDirAllEntries(ctx, hms.filerClient, util.FullPath(hms.topic.Dir()), "", func(versionEntry *filer_pb.Entry, isLast bool) error {
-		if !versionEntry.IsDirectory {
-			return nil // Skip non-directories
-		}
-
-		// Parse version timestamp from directory name (e.g., "v2025-09-01-07-16-34")
-		versionTime, parseErr := topic.ParseTopicVersion(versionEntry.Name)
-		if parseErr != nil {
-			// Skip directories that don't match the version format
+	var err = filer_pb.ReadDirAllEntries(ctx, hms.filerClient, util.FullPath(hms.topic.Dir()), "", func(versionEntry *filer_pb.Entry, isLast bool) error {
+		if !versionEntry.GetIsDirectory() {
 			return nil
 		}
 
-		// Scan partition directories within this version
-		versionDir := fmt.Sprintf("%s/%s", hms.topic.Dir(), versionEntry.Name)
+		versionTime, parseErr := topic.ParseTopicVersion(versionEntry.GetName())
+		if parseErr != nil {
+			return nil
+		}
+
+		versionDir := fmt.Sprintf("%s/%s", hms.topic.Dir(), versionEntry.GetName())
+
 		return filer_pb.ReadDirAllEntries(ctx, hms.filerClient, util.FullPath(versionDir), "", func(partitionEntry *filer_pb.Entry, isLast bool) error {
-			if !partitionEntry.IsDirectory {
-				return nil // Skip non-directories
+			if !partitionEntry.GetIsDirectory() {
+				return nil
 			}
 
-			// Parse partition boundary from directory name (e.g., "0000-0630")
-			rangeStart, rangeStop := topic.ParsePartitionBoundary(partitionEntry.Name)
+			rangeStart, rangeStop := topic.ParsePartitionBoundary(partitionEntry.GetName())
 			if rangeStart == rangeStop {
-				return nil // Skip invalid partition names
+				return nil
 			}
 
-			// Create partition object
 			partition := topic.Partition{
 				RangeStart: rangeStart,
 				RangeStop:  rangeStop,
@@ -503,21 +503,24 @@ func (hms *HybridMessageScanner) discoverTopicPartitions(ctx context.Context) ([
 			}
 
 			allPartitions = append(allPartitions, partition)
+
 			return nil
 		})
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan topic directory for partitions: %v", err)
+		return nil, fmt.Errorf("failed to scan topic directory for partitions: %w", err)
 	}
 
 	// If no partitions found, return empty slice (valid for newly created or empty topics)
 	if len(allPartitions) == 0 {
 		fmt.Printf("No partitions found for topic %s - returning empty result set\n", hms.topic.String())
+
 		return []topic.Partition{}, nil
 	}
 
 	fmt.Printf("Discovered %d partitions for topic %s\n", len(allPartitions), hms.topic.String())
+
 	return allPartitions, nil
 }
 
@@ -527,6 +530,7 @@ func (hms *HybridMessageScanner) discoverTopicPartitions(ctx context.Context) ([
 // 2. Live logs + Parquet files from disk (FLUSHED/ARCHIVED)
 func (hms *HybridMessageScanner) scanPartitionHybrid(ctx context.Context, partition topic.Partition, options HybridScanOptions) ([]HybridScanResult, error) {
 	results, _, err := hms.scanPartitionHybridWithStats(ctx, partition, options)
+
 	return results, err
 }
 
@@ -588,7 +592,7 @@ func (hms *HybridMessageScanner) scanPartitionHybridWithStats(ctx context.Contex
 
 		mergedResults, err := hms.streamingMerge(dataSources, scanLimit)
 		if err != nil {
-			return nil, stats, fmt.Errorf("streaming merge failed: %v", err)
+			return nil, stats, fmt.Errorf("streaming merge failed: %w", err)
 		}
 		results = mergedResults
 	}
@@ -618,7 +622,7 @@ func (hms *HybridMessageScanner) countLiveLogFiles(partition topic.Partition) (i
 
 		for {
 			resp, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
@@ -627,10 +631,10 @@ func (hms *HybridMessageScanner) countLiveLogFiles(partition topic.Partition) (i
 
 			// Count files that are not .parquet files (live log files)
 			// Live log files typically have timestamps or are named like log files
-			fileName := resp.Entry.Name
+			fileName := resp.GetEntry().GetName()
 			if !strings.HasSuffix(fileName, ".parquet") &&
 				!strings.HasSuffix(fileName, ".offset") &&
-				len(resp.Entry.Chunks) > 0 { // Has actual content
+				len(resp.GetEntry().GetChunks()) > 0 { // Has actual content
 				fileCount++
 			}
 		}
@@ -641,6 +645,7 @@ func (hms *HybridMessageScanner) countLiveLogFiles(partition topic.Partition) (i
 	if err != nil {
 		return 0, err
 	}
+
 	return fileCount, nil
 }
 
@@ -652,12 +657,13 @@ func (hms *HybridMessageScanner) countLiveLogFiles(partition topic.Partition) (i
 func (hms *HybridMessageScanner) isControlEntry(logEntry *filer_pb.LogEntry) bool {
 	// Pre-decode DataMessage if needed
 	var dataMessage *mq_pb.DataMessage
-	if len(logEntry.Data) > 0 {
+	if len(logEntry.GetData()) > 0 {
 		dataMessage = &mq_pb.DataMessage{}
-		if err := proto.Unmarshal(logEntry.Data, dataMessage); err != nil {
+		if err := proto.Unmarshal(logEntry.GetData(), dataMessage); err != nil {
 			dataMessage = nil // Failed to decode, treat as raw data
 		}
 	}
+
 	return hms.isControlEntryWithDecoded(logEntry, dataMessage)
 }
 
@@ -665,12 +671,12 @@ func (hms *HybridMessageScanner) isControlEntry(logEntry *filer_pb.LogEntry) boo
 // This avoids duplicate protobuf unmarshaling when the DataMessage is already decoded
 func (hms *HybridMessageScanner) isControlEntryWithDecoded(logEntry *filer_pb.LogEntry, dataMessage *mq_pb.DataMessage) bool {
 	// Skip entries with empty keys (same logic as subscriber)
-	if len(logEntry.Key) == 0 {
+	if len(logEntry.GetKey()) == 0 {
 		return true
 	}
 
 	// Check if this is a DataMessage with control field populated
-	if dataMessage != nil && dataMessage.Ctrl != nil {
+	if dataMessage != nil && dataMessage.GetCtrl() != nil {
 		return true
 	}
 
@@ -685,13 +691,13 @@ func isNullOrEmpty(value *schema_pb.Value) bool {
 		return true
 	}
 
-	switch v := value.Kind.(type) {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_StringValue:
 		return v.StringValue == ""
 	case *schema_pb.Value_BytesValue:
 		return len(v.BytesValue) == 0
 	case *schema_pb.Value_ListValue:
-		return v.ListValue == nil || len(v.ListValue.Values) == 0
+		return v.ListValue == nil || len(v.ListValue.GetValues()) == 0
 	case nil:
 		return true // No kind set means null
 	default:
@@ -715,8 +721,8 @@ func (hms *HybridMessageScanner) isSchemaless() bool {
 	hasValue := false
 	dataFieldCount := 0
 
-	for _, field := range hms.recordSchema.Fields {
-		switch field.Name {
+	for _, field := range hms.recordSchema.GetFields() {
+		switch field.GetName() {
 		case SW_COLUMN_NAME_TIMESTAMP, SW_COLUMN_NAME_KEY:
 			// System fields - ignore
 			continue
@@ -745,20 +751,21 @@ func (hms *HybridMessageScanner) convertLogEntryToRecordValue(logEntry *filer_pb
 			Fields: make(map[string]*schema_pb.Value),
 		}
 		recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{
-			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.TsNs},
+			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.GetTsNs()},
 		}
 		recordValue.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{
-			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Key},
+			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetKey()},
 		}
 		recordValue.Fields[SW_COLUMN_NAME_VALUE] = &schema_pb.Value{
-			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Data},
+			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetData()},
 		}
+
 		return recordValue, "live_log", nil
 	}
 
 	// Try to unmarshal as RecordValue first (Parquet format)
 	recordValue := &schema_pb.RecordValue{}
-	if err := proto.Unmarshal(logEntry.Data, recordValue); err == nil {
+	if err := proto.Unmarshal(logEntry.GetData(), recordValue); err == nil {
 		// This is an archived message from Parquet files
 		// FIX: Add system columns from LogEntry to RecordValue
 		if recordValue.Fields == nil {
@@ -767,10 +774,10 @@ func (hms *HybridMessageScanner) convertLogEntryToRecordValue(logEntry *filer_pb
 
 		// Add system columns from LogEntry
 		recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{
-			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.TsNs},
+			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.GetTsNs()},
 		}
 		recordValue.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{
-			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Key},
+			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetKey()},
 		}
 
 		return recordValue, "parquet_archive", nil
@@ -778,14 +785,6 @@ func (hms *HybridMessageScanner) convertLogEntryToRecordValue(logEntry *filer_pb
 
 	// If not a RecordValue, this is raw live message data - parse with schema
 	return hms.parseRawMessageWithSchema(logEntry)
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // parseRawMessageWithSchema parses raw live message data using the topic's schema
@@ -797,20 +796,21 @@ func (hms *HybridMessageScanner) parseRawMessageWithSchema(logEntry *filer_pb.Lo
 
 	// Add system columns (always present)
 	recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{
-		Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.TsNs},
+		Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.GetTsNs()},
 	}
 	recordValue.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{
-		Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Key},
+		Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetKey()},
 	}
 
 	// Parse message data based on schema
-	if hms.recordSchema == nil || len(hms.recordSchema.Fields) == 0 {
+	if hms.recordSchema == nil || len(hms.recordSchema.GetFields()) == 0 {
 		// Fallback: No schema available, use "_value" for schema-less topics only
 		if hms.isSchemaless() {
 			recordValue.Fields[SW_COLUMN_NAME_VALUE] = &schema_pb.Value{
-				Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Data},
+				Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetData()},
 			}
 		}
+
 		return recordValue, "live_log", nil
 	}
 
@@ -824,40 +824,40 @@ func (hms *HybridMessageScanner) parseRawMessageWithSchema(logEntry *filer_pb.Lo
 		// AVRO format - use Avro decoder
 		// Note: Avro decoding requires schema registry integration
 		// For now, fall through to JSON as many Avro messages are also valid JSON
-		parsedRecord, err = hms.parseJSONMessage(logEntry.Data)
+		parsedRecord, err = hms.parseJSONMessage(logEntry.GetData())
 	case "PROTOBUF":
 		// PROTOBUF format - use protobuf decoder
-		parsedRecord, err = hms.parseProtobufMessage(logEntry.Data)
+		parsedRecord, err = hms.parseProtobufMessage(logEntry.GetData())
 	case "JSON_SCHEMA", "":
 		// JSON_SCHEMA format or empty (default to JSON)
 		// JSON is the most common format for schema registry
-		parsedRecord, err = hms.parseJSONMessage(logEntry.Data)
+		parsedRecord, err = hms.parseJSONMessage(logEntry.GetData())
 		if err != nil {
 			// Try protobuf as fallback
-			parsedRecord, err = hms.parseProtobufMessage(logEntry.Data)
+			parsedRecord, err = hms.parseProtobufMessage(logEntry.GetData())
 		}
 	default:
 		// Unknown format - try JSON first, then protobuf as fallback
-		parsedRecord, err = hms.parseJSONMessage(logEntry.Data)
+		parsedRecord, err = hms.parseJSONMessage(logEntry.GetData())
 		if err != nil {
-			parsedRecord, err = hms.parseProtobufMessage(logEntry.Data)
+			parsedRecord, err = hms.parseProtobufMessage(logEntry.GetData())
 		}
 	}
 
 	if err == nil && parsedRecord != nil {
 		// Successfully parsed, merge with system columns
-		for fieldName, fieldValue := range parsedRecord.Fields {
-			recordValue.Fields[fieldName] = fieldValue
-		}
+		maps.Copy(recordValue.GetFields(), parsedRecord.GetFields())
+
 		return recordValue, "live_log", nil
 	}
 
 	// Fallback: If schema has a single field, map the raw data to it with type conversion
-	if len(hms.recordSchema.Fields) == 1 {
-		field := hms.recordSchema.Fields[0]
-		convertedValue, convErr := hms.convertRawDataToSchemaValue(logEntry.Data, field.Type)
+	if len(hms.recordSchema.GetFields()) == 1 {
+		field := hms.recordSchema.GetFields()[0]
+		convertedValue, convErr := hms.convertRawDataToSchemaValue(logEntry.GetData(), field.GetType())
 		if convErr == nil {
-			recordValue.Fields[field.Name] = convertedValue
+			recordValue.Fields[field.GetName()] = convertedValue
+
 			return recordValue, "live_log", nil
 		}
 	}
@@ -865,7 +865,7 @@ func (hms *HybridMessageScanner) parseRawMessageWithSchema(logEntry *filer_pb.Lo
 	// Final fallback: treat as bytes field for schema-less topics only
 	if hms.isSchemaless() {
 		recordValue.Fields[SW_COLUMN_NAME_VALUE] = &schema_pb.Value{
-			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Data},
+			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetData()},
 		}
 	}
 
@@ -882,14 +882,15 @@ func (hms *HybridMessageScanner) convertLogEntryToRecordValueWithDecoded(logEntr
 			Fields: make(map[string]*schema_pb.Value),
 		}
 		recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{
-			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.TsNs},
+			Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.GetTsNs()},
 		}
 		recordValue.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{
-			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Key},
+			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetKey()},
 		}
 		recordValue.Fields[SW_COLUMN_NAME_VALUE] = &schema_pb.Value{
-			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Data},
+			Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetData()},
 		}
+
 		return recordValue, "live_log", nil
 	}
 
@@ -897,13 +898,13 @@ func (hms *HybridMessageScanner) convertLogEntryToRecordValueWithDecoded(logEntr
 	// So we need to try unmarshaling LogEntry.Data as RecordValue first
 	var recordValueBytes []byte
 
-	if dataMessage != nil && len(dataMessage.Value) > 0 {
+	if dataMessage != nil && len(dataMessage.GetValue()) > 0 {
 		// DataMessage has a Value field - use it
-		recordValueBytes = dataMessage.Value
+		recordValueBytes = dataMessage.GetValue()
 	} else {
 		// DataMessage doesn't have Value, use LogEntry.Data directly
 		// This is the normal case when broker stores messages
-		recordValueBytes = logEntry.Data
+		recordValueBytes = logEntry.GetData()
 	}
 
 	// Try to unmarshal as RecordValue
@@ -919,10 +920,10 @@ func (hms *HybridMessageScanner) convertLogEntryToRecordValueWithDecoded(logEntr
 
 			// Add system columns from LogEntry
 			recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{
-				Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.TsNs},
+				Kind: &schema_pb.Value_Int64Value{Int64Value: logEntry.GetTsNs()},
 			}
 			recordValue.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{
-				Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.Key},
+				Kind: &schema_pb.Value_BytesValue{BytesValue: logEntry.GetKey()},
 			}
 
 			return recordValue, "live_log", nil
@@ -938,9 +939,9 @@ func (hms *HybridMessageScanner) convertLogEntryToRecordValueWithDecoded(logEntr
 // parseJSONMessage attempts to parse raw data as JSON and map to schema fields
 func (hms *HybridMessageScanner) parseJSONMessage(data []byte) (*schema_pb.RecordValue, error) {
 	// Try to parse as JSON
-	var jsonData map[string]interface{}
+	var jsonData map[string]any
 	if err := json.Unmarshal(data, &jsonData); err != nil {
-		return nil, fmt.Errorf("not valid JSON: %v", err)
+		return nil, fmt.Errorf("not valid JSON: %w", err)
 	}
 
 	recordValue := &schema_pb.RecordValue{
@@ -948,10 +949,10 @@ func (hms *HybridMessageScanner) parseJSONMessage(data []byte) (*schema_pb.Recor
 	}
 
 	// Map JSON fields to schema fields
-	for _, schemaField := range hms.recordSchema.Fields {
-		fieldName := schemaField.Name
+	for _, schemaField := range hms.recordSchema.GetFields() {
+		fieldName := schemaField.GetName()
 		if jsonValue, exists := jsonData[fieldName]; exists {
-			schemaValue, err := hms.convertJSONValueToSchemaValue(jsonValue, schemaField.Type)
+			schemaValue, err := hms.convertJSONValueToSchemaValue(jsonValue, schemaField.GetType())
 			if err != nil {
 				// Log conversion error but continue with other fields
 				continue
@@ -976,14 +977,14 @@ func (hms *HybridMessageScanner) parseProtobufMessage(data []byte) (*schema_pb.R
 
 	// Strategy 2: Check if it's a different protobuf message type
 	// For now, return error as we need more specific knowledge of MQ message formats
-	return nil, fmt.Errorf("could not parse as protobuf RecordValue")
+	return nil, errors.New("could not parse as protobuf RecordValue")
 }
 
 // convertRawDataToSchemaValue converts raw bytes to a specific schema type
 func (hms *HybridMessageScanner) convertRawDataToSchemaValue(data []byte, fieldType *schema_pb.Type) (*schema_pb.Value, error) {
 	dataStr := string(data)
 
-	switch fieldType.Kind.(type) {
+	switch fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		scalarType := fieldType.GetScalarType()
 		switch scalarType {
@@ -1017,11 +1018,12 @@ func (hms *HybridMessageScanner) convertRawDataToSchemaValue(data []byte, fieldT
 			}
 		case schema_pb.ScalarType_BOOL:
 			lowerStr := strings.ToLower(strings.TrimSpace(dataStr))
-			if lowerStr == "true" || lowerStr == "1" || lowerStr == "yes" {
+			switch lowerStr {
+			case "true", "1", "yes":
 				return &schema_pb.Value{
 					Kind: &schema_pb.Value_BoolValue{BoolValue: true},
 				}, nil
-			} else if lowerStr == "false" || lowerStr == "0" || lowerStr == "no" {
+			case "false", "0", "no":
 				return &schema_pb.Value{
 					Kind: &schema_pb.Value_BoolValue{BoolValue: false},
 				}, nil
@@ -1037,8 +1039,8 @@ func (hms *HybridMessageScanner) convertRawDataToSchemaValue(data []byte, fieldT
 }
 
 // convertJSONValueToSchemaValue converts a JSON value to schema_pb.Value based on schema type
-func (hms *HybridMessageScanner) convertJSONValueToSchemaValue(jsonValue interface{}, fieldType *schema_pb.Type) (*schema_pb.Value, error) {
-	switch fieldType.Kind.(type) {
+func (hms *HybridMessageScanner) convertJSONValueToSchemaValue(jsonValue any, fieldType *schema_pb.Type) (*schema_pb.Value, error) {
+	switch fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		scalarType := fieldType.GetScalarType()
 		switch scalarType {
@@ -1258,7 +1260,7 @@ func (h *HybridMessageScanner) ReadParquetStatistics(partitionPath string) ([]*P
 
 	err := filer_pb.ReadDirAllEntries(context.Background(), h.filerClient, util.FullPath(partitionPath), "", func(entry *filer_pb.Entry, isLast bool) error {
 		// Only process parquet files
-		if entry.IsDirectory || !strings.HasSuffix(entry.Name, ".parquet") {
+		if entry.GetIsDirectory() || !strings.HasSuffix(entry.GetName(), ".parquet") {
 			return nil
 		}
 
@@ -1266,13 +1268,15 @@ func (h *HybridMessageScanner) ReadParquetStatistics(partitionPath string) ([]*P
 		stats, err := h.extractParquetFileStats(entry, lookupFileIdFn, chunkCache)
 		if err != nil {
 			// Log error but continue processing other files
-			fmt.Printf("Warning: failed to extract stats from %s: %v\n", entry.Name, err)
+			fmt.Printf("Warning: failed to extract stats from %s: %v\n", entry.GetName(), err)
+
 			return nil
 		}
 
 		if stats != nil {
 			fileStats = append(fileStats, stats)
 		}
+
 		return nil
 	})
 
@@ -1283,7 +1287,7 @@ func (h *HybridMessageScanner) ReadParquetStatistics(partitionPath string) ([]*P
 func (h *HybridMessageScanner) extractParquetFileStats(entry *filer_pb.Entry, lookupFileIdFn wdclient.LookupFileIdFunctionType, chunkCache *chunk_cache.ChunkCacheInMemory) (*ParquetFileStats, error) {
 	// Create reader for the parquet file
 	fileSize := filer.FileSize(entry)
-	visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, entry.Chunks, 0, int64(fileSize))
+	visibleIntervals, _ := filer.NonOverlappingVisibleIntervals(context.Background(), lookupFileIdFn, entry.GetChunks(), 0, int64(fileSize))
 	chunkViews := filer.ViewFromVisibleIntervals(visibleIntervals, 0, int64(fileSize))
 	readerCache := filer.NewReaderCache(32, chunkCache, lookupFileIdFn)
 	readerAt := filer.NewChunkReaderAtFromClient(context.Background(), readerCache, chunkViews, int64(fileSize), filer.DefaultPrefetchCount)
@@ -1295,16 +1299,16 @@ func (h *HybridMessageScanner) extractParquetFileStats(entry *filer_pb.Entry, lo
 	fileView := parquetReader.File()
 
 	fileStats := &ParquetFileStats{
-		FileName:    entry.Name,
+		FileName:    entry.GetName(),
 		RowCount:    fileView.NumRows(),
 		ColumnStats: make(map[string]*ParquetColumnStats),
 	}
 	// Populate optional min/max from filer extended attributes (writer stores ns timestamps)
 	if entry != nil && entry.Extended != nil {
-		if minBytes, ok := entry.Extended[mq.ExtendedAttrTimestampMin]; ok && len(minBytes) == 8 {
+		if minBytes, ok := entry.GetExtended()[mq.ExtendedAttrTimestampMin]; ok && len(minBytes) == 8 {
 			fileStats.MinTimestampNs = int64(binary.BigEndian.Uint64(minBytes))
 		}
-		if maxBytes, ok := entry.Extended[mq.ExtendedAttrTimestampMax]; ok && len(maxBytes) == 8 {
+		if maxBytes, ok := entry.GetExtended()[mq.ExtendedAttrTimestampMax]; ok && len(maxBytes) == 8 {
 			fileStats.MaxTimestampNs = int64(binary.BigEndian.Uint64(maxBytes))
 		}
 	}
@@ -1344,7 +1348,7 @@ func (h *HybridMessageScanner) extractParquetFileStats(entry *filer_pb.Entry, lo
 			nullCount := int64(0)
 
 			// Aggregate null counts across all pages
-			for pageIdx := 0; pageIdx < numPages; pageIdx++ {
+			for pageIdx := range numPages {
 				nullCount += columnIndex.NullCount(pageIdx)
 			}
 
@@ -1394,6 +1398,7 @@ func (h *HybridMessageScanner) getColumnNameFromSchema(schema *parquet.Schema, c
 	if columnIndex >= 0 && columnIndex < len(columnNames) {
 		return columnNames[columnIndex]
 	}
+
 	return ""
 }
 
@@ -1450,8 +1455,8 @@ func (h *HybridMessageScanner) compareSchemaValues(v1, v2 *schema_pb.Value) int 
 }
 
 // extractRawValueFromSchema extracts the raw value from schema_pb.Value
-func (h *HybridMessageScanner) extractRawValueFromSchema(value *schema_pb.Value) interface{} {
-	switch v := value.Kind.(type) {
+func (h *HybridMessageScanner) extractRawValueFromSchema(value *schema_pb.Value) any {
+	switch v := value.GetKind().(type) {
 	case *schema_pb.Value_BoolValue:
 		return v.BoolValue
 	case *schema_pb.Value_Int32Value:
@@ -1467,11 +1472,12 @@ func (h *HybridMessageScanner) extractRawValueFromSchema(value *schema_pb.Value)
 	case *schema_pb.Value_StringValue:
 		return v.StringValue
 	}
+
 	return nil
 }
 
 // compareRawValues compares two raw values
-func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
+func (h *HybridMessageScanner) compareRawValues(v1, v2 any) int {
 	// Handle nil cases
 	if v1 == nil && v2 == nil {
 		return 0
@@ -1493,6 +1499,7 @@ func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
 			if val1 {
 				return 1
 			}
+
 			return -1
 		}
 	case int32:
@@ -1502,6 +1509,7 @@ func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
 			} else if val1 > val2 {
 				return 1
 			}
+
 			return 0
 		}
 	case int64:
@@ -1511,6 +1519,7 @@ func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
 			} else if val1 > val2 {
 				return 1
 			}
+
 			return 0
 		}
 	case float32:
@@ -1520,6 +1529,7 @@ func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
 			} else if val1 > val2 {
 				return 1
 			}
+
 			return 0
 		}
 	case float64:
@@ -1529,6 +1539,7 @@ func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
 			} else if val1 > val2 {
 				return 1
 			}
+
 			return 0
 		}
 	case string:
@@ -1538,6 +1549,7 @@ func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
 			} else if val1 > val2 {
 				return 1
 			}
+
 			return 0
 		}
 	}
@@ -1550,6 +1562,7 @@ func (h *HybridMessageScanner) compareRawValues(v1, v2 interface{}) int {
 	} else if str1 > str2 {
 		return 1
 	}
+
 	return 0
 }
 
@@ -1573,7 +1586,8 @@ func (hms *HybridMessageScanner) streamingMerge(dataSources []StreamingDataSourc
 				for _, s := range dataSources {
 					s.Close()
 				}
-				return nil, fmt.Errorf("failed to read from data source %d: %v", i, err)
+
+				return nil, fmt.Errorf("failed to read from data source %d: %w", i, err)
 			}
 			if result != nil {
 				heap.Push(mergeHeap, &StreamingMergeItem{
@@ -1640,6 +1654,7 @@ func (s *SliceDataSource) Next() (*HybridScanResult, error) {
 	}
 	result := &s.results[s.index]
 	s.index++
+
 	return result, nil
 }
 
@@ -1718,9 +1733,9 @@ func (s *StreamingFlushedDataSource) startStreaming() {
 		eachLogEntryFn := func(logEntry *filer_pb.LogEntry) (isDone bool, err error) {
 			// Pre-decode DataMessage for reuse in both control check and conversion
 			var dataMessage *mq_pb.DataMessage
-			if len(logEntry.Data) > 0 {
+			if len(logEntry.GetData()) > 0 {
 				dataMessage = &mq_pb.DataMessage{}
-				if err := proto.Unmarshal(logEntry.Data, dataMessage); err != nil {
+				if err := proto.Unmarshal(logEntry.GetData(), dataMessage); err != nil {
 					dataMessage = nil // Failed to decode, treat as raw data
 				}
 			}
@@ -1733,7 +1748,7 @@ func (s *StreamingFlushedDataSource) startStreaming() {
 			// Convert log entry to schema_pb.RecordValue for consistent processing
 			recordValue, source, convertErr := s.hms.convertLogEntryToRecordValueWithDecoded(logEntry, dataMessage)
 			if convertErr != nil {
-				return false, fmt.Errorf("failed to convert log entry: %v", convertErr)
+				return false, fmt.Errorf("failed to convert log entry: %w", convertErr)
 			}
 
 			// Apply predicate filtering (WHERE clause)
@@ -1742,14 +1757,14 @@ func (s *StreamingFlushedDataSource) startStreaming() {
 			}
 
 			// Extract system columns
-			timestamp := recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value()
-			key := recordValue.Fields[SW_COLUMN_NAME_KEY].GetBytesValue()
+			timestamp := recordValue.GetFields()[SW_COLUMN_NAME_TIMESTAMP].GetInt64Value()
+			key := recordValue.GetFields()[SW_COLUMN_NAME_KEY].GetBytesValue()
 
 			// Apply column projection
 			values := make(map[string]*schema_pb.Value)
 			if len(s.options.Columns) == 0 {
 				// Select all columns (excluding system columns from user view)
-				for name, value := range recordValue.Fields {
+				for name, value := range recordValue.GetFields() {
 					if name != SW_COLUMN_NAME_TIMESTAMP && name != SW_COLUMN_NAME_KEY {
 						values[name] = value
 					}
@@ -1757,7 +1772,7 @@ func (s *StreamingFlushedDataSource) startStreaming() {
 			} else {
 				// Select specified columns only
 				for _, columnName := range s.options.Columns {
-					if value, exists := recordValue.Fields[columnName]; exists {
+					if value, exists := recordValue.GetFields()[columnName]; exists {
 						values[columnName] = value
 					}
 				}
@@ -1804,7 +1819,7 @@ func (s *StreamingFlushedDataSource) startStreaming() {
 			// Only try to send error if not already closed
 			if atomic.LoadInt32(&s.closed) == 0 {
 				select {
-				case s.errorChan <- fmt.Errorf("flushed data scan failed: %v", err):
+				case s.errorChan <- fmt.Errorf("flushed data scan failed: %w", err):
 				case <-s.doneChan:
 				default:
 					// Channel might be full or closed, ignore
@@ -1826,6 +1841,7 @@ func (s *StreamingFlushedDataSource) Next() (*HybridScanResult, error) {
 		if !ok {
 			return nil, nil // No more results
 		}
+
 		return result, nil
 	case err := <-s.errorChan:
 		return nil, err
@@ -1838,6 +1854,7 @@ func (s *StreamingFlushedDataSource) HasMore() bool {
 	if !s.started {
 		return true // Haven't started yet, so potentially has data
 	}
+
 	return !s.finished || len(s.resultChan) > 0
 }
 
@@ -1848,6 +1865,7 @@ func (s *StreamingFlushedDataSource) Close() error {
 		close(s.resultChan)
 		close(s.errorChan)
 	}
+
 	return nil
 }
 

@@ -13,9 +13,7 @@ const (
 )
 
 func (s3a *S3ApiServer) getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error) {
-
 	err = s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := filer_pb.LookupEntry(context.Background(), client, &filer_pb.LookupDirectoryEntryRequest{
 			Directory: parentDirectoryPath,
 			Name:      entryName,
@@ -24,20 +22,20 @@ func (s3a *S3ApiServer) getTags(parentDirectoryPath string, entryName string) (t
 			return err
 		}
 		tags = make(map[string]string)
-		for k, v := range resp.Entry.Extended {
+		for k, v := range resp.GetEntry().GetExtended() {
 			if strings.HasPrefix(k, S3TAG_PREFIX) {
 				tags[k[len(S3TAG_PREFIX):]] = string(v)
 			}
 		}
+
 		return nil
 	})
+
 	return
 }
 
 func (s3a *S3ApiServer) setTags(parentDirectoryPath string, entryName string, tags map[string]string) (err error) {
-
 	return s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := filer_pb.LookupEntry(context.Background(), client, &filer_pb.LookupDirectoryEntryRequest{
 			Directory: parentDirectoryPath,
 			Name:      entryName,
@@ -46,9 +44,9 @@ func (s3a *S3ApiServer) setTags(parentDirectoryPath string, entryName string, ta
 			return err
 		}
 
-		for k, _ := range resp.Entry.Extended {
+		for k := range resp.GetEntry().GetExtended() {
 			if strings.HasPrefix(k, S3TAG_PREFIX) {
-				delete(resp.Entry.Extended, k)
+				delete(resp.GetEntry().GetExtended(), k)
 			}
 		}
 
@@ -61,19 +59,15 @@ func (s3a *S3ApiServer) setTags(parentDirectoryPath string, entryName string, ta
 
 		return filer_pb.UpdateEntry(context.Background(), client, &filer_pb.UpdateEntryRequest{
 			Directory:          parentDirectoryPath,
-			Entry:              resp.Entry,
+			Entry:              resp.GetEntry(),
 			IsFromOtherCluster: false,
 			Signatures:         nil,
 		})
-
 	})
-
 }
 
 func (s3a *S3ApiServer) rmTags(parentDirectoryPath string, entryName string) (err error) {
-
 	return s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		resp, err := filer_pb.LookupEntry(context.Background(), client, &filer_pb.LookupDirectoryEntryRequest{
 			Directory: parentDirectoryPath,
 			Name:      entryName,
@@ -83,9 +77,9 @@ func (s3a *S3ApiServer) rmTags(parentDirectoryPath string, entryName string) (er
 		}
 
 		hasDeletion := false
-		for k, _ := range resp.Entry.Extended {
+		for k := range resp.GetEntry().GetExtended() {
 			if strings.HasPrefix(k, S3TAG_PREFIX) {
-				delete(resp.Entry.Extended, k)
+				delete(resp.GetEntry().GetExtended(), k)
 				hasDeletion = true
 			}
 		}
@@ -96,11 +90,9 @@ func (s3a *S3ApiServer) rmTags(parentDirectoryPath string, entryName string) (er
 
 		return filer_pb.UpdateEntry(context.Background(), client, &filer_pb.UpdateEntryRequest{
 			Directory:          parentDirectoryPath,
-			Entry:              resp.Entry,
+			Entry:              resp.GetEntry(),
 			IsFromOtherCluster: false,
 			Signatures:         nil,
 		})
-
 	})
-
 }

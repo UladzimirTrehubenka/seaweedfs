@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/pquerna/cachecontrol/cacheobject"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
@@ -72,7 +73,6 @@ type SSEResponseMetadata struct {
 }
 
 func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request) {
-
 	// http://docs.aws.amazon.com/AmazonS3/latest/dev/UploadingObjects.html
 
 	bucket, object := s3_constants.GetBucketAndObject(r)
@@ -81,24 +81,28 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	_, err := validateContentMd5(r.Header)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidDigest)
+
 		return
 	}
 
 	// Check conditional headers
 	if errCode := s3a.checkConditionalHeaders(r, bucket, object); errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
 	// Check bucket policy
 	if errCode, _ := s3a.checkPolicyWithEntry(r, bucket, object, string(s3_constants.ACTION_WRITE), "", nil); errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
 	if r.Header.Get("Cache-Control") != "" {
 		if _, err = cacheobject.ParseRequestCacheControl(r.Header.Get("Cache-Control")); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInvalidDigest)
+
 			return
 		}
 	}
@@ -106,6 +110,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	if r.Header.Get("Expires") != "" {
 		if _, err = time.Parse(http.TimeFormat, r.Header.Get("Expires")); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrMalformedDate)
+
 			return
 		}
 	}
@@ -113,6 +118,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	dataReader, s3ErrCode := getRequestDataReader(s3a, r)
 	if s3ErrCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, s3ErrCode)
+
 		return
 	}
 	defer dataReader.Close()
@@ -150,6 +156,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 				s3a.setObjectOwnerFromRequest(r, bucket, entry)
 			}); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 			return
 		}
 	} else {
@@ -167,11 +174,13 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 				if err != nil {
 					glog.Errorf("Error re-checking versioning status for bucket %s after auto-creation: %v", bucket, err)
 					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 					return
 				}
 			} else {
 				glog.Errorf("Error checking versioning status for bucket %s: %v", bucket, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 				return
 			}
 		}
@@ -186,6 +195,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 		if err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 			glog.Errorf("Error checking Object Lock status for bucket %s: %v", bucket, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 			return
 		}
 
@@ -193,6 +203,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 		if err := s3a.validateObjectLockHeaders(r, objectLockEnabled); err != nil {
 			glog.V(2).Infof("PutObjectHandler: object lock header validation failed for bucket %s, object %s: %v", bucket, object, err)
 			s3err.WriteErrorResponse(w, r, mapValidationErrorToS3Error(err))
+
 			return
 		}
 
@@ -203,6 +214,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 			if err := s3a.enforceObjectLockProtections(r, bucket, object, "", governanceBypassAllowed); err != nil {
 				glog.V(2).Infof("PutObjectHandler: object lock permissions check failed for %s/%s: %v", bucket, object, err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 				return
 			}
 		}
@@ -215,6 +227,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 			if errCode != s3err.ErrNone {
 				glog.Errorf("PutObjectHandler: putVersionedObject failed with errCode=%v for %s/%s", errCode, bucket, object)
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 
@@ -240,6 +253,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 			etag, errCode, sseMetadata := s3a.putSuspendedVersioningObject(r, bucket, object, dataReader, objectContentType)
 			if errCode != s3err.ErrNone {
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 
@@ -262,6 +276,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 
 			if errCode != s3err.ErrNone {
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 
@@ -312,6 +327,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 		encryptionResult, applyErr := s3a.applyBucketDefaultEncryption(bucket, r, dataReader)
 		if applyErr != nil {
 			glog.Errorf("Failed to apply bucket default encryption: %v", applyErr)
+
 			return "", s3err.ErrInternalError, SSEResponseMetadata{}
 		}
 
@@ -335,6 +351,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 			sseS3Metadata, metaErr = SerializeSSES3Metadata(sseS3Key)
 			if metaErr != nil {
 				glog.Errorf("Failed to serialize SSE-S3 metadata for bucket default encryption: %v", metaErr)
+
 				return "", s3err.ErrInternalError, SSEResponseMetadata{}
 			}
 		}
@@ -368,10 +385,11 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 			if err != nil {
 				return fmt.Errorf("assign volume: %w", err)
 			}
-			if resp.Error != "" {
-				return fmt.Errorf("assign volume: %v", resp.Error)
+			if resp.GetError() != "" {
+				return fmt.Errorf("assign volume: %v", resp.GetError())
 			}
 			assignResult = resp
+
 			return nil
 		})
 		if err != nil {
@@ -380,11 +398,11 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 
 		// Convert filer_pb.AssignVolumeResponse to operation.AssignResult
 		return nil, &operation.AssignResult{
-			Fid:       assignResult.FileId,
-			Url:       assignResult.Location.Url,
-			PublicUrl: assignResult.Location.PublicUrl,
+			Fid:       assignResult.GetFileId(),
+			Url:       assignResult.GetLocation().GetUrl(),
+			PublicUrl: assignResult.GetLocation().GetPublicUrl(),
 			Count:     uint64(count),
-			Auth:      security.EncodedJwt(assignResult.Auth),
+			Auth:      security.EncodedJwt(assignResult.GetAuth()),
 		}, nil
 	}
 
@@ -416,6 +434,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 		if strings.Contains(err.Error(), s3err.ErrMsgPayloadChecksumMismatch) {
 			return "", s3err.ErrInvalidDigest, SSEResponseMetadata{}
 		}
+
 		return "", s3err.ErrInternalError, SSEResponseMetadata{}
 	}
 
@@ -428,7 +447,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 	// Log chunk details for debugging (verbose only - high frequency)
 	if glog.V(4) {
 		for i, chunk := range chunkResult.FileChunks {
-			glog.Infof("  PUT Chunk[%d]: fid=%s, offset=%d, size=%d", i, chunk.GetFileIdString(), chunk.Offset, chunk.Size)
+			glog.Infof("  PUT Chunk[%d]: fid=%s, offset=%d, size=%d", i, chunk.GetFileIdString(), chunk.GetOffset(), chunk.GetSize())
 		}
 	}
 
@@ -453,7 +472,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 					Algorithm:  "AES256",
 					IV:         base64.StdEncoding.EncodeToString(sseIV),
 					KeyMD5:     customerKey.KeyMD5,
-					PartOffset: chunk.Offset, // Position within the encrypted stream (always encrypted from 0)
+					PartOffset: chunk.GetOffset(), // Position within the encrypted stream (always encrypted from 0)
 				}
 				if ssecMetadata, serErr := json.Marshal(ssecMetadataStruct); serErr == nil {
 					chunk.SseMetadata = ssecMetadata
@@ -471,14 +490,14 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 				EncryptionContext: sseKMSKey.EncryptionContext,
 				BucketKeyEnabled:  sseKMSKey.BucketKeyEnabled,
 				IV:                sseKMSKey.IV,
-				ChunkOffset:       chunk.Offset, // Set chunk-specific offset for IV calculation
+				ChunkOffset:       chunk.GetOffset(), // Set chunk-specific offset for IV calculation
 			}
 
 			// Serialize per-chunk metadata
 			if chunkMetadata, serErr := SerializeSSEKMSMetadata(chunkSSEKey); serErr == nil {
 				chunk.SseMetadata = chunkMetadata
 			} else {
-				glog.Errorf("Failed to serialize SSE-KMS metadata for chunk at offset %d: %v", chunk.Offset, serErr)
+				glog.Errorf("Failed to serialize SSE-KMS metadata for chunk at offset %d: %v", chunk.GetOffset(), serErr)
 			}
 		case sseS3Key != nil:
 			// SSE-S3: Create per-chunk metadata with chunk-specific IVs
@@ -486,7 +505,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 			chunk.SseType = filer_pb.SSEType_SSE_S3
 
 			// Calculate chunk-specific IV using base IV and chunk offset
-			chunkIV, _ := calculateIVWithOffset(sseS3Key.IV, chunk.Offset)
+			chunkIV, _ := calculateIVWithOffset(sseS3Key.IV, chunk.GetOffset())
 
 			// Create a copy of the SSE-S3 key with chunk-specific IV
 			chunkSSEKey := &SSES3Key{
@@ -500,7 +519,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 			if chunkMetadata, serErr := SerializeSSES3Metadata(chunkSSEKey); serErr == nil {
 				chunk.SseMetadata = chunkMetadata
 			} else {
-				glog.Errorf("Failed to serialize SSE-S3 metadata for chunk at offset %d: %v", chunk.Offset, serErr)
+				glog.Errorf("Failed to serialize SSE-S3 metadata for chunk at offset %d: %v", chunk.GetOffset(), serErr)
 			}
 		}
 	}
@@ -554,7 +573,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 	}
 
 	// Set TTL-based S3 expiry flag only if object has a TTL
-	if entry.Attributes.TtlSec > 0 {
+	if entry.GetAttributes().GetTtlSec() > 0 {
 		entry.Extended[s3_constants.SeaweedFSExpiresS3] = []byte("true")
 	}
 
@@ -581,6 +600,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 	if sc := r.Header.Get(s3_constants.AmzStorageClass); sc != "" {
 		if !validateStorageClass(sc) {
 			glog.Warningf("putToFiler: Invalid storage class '%s' for %s", sc, filePath)
+
 			return "", s3err.ErrInvalidStorageClass, SSEResponseMetadata{}
 		}
 		entry.Extended[s3_constants.AmzStorageClass] = []byte(sc)
@@ -592,11 +612,13 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 		parsedTags, err := url.ParseQuery(tagging)
 		if err != nil {
 			glog.Warningf("putToFiler: Invalid S3 tag format in header '%s': %v", tagging, err)
+
 			return "", s3err.ErrInvalidTag, SSEResponseMetadata{}
 		}
 		for key, values := range parsedTags {
 			if len(values) > 1 {
 				glog.Warningf("putToFiler: Duplicate tag key '%s' in header", key)
+
 				return "", s3err.ErrInvalidTag, SSEResponseMetadata{}
 			}
 			value := ""
@@ -640,7 +662,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 	// Use context.Background() to ensure metadata save completes even if HTTP request is cancelled
 	// This matches the chunk upload behavior and prevents orphaned chunks
 	glog.V(3).Infof("putToFiler: About to create entry - dir=%s, name=%s, chunks=%d, extended keys=%d",
-		path.Dir(filePath), path.Base(filePath), len(entry.Chunks), len(entry.Extended))
+		path.Dir(filePath), path.Base(filePath), len(entry.GetChunks()), len(entry.GetExtended()))
 	createErr := s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		req := &filer_pb.CreateEntryRequest{
 			Directory: path.Dir(filePath),
@@ -651,6 +673,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 		if err != nil {
 			glog.Errorf("putToFiler: CreateEntry returned error: %v", err)
 		}
+
 		return err
 	})
 	if createErr != nil {
@@ -669,7 +692,7 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, filePath string, dataReader 
 	glog.V(3).Infof("putToFiler: CreateEntry SUCCESS for %s", filePath)
 
 	glog.V(2).Infof("putToFiler: Metadata saved SUCCESS - path=%s, etag(hex)=%s, size=%d, partNumber=%d",
-		filePath, etag, entry.Attributes.FileSize, partNumber)
+		filePath, etag, entry.GetAttributes().GetFileSize(), partNumber)
 
 	BucketTrafficReceived(chunkResult.TotalSize, r)
 
@@ -838,18 +861,19 @@ func (s3a *S3ApiServer) putSuspendedVersioningObject(r *http.Request, bucket, ob
 		glog.V(3).Infof("putSuspendedVersioningObject: found %d entries in .versions for %s/%s", len(entries), bucket, object)
 		for _, entry := range entries {
 			if entry.Extended != nil {
-				if versionIdBytes, ok := entry.Extended[s3_constants.ExtVersionIdKey]; ok {
+				if versionIdBytes, ok := entry.GetExtended()[s3_constants.ExtVersionIdKey]; ok {
 					versionId := string(versionIdBytes)
 					glog.V(3).Infof("putSuspendedVersioningObject: found version '%s' in .versions", versionId)
 					if versionId == "null" {
 						// Only delete null version - preserve real versioned entries
 						glog.V(3).Infof("putSuspendedVersioningObject: deleting null version from .versions")
-						err := s3a.rm(versionsDir, entry.Name, true, false)
+						err := s3a.rm(versionsDir, entry.GetName(), true, false)
 						if err != nil {
 							glog.Warningf("putSuspendedVersioningObject: failed to delete null version: %v", err)
 						} else {
 							glog.V(3).Infof("putSuspendedVersioningObject: successfully deleted null version")
 						}
+
 						break
 					}
 				}
@@ -888,6 +912,7 @@ func (s3a *S3ApiServer) putSuspendedVersioningObject(r *http.Request, bucket, ob
 		parsedTime, err := time.Parse(time.RFC3339, explicitRetainUntilDate)
 		if err != nil {
 			glog.Errorf("putSuspendedVersioningObject: failed to parse retention until date: %v", err)
+
 			return "", s3err.ErrInvalidRequest, SSEResponseMetadata{}
 		}
 		r.Header.Set(s3_constants.ExtRetentionUntilDateKey, strconv.FormatInt(parsedTime.Unix(), 10))
@@ -900,6 +925,7 @@ func (s3a *S3ApiServer) putSuspendedVersioningObject(r *http.Request, bucket, ob
 			glog.V(2).Infof("putSuspendedVersioningObject: setting legal hold header: %s", legalHold)
 		} else {
 			glog.Errorf("putSuspendedVersioningObject: invalid legal hold value: %s", legalHold)
+
 			return "", s3err.ErrInvalidRequest, SSEResponseMetadata{}
 		}
 	}
@@ -910,11 +936,11 @@ func (s3a *S3ApiServer) putSuspendedVersioningObject(r *http.Request, bucket, ob
 		tempEntry := &filer_pb.Entry{Extended: make(map[string][]byte)}
 		if err := s3a.applyBucketDefaultRetention(bucket, tempEntry); err == nil {
 			// Copy default retention headers from temp entry
-			if modeBytes, ok := tempEntry.Extended[s3_constants.ExtObjectLockModeKey]; ok {
+			if modeBytes, ok := tempEntry.GetExtended()[s3_constants.ExtObjectLockModeKey]; ok {
 				r.Header.Set(s3_constants.ExtObjectLockModeKey, string(modeBytes))
 				glog.V(2).Infof("putSuspendedVersioningObject: applied bucket default retention mode: %s", string(modeBytes))
 			}
-			if dateBytes, ok := tempEntry.Extended[s3_constants.ExtRetentionUntilDateKey]; ok {
+			if dateBytes, ok := tempEntry.GetExtended()[s3_constants.ExtRetentionUntilDateKey]; ok {
 				r.Header.Set(s3_constants.ExtRetentionUntilDateKey, string(dateBytes))
 				glog.V(2).Infof("putSuspendedVersioningObject: applied bucket default retention date")
 			}
@@ -925,6 +951,7 @@ func (s3a *S3ApiServer) putSuspendedVersioningObject(r *http.Request, bucket, ob
 	etag, errCode, sseMetadata = s3a.putToFiler(r, filePath, body, bucket, 1)
 	if errCode != s3err.ErrNone {
 		glog.Errorf("putSuspendedVersioningObject: failed to upload object: %v", errCode)
+
 		return "", errCode, SSEResponseMetadata{}
 	}
 
@@ -954,13 +981,14 @@ func (s3a *S3ApiServer) updateIsLatestFlagsForSuspendedVersioning(bucket, object
 	if err != nil {
 		// No .versions directory exists, nothing to update
 		glog.V(2).Infof("updateIsLatestFlagsForSuspendedVersioning: no .versions directory for %s/%s", bucket, object)
+
 		return nil
 	}
 
 	// List all entries in .versions directory
 	entries, _, err := s3a.list(versionsDir, "", "", false, 1000)
 	if err != nil {
-		return fmt.Errorf("failed to list versions directory: %v", err)
+		return fmt.Errorf("failed to list versions directory: %w", err)
 	}
 
 	glog.V(2).Infof("updateIsLatestFlagsForSuspendedVersioning: found %d entries to update", len(entries))
@@ -972,7 +1000,7 @@ func (s3a *S3ApiServer) updateIsLatestFlagsForSuspendedVersioning(bucket, object
 		}
 
 		// Check if this entry has a version ID (it should be a version or delete marker)
-		versionIdBytes, hasVersionId := entry.Extended[s3_constants.ExtVersionIdKey]
+		versionIdBytes, hasVersionId := entry.GetExtended()[s3_constants.ExtVersionIdKey]
 		if !hasVersionId {
 			continue
 		}
@@ -990,17 +1018,17 @@ func (s3a *S3ApiServer) updateIsLatestFlagsForSuspendedVersioning(bucket, object
 	versionsEntry, err := s3a.getEntry(bucketDir, versionsObjectPath)
 	if err == nil && versionsEntry.Extended != nil {
 		// Remove latest version metadata so all versions show IsLatest=false
-		delete(versionsEntry.Extended, s3_constants.ExtLatestVersionIdKey)
-		delete(versionsEntry.Extended, s3_constants.ExtLatestVersionFileNameKey)
+		delete(versionsEntry.GetExtended(), s3_constants.ExtLatestVersionIdKey)
+		delete(versionsEntry.GetExtended(), s3_constants.ExtLatestVersionFileNameKey)
 
 		// Update the .versions directory entry
-		err = s3a.mkFile(bucketDir, versionsObjectPath, versionsEntry.Chunks, func(updatedEntry *filer_pb.Entry) {
-			updatedEntry.Extended = versionsEntry.Extended
-			updatedEntry.Attributes = versionsEntry.Attributes
-			updatedEntry.Chunks = versionsEntry.Chunks
+		err = s3a.mkFile(bucketDir, versionsObjectPath, versionsEntry.GetChunks(), func(updatedEntry *filer_pb.Entry) {
+			updatedEntry.Extended = versionsEntry.GetExtended()
+			updatedEntry.Attributes = versionsEntry.GetAttributes()
+			updatedEntry.Chunks = versionsEntry.GetChunks()
 		})
 		if err != nil {
-			return fmt.Errorf("failed to update .versions directory metadata: %v", err)
+			return fmt.Errorf("failed to update .versions directory metadata: %w", err)
 		}
 
 		glog.V(2).Infof("updateIsLatestFlagsForSuspendedVersioning: cleared latest version metadata for %s/%s", bucket, object)
@@ -1040,6 +1068,7 @@ func (s3a *S3ApiServer) putVersionedObject(r *http.Request, bucket, object strin
 	etag, errCode, sseMetadata = s3a.putToFiler(r, versionFilePath, body, bucket, 1)
 	if errCode != s3err.ErrNone {
 		glog.Errorf("putVersionedObject: failed to upload version: %v", errCode)
+
 		return "", "", errCode, SSEResponseMetadata{}
 	}
 
@@ -1063,6 +1092,7 @@ func (s3a *S3ApiServer) putVersionedObject(r *http.Request, bucket, object strin
 
 	if err != nil {
 		glog.Errorf("putVersionedObject: failed to get version entry after %d attempts: %v", maxRetries, err)
+
 		return "", "", s3err.ErrInternalError, SSEResponseMetadata{}
 	}
 
@@ -1084,17 +1114,19 @@ func (s3a *S3ApiServer) putVersionedObject(r *http.Request, bucket, object strin
 	// Extract and store object lock metadata from request headers
 	if err := s3a.extractObjectLockMetadataFromRequest(r, versionEntry); err != nil {
 		glog.Errorf("putVersionedObject: failed to extract object lock metadata: %v", err)
+
 		return "", "", s3err.ErrInvalidRequest, SSEResponseMetadata{}
 	}
 
 	// Update the version entry with metadata
-	err = s3a.mkFile(bucketDir, versionObjectPath, versionEntry.Chunks, func(updatedEntry *filer_pb.Entry) {
-		updatedEntry.Extended = versionEntry.Extended
-		updatedEntry.Attributes = versionEntry.Attributes
-		updatedEntry.Chunks = versionEntry.Chunks
+	err = s3a.mkFile(bucketDir, versionObjectPath, versionEntry.GetChunks(), func(updatedEntry *filer_pb.Entry) {
+		updatedEntry.Extended = versionEntry.GetExtended()
+		updatedEntry.Attributes = versionEntry.GetAttributes()
+		updatedEntry.Chunks = versionEntry.GetChunks()
 	})
 	if err != nil {
 		glog.Errorf("putVersionedObject: failed to update version metadata: %v", err)
+
 		return "", "", s3err.ErrInternalError, SSEResponseMetadata{}
 	}
 
@@ -1103,9 +1135,11 @@ func (s3a *S3ApiServer) putVersionedObject(r *http.Request, bucket, object strin
 	err = s3a.updateLatestVersionInDirectory(bucket, normalizedObject, versionId, versionFileName, versionEntry)
 	if err != nil {
 		glog.Errorf("putVersionedObject: failed to update latest version in directory: %v", err)
+
 		return "", "", s3err.ErrInternalError, SSEResponseMetadata{}
 	}
 	glog.V(2).Infof("putVersionedObject: successfully created version %s for %s/%s (normalized: %s)", versionId, bucket, object, normalizedObject)
+
 	return versionId, etag, s3err.ErrNone, sseMetadata
 }
 
@@ -1134,6 +1168,7 @@ func (s3a *S3ApiServer) updateLatestVersionInDirectory(bucket, object, versionId
 
 	if err != nil {
 		glog.Errorf("updateLatestVersionInDirectory: failed to get .versions directory for %s/%s after %d attempts: %v", bucket, object, maxRetries, err)
+
 		return fmt.Errorf("failed to get .versions directory after %d attempts: %w", maxRetries, err)
 	}
 
@@ -1148,13 +1183,14 @@ func (s3a *S3ApiServer) updateLatestVersionInDirectory(bucket, object, versionId
 	setCachedListMetadata(versionsEntry, versionEntry)
 
 	// Update the .versions directory entry with metadata
-	err = s3a.mkFile(bucketDir, versionsObjectPath, versionsEntry.Chunks, func(updatedEntry *filer_pb.Entry) {
-		updatedEntry.Extended = versionsEntry.Extended
-		updatedEntry.Attributes = versionsEntry.Attributes
-		updatedEntry.Chunks = versionsEntry.Chunks
+	err = s3a.mkFile(bucketDir, versionsObjectPath, versionsEntry.GetChunks(), func(updatedEntry *filer_pb.Entry) {
+		updatedEntry.Extended = versionsEntry.GetExtended()
+		updatedEntry.Attributes = versionsEntry.GetAttributes()
+		updatedEntry.Chunks = versionsEntry.GetChunks()
 	})
 	if err != nil {
 		glog.Errorf("updateLatestVersionInDirectory: failed to update .versions directory metadata: %v", err)
+
 		return fmt.Errorf("failed to update .versions directory metadata: %w", err)
 	}
 
@@ -1182,6 +1218,7 @@ func (s3a *S3ApiServer) extractObjectLockMetadataFromRequest(r *http.Request, en
 		parsedTime, err := time.Parse(time.RFC3339, explicitRetainUntilDate)
 		if err != nil {
 			glog.Errorf("extractObjectLockMetadataFromRequest: failed to parse retention until date, expected format: %s, error: %v", time.RFC3339, err)
+
 			return ErrInvalidRetentionDateFormat
 		}
 		entry.Extended[s3_constants.ExtRetentionUntilDateKey] = []byte(strconv.FormatInt(parsedTime.Unix(), 10))
@@ -1196,6 +1233,7 @@ func (s3a *S3ApiServer) extractObjectLockMetadataFromRequest(r *http.Request, en
 			glog.V(2).Infof("extractObjectLockMetadataFromRequest: storing legal hold: %s", legalHold)
 		} else {
 			glog.Errorf("extractObjectLockMetadataFromRequest: unexpected legal hold value provided, expected 'ON' or 'OFF'")
+
 			return ErrInvalidLegalHoldStatus
 		}
 	}
@@ -1227,21 +1265,21 @@ func (s3a *S3ApiServer) applyBucketDefaultEncryption(bucket string, r *http.Requ
 			return &BucketDefaultEncryptionResult{DataReader: dataReader}, nil
 		}
 		// Real error - propagate to prevent silent encryption bypass
-		return nil, fmt.Errorf("failed to read bucket encryption config: %v", err)
+		return nil, fmt.Errorf("failed to read bucket encryption config: %w", err)
 	}
 	if encryptionConfig == nil {
 		// No default encryption configured, return original reader
 		return &BucketDefaultEncryptionResult{DataReader: dataReader}, nil
 	}
 
-	if encryptionConfig.SseAlgorithm == "" {
+	if encryptionConfig.GetSseAlgorithm() == "" {
 		// No encryption algorithm specified
 		return &BucketDefaultEncryptionResult{DataReader: dataReader}, nil
 	}
 
-	glog.V(3).Infof("applyBucketDefaultEncryption: applying default encryption %s for bucket %s", encryptionConfig.SseAlgorithm, bucket)
+	glog.V(3).Infof("applyBucketDefaultEncryption: applying default encryption %s for bucket %s", encryptionConfig.GetSseAlgorithm(), bucket)
 
-	switch encryptionConfig.SseAlgorithm {
+	switch encryptionConfig.GetSseAlgorithm() {
 	case EncryptionTypeAES256:
 		// Apply SSE-S3 (AES256) encryption
 		return s3a.applySSES3DefaultEncryption(dataReader)
@@ -1251,7 +1289,7 @@ func (s3a *S3ApiServer) applyBucketDefaultEncryption(bucket string, r *http.Requ
 		return s3a.applySSEKMSDefaultEncryption(bucket, r, dataReader, encryptionConfig)
 
 	default:
-		return nil, fmt.Errorf("unsupported default encryption algorithm: %s", encryptionConfig.SseAlgorithm)
+		return nil, fmt.Errorf("unsupported default encryption algorithm: %s", encryptionConfig.GetSseAlgorithm())
 	}
 }
 
@@ -1261,13 +1299,13 @@ func (s3a *S3ApiServer) applySSES3DefaultEncryption(dataReader io.Reader) (*Buck
 	keyManager := GetSSES3KeyManager()
 	key, err := keyManager.GetOrCreateKey("")
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate SSE-S3 key for default encryption: %v", err)
+		return nil, fmt.Errorf("failed to generate SSE-S3 key for default encryption: %w", err)
 	}
 
 	// Create encrypted reader
 	encryptedReader, iv, encErr := CreateSSES3EncryptedReader(dataReader, key)
 	if encErr != nil {
-		return nil, fmt.Errorf("failed to create SSE-S3 encrypted reader for default encryption: %v", encErr)
+		return nil, fmt.Errorf("failed to create SSE-S3 encrypted reader for default encryption: %w", encErr)
 	}
 
 	// Store IV on the key object for later decryption
@@ -1286,13 +1324,13 @@ func (s3a *S3ApiServer) applySSES3DefaultEncryption(dataReader io.Reader) (*Buck
 // applySSEKMSDefaultEncryption applies SSE-KMS encryption as bucket default
 func (s3a *S3ApiServer) applySSEKMSDefaultEncryption(bucket string, r *http.Request, dataReader io.Reader, encryptionConfig *s3_pb.EncryptionConfiguration) (*BucketDefaultEncryptionResult, error) {
 	// Use the KMS key ID from bucket configuration, or default if not specified
-	keyID := encryptionConfig.KmsKeyId
+	keyID := encryptionConfig.GetKmsKeyId()
 	if keyID == "" {
 		keyID = "alias/aws/s3" // AWS default KMS key for S3
 	}
 
 	// Check if bucket key is enabled in configuration
-	bucketKeyEnabled := encryptionConfig.BucketKeyEnabled
+	bucketKeyEnabled := encryptionConfig.GetBucketKeyEnabled()
 
 	// Build encryption context for KMS
 	// Use bucket parameter passed to function (not from request parsing)
@@ -1302,7 +1340,7 @@ func (s3a *S3ApiServer) applySSEKMSDefaultEncryption(bucket string, r *http.Requ
 	// Create SSE-KMS encrypted reader
 	encryptedReader, sseKey, encErr := CreateSSEKMSEncryptedReaderWithBucketKey(dataReader, keyID, encryptionContext, bucketKeyEnabled)
 	if encErr != nil {
-		return nil, fmt.Errorf("failed to create SSE-KMS encrypted reader for default encryption: %v", encErr)
+		return nil, fmt.Errorf("failed to create SSE-KMS encrypted reader for default encryption: %w", encErr)
 	}
 
 	glog.V(3).Infof("applySSEKMSDefaultEncryption: applied SSE-KMS default encryption with key ID: %s", keyID)
@@ -1344,11 +1382,11 @@ func (s3a *S3ApiServer) applyBucketDefaultRetention(bucket string, entry *filer_
 
 	// Validate default retention has required fields
 	if defaultRetention.Mode == "" {
-		return fmt.Errorf("default retention missing mode")
+		return errors.New("default retention missing mode")
 	}
 
 	if !defaultRetention.DaysSet && !defaultRetention.YearsSet {
-		return fmt.Errorf("default retention missing period")
+		return errors.New("default retention missing period")
 	}
 
 	// Calculate retention until date based on default retention period
@@ -1575,6 +1613,7 @@ func parseConditionalHeaders(r *http.Request) (conditionalHeaders, s3err.ErrorCo
 		headers.ifModifiedSince, err = time.Parse(time.RFC1123, ifModifiedSinceStr)
 		if err != nil {
 			glog.V(3).Infof("parseConditionalHeaders: Invalid If-Modified-Since format: %v", err)
+
 			return headers, s3err.ErrInvalidRequest
 		}
 	}
@@ -1583,6 +1622,7 @@ func parseConditionalHeaders(r *http.Request) (conditionalHeaders, s3err.ErrorCo
 		headers.ifUnmodifiedSince, err = time.Parse(time.RFC1123, ifUnmodifiedSinceStr)
 		if err != nil {
 			glog.V(3).Infof("parseConditionalHeaders: Invalid If-Unmodified-Since format: %v", err)
+
 			return headers, s3err.ErrInvalidRequest
 		}
 	}
@@ -1593,16 +1633,16 @@ func parseConditionalHeaders(r *http.Request) (conditionalHeaders, s3err.ErrorCo
 // S3ApiServer implements EntryGetter interface
 func (s3a *S3ApiServer) getObjectETag(entry *filer_pb.Entry) string {
 	// Try to get ETag from Extended attributes first
-	if etagBytes, hasETag := entry.Extended[s3_constants.ExtETagKey]; hasETag {
+	if etagBytes, hasETag := entry.GetExtended()[s3_constants.ExtETagKey]; hasETag {
 		return string(etagBytes)
 	}
 	// Check for Md5 in Attributes (matches filer.ETag behavior)
 	// Note: len(nil slice) == 0 in Go, so no need for explicit nil check
-	if entry.Attributes != nil && len(entry.Attributes.Md5) > 0 {
-		return fmt.Sprintf("\"%x\"", entry.Attributes.Md5)
+	if entry.GetAttributes() != nil && len(entry.GetAttributes().GetMd5()) > 0 {
+		return fmt.Sprintf("\"%x\"", entry.GetAttributes().GetMd5())
 	}
 	// Fallback: calculate ETag from chunks
-	return s3a.calculateETagFromChunks(entry.Chunks)
+	return s3a.calculateETagFromChunks(entry.GetChunks())
 }
 
 func (s3a *S3ApiServer) etagMatches(headerValue, objectETag string) bool {
@@ -1610,14 +1650,15 @@ func (s3a *S3ApiServer) etagMatches(headerValue, objectETag string) bool {
 	objectETag = strings.Trim(objectETag, `"`)
 
 	// Split header value by commas to handle multiple ETags
-	etags := strings.Split(headerValue, ",")
-	for _, etag := range etags {
+	etags := strings.SplitSeq(headerValue, ",")
+	for etag := range etags {
 		etag = strings.TrimSpace(etag)
 		etag = strings.Trim(etag, `"`)
 		if etag == objectETag {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1636,6 +1677,7 @@ func (s3a *S3ApiServer) validateConditionalHeaders(r *http.Request, headers cond
 	if headers.ifMatch != "" {
 		if !objectExists {
 			glog.V(3).Infof("validateConditionalHeaders: If-Match failed - object %s/%s does not exist", bucket, object)
+
 			return s3err.ErrPreconditionFailed
 		}
 		// If `ifMatch` is "*", the condition is met if the object exists.
@@ -1646,6 +1688,7 @@ func (s3a *S3ApiServer) validateConditionalHeaders(r *http.Request, headers cond
 			// Use production etagMatches method
 			if !s3a.etagMatches(headers.ifMatch, objectETag) {
 				glog.V(3).Infof("validateConditionalHeaders: If-Match failed for object %s/%s - expected ETag %s, got %s", bucket, object, headers.ifMatch, objectETag)
+
 				return s3err.ErrPreconditionFailed
 			}
 		}
@@ -1655,10 +1698,11 @@ func (s3a *S3ApiServer) validateConditionalHeaders(r *http.Request, headers cond
 	// 2. Check If-Unmodified-Since
 	if !headers.ifUnmodifiedSince.IsZero() {
 		if objectExists {
-			if entry.Attributes != nil {
-				objectModTime := time.Unix(entry.Attributes.Mtime, 0)
+			if entry.GetAttributes() != nil {
+				objectModTime := time.Unix(entry.GetAttributes().GetMtime(), 0)
 				if objectModTime.After(headers.ifUnmodifiedSince) {
 					glog.V(3).Infof("validateConditionalHeaders: If-Unmodified-Since failed - object modified after %s", r.Header.Get(s3_constants.IfUnmodifiedSince))
+
 					return s3err.ErrPreconditionFailed
 				}
 				glog.V(3).Infof("validateConditionalHeaders: If-Unmodified-Since passed - object not modified since %s", r.Header.Get(s3_constants.IfUnmodifiedSince))
@@ -1671,6 +1715,7 @@ func (s3a *S3ApiServer) validateConditionalHeaders(r *http.Request, headers cond
 		if objectExists {
 			if headers.ifNoneMatch == "*" {
 				glog.V(3).Infof("validateConditionalHeaders: If-None-Match=* failed - object %s/%s exists", bucket, object)
+
 				return s3err.ErrPreconditionFailed
 			}
 			// Use production getObjectETag method
@@ -1678,6 +1723,7 @@ func (s3a *S3ApiServer) validateConditionalHeaders(r *http.Request, headers cond
 			// Use production etagMatches method
 			if s3a.etagMatches(headers.ifNoneMatch, objectETag) {
 				glog.V(3).Infof("validateConditionalHeaders: If-None-Match failed - ETag matches %s", objectETag)
+
 				return s3err.ErrPreconditionFailed
 			}
 			glog.V(3).Infof("validateConditionalHeaders: If-None-Match passed - ETag %s doesn't match %s", objectETag, headers.ifNoneMatch)
@@ -1689,10 +1735,11 @@ func (s3a *S3ApiServer) validateConditionalHeaders(r *http.Request, headers cond
 	// 4. Check If-Modified-Since
 	if !headers.ifModifiedSince.IsZero() {
 		if objectExists {
-			if entry.Attributes != nil {
-				objectModTime := time.Unix(entry.Attributes.Mtime, 0)
+			if entry.GetAttributes() != nil {
+				objectModTime := time.Unix(entry.GetAttributes().GetMtime(), 0)
 				if !objectModTime.After(headers.ifModifiedSince) {
 					glog.V(3).Infof("validateConditionalHeaders: If-Modified-Since failed - object not modified since %s", r.Header.Get(s3_constants.IfModifiedSince))
+
 					return s3err.ErrPreconditionFailed
 				}
 				glog.V(3).Infof("validateConditionalHeaders: If-Modified-Since passed - object modified after %s", r.Header.Get(s3_constants.IfModifiedSince))
@@ -1718,6 +1765,7 @@ func (s3a *S3ApiServer) checkConditionalHeadersWithGetter(getter EntryGetter, r 
 			entry = nil
 		} else {
 			glog.Errorf("checkConditionalHeadersWithGetter: failed to get entry for %s/%s: %v", bucket, object, entryErr)
+
 			return s3err.ErrInternalError
 		}
 	}
@@ -1746,9 +1794,11 @@ func (s3a *S3ApiServer) checkConditionalHeaders(r *http.Request, bucket, object 
 			entry = nil
 		} else {
 			glog.Errorf("checkConditionalHeaders: error resolving object entry for %s/%s: %v", bucket, object, err)
+
 			return s3err.ErrInternalError
 		}
 	}
+
 	return s3a.validateConditionalHeaders(r, headers, entry, bucket, object)
 }
 
@@ -1764,10 +1814,12 @@ func (s3a *S3ApiServer) validateConditionalHeadersForReads(r *http.Request, head
 	if !objectExists {
 		if headers.ifMatch != "" {
 			glog.V(3).Infof("validateConditionalHeadersForReads: If-Match failed - object %s/%s does not exist", bucket, object)
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrPreconditionFailed, Entry: nil}
 		}
 		if !headers.ifUnmodifiedSince.IsZero() {
 			glog.V(3).Infof("validateConditionalHeadersForReads: If-Unmodified-Since failed - object %s/%s does not exist", bucket, object)
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrPreconditionFailed, Entry: nil}
 		}
 		// If-None-Match and If-Modified-Since succeed when object doesn't exist
@@ -1788,6 +1840,7 @@ func (s3a *S3ApiServer) validateConditionalHeadersForReads(r *http.Request, head
 			// Use production etagMatches method
 			if !s3a.etagMatches(headers.ifMatch, objectETag) {
 				glog.V(3).Infof("validateConditionalHeadersForReads: If-Match failed for object %s/%s - expected ETag %s, got %s", bucket, object, headers.ifMatch, objectETag)
+
 				return ConditionalHeaderResult{ErrorCode: s3err.ErrPreconditionFailed, Entry: entry}
 			}
 		}
@@ -1796,9 +1849,10 @@ func (s3a *S3ApiServer) validateConditionalHeadersForReads(r *http.Request, head
 
 	// 2. Check If-Unmodified-Since (412 Precondition Failed if fails)
 	if !headers.ifUnmodifiedSince.IsZero() {
-		objectModTime := time.Unix(entry.Attributes.Mtime, 0)
+		objectModTime := time.Unix(entry.GetAttributes().GetMtime(), 0)
 		if objectModTime.After(headers.ifUnmodifiedSince) {
 			glog.V(3).Infof("validateConditionalHeadersForReads: If-Unmodified-Since failed - object modified after %s", r.Header.Get(s3_constants.IfUnmodifiedSince))
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrPreconditionFailed, Entry: entry}
 		}
 		glog.V(3).Infof("validateConditionalHeadersForReads: If-Unmodified-Since passed - object not modified since %s", r.Header.Get(s3_constants.IfUnmodifiedSince))
@@ -1811,11 +1865,13 @@ func (s3a *S3ApiServer) validateConditionalHeadersForReads(r *http.Request, head
 
 		if headers.ifNoneMatch == "*" {
 			glog.V(3).Infof("validateConditionalHeadersForReads: If-None-Match=* failed - object %s/%s exists", bucket, object)
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrNotModified, ETag: objectETag, Entry: entry}
 		}
 		// Use production etagMatches method
 		if s3a.etagMatches(headers.ifNoneMatch, objectETag) {
 			glog.V(3).Infof("validateConditionalHeadersForReads: If-None-Match failed - ETag matches %s", objectETag)
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrNotModified, ETag: objectETag, Entry: entry}
 		}
 		glog.V(3).Infof("validateConditionalHeadersForReads: If-None-Match passed - ETag %s doesn't match %s", objectETag, headers.ifNoneMatch)
@@ -1823,11 +1879,12 @@ func (s3a *S3ApiServer) validateConditionalHeadersForReads(r *http.Request, head
 
 	// 4. Check If-Modified-Since (304 Not Modified if fails)
 	if !headers.ifModifiedSince.IsZero() {
-		objectModTime := time.Unix(entry.Attributes.Mtime, 0)
+		objectModTime := time.Unix(entry.GetAttributes().GetMtime(), 0)
 		if !objectModTime.After(headers.ifModifiedSince) {
 			// Use production getObjectETag method
 			objectETag := s3a.getObjectETag(entry)
 			glog.V(3).Infof("validateConditionalHeadersForReads: If-Modified-Since failed - object not modified since %s", r.Header.Get(s3_constants.IfModifiedSince))
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrNotModified, ETag: objectETag, Entry: entry}
 		}
 		glog.V(3).Infof("validateConditionalHeadersForReads: If-Modified-Since passed - object modified after %s", r.Header.Get(s3_constants.IfModifiedSince))
@@ -1852,6 +1909,7 @@ func (s3a *S3ApiServer) checkConditionalHeadersForReadsWithGetter(getter EntryGe
 			entry = nil
 		} else {
 			glog.Errorf("checkConditionalHeadersForReadsWithGetter: failed to get entry for %s/%s: %v", bucket, object, entryErr)
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrInternalError}
 		}
 	}
@@ -1880,9 +1938,11 @@ func (s3a *S3ApiServer) checkConditionalHeadersForReads(r *http.Request, bucket,
 			entry = nil
 		} else {
 			glog.Errorf("checkConditionalHeadersForReads: error resolving object entry for %s/%s: %v", bucket, object, err)
+
 			return ConditionalHeaderResult{ErrorCode: s3err.ErrInternalError, Entry: nil}
 		}
 	}
+
 	return s3a.validateConditionalHeadersForReads(r, headers, entry, bucket, object)
 }
 
@@ -1903,6 +1963,7 @@ func (s3a *S3ApiServer) deleteOrphanedChunks(chunks []*filer_pb.FileChunk) {
 
 	if len(fileIds) == 0 {
 		glog.Warningf("deleteOrphanedChunks: no valid file IDs found in %d chunks", len(chunks))
+
 		return
 	}
 
@@ -1923,22 +1984,23 @@ func (s3a *S3ApiServer) deleteOrphanedChunks(chunks []*filer_pb.FileChunk) {
 			}
 
 			// Convert filer response to operation.LookupResult format
-			for vid, locs := range resp.LocationsMap {
+			for vid, locs := range resp.GetLocationsMap() {
 				result := &operation.LookupResult{
 					VolumeOrFileId: vid,
 				}
 
-				for _, loc := range locs.Locations {
+				for _, loc := range locs.GetLocations() {
 					result.Locations = append(result.Locations, operation.Location{
-						Url:        loc.Url,
-						PublicUrl:  loc.PublicUrl,
-						DataCenter: loc.DataCenter,
-						GrpcPort:   int(loc.GrpcPort),
+						Url:        loc.GetUrl(),
+						PublicUrl:  loc.GetPublicUrl(),
+						DataCenter: loc.GetDataCenter(),
+						GrpcPort:   int(loc.GetGrpcPort()),
 					})
 				}
 
 				results[vid] = result
 			}
+
 			return nil
 		})
 
@@ -1952,13 +2014,13 @@ func (s3a *S3ApiServer) deleteOrphanedChunks(chunks []*filer_pb.FileChunk) {
 	successCount := 0
 	failureCount := 0
 	for _, result := range deleteResults {
-		if result.Error != "" {
+		if result.GetError() != "" {
 			glog.Warningf("deleteOrphanedChunks: failed to delete chunk %s: %s (status: %d)",
-				result.FileId, result.Error, result.Status)
+				result.GetFileId(), result.GetError(), result.GetStatus())
 			failureCount++
 		} else {
 			glog.V(4).Infof("deleteOrphanedChunks: successfully deleted chunk %s (size: %d bytes)",
-				result.FileId, result.Size)
+				result.GetFileId(), result.GetSize())
 			successCount++
 		}
 	}
@@ -1976,6 +2038,7 @@ func validateStorageClass(sc string) bool {
 	case "STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER", "DEEP_ARCHIVE", "OUTPOSTS", "GLACIER_IR", "SNOW":
 		return true
 	}
+
 	return false
 }
 
@@ -1985,5 +2048,6 @@ func (s3a *S3ApiServer) getStorageClassFromExtended(extended map[string][]byte) 
 			return string(sc)
 		}
 	}
+
 	return "STANDARD"
 }

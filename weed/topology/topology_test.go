@@ -101,9 +101,9 @@ func TestHandlingVolumeServerHeartbeat(t *testing.T) {
 		}
 		topo.SyncDataNodeRegistration(volumeMessages, dn)
 
-		//rp, _ := storage.NewReplicaPlacementFromString("000")
-		//layout := topo.GetVolumeLayout("", rp, needle.EMPTY_TTL)
-		//assert(t, "writables", len(layout.writables), volumeCount)
+		// rp, _ := storage.NewReplicaPlacementFromString("000")
+		// layout := topo.GetVolumeLayout("", rp, needle.EMPTY_TTL)
+		// assert(t, "writables", len(layout.writables), volumeCount)
 
 		usageCounts := topo.diskUsages.usages[types.HardDriveType]
 
@@ -154,7 +154,6 @@ func TestHandlingVolumeServerHeartbeat(t *testing.T) {
 		}
 
 		assert(t, "writables after add back", len(layout.writables), volumeCount)
-
 	}
 
 	topo.UnRegisterDataNode(dn)
@@ -162,7 +161,6 @@ func TestHandlingVolumeServerHeartbeat(t *testing.T) {
 	usageCounts := topo.diskUsages.usages[types.HardDriveType]
 
 	assert(t, "activeVolumeCount2", int(usageCounts.activeVolumeCount), 0)
-
 }
 
 func assert(t *testing.T, message string, actual, expected int) {
@@ -172,7 +170,6 @@ func assert(t *testing.T, message string, actual, expected int) {
 }
 
 func TestAddRemoveVolume(t *testing.T) {
-
 	topo := NewTopology("weedfs", sequence.NewMemorySequencer(), 32*1024, 5, false)
 
 	dc := topo.GetOrCreateDataCenter("dc1")

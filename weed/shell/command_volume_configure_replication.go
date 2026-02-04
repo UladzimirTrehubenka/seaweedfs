@@ -41,7 +41,6 @@ func (c *commandVolumeConfigureReplication) HasTag(CommandTag) bool {
 }
 
 func (c *commandVolumeConfigureReplication) Do(args []string, commandEnv *CommandEnv, _ io.Writer) (err error) {
-
 	configureReplicationCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	volumeIdInt := configureReplicationCommand.Int("volumeId", 0, "the volume id")
 	replicationString := configureReplicationCommand.String("replication", "", "the intended replication value")
@@ -51,11 +50,11 @@ func (c *commandVolumeConfigureReplication) Do(args []string, commandEnv *Comman
 	}
 
 	if err = commandEnv.confirmIsLocked(args); err != nil {
-		return
+		return err
 	}
 
 	if *replicationString == "" {
-		return fmt.Errorf("empty replication value")
+		return errors.New("empty replication value")
 	}
 
 	replicaPlacement, err := super_block.NewReplicaPlacementFromString(*replicationString)
@@ -75,10 +74,10 @@ func (c *commandVolumeConfigureReplication) Do(args []string, commandEnv *Comman
 	// find all data nodes with volumes that needs replication change
 	eachDataNode(topologyInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
 		var targetVolumeIds []uint32
-		for _, diskInfo := range dn.DiskInfos {
-			for _, v := range diskInfo.VolumeInfos {
+		for _, diskInfo := range dn.GetDiskInfos() {
+			for _, v := range diskInfo.GetVolumeInfos() {
 				if volumeFilter(v) {
-					targetVolumeIds = append(targetVolumeIds, v.Id)
+					targetVolumeIds = append(targetVolumeIds, v.GetId())
 				}
 			}
 		}
@@ -94,10 +93,11 @@ func (c *commandVolumeConfigureReplication) Do(args []string, commandEnv *Comman
 				if configureErr != nil {
 					return configureErr
 				}
-				if resp.Error != "" {
-					return errors.New(resp.Error)
+				if resp.GetError() != "" {
+					return errors.New(resp.GetError())
 				}
 			}
+
 			return nil
 		})
 		if err != nil {
@@ -112,23 +112,26 @@ func getVolumeFilter(replicaPlacement *super_block.ReplicaPlacement, volumeId ui
 	replicaPlacementInt32 := uint32(replicaPlacement.Byte())
 	if volumeId > 0 {
 		return func(v *master_pb.VolumeInformationMessage) bool {
-			return v.Id == volumeId && v.ReplicaPlacement != replicaPlacementInt32
+			return v.GetId() == volumeId && v.GetReplicaPlacement() != replicaPlacementInt32
 		}
 	}
+
 	return func(v *master_pb.VolumeInformationMessage) bool {
 		var collectionMatched bool
-		if collectionPattern == "" {
+		switch collectionPattern {
+		case "":
 			// Empty pattern matches all collections
 			collectionMatched = true
-		} else if collectionPattern == CollectionDefault {
-			collectionMatched = v.Collection == ""
-		} else {
-			m, err := filepath.Match(collectionPattern, v.Collection)
+		case CollectionDefault:
+			collectionMatched = v.GetCollection() == ""
+		default:
+			m, err := filepath.Match(collectionPattern, v.GetCollection())
 			if err != nil {
 				return false
 			}
 			collectionMatched = m
 		}
-		return collectionMatched && v.ReplicaPlacement != replicaPlacementInt32
+
+		return collectionMatched && v.GetReplicaPlacement() != replicaPlacementInt32
 	}
 }

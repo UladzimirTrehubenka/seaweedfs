@@ -1,6 +1,7 @@
 package sftpd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -26,7 +27,7 @@ func NewSeaweedFileReaderAt(fs *SftpServer, entry *filer_pb.Entry) *SeaweedFileR
 		entry:      entry,
 		bufferSize: 5 * 1024 * 1024,       // 5MB
 		cache:      utils.NewLRUCache(10), // Max 10 chunks = ~50MB
-		fileSize:   int64(entry.Attributes.FileSize),
+		fileSize:   int64(entry.GetAttributes().GetFileSize()),
 	}
 }
 
@@ -58,7 +59,7 @@ func (ra *SeaweedFileReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 				if rs, ok := r.(io.ReadSeeker); ok {
 					ra.reader = rs
 				} else {
-					return 0, fmt.Errorf("reader is not seekable")
+					return 0, errors.New("reader is not seekable")
 				}
 			}
 
@@ -68,17 +69,14 @@ func (ra *SeaweedFileReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 
 			buffer = make([]byte, readSize)
 			readBytes, err := io.ReadFull(ra.reader, buffer)
-			if err != nil && err != io.ErrUnexpectedEOF {
+			if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 				return 0, fmt.Errorf("read error: %w", err)
 			}
 			buffer = buffer[:readBytes]
 			ra.cache.Put(bufferKey, buffer)
 		}
 
-		toCopy := len(buffer) - bufferOffset
-		if toCopy > remaining {
-			toCopy = remaining
-		}
+		toCopy := min(len(buffer)-bufferOffset, remaining)
 		if toCopy <= 0 {
 			break
 		}
@@ -95,5 +93,6 @@ func (ra *SeaweedFileReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 	if totalRead < len(p) {
 		return totalRead, io.EOF
 	}
+
 	return totalRead, nil
 }

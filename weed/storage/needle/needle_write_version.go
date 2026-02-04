@@ -19,5 +19,6 @@ func writeNeedleByVersion(version Version, n *Needle, offset uint64, bytesBuffer
 	default:
 		err = fmt.Errorf("unsupported version: %d", version)
 	}
+
 	return
 }

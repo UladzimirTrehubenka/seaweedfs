@@ -2,14 +2,15 @@ package redis_lua
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 )
 
 func (store *UniversalRedisLuaStore) KvPut(ctx context.Context, key []byte, value []byte) (err error) {
-
 	_, err = store.Client.Set(ctx, string(key), value, 0).Result()
 
 	if err != nil {
@@ -20,10 +21,9 @@ func (store *UniversalRedisLuaStore) KvPut(ctx context.Context, key []byte, valu
 }
 
 func (store *UniversalRedisLuaStore) KvGet(ctx context.Context, key []byte) (value []byte, err error) {
-
 	data, err := store.Client.Get(ctx, string(key)).Result()
 
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, filer.ErrKvNotFound
 	}
 
@@ -31,7 +31,6 @@ func (store *UniversalRedisLuaStore) KvGet(ctx context.Context, key []byte) (val
 }
 
 func (store *UniversalRedisLuaStore) KvDelete(ctx context.Context, key []byte) (err error) {
-
 	_, err = store.Client.Del(ctx, string(key)).Result()
 
 	if err != nil {

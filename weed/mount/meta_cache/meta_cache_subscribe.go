@@ -18,18 +18,17 @@ type MetadataFollower struct {
 
 func mergeProcessors(mainProcessor func(resp *filer_pb.SubscribeMetadataResponse) error, followers ...*MetadataFollower) func(resp *filer_pb.SubscribeMetadataResponse) error {
 	return func(resp *filer_pb.SubscribeMetadataResponse) error {
-
 		// build the full path
-		entry := resp.EventNotification.NewEntry
+		entry := resp.GetEventNotification().GetNewEntry()
 		if entry == nil {
-			entry = resp.EventNotification.OldEntry
+			entry = resp.GetEventNotification().GetOldEntry()
 		}
 		if entry != nil {
-			dir := resp.Directory
-			if resp.EventNotification.NewParentPath != "" {
-				dir = resp.EventNotification.NewParentPath
+			dir := resp.GetDirectory()
+			if resp.GetEventNotification().GetNewParentPath() != "" {
+				dir = resp.GetEventNotification().GetNewParentPath()
 			}
-			fp := util.NewFullPath(dir, entry.Name)
+			fp := util.NewFullPath(dir, entry.GetName())
 
 			for _, follower := range followers {
 				if strings.HasPrefix(string(fp), follower.PathPrefixToWatch) {
@@ -39,45 +38,45 @@ func mergeProcessors(mainProcessor func(resp *filer_pb.SubscribeMetadataResponse
 				}
 			}
 		}
+
 		return mainProcessor(resp)
 	}
 }
 
 func SubscribeMetaEvents(mc *MetaCache, selfSignature int32, client filer_pb.FilerClient, dir string, lastTsNs int64, onRetry func(lastTsNs int64, err error), followers ...*MetadataFollower) error {
-
 	var prefixes []string
 	for _, follower := range followers {
 		prefixes = append(prefixes, follower.PathPrefixToWatch)
 	}
 
 	processEventFn := func(resp *filer_pb.SubscribeMetadataResponse) error {
-		message := resp.EventNotification
+		message := resp.GetEventNotification()
 
-		for _, sig := range message.Signatures {
+		for _, sig := range message.GetSignatures() {
 			if sig == selfSignature && selfSignature != 0 {
 				return nil
 			}
 		}
 
-		dir := resp.Directory
+		dir := resp.GetDirectory()
 		var oldPath util.FullPath
 		var newEntry *filer.Entry
-		if message.OldEntry != nil {
-			oldPath = util.NewFullPath(dir, message.OldEntry.Name)
+		if message.GetOldEntry() != nil {
+			oldPath = util.NewFullPath(dir, message.GetOldEntry().GetName())
 			glog.V(4).Infof("deleting %v", oldPath)
 		}
 
-		if message.NewEntry != nil {
-			if message.NewParentPath != "" {
-				dir = message.NewParentPath
+		if message.GetNewEntry() != nil {
+			if message.GetNewParentPath() != "" {
+				dir = message.GetNewParentPath()
 			}
-			key := util.NewFullPath(dir, message.NewEntry.Name)
+			key := util.NewFullPath(dir, message.GetNewEntry().GetName())
 			glog.V(4).Infof("creating %v", key)
-			newEntry = filer.FromPbEntry(dir, message.NewEntry)
+			newEntry = filer.FromPbEntry(dir, message.GetNewEntry())
 		}
 		err := mc.AtomicUpdateEntryFromFiler(context.Background(), oldPath, newEntry)
 		if err == nil {
-			if message.NewEntry != nil || message.OldEntry != nil {
+			if message.GetNewEntry() != nil || message.GetOldEntry() != nil {
 				dirsToNotify := make(map[util.FullPath]struct{})
 				if oldPath != "" {
 					parent, _ := oldPath.DirAndName()
@@ -87,31 +86,30 @@ func SubscribeMetaEvents(mc *MetaCache, selfSignature int32, client filer_pb.Fil
 					newParent, _ := newEntry.DirAndName()
 					dirsToNotify[util.FullPath(newParent)] = struct{}{}
 				}
-				if message.NewEntry != nil && message.NewEntry.IsDirectory {
-					childPath := util.NewFullPath(dir, message.NewEntry.Name)
+				if message.GetNewEntry() != nil && message.GetNewEntry().GetIsDirectory() {
+					childPath := util.NewFullPath(dir, message.GetNewEntry().GetName())
 					dirsToNotify[childPath] = struct{}{}
 				}
 				for dirPath := range dirsToNotify {
 					mc.noteDirectoryUpdate(dirPath)
 				}
 			}
-			if message.OldEntry != nil && message.NewEntry != nil {
-				oldKey := util.NewFullPath(resp.Directory, message.OldEntry.Name)
-				mc.invalidateFunc(oldKey, message.OldEntry)
-				if message.OldEntry.Name != message.NewEntry.Name {
-					newKey := util.NewFullPath(dir, message.NewEntry.Name)
-					mc.invalidateFunc(newKey, message.NewEntry)
+			if message.GetOldEntry() != nil && message.GetNewEntry() != nil {
+				oldKey := util.NewFullPath(resp.GetDirectory(), message.GetOldEntry().GetName())
+				mc.invalidateFunc(oldKey, message.GetOldEntry())
+				if message.GetOldEntry().GetName() != message.GetNewEntry().GetName() {
+					newKey := util.NewFullPath(dir, message.GetNewEntry().GetName())
+					mc.invalidateFunc(newKey, message.GetNewEntry())
 				}
 			} else if filer_pb.IsCreate(resp) {
 				// no need to invalidate
 			} else if filer_pb.IsDelete(resp) {
-				oldKey := util.NewFullPath(resp.Directory, message.OldEntry.Name)
-				mc.invalidateFunc(oldKey, message.OldEntry)
+				oldKey := util.NewFullPath(resp.GetDirectory(), message.GetOldEntry().GetName())
+				mc.invalidateFunc(oldKey, message.GetOldEntry())
 			}
 		}
 
 		return err
-
 	}
 
 	prefix := dir
@@ -133,12 +131,14 @@ func SubscribeMetaEvents(mc *MetaCache, selfSignature int32, client filer_pb.Fil
 	}
 	util.RetryUntil("followMetaUpdates", func() error {
 		metadataFollowOption.ClientEpoch++
+
 		return pb.WithFilerClientFollowMetadata(client, metadataFollowOption, mergeProcessors(processEventFn, followers...))
 	}, func(err error) bool {
 		if onRetry != nil {
 			onRetry(metadataFollowOption.StartTsNs, err)
 		}
 		glog.Errorf("follow metadata updates: %v", err)
+
 		return true
 	})
 

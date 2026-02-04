@@ -3,9 +3,11 @@ package redis3
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/util/skiplist"
 )
 
@@ -56,7 +58,7 @@ There are multiple cases after finding the name for greater or equal node
 	// merge into next node. Avoid too many nodes if adding data in reverse order.
 	if nextNode is not nil and nextNode has capacity
 	  delete nextNode.Key
-      nextNode.Key = name
+      = name
       nextNode.batch.add name
       insert nodeNode.Key
 	  return
@@ -71,29 +73,29 @@ There are multiple cases after finding the name for greater or equal node
 func (nl *ItemList) canAddMember(node *skiplist.SkipListElementReference, name string) (alreadyContains bool, nodeSize int, err error) {
 	ctx := context.Background()
 	pipe := nl.client.TxPipeline()
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	countOperation := pipe.ZLexCount(ctx, key, "-", "+")
 	scoreOperationt := pipe.ZScore(ctx, key, name)
-	if _, err = pipe.Exec(ctx); err != nil && err != redis.Nil {
+	if _, err = pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		return false, 0, err
 	}
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		err = nil
 	}
 	alreadyContains = scoreOperationt.Err() == nil
 	nodeSize = int(countOperation.Val())
+
 	return
 }
 
 func (nl *ItemList) WriteName(name string) error {
-
 	lookupKey := []byte(name)
 	prevNode, nextNode, found, err := nl.skipList.FindGreaterOrEqual(lookupKey)
 	if err != nil {
 		return err
 	}
 	// case 1: the name already exists as one leading key in the batch
-	if found && bytes.Compare(nextNode.Key, lookupKey) == 0 {
+	if found && bytes.Equal(nextNode.GetKey(), lookupKey) {
 		return nil
 	}
 
@@ -103,7 +105,7 @@ func (nl *ItemList) WriteName(name string) error {
 	}
 
 	if nextNode != nil && prevNode == nil {
-		prevNodeReference = nextNode.Prev
+		prevNodeReference = nextNode.GetPrev()
 	}
 
 	if prevNodeReference != nil {
@@ -130,6 +132,7 @@ func (nl *ItemList) WriteName(name string) error {
 			if err := nl.ItemAdd(lookupKey, 0, name); err != nil {
 				return err
 			}
+
 			return nil
 		}
 		if addToX {
@@ -139,7 +142,7 @@ func (nl *ItemList) WriteName(name string) error {
 				return nil
 			}
 			// delete skiplist reference to old node
-			if _, err := nl.skipList.DeleteByKey(prevNodeReference.Key); err != nil {
+			if _, err := nl.skipList.DeleteByKey(prevNodeReference.GetKey()); err != nil {
 				return err
 			}
 			// add namesToY and name to a new X
@@ -153,9 +156,10 @@ func (nl *ItemList) WriteName(name string) error {
 			}
 
 			// point skip list to current Y
-			if err := nl.ItemAdd(lookupKey, prevNodeReference.ElementPointer); err != nil {
+			if err := nl.ItemAdd(lookupKey, prevNodeReference.GetElementPointer()); err != nil {
 				return nil
 			}
+
 			return nil
 		} else {
 			// collect names after name, add them to Y
@@ -172,22 +176,23 @@ func (nl *ItemList) WriteName(name string) error {
 			if err := nl.NodeDeleteAfterExclusive(prevNodeReference, name); err != nil {
 				return nil
 			}
+
 			return nil
 		}
-
 	}
 
 	// case 2.4
 	if nextNode != nil {
 		nodeSize := nl.NodeSize(nextNode.Reference())
 		if nodeSize < nl.batchSize {
-			if id, err := nl.skipList.DeleteByKey(nextNode.Key); err != nil {
+			if id, err := nl.skipList.DeleteByKey(nextNode.GetKey()); err != nil {
 				return err
 			} else {
 				if err := nl.ItemAdd(lookupKey, id, name); err != nil {
 					return err
 				}
 			}
+
 			return nil
 		}
 	}
@@ -247,8 +252,8 @@ func (nl *ItemList) DeleteName(name string) error {
 	}
 
 	// case 1
-	if found && bytes.Compare(nextNode.Key, lookupKey) == 0 {
-		if _, err := nl.skipList.DeleteByKey(nextNode.Key); err != nil {
+	if found && bytes.Equal(nextNode.GetKey(), lookupKey) {
+		if _, err := nl.skipList.DeleteByKey(nextNode.GetKey()); err != nil {
 			return err
 		}
 		if err := nl.NodeDeleteMember(nextNode.Reference(), name); err != nil {
@@ -258,7 +263,8 @@ func (nl *ItemList) DeleteName(name string) error {
 		if minName == "" {
 			return nl.NodeDelete(nextNode.Reference())
 		}
-		return nl.ItemAdd([]byte(minName), nextNode.Id)
+
+		return nl.ItemAdd([]byte(minName), nextNode.GetId())
 	}
 
 	if !found {
@@ -269,7 +275,7 @@ func (nl *ItemList) DeleteName(name string) error {
 	}
 
 	if nextNode != nil && prevNode == nil {
-		prevNode, err = nl.skipList.LoadElement(nextNode.Prev)
+		prevNode, err = nl.skipList.LoadElement(nextNode.GetPrev())
 		if err != nil {
 			return err
 		}
@@ -290,15 +296,16 @@ func (nl *ItemList) DeleteName(name string) error {
 	}
 	prevSize := nl.NodeSize(prevNode.Reference())
 	if prevSize == 0 {
-		if _, err := nl.skipList.DeleteByKey(prevNode.Key); err != nil {
+		if _, err := nl.skipList.DeleteByKey(prevNode.GetKey()); err != nil {
 			return err
 		}
+
 		return nil
 	}
 	nextSize := nl.NodeSize(nextNode.Reference())
 	if nextSize > 0 && prevSize+nextSize < nl.batchSize {
 		// case 3.1 merge nextNode and prevNode
-		if _, err := nl.skipList.DeleteByKey(nextNode.Key); err != nil {
+		if _, err := nl.skipList.DeleteByKey(nextNode.GetKey()); err != nil {
 			return err
 		}
 		nextNames, err := nl.NodeRangeBeforeExclusive(nextNode.Reference(), "")
@@ -308,6 +315,7 @@ func (nl *ItemList) DeleteName(name string) error {
 		if err := nl.NodeAddMember(prevNode.Reference(), nextNames...); err != nil {
 			return err
 		}
+
 		return nl.NodeDelete(nextNode.Reference())
 	} else {
 		// case 3.2 update prevNode
@@ -322,7 +330,7 @@ func (nl *ItemList) ListNames(startFrom string, visitNamesFn func(name string) b
 	if err != nil {
 		return err
 	}
-	if found && bytes.Compare(nextNode.Key, lookupKey) == 0 {
+	if found && bytes.Equal(nextNode.GetKey(), lookupKey) {
 		prevNode = nil
 	}
 	if !found {
@@ -342,7 +350,7 @@ func (nl *ItemList) ListNames(startFrom string, visitNamesFn func(name string) b
 		if !nl.NodeScanInclusiveAfter(nextNode.Reference(), startFrom, visitNamesFn) {
 			return nil
 		}
-		nextNode, err = nl.skipList.LoadElement(nextNode.Next[0])
+		nextNode, err = nl.skipList.LoadElement(nextNode.GetNext()[0])
 		if err != nil {
 			return err
 		}
@@ -352,7 +360,6 @@ func (nl *ItemList) ListNames(startFrom string, visitNamesFn func(name string) b
 }
 
 func (nl *ItemList) RemoteAllListElement() error {
-
 	t := nl.skipList
 
 	nodeRef := t.StartLevels[0]
@@ -370,21 +377,22 @@ func (nl *ItemList) RemoteAllListElement() error {
 		if err := nl.NodeDelete(node.Reference()); err != nil {
 			return err
 		}
-		nodeRef = node.Next[0]
+		nodeRef = node.GetNext()[0]
 	}
-	return nil
 
+	return nil
 }
 
 func (nl *ItemList) NodeContainsItem(node *skiplist.SkipListElementReference, item string) bool {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	_, err := nl.client.ZScore(context.Background(), key, item).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return false
 	}
 	if err == nil {
 		return true
 	}
+
 	return false
 }
 
@@ -392,12 +400,13 @@ func (nl *ItemList) NodeSize(node *skiplist.SkipListElementReference) int {
 	if node == nil {
 		return 0
 	}
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
+
 	return int(nl.client.ZLexCount(context.Background(), key, "-", "+").Val())
 }
 
 func (nl *ItemList) NodeAddMember(node *skiplist.SkipListElementReference, names ...string) error {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	var members []redis.Z
 	for _, name := range names {
 		members = append(members, redis.Z{
@@ -405,25 +414,29 @@ func (nl *ItemList) NodeAddMember(node *skiplist.SkipListElementReference, names
 			Member: name,
 		})
 	}
+
 	return nl.client.ZAddNX(context.Background(), key, members...).Err()
 }
 func (nl *ItemList) NodeDeleteMember(node *skiplist.SkipListElementReference, name string) error {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
+
 	return nl.client.ZRem(context.Background(), key, name).Err()
 }
 
 func (nl *ItemList) NodeDelete(node *skiplist.SkipListElementReference) error {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
+
 	return nl.client.Del(context.Background(), key).Err()
 }
 
 func (nl *ItemList) NodeInnerPosition(node *skiplist.SkipListElementReference, name string) int {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
+
 	return int(nl.client.ZLexCount(context.Background(), key, "-", "("+name).Val())
 }
 
 func (nl *ItemList) NodeMin(node *skiplist.SkipListElementReference) string {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	slice := nl.client.ZRangeByLex(context.Background(), key, &redis.ZRangeBy{
 		Min:    "-",
 		Max:    "+",
@@ -432,13 +445,15 @@ func (nl *ItemList) NodeMin(node *skiplist.SkipListElementReference) string {
 	}).Val()
 	if len(slice) > 0 {
 		s := slice[0]
+
 		return s
 	}
+
 	return ""
 }
 
 func (nl *ItemList) NodeScanInclusiveAfter(node *skiplist.SkipListElementReference, startFrom string, visitNamesFn func(name string) bool) bool {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	if startFrom == "" {
 		startFrom = "-"
 	} else {
@@ -453,28 +468,31 @@ func (nl *ItemList) NodeScanInclusiveAfter(node *skiplist.SkipListElementReferen
 			return false
 		}
 	}
+
 	return true
 }
 
 func (nl *ItemList) NodeRangeBeforeExclusive(node *skiplist.SkipListElementReference, stopAt string) ([]string, error) {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	if stopAt == "" {
 		stopAt = "+"
 	} else {
 		stopAt = "(" + stopAt
 	}
+
 	return nl.client.ZRangeByLex(context.Background(), key, &redis.ZRangeBy{
 		Min: "-",
 		Max: stopAt,
 	}).Result()
 }
 func (nl *ItemList) NodeRangeAfterExclusive(node *skiplist.SkipListElementReference, startFrom string) ([]string, error) {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	if startFrom == "" {
 		startFrom = "-"
 	} else {
 		startFrom = "(" + startFrom
 	}
+
 	return nl.client.ZRangeByLex(context.Background(), key, &redis.ZRangeBy{
 		Min: startFrom,
 		Max: "+",
@@ -482,21 +500,23 @@ func (nl *ItemList) NodeRangeAfterExclusive(node *skiplist.SkipListElementRefere
 }
 
 func (nl *ItemList) NodeDeleteBeforeExclusive(node *skiplist.SkipListElementReference, stopAt string) error {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	if stopAt == "" {
 		stopAt = "+"
 	} else {
 		stopAt = "(" + stopAt
 	}
+
 	return nl.client.ZRemRangeByLex(context.Background(), key, "-", stopAt).Err()
 }
 func (nl *ItemList) NodeDeleteAfterExclusive(node *skiplist.SkipListElementReference, startFrom string) error {
-	key := fmt.Sprintf("%s%dm", nl.prefix, node.ElementPointer)
+	key := fmt.Sprintf("%s%dm", nl.prefix, node.GetElementPointer())
 	if startFrom == "" {
 		startFrom = "-"
 	} else {
 		startFrom = "(" + startFrom
 	}
+
 	return nl.client.ZRemRangeByLex(context.Background(), key, startFrom, "+").Err()
 }
 
@@ -511,5 +531,6 @@ func (nl *ItemList) ItemAdd(lookupKey []byte, idIfKnown int64, names ...string) 
 			}, names...)
 		}
 	}
+
 	return nil
 }

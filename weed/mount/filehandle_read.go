@@ -2,6 +2,7 @@ package mount
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -21,6 +22,7 @@ func (fh *FileHandle) unlockForRead(startOffset int64, size int) {
 
 func (fh *FileHandle) readFromDirtyPages(buff []byte, startOffset int64, tsNs int64) (maxStop int64) {
 	maxStop = fh.dirtyPages.ReadDirtyDataAt(buff, startOffset, tsNs)
+
 	return
 }
 
@@ -41,28 +43,32 @@ func (fh *FileHandle) readFromChunksWithContext(ctx context.Context, buff []byte
 		err := fh.downloadRemoteEntry(entry)
 		if err != nil {
 			glog.V(1).Infof("download remote entry %s: %v", fileFullPath, err)
+
 			return 0, 0, err
 		}
 	}
 
-	fileSize := int64(entry.Attributes.FileSize)
+	fileSize := int64(entry.Attributes.GetFileSize())
 	if fileSize == 0 {
 		fileSize = int64(filer.FileSize(entry.GetEntry()))
 	}
 
 	if fileSize == 0 {
 		glog.V(1).Infof("empty fh %v", fileFullPath)
+
 		return 0, 0, io.EOF
 	} else if offset == fileSize {
 		return 0, 0, io.EOF
 	} else if offset >= fileSize {
 		glog.V(1).Infof("invalid read, fileSize %d, offset %d for %s", fileSize, offset, fileFullPath)
+
 		return 0, 0, io.EOF
 	}
 
 	if offset < int64(len(entry.Content)) {
 		totalRead := copy(buff, entry.Content[offset:])
 		glog.V(4).Infof("file handle read cached %s [%d,%d] %d", fileFullPath, offset, offset+int64(totalRead), totalRead)
+
 		return int64(totalRead), 0, nil
 	}
 
@@ -71,6 +77,7 @@ func (fh *FileHandle) readFromChunksWithContext(ctx context.Context, buff []byte
 		totalRead, ts, err := fh.tryRDMARead(ctx, fileSize, buff, offset, entry)
 		if err == nil {
 			glog.V(4).Infof("RDMA read successful for %s [%d,%d] %d", fileFullPath, offset, offset+int64(totalRead), totalRead)
+
 			return int64(totalRead), ts, nil
 		}
 		glog.V(4).Infof("RDMA read failed for %s, falling back to HTTP: %v", fileFullPath, err)
@@ -79,7 +86,7 @@ func (fh *FileHandle) readFromChunksWithContext(ctx context.Context, buff []byte
 	// Fall back to normal chunk reading
 	totalRead, ts, err := fh.entryChunkGroup.ReadDataAt(ctx, fileSize, buff, offset)
 
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		glog.Errorf("file handle read %s: %v", fileFullPath, err)
 	}
 
@@ -94,9 +101,9 @@ func (fh *FileHandle) tryRDMARead(ctx context.Context, fileSize int64, buff []by
 	// This is a simplified approach - in a full implementation, we'd need to
 	// handle chunk boundaries, multiple chunks, etc.
 
-	chunks := entry.GetEntry().Chunks
+	chunks := entry.GetEntry().GetChunks()
 	if len(chunks) == 0 {
-		return 0, 0, fmt.Errorf("no chunks available for RDMA read")
+		return 0, 0, errors.New("no chunks available for RDMA read")
 	}
 
 	// Find the chunk that contains our offset using binary search
@@ -122,34 +129,33 @@ func (fh *FileHandle) tryRDMARead(ctx context.Context, fileSize int64, buff []by
 	}
 
 	// Calculate how much to read from this chunk
-	remainingInChunk := int64(targetChunk.Size) - chunkOffset
+	remainingInChunk := int64(targetChunk.GetSize()) - chunkOffset
 	readSize := min(int64(len(buff)), remainingInChunk)
 
 	glog.V(4).Infof("RDMA read attempt: chunk=%s (fileId=%s), chunkOffset=%d, readSize=%d",
-		targetChunk.FileId, targetChunk.FileId, chunkOffset, readSize)
+		targetChunk.GetFileId(), targetChunk.GetFileId(), chunkOffset, readSize)
 
 	// Try RDMA read using file ID directly (more efficient)
-	data, isRDMA, err := fh.wfs.rdmaClient.ReadNeedle(ctx, targetChunk.FileId, uint64(chunkOffset), uint64(readSize))
+	data, isRDMA, err := fh.wfs.rdmaClient.ReadNeedle(ctx, targetChunk.GetFileId(), uint64(chunkOffset), uint64(readSize))
 	if err != nil {
 		return 0, 0, fmt.Errorf("RDMA read failed: %w", err)
 	}
 
 	if !isRDMA {
-		return 0, 0, fmt.Errorf("RDMA not available for chunk")
+		return 0, 0, errors.New("RDMA not available for chunk")
 	}
 
 	// Copy data to buffer
 	copied := copy(buff, data)
-	return int64(copied), targetChunk.ModifiedTsNs, nil
+
+	return int64(copied), targetChunk.GetModifiedTsNs(), nil
 }
 
 func (fh *FileHandle) downloadRemoteEntry(entry *LockedEntry) error {
-
 	fileFullPath := fh.FullPath()
 	dir, _ := fileFullPath.DirAndName()
 
 	err := fh.wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		request := &filer_pb.CacheRemoteObjectToLocalClusterRequest{
 			Directory: string(dir),
 			Name:      entry.Name,
@@ -158,14 +164,14 @@ func (fh *FileHandle) downloadRemoteEntry(entry *LockedEntry) error {
 		glog.V(4).Infof("download entry: %v", request)
 		resp, err := client.CacheRemoteObjectToLocalCluster(context.Background(), request)
 		if err != nil {
-			return fmt.Errorf("CacheRemoteObjectToLocalCluster file %s: %v", fileFullPath, err)
+			return fmt.Errorf("CacheRemoteObjectToLocalCluster file %s: %w", fileFullPath, err)
 		}
 
-		fh.SetEntry(resp.Entry)
+		fh.SetEntry(resp.GetEntry())
 
 		// Only update cache if the parent directory is cached
 		if fh.wfs.metaCache.IsDirectoryCached(util.FullPath(dir)) {
-			if err := fh.wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, resp.Entry)); err != nil {
+			if err := fh.wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.GetDirectory(), resp.GetEntry())); err != nil {
 				return fmt.Errorf("update meta cache for %s: %w", fileFullPath, err)
 			}
 		}

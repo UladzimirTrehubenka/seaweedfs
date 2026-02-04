@@ -134,7 +134,7 @@ func TestSQLWhereClauseIssue(t *testing.T) {
 		t.Logf("First row ID: %s", firstId)
 
 		// Try to filter to just that specific ID
-		specificSql := fmt.Sprintf("SELECT id FROM user_events WHERE id = %s", firstId)
+		specificSql := "SELECT id FROM user_events WHERE id = " + firstId
 		specificResult, err := engine.ExecuteSQL(context.Background(), specificSql)
 
 		if err != nil {
@@ -143,14 +143,15 @@ func TestSQLWhereClauseIssue(t *testing.T) {
 			actualCount := len(specificResult.Rows)
 			t.Logf("WHERE id = %s returned %d rows", firstId, actualCount)
 
-			if actualCount == allCount {
+			switch actualCount {
+			case allCount:
 				t.Log("CONFIRMED: WHERE clause is completely ignored")
 				t.Log("   - Query parsed successfully")
 				t.Log("   - No errors returned")
 				t.Log("   - But filtering logic not implemented in execution")
-			} else if actualCount == 1 {
+			case 1:
 				t.Log("WHERE clause working correctly")
-			} else {
+			default:
 				t.Logf("❓ Unexpected result: got %d rows instead of 1 or %d", actualCount, allCount)
 			}
 		}
@@ -161,9 +162,10 @@ func TestSQLWhereClauseIssue(t *testing.T) {
 	impossibleCount := len(impossibleResult.Rows)
 	t.Logf("WHERE 1 = 0 returned %d rows", impossibleCount)
 
-	if impossibleCount == allCount {
+	switch impossibleCount {
+	case allCount:
 		t.Log("CONFIRMED: Even impossible WHERE conditions are ignored")
-	} else if impossibleCount == 0 {
+	case 0:
 		t.Log("Impossible WHERE condition correctly returns no rows")
 	}
 }

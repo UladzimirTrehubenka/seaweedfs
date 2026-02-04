@@ -24,9 +24,11 @@ func WaitWithTimeout(ctx context.Context, cond *sync.Cond, timer *time.Timer) in
 		return http.StatusOK
 	case <-timer.C:
 		cond.Broadcast()
+
 		return http.StatusTooManyRequests
 	case <-ctx.Done():
 		cond.Broadcast()
+
 		return HttpStatusCancelled
 	}
 }

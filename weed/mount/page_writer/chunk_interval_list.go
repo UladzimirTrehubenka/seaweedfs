@@ -40,6 +40,7 @@ func newChunkWrittenIntervalList() *ChunkWrittenIntervalList {
 	}
 	list.head.next = list.tail
 	list.tail.prev = list.head
+
 	return list
 }
 
@@ -62,13 +63,13 @@ func (list *ChunkWrittenIntervalList) WrittenSize() (writtenByteCount int64) {
 	for t := list.head; t != nil; t = t.next {
 		writtenByteCount += t.Size()
 	}
+
 	return
 }
 
 func (list *ChunkWrittenIntervalList) addInterval(interval *ChunkWrittenInterval) {
-
-	//t := list.head
-	//for ; t.next != nil; t = t.next {
+	// t := list.head
+	// for ; t.next != nil; t = t.next {
 	//	if t.TsNs > interval.TsNs {
 	//		println("writes is out of order", t.TsNs-interval.TsNs, "ns")
 	//	}
@@ -114,7 +115,6 @@ func (list *ChunkWrittenIntervalList) addInterval(interval *ChunkWrittenInterval
 		q.prev = interval
 		interval.next = q
 	}
-
 }
 
 func (list *ChunkWrittenIntervalList) size() int {
@@ -122,5 +122,6 @@ func (list *ChunkWrittenIntervalList) size() int {
 	for t := list.head; t != nil; t = t.next {
 		count++
 	}
+
 	return count - 2
 }

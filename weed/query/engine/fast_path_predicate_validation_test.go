@@ -122,7 +122,7 @@ func TestFastPathPredicateValidation(t *testing.T) {
 				// No WHERE clause case
 				onlyTimePredicates = true
 			} else {
-				startTimeNs, stopTimeNs, onlyTimePredicates = engine.SQLEngine.extractTimeFiltersWithValidation(whereExpr)
+				startTimeNs, stopTimeNs, onlyTimePredicates = engine.extractTimeFiltersWithValidation(whereExpr)
 			}
 
 			// Verify the results
@@ -201,7 +201,7 @@ func TestFastPathAggregationSafety(t *testing.T) {
 			startTimeNs, stopTimeNs := int64(0), int64(0)
 			onlyTimePredicates := true
 			if selectStmt.Where != nil {
-				startTimeNs, stopTimeNs, onlyTimePredicates = engine.SQLEngine.extractTimeFiltersWithValidation(selectStmt.Where.Expr)
+				startTimeNs, stopTimeNs, onlyTimePredicates = engine.extractTimeFiltersWithValidation(selectStmt.Where.Expr)
 			}
 
 			canAttemptFastPath := selectStmt.Where == nil || onlyTimePredicates
@@ -261,7 +261,7 @@ func TestTimestampColumnDetection(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.columnName, func(t *testing.T) {
-			isTimestamp := engine.SQLEngine.isTimestampColumn(tc.columnName)
+			isTimestamp := engine.isTimestampColumn(tc.columnName)
 			if isTimestamp != tc.isTimestamp {
 				t.Errorf("Expected isTimestampColumn(%s)=%v, got %v. %s",
 					tc.columnName, tc.isTimestamp, isTimestamp, tc.description)

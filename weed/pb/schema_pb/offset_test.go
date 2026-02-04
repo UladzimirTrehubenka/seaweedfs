@@ -52,14 +52,14 @@ func TestPartitionOffsetSerialization(t *testing.T) {
 	}
 
 	// Verify all fields are preserved
-	if restored.StartTsNs != original.StartTsNs {
-		t.Errorf("StartTsNs = %d, want %d", restored.StartTsNs, original.StartTsNs)
+	if restored.GetStartTsNs() != original.GetStartTsNs() {
+		t.Errorf("StartTsNs = %d, want %d", restored.GetStartTsNs(), original.GetStartTsNs())
 	}
-	if restored.StartOffset != original.StartOffset {
-		t.Errorf("StartOffset = %d, want %d", restored.StartOffset, original.StartOffset)
+	if restored.GetStartOffset() != original.GetStartOffset() {
+		t.Errorf("StartOffset = %d, want %d", restored.GetStartOffset(), original.GetStartOffset())
 	}
-	if restored.Partition.RingSize != original.Partition.RingSize {
-		t.Errorf("Partition.RingSize = %d, want %d", restored.Partition.RingSize, original.Partition.RingSize)
+	if restored.GetPartition().GetRingSize() != original.GetPartition().GetRingSize() {
+		t.Errorf("Partition.RingSize = %d, want %d", restored.GetPartition().GetRingSize(), original.GetPartition().GetRingSize())
 	}
 }
 
@@ -88,7 +88,7 @@ func TestPartitionOffsetBackwardCompatibility(t *testing.T) {
 	}
 
 	// StartOffset should default to 0
-	if restored.StartOffset != 0 {
-		t.Errorf("StartOffset = %d, want 0", restored.StartOffset)
+	if restored.GetStartOffset() != 0 {
+		t.Errorf("StartOffset = %d, want 0", restored.GetStartOffset())
 	}
 }

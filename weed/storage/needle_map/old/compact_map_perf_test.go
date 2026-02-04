@@ -25,12 +25,11 @@ go tool pprof --alloc_space needle.test mem.out
 */
 
 func TestMemoryUsage(t *testing.T) {
-
 	var maps []*CompactMap
 	totalRowCount := uint64(0)
 
 	startTime := time.Now()
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		indexFile, ie := os.OpenFile("../../../../test/data/sample.idx", os.O_RDWR|os.O_RDONLY, 0644)
 		if ie != nil {
 			log.Fatalln(ie)
@@ -46,7 +45,6 @@ func TestMemoryUsage(t *testing.T) {
 		fmt.Printf("\tTaken = %v\n", now.Sub(startTime))
 		startTime = now
 	}
-
 }
 
 func loadNewNeedleMap(file *os.File) (*CompactMap, uint64) {
@@ -72,11 +70,9 @@ func loadNewNeedleMap(file *os.File) (*CompactMap, uint64) {
 	}
 
 	return m, rowCount
-
 }
 
 func PrintMemUsage(totalRowCount uint64) {
-
 	runtime.GC()
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)

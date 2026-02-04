@@ -46,15 +46,15 @@ func TestS3Conf(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	err := ProtoToText(&buf, s3Conf)
-	assert.Equal(t, err, nil)
+	assert.NoError(t, err)
 	s3ConfSaved := &iam_pb.S3ApiConfiguration{}
 	err = ParseS3ConfigurationFromBytes(buf.Bytes(), s3ConfSaved)
-	assert.Equal(t, err, nil)
+	assert.NoError(t, err)
 
-	assert.Equal(t, "some_name", s3ConfSaved.Identities[0].Name)
-	assert.Equal(t, "some_read_only_user", s3ConfSaved.Identities[1].Name)
-	assert.Equal(t, "some_access_key1", s3ConfSaved.Identities[0].Credentials[0].AccessKey)
-	assert.Equal(t, "some_secret_key2", s3ConfSaved.Identities[1].Credentials[0].SecretKey)
+	assert.Equal(t, "some_name", s3ConfSaved.GetIdentities()[0].GetName())
+	assert.Equal(t, "some_read_only_user", s3ConfSaved.GetIdentities()[1].GetName())
+	assert.Equal(t, "some_access_key1", s3ConfSaved.GetIdentities()[0].GetCredentials()[0].GetAccessKey())
+	assert.Equal(t, "some_secret_key2", s3ConfSaved.GetIdentities()[1].GetCredentials()[0].GetSecretKey())
 }
 
 func TestCheckDuplicateAccessKey(t *testing.T) {

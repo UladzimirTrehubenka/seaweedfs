@@ -3,6 +3,7 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/linkedin/goavro/v2"
@@ -21,13 +22,13 @@ const (
 // SchemaEvolutionChecker handles schema compatibility checking and evolution
 type SchemaEvolutionChecker struct {
 	// Cache for parsed schemas to avoid re-parsing
-	schemaCache map[string]interface{}
+	schemaCache map[string]any
 }
 
 // NewSchemaEvolutionChecker creates a new schema evolution checker
 func NewSchemaEvolutionChecker() *SchemaEvolutionChecker {
 	return &SchemaEvolutionChecker{
-		schemaCache: make(map[string]interface{}),
+		schemaCache: make(map[string]any),
 	}
 }
 
@@ -44,7 +45,6 @@ func (checker *SchemaEvolutionChecker) CheckCompatibility(
 	format Format,
 	level CompatibilityLevel,
 ) (*CompatibilityResult, error) {
-
 	result := &CompatibilityResult{
 		Compatible: true,
 		Issues:     []string{},
@@ -72,7 +72,6 @@ func (checker *SchemaEvolutionChecker) checkAvroCompatibility(
 	oldSchemaStr, newSchemaStr string,
 	level CompatibilityLevel,
 ) (*CompatibilityResult, error) {
-
 	result := &CompatibilityResult{
 		Compatible: true,
 		Issues:     []string{},
@@ -92,7 +91,7 @@ func (checker *SchemaEvolutionChecker) checkAvroCompatibility(
 	}
 
 	// Parse schema structures for detailed analysis
-	var oldSchemaMap, newSchemaMap map[string]interface{}
+	var oldSchemaMap, newSchemaMap map[string]any
 	if err := json.Unmarshal([]byte(oldSchemaStr), &oldSchemaMap); err != nil {
 		return nil, fmt.Errorf("failed to parse old schema JSON: %w", err)
 	}
@@ -126,7 +125,7 @@ func (checker *SchemaEvolutionChecker) checkAvroCompatibility(
 
 // checkAvroBackwardCompatibility checks if new schema can read data written with old schema
 func (checker *SchemaEvolutionChecker) checkAvroBackwardCompatibility(
-	oldSchema, newSchema map[string]interface{},
+	oldSchema, newSchema map[string]any,
 	result *CompatibilityResult,
 ) {
 	// Check if fields were removed without defaults
@@ -164,7 +163,7 @@ func (checker *SchemaEvolutionChecker) checkAvroBackwardCompatibility(
 
 // checkAvroForwardCompatibility checks if old schema can read data written with new schema
 func (checker *SchemaEvolutionChecker) checkAvroForwardCompatibility(
-	oldSchema, newSchema map[string]interface{},
+	oldSchema, newSchema map[string]any,
 	result *CompatibilityResult,
 ) {
 	// Check if fields were added without defaults in old schema
@@ -202,12 +201,12 @@ func (checker *SchemaEvolutionChecker) checkAvroForwardCompatibility(
 }
 
 // extractAvroFields extracts field information from an Avro schema
-func (checker *SchemaEvolutionChecker) extractAvroFields(schema map[string]interface{}) map[string]map[string]interface{} {
-	fields := make(map[string]map[string]interface{})
+func (checker *SchemaEvolutionChecker) extractAvroFields(schema map[string]any) map[string]map[string]any {
+	fields := make(map[string]map[string]any)
 
-	if fieldsArray, ok := schema["fields"].([]interface{}); ok {
+	if fieldsArray, ok := schema["fields"].([]any); ok {
 		for _, fieldInterface := range fieldsArray {
-			if field, ok := fieldInterface.(map[string]interface{}); ok {
+			if field, ok := fieldInterface.(map[string]any); ok {
 				if name, ok := field["name"].(string); ok {
 					fields[name] = field
 				}
@@ -219,7 +218,7 @@ func (checker *SchemaEvolutionChecker) extractAvroFields(schema map[string]inter
 }
 
 // areAvroTypesCompatible checks if two Avro types are compatible
-func (checker *SchemaEvolutionChecker) areAvroTypesCompatible(oldType, newType interface{}, backward bool) bool {
+func (checker *SchemaEvolutionChecker) areAvroTypesCompatible(oldType, newType any, backward bool) bool {
 	// Simplified type compatibility check
 	// In a full implementation, this would handle complex types, unions, etc.
 
@@ -250,10 +249,8 @@ func (checker *SchemaEvolutionChecker) isPromotableType(from, to string) bool {
 	}
 
 	if validPromotions, exists := promotions[from]; exists {
-		for _, validTo := range validPromotions {
-			if to == validTo {
-				return true
-			}
+		if slices.Contains(validPromotions, to) {
+			return true
 		}
 	}
 
@@ -266,7 +263,7 @@ func (checker *SchemaEvolutionChecker) validateAvroDataCompatibility(
 	level CompatibilityLevel,
 ) error {
 	// Create test data with old schema
-	testData := map[string]interface{}{
+	testData := map[string]any{
 		"test_field": "test_value",
 	}
 
@@ -304,7 +301,6 @@ func (checker *SchemaEvolutionChecker) checkProtobufCompatibility(
 	oldSchemaStr, newSchemaStr string,
 	level CompatibilityLevel,
 ) (*CompatibilityResult, error) {
-
 	result := &CompatibilityResult{
 		Compatible: true,
 		Issues:     []string{},
@@ -335,7 +331,6 @@ func (checker *SchemaEvolutionChecker) checkJSONSchemaCompatibility(
 	oldSchemaStr, newSchemaStr string,
 	level CompatibilityLevel,
 ) (*CompatibilityResult, error) {
-
 	result := &CompatibilityResult{
 		Compatible: true,
 		Issues:     []string{},
@@ -343,7 +338,7 @@ func (checker *SchemaEvolutionChecker) checkJSONSchemaCompatibility(
 	}
 
 	// Parse JSON schemas
-	var oldSchema, newSchema map[string]interface{}
+	var oldSchema, newSchema map[string]any
 	if err := json.Unmarshal([]byte(oldSchemaStr), &oldSchema); err != nil {
 		return nil, fmt.Errorf("failed to parse old JSON schema: %w", err)
 	}
@@ -369,7 +364,7 @@ func (checker *SchemaEvolutionChecker) checkJSONSchemaCompatibility(
 
 // checkJSONSchemaBackwardCompatibility checks JSON Schema backward compatibility
 func (checker *SchemaEvolutionChecker) checkJSONSchemaBackwardCompatibility(
-	oldSchema, newSchema map[string]interface{},
+	oldSchema, newSchema map[string]any,
 	result *CompatibilityResult,
 ) {
 	// Check if required fields were added
@@ -399,7 +394,7 @@ func (checker *SchemaEvolutionChecker) checkJSONSchemaBackwardCompatibility(
 
 // checkJSONSchemaForwardCompatibility checks JSON Schema forward compatibility
 func (checker *SchemaEvolutionChecker) checkJSONSchemaForwardCompatibility(
-	oldSchema, newSchema map[string]interface{},
+	oldSchema, newSchema map[string]any,
 	result *CompatibilityResult,
 ) {
 	// Check if required fields were removed
@@ -427,35 +422,33 @@ func (checker *SchemaEvolutionChecker) checkJSONSchemaForwardCompatibility(
 }
 
 // extractJSONSchemaRequired extracts required fields from JSON Schema
-func (checker *SchemaEvolutionChecker) extractJSONSchemaRequired(schema map[string]interface{}) []string {
-	if required, ok := schema["required"].([]interface{}); ok {
+func (checker *SchemaEvolutionChecker) extractJSONSchemaRequired(schema map[string]any) []string {
+	if required, ok := schema["required"].([]any); ok {
 		var fields []string
 		for _, field := range required {
 			if fieldStr, ok := field.(string); ok {
 				fields = append(fields, fieldStr)
 			}
 		}
+
 		return fields
 	}
+
 	return []string{}
 }
 
 // extractJSONSchemaProperties extracts properties from JSON Schema
-func (checker *SchemaEvolutionChecker) extractJSONSchemaProperties(schema map[string]interface{}) map[string]interface{} {
-	if properties, ok := schema["properties"].(map[string]interface{}); ok {
+func (checker *SchemaEvolutionChecker) extractJSONSchemaProperties(schema map[string]any) map[string]any {
+	if properties, ok := schema["properties"].(map[string]any); ok {
 		return properties
 	}
-	return make(map[string]interface{})
+
+	return make(map[string]any)
 }
 
 // contains checks if a slice contains a string
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 // GetCompatibilityLevel returns the compatibility level for a subject
@@ -477,8 +470,8 @@ func (checker *SchemaEvolutionChecker) CanEvolve(
 	currentSchemaStr, newSchemaStr string,
 	format Format,
 ) (*CompatibilityResult, error) {
-
 	level := checker.GetCompatibilityLevel(subject)
+
 	return checker.CheckCompatibility(currentSchemaStr, newSchemaStr, format, level)
 }
 
@@ -488,7 +481,6 @@ func (checker *SchemaEvolutionChecker) SuggestEvolution(
 	format Format,
 	level CompatibilityLevel,
 ) ([]string, error) {
-
 	suggestions := []string{}
 
 	result, err := checker.CheckCompatibility(oldSchemaStr, newSchemaStr, format, level)
@@ -498,6 +490,7 @@ func (checker *SchemaEvolutionChecker) SuggestEvolution(
 
 	if result.Compatible {
 		suggestions = append(suggestions, "Schema evolution is compatible")
+
 		return suggestions, nil
 	}
 

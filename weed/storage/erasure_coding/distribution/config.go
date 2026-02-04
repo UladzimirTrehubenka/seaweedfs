@@ -34,6 +34,7 @@ func NewECConfig(dataShards, parityShards int) (ECConfig, error) {
 		return ECConfig{}, fmt.Errorf("total shards (%d+%d=%d) exceeds maximum of 32",
 			dataShards, parityShards, dataShards+parityShards)
 	}
+
 	return ECConfig{
 		DataShards:   dataShards,
 		ParityShards: parityShards,
@@ -141,6 +142,7 @@ func NewReplicationConfig(rp *super_block.ReplicaPlacement) ReplicationConfig {
 			Original:        "000",
 		}
 	}
+
 	return ReplicationConfig{
 		MinDataCenters:  rp.DiffDataCenterCount + 1,
 		MinRacksPerDC:   rp.DiffRackCount + 1,
@@ -155,6 +157,7 @@ func NewReplicationConfigFromString(replication string) (ReplicationConfig, erro
 	if err != nil {
 		return ReplicationConfig{}, err
 	}
+
 	return NewReplicationConfig(rp), nil
 }
 

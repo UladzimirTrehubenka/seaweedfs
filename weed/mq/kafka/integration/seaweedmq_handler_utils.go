@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,13 +19,13 @@ import (
 // NewSeaweedMQBrokerHandler creates a new handler with SeaweedMQ broker integration
 func NewSeaweedMQBrokerHandler(masters string, filerGroup string, clientHost string) (*SeaweedMQHandler, error) {
 	if masters == "" {
-		return nil, fmt.Errorf("masters required - SeaweedMQ infrastructure must be configured")
+		return nil, errors.New("masters required - SeaweedMQ infrastructure must be configured")
 	}
 
 	// Parse master addresses using SeaweedFS utilities
 	masterServerAddresses := pb.ServerAddresses(masters).ToAddresses()
 	if len(masterServerAddresses) == 0 {
-		return nil, fmt.Errorf("no valid master addresses provided")
+		return nil, errors.New("no valid master addresses provided")
 	}
 
 	// Load security configuration for gRPC connections
@@ -57,18 +58,19 @@ func NewSeaweedMQBrokerHandler(masters string, filerGroup string, clientHost str
 	brokerAddresses, err := discoverBrokersWithMasterClient(masterClient, filerGroup)
 	if err != nil {
 		glog.Errorf("Broker discovery failed: %v", err)
-		return nil, fmt.Errorf("failed to discover brokers: %v", err)
+
+		return nil, fmt.Errorf("failed to discover brokers: %w", err)
 	}
 	glog.V(1).Infof("Broker discovery returned: %v", brokerAddresses)
 
 	if len(brokerAddresses) == 0 {
-		return nil, fmt.Errorf("no brokers discovered from masters")
+		return nil, errors.New("no brokers discovered from masters")
 	}
 
 	// Discover filers from masters using master client
 	filerAddresses, err := discoverFilersWithMasterClient(masterClient, filerGroup)
 	if err != nil {
-		return nil, fmt.Errorf("failed to discover filers: %v", err)
+		return nil, fmt.Errorf("failed to discover filers: %w", err)
 	}
 
 	// Create shared filer client accessor for all components
@@ -83,13 +85,14 @@ func NewSeaweedMQBrokerHandler(masters string, filerGroup string, clientHost str
 	// Create broker client with shared filer accessor
 	brokerClient, err := NewBrokerClientWithFilerAccessor(brokerAddress, sharedFilerAccessor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create broker client: %v", err)
+		return nil, fmt.Errorf("failed to create broker client: %w", err)
 	}
 
 	// Test the connection
 	if err := brokerClient.HealthCheck(); err != nil {
 		brokerClient.Close()
-		return nil, fmt.Errorf("broker health check failed: %v", err)
+
+		return nil, fmt.Errorf("broker health check failed: %w", err)
 	}
 
 	return &SeaweedMQHandler{
@@ -121,13 +124,13 @@ func discoverBrokersWithMasterClient(masterClient *wdclient.MasterClient, filerG
 			return err
 		}
 
-		glog.V(1).Infof("list cluster nodes successful - found %d cluster nodes", len(resp.ClusterNodes))
+		glog.V(1).Infof("list cluster nodes successful - found %d cluster nodes", len(resp.GetClusterNodes()))
 
 		// Extract broker addresses from response
-		for _, node := range resp.ClusterNodes {
-			if node.Address != "" {
-				brokers = append(brokers, node.Address)
-				glog.V(1).Infof("discovered broker: %s", node.Address)
+		for _, node := range resp.GetClusterNodes() {
+			if node.GetAddress() != "" {
+				brokers = append(brokers, node.GetAddress())
+				glog.V(1).Infof("discovered broker: %s", node.GetAddress())
 			}
 		}
 
@@ -158,10 +161,10 @@ func discoverFilersWithMasterClient(masterClient *wdclient.MasterClient, filerGr
 		}
 
 		// Extract filer addresses from response - return as HTTP addresses (pb.ServerAddress)
-		for _, node := range resp.ClusterNodes {
-			if node.Address != "" {
+		for _, node := range resp.GetClusterNodes() {
+			if node.GetAddress() != "" {
 				// Return HTTP address as pb.ServerAddress (no pre-conversion to gRPC)
-				httpAddr := pb.ServerAddress(node.Address)
+				httpAddr := pb.ServerAddress(node.GetAddress())
 				filers = append(filers, httpAddr)
 			}
 		}
@@ -192,6 +195,7 @@ func (h *SeaweedMQHandler) Close() error {
 	if h.brokerClient != nil {
 		return h.brokerClient.Close()
 	}
+
 	return nil
 }
 
@@ -201,7 +205,7 @@ func (h *SeaweedMQHandler) Close() error {
 func (h *SeaweedMQHandler) CreatePerConnectionBrokerClient() (*BrokerClient, error) {
 	// Use the same broker addresses as the shared client
 	if len(h.brokerAddresses) == 0 {
-		return nil, fmt.Errorf("no broker addresses available")
+		return nil, errors.New("no broker addresses available")
 	}
 
 	// Use the first broker address (in production, could use load balancing)

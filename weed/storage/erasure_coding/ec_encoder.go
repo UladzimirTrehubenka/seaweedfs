@@ -28,7 +28,6 @@ const (
 // WriteSortedFileFromIdx generates .ecx file from existing .idx file
 // all keys are sorted in ascending order
 func WriteSortedFileFromIdx(baseFileName string, ext string) (e error) {
-
 	nm, err := readNeedleMap(baseFileName)
 	if nm != nil {
 		defer nm.Close()
@@ -46,6 +45,7 @@ func WriteSortedFileFromIdx(baseFileName string, ext string) (e error) {
 	err = nm.AscendingVisit(func(value needle_map.NeedleValue) error {
 		bytes := value.ToBytes()
 		_, writeErr := ecxFile.Write(bytes)
+
 		return writeErr
 	})
 
@@ -59,6 +59,7 @@ func WriteSortedFileFromIdx(baseFileName string, ext string) (e error) {
 // WriteEcFiles generates .ec00 ~ .ec13 files using default EC context
 func WriteEcFiles(baseFileName string) error {
 	ctx := NewDefaultECContext("", 0)
+
 	return WriteEcFilesWithContext(baseFileName, ctx)
 }
 
@@ -70,9 +71,9 @@ func WriteEcFilesWithContext(baseFileName string, ctx *ECContext) error {
 func RebuildEcFiles(baseFileName string) ([]uint32, error) {
 	// Attempt to load EC config from .vif file to preserve original configuration
 	var ctx *ECContext
-	if volumeInfo, _, found, _ := volume_info.MaybeLoadVolumeInfo(baseFileName + ".vif"); found && volumeInfo.EcShardConfig != nil {
-		ds := int(volumeInfo.EcShardConfig.DataShards)
-		ps := int(volumeInfo.EcShardConfig.ParityShards)
+	if volumeInfo, _, found, _ := volume_info.MaybeLoadVolumeInfo(baseFileName + ".vif"); found && volumeInfo.GetEcShardConfig() != nil {
+		ds := int(volumeInfo.GetEcShardConfig().GetDataShards())
+		ps := int(volumeInfo.GetEcShardConfig().GetParityShards())
 
 		// Validate EC config before using it
 		if ds > 0 && ps > 0 && ds+ps <= MaxShardCount {
@@ -119,11 +120,11 @@ func generateEcFiles(baseFileName string, bufferSize int, largeBlockSize int64, 
 	if err != nil {
 		return fmt.Errorf("encodeDatFile: %w", err)
 	}
+
 	return nil
 }
 
 func generateMissingEcFiles(baseFileName string, bufferSize int, largeBlockSize int64, smallBlockSize int64, ctx *ECContext) (generatedShardIds []uint32, err error) {
-
 	shardHasData := make([]bool, ctx.Total())
 	inputFiles := make([]*os.File, ctx.Total())
 	outputFiles := make([]*os.File, ctx.Total())
@@ -150,11 +151,11 @@ func generateMissingEcFiles(baseFileName string, bufferSize int, largeBlockSize 
 	if err != nil {
 		return nil, fmt.Errorf("rebuildEcFiles: %w", err)
 	}
+
 	return
 }
 
 func encodeData(file *os.File, enc reedsolomon.Encoder, startOffset, blockSize int64, buffers [][]byte, outputs []*os.File, ctx *ECContext) error {
-
 	bufferSize := int64(len(buffers[0]))
 	if bufferSize == 0 {
 		glog.Fatal("unexpected zero buffer size")
@@ -165,7 +166,7 @@ func encodeData(file *os.File, enc reedsolomon.Encoder, startOffset, blockSize i
 		glog.Fatalf("unexpected block size %d buffer size %d", blockSize, bufferSize)
 	}
 
-	for b := int64(0); b < batchCount; b++ {
+	for b := range batchCount {
 		err := encodeDataOneBatch(file, enc, startOffset+b*bufferSize, blockSize, buffers, outputs, ctx)
 		if err != nil {
 			return err
@@ -184,10 +185,11 @@ func openEcFiles(baseFileName string, forRead bool, ctx *ECContext) (files []*os
 		}
 		f, err := os.OpenFile(fname, openOption, 0644)
 		if err != nil {
-			return files, fmt.Errorf("failed to open file %s: %v", fname, err)
+			return files, fmt.Errorf("failed to open file %s: %w", fname, err)
 		}
 		files = append(files, f)
 	}
+
 	return
 }
 
@@ -200,9 +202,8 @@ func closeEcFiles(files []*os.File) {
 }
 
 func encodeDataOneBatch(file *os.File, enc reedsolomon.Encoder, startOffset, blockSize int64, buffers [][]byte, outputs []*os.File, ctx *ECContext) error {
-
 	// read data into buffers
-	for i := 0; i < ctx.DataShards; i++ {
+	for i := range ctx.DataShards {
 		n, err := file.ReadAt(buffers[i], startOffset+blockSize*int64(i))
 		if err != nil {
 			if err != io.EOF {
@@ -232,7 +233,6 @@ func encodeDataOneBatch(file *os.File, enc reedsolomon.Encoder, startOffset, blo
 }
 
 func encodeDatFile(remainingSize int64, baseFileName string, bufferSize int, largeBlockSize int64, file *os.File, smallBlockSize int64, ctx *ECContext) error {
-
 	var processedSize int64
 
 	enc, err := ctx.CreateEncoder()
@@ -248,7 +248,7 @@ func encodeDatFile(remainingSize int64, baseFileName string, bufferSize int, lar
 	outputs, err := openEcFiles(baseFileName, false, ctx)
 	defer closeEcFiles(outputs)
 	if err != nil {
-		return fmt.Errorf("failed to open ec files %s: %v", baseFileName, err)
+		return fmt.Errorf("failed to open ec files %s: %w", baseFileName, err)
 	}
 
 	// Pre-calculate row sizes to avoid redundant calculations in loops
@@ -271,11 +271,11 @@ func encodeDatFile(remainingSize int64, baseFileName string, bufferSize int, lar
 		remainingSize -= smallRowSize
 		processedSize += smallRowSize
 	}
+
 	return nil
 }
 
 func rebuildEcFiles(shardHasData []bool, inputFiles []*os.File, outputFiles []*os.File, ctx *ECContext) error {
-
 	enc, err := ctx.CreateEncoder()
 	if err != nil {
 		return fmt.Errorf("failed to create encoder: %w", err)
@@ -291,7 +291,6 @@ func rebuildEcFiles(shardHasData []bool, inputFiles []*os.File, outputFiles []*o
 	var startOffset int64
 	var inputBufferDataSize int
 	for {
-
 		// read the input data from files
 		for i := 0; i < ctx.Total(); i++ {
 			if shardHasData[i] {
@@ -327,13 +326,12 @@ func rebuildEcFiles(shardHasData []bool, inputFiles []*os.File, outputFiles []*o
 		}
 		startOffset += int64(inputBufferDataSize)
 	}
-
 }
 
 func readNeedleMap(baseFileName string) (*needle_map.MemDb, error) {
 	indexFile, err := os.OpenFile(baseFileName+".idx", os.O_RDONLY, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read Volume Index %s.idx: %v", baseFileName, err)
+		return nil, fmt.Errorf("cannot read Volume Index %s.idx: %w", baseFileName, err)
 	}
 	defer indexFile.Close()
 
@@ -344,7 +342,9 @@ func readNeedleMap(baseFileName string) (*needle_map.MemDb, error) {
 		} else {
 			cm.Delete(key)
 		}
+
 		return nil
 	})
+
 	return cm, err
 }

@@ -2,12 +2,14 @@ package redis3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
 	redsync "github.com/go-redsync/redsync/v4"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -34,16 +36,15 @@ func (store *UniversalRedis3Store) RollbackTransaction(ctx context.Context) erro
 }
 
 func (store *UniversalRedis3Store) InsertEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	if err = store.doInsertEntry(ctx, entry); err != nil {
 		return err
 	}
 
-	dir, name := entry.FullPath.DirAndName()
+	dir, name := entry.DirAndName()
 
 	if name != "" {
 		if err = insertChild(ctx, store, genDirectoryListKey(dir), name); err != nil {
-			return fmt.Errorf("persisting %s in parent dir: %v", entry.FullPath, err)
+			return fmt.Errorf("persisting %s in parent dir: %w", entry.FullPath, err)
 		}
 	}
 
@@ -53,7 +54,7 @@ func (store *UniversalRedis3Store) InsertEntry(ctx context.Context, entry *filer
 func (store *UniversalRedis3Store) doInsertEntry(ctx context.Context, entry *filer.Entry) error {
 	value, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encoding %s %+v: %v", entry.FullPath, entry.Attr, err)
+		return fmt.Errorf("encoding %s %+v: %w", entry.FullPath, entry.Attr, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -61,25 +62,24 @@ func (store *UniversalRedis3Store) doInsertEntry(ctx context.Context, entry *fil
 	}
 
 	if err = store.Client.Set(ctx, string(entry.FullPath), value, time.Duration(entry.TtlSec)*time.Second).Err(); err != nil {
-		return fmt.Errorf("persisting %s : %v", entry.FullPath, err)
+		return fmt.Errorf("persisting %s : %w", entry.FullPath, err)
 	}
+
 	return nil
 }
 
 func (store *UniversalRedis3Store) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	return store.doInsertEntry(ctx, entry)
 }
 
 func (store *UniversalRedis3Store) FindEntry(ctx context.Context, fullpath util.FullPath) (entry *filer.Entry, err error) {
-
 	data, err := store.Client.Get(ctx, string(fullpath)).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, filer_pb.ErrNotFound
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("get %s : %v", fullpath, err)
+		return nil, fmt.Errorf("get %s : %w", fullpath, err)
 	}
 
 	entry = &filer.Entry{
@@ -87,29 +87,28 @@ func (store *UniversalRedis3Store) FindEntry(ctx context.Context, fullpath util.
 	}
 	err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData([]byte(data)))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
 }
 
 func (store *UniversalRedis3Store) DeleteEntry(ctx context.Context, fullpath util.FullPath) (err error) {
-
 	_, err = store.Client.Del(ctx, genDirectoryListKey(string(fullpath))).Result()
 	if err != nil {
-		return fmt.Errorf("delete dir list %s : %v", fullpath, err)
+		return fmt.Errorf("delete dir list %s : %w", fullpath, err)
 	}
 
 	_, err = store.Client.Del(ctx, string(fullpath)).Result()
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	dir, name := fullpath.DirAndName()
 
 	if name != "" {
 		if err = removeChild(ctx, store, genDirectoryListKey(dir), name); err != nil {
-			return fmt.Errorf("DeleteEntry %s in parent dir: %v", fullpath, err)
+			return fmt.Errorf("DeleteEntry %s in parent dir: %w", fullpath, err)
 		}
 	}
 
@@ -117,18 +116,17 @@ func (store *UniversalRedis3Store) DeleteEntry(ctx context.Context, fullpath uti
 }
 
 func (store *UniversalRedis3Store) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) (err error) {
-
 	return removeChildren(ctx, store, genDirectoryListKey(string(fullpath)), func(name string) error {
 		path := util.NewFullPath(string(fullpath), name)
 		_, err = store.Client.Del(ctx, string(path)).Result()
 		if err != nil {
-			return fmt.Errorf("DeleteFolderChildren %s in parent dir: %v", fullpath, err)
+			return fmt.Errorf("DeleteFolderChildren %s in parent dir: %w", fullpath, err)
 		}
 		// not efficient, but need to remove if it is a directory
 		store.Client.Del(ctx, genDirectoryListKey(string(path)))
+
 		return nil
 	})
-
 }
 
 func (store *UniversalRedis3Store) ListDirectoryPrefixedEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, prefix string, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
@@ -136,7 +134,6 @@ func (store *UniversalRedis3Store) ListDirectoryPrefixedEntries(ctx context.Cont
 }
 
 func (store *UniversalRedis3Store) ListDirectoryEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
-
 	dirListKey := genDirectoryListKey(string(dirPath))
 	counter := int64(0)
 
@@ -153,7 +150,7 @@ func (store *UniversalRedis3Store) ListDirectoryEntries(ctx context.Context, dir
 		lastFileName = fileName
 		if err != nil {
 			glog.V(0).InfofCtx(ctx, "list %s : %v", path, err)
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return true
 			}
 		} else {
@@ -161,6 +158,7 @@ func (store *UniversalRedis3Store) ListDirectoryEntries(ctx context.Context, dir
 				if entry.Attr.Crtime.Add(time.Duration(entry.TtlSec) * time.Second).Before(time.Now()) {
 					store.Client.Del(ctx, string(path)).Result()
 					store.Client.ZRem(ctx, dirListKey, fileName).Result()
+
 					return true
 				}
 			}
@@ -170,6 +168,7 @@ func (store *UniversalRedis3Store) ListDirectoryEntries(ctx context.Context, dir
 			if resEachEntryFuncErr != nil {
 				glog.V(0).InfofCtx(ctx, "failed to process eachEntryFunc for entry %q: %v", fileName, resEachEntryFuncErr)
 				callbackErr = resEachEntryFuncErr
+
 				return false
 			}
 
@@ -181,6 +180,7 @@ func (store *UniversalRedis3Store) ListDirectoryEntries(ctx context.Context, dir
 				return false
 			}
 		}
+
 		return true
 	})
 

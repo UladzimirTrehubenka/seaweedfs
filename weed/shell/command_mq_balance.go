@@ -31,7 +31,6 @@ func (c *commandMqBalanceTopics) HasTag(CommandTag) bool {
 }
 
 func (c *commandMqBalanceTopics) Do(args []string, commandEnv *CommandEnv, writer io.Writer) error {
-
 	// find the broker balancer
 	brokerBalancer, err := findBrokerBalancer(commandEnv)
 	if err != nil {
@@ -45,7 +44,7 @@ func (c *commandMqBalanceTopics) Do(args []string, commandEnv *CommandEnv, write
 		if err != nil {
 			return err
 		}
+
 		return nil
 	})
-
 }

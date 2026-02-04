@@ -1,7 +1,7 @@
 package erasure_coding
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/seaweedfs/seaweedfs/weed/admin/config"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -12,6 +12,7 @@ import (
 // Config extends BaseConfig with erasure coding specific settings
 type Config struct {
 	base.BaseConfig
+
 	QuietForSeconds  int     `json:"quiet_for_seconds"`
 	FullnessRatio    float64 `json:"fullness_ratio"`
 	CollectionFilter string  `json:"collection_filter"`
@@ -167,27 +168,27 @@ func (c *Config) ToTaskPolicy() *worker_pb.TaskPolicy {
 // FromTaskPolicy loads configuration from a TaskPolicy protobuf message
 func (c *Config) FromTaskPolicy(policy *worker_pb.TaskPolicy) error {
 	if policy == nil {
-		return fmt.Errorf("policy is nil")
+		return errors.New("policy is nil")
 	}
 
 	// Set general TaskPolicy fields
-	c.Enabled = policy.Enabled
-	c.MaxConcurrent = int(policy.MaxConcurrent)
-	c.ScanIntervalSeconds = int(policy.RepeatIntervalSeconds) // Direct seconds-to-seconds mapping
+	c.Enabled = policy.GetEnabled()
+	c.MaxConcurrent = int(policy.GetMaxConcurrent())
+	c.ScanIntervalSeconds = int(policy.GetRepeatIntervalSeconds()) // Direct seconds-to-seconds mapping
 
 	// Set erasure coding-specific fields from the task config
 	if ecConfig := policy.GetErasureCodingConfig(); ecConfig != nil {
-		c.FullnessRatio = float64(ecConfig.FullnessRatio)
-		c.QuietForSeconds = int(ecConfig.QuietForSeconds)
-		c.MinSizeMB = int(ecConfig.MinVolumeSizeMb)
-		c.CollectionFilter = ecConfig.CollectionFilter
+		c.FullnessRatio = float64(ecConfig.GetFullnessRatio())
+		c.QuietForSeconds = int(ecConfig.GetQuietForSeconds())
+		c.MinSizeMB = int(ecConfig.GetMinVolumeSizeMb())
+		c.CollectionFilter = ecConfig.GetCollectionFilter()
 	}
 
 	return nil
 }
 
 // LoadConfigFromPersistence loads configuration from the persistence layer if available
-func LoadConfigFromPersistence(configPersistence interface{}) *Config {
+func LoadConfigFromPersistence(configPersistence any) *Config {
 	config := NewDefaultConfig()
 
 	// Try to load from persistence if available
@@ -197,11 +198,13 @@ func LoadConfigFromPersistence(configPersistence interface{}) *Config {
 		if policy, err := persistence.LoadErasureCodingTaskPolicy(); err == nil && policy != nil {
 			if err := config.FromTaskPolicy(policy); err == nil {
 				glog.V(1).Infof("Loaded erasure coding configuration from persistence")
+
 				return config
 			}
 		}
 	}
 
 	glog.V(1).Infof("Using default erasure coding configuration")
+
 	return config
 }

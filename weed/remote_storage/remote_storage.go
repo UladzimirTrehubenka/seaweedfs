@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
-	"google.golang.org/protobuf/proto"
 )
 
 const slash = "/"
@@ -21,6 +22,7 @@ func ParseLocationName(remote string) (locationName string) {
 	if len(parts) >= 1 {
 		return parts[0]
 	}
+
 	return
 }
 
@@ -34,10 +36,11 @@ func parseBucketLocation(remote string) (loc *remote_pb.RemoteStorageLocation) {
 	if len(parts) >= 2 {
 		loc.Bucket = parts[1]
 	}
-	loc.Path = remote[len(loc.Name)+1+len(loc.Bucket):]
-	if loc.Path == "" {
+	loc.Path = remote[len(loc.GetName())+1+len(loc.GetBucket()):]
+	if loc.GetPath() == "" {
 		loc.Path = slash
 	}
+
 	return
 }
 
@@ -48,18 +51,20 @@ func parseNoBucketLocation(remote string) (loc *remote_pb.RemoteStorageLocation)
 	if len(parts) >= 1 {
 		loc.Name = parts[0]
 	}
-	loc.Path = remote[len(loc.Name):]
-	if loc.Path == "" {
+	loc.Path = remote[len(loc.GetName()):]
+	if loc.GetPath() == "" {
 		loc.Path = slash
 	}
+
 	return
 }
 
 func FormatLocation(loc *remote_pb.RemoteStorageLocation) string {
-	if loc.Bucket == "" {
-		return fmt.Sprintf("%s%s", loc.Name, loc.Path)
+	if loc.GetBucket() == "" {
+		return fmt.Sprintf("%s%s", loc.GetName(), loc.GetPath())
 	}
-	return fmt.Sprintf("%s/%s%s", loc.Name, loc.Bucket, loc.Path)
+
+	return fmt.Sprintf("%s/%s%s", loc.GetName(), loc.GetBucket(), loc.GetPath())
 }
 
 type VisitFunc func(dir string, name string, isDirectory bool, remoteEntry *filer_pb.RemoteEntry) error
@@ -104,6 +109,7 @@ func GetAllRemoteStorageNames() string {
 		storageNames = append(storageNames, k)
 	}
 	sort.Strings(storageNames)
+
 	return strings.Join(storageNames, "|")
 }
 
@@ -115,6 +121,7 @@ func GetRemoteStorageNamesHasBucket() string {
 		}
 	}
 	sort.Strings(storageNames)
+
 	return strings.Join(storageNames, "|")
 }
 
@@ -127,14 +134,16 @@ func ParseRemoteLocation(remoteConfType string, remote string) (remoteStorageLoc
 	if !maker.HasBucket() {
 		return parseNoBucketLocation(remote), nil
 	}
+
 	return parseBucketLocation(remote), nil
 }
 
 func makeRemoteStorageClient(remoteConf *remote_pb.RemoteConf) (RemoteStorageClient, error) {
-	maker, found := RemoteStorageClientMakers[remoteConf.Type]
+	maker, found := RemoteStorageClientMakers[remoteConf.GetType()]
 	if !found {
-		return nil, fmt.Errorf("remote storage type %s not found", remoteConf.Type)
+		return nil, fmt.Errorf("remote storage type %s not found", remoteConf.GetType())
 	}
+
 	return maker.Make(remoteConf)
 }
 
@@ -142,17 +151,17 @@ func GetRemoteStorage(remoteConf *remote_pb.RemoteConf) (RemoteStorageClient, er
 	remoteStorageClientsLock.Lock()
 	defer remoteStorageClientsLock.Unlock()
 
-	existingRemoteStorageClient, found := remoteStorageClients[remoteConf.Name]
+	existingRemoteStorageClient, found := remoteStorageClients[remoteConf.GetName()]
 	if found && proto.Equal(existingRemoteStorageClient.RemoteConf, remoteConf) {
 		return existingRemoteStorageClient.RemoteStorageClient, nil
 	}
 
 	newRemoteStorageClient, err := makeRemoteStorageClient(remoteConf)
 	if err != nil {
-		return nil, fmt.Errorf("make remote storage client %s: %v", remoteConf.Name, err)
+		return nil, fmt.Errorf("make remote storage client %s: %w", remoteConf.GetName(), err)
 	}
 
-	remoteStorageClients[remoteConf.Name] = CachedRemoteStorageClient{
+	remoteStorageClients[remoteConf.GetName()] = CachedRemoteStorageClient{
 		RemoteConf:          remoteConf,
 		RemoteStorageClient: newRemoteStorageClient,
 	}

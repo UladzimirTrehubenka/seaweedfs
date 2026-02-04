@@ -26,8 +26,10 @@ func NewLRUCache(capacity int) *LruCache {
 func (c *LruCache) Get(key int64) ([]byte, bool) {
 	if ele, ok := c.cache[key]; ok {
 		c.ll.MoveToFront(ele)
+
 		return ele.Value.(*CacheEntry).value, true
 	}
+
 	return nil, false
 }
 
@@ -35,6 +37,7 @@ func (c *LruCache) Put(key int64, value []byte) {
 	if ele, ok := c.cache[key]; ok {
 		c.ll.MoveToFront(ele)
 		ele.Value.(*CacheEntry).value = value
+
 		return
 	}
 

@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -18,6 +19,7 @@ import (
 
 type Disk struct {
 	NodeImpl
+
 	volumes      map[needle.VolumeId]storage.VolumeInfo
 	ecShards     map[needle.VolumeId]*erasure_coding.EcVolumeInfo
 	ecShardsLock sync.RWMutex
@@ -30,12 +32,14 @@ func NewDisk(diskType string) *Disk {
 	s.diskUsages = newDiskUsages()
 	s.volumes = make(map[needle.VolumeId]storage.VolumeInfo, 2)
 	s.ecShards = make(map[needle.VolumeId]*erasure_coding.EcVolumeInfo, 2)
-	s.NodeImpl.value = s
+	s.value = s
+
 	return s
 }
 
 type DiskUsages struct {
 	sync.RWMutex
+
 	usages map[types.DiskType]*DiskUsageCounts
 }
 
@@ -56,8 +60,8 @@ func (d *DiskUsages) negative() *DiskUsages {
 		a.activeVolumeCount = -b.activeVolumeCount
 		a.ecShardCount = -b.ecShardCount
 		a.maxVolumeCount = -b.maxVolumeCount
-
 	}
+
 	return t
 }
 
@@ -73,6 +77,7 @@ func (d *DiskUsages) ToDiskInfo() map[string]*master_pb.DiskInfo {
 		}
 		ret[string(diskType)] = m
 	}
+
 	return ret
 }
 
@@ -82,6 +87,7 @@ func (d *DiskUsages) FreeSpace() (freeSpace int64) {
 	for _, diskUsage := range d.usages {
 		freeSpace += diskUsage.FreeSpace()
 	}
+
 	return
 }
 
@@ -91,6 +97,7 @@ func (d *DiskUsages) GetMaxVolumeCount() (maxVolumeCount int64) {
 	for _, diskUsage := range d.usages {
 		maxVolumeCount += diskUsage.maxVolumeCount
 	}
+
 	return
 }
 
@@ -115,6 +122,7 @@ func (a *DiskUsageCounts) FreeSpace() int64 {
 	if a.ecShardCount > 0 {
 		freeVolumeSlotCount = freeVolumeSlotCount - a.ecShardCount/erasure_coding.DataShardsCount - 1
 	}
+
 	return freeVolumeSlotCount
 }
 
@@ -137,18 +145,21 @@ func (du *DiskUsages) getOrCreateDisk(diskType types.DiskType) *DiskUsageCounts 
 	}
 	t = &DiskUsageCounts{}
 	du.usages[diskType] = t
+
 	return t
 }
 
 func (d *Disk) String() string {
 	d.RLock()
 	defer d.RUnlock()
+
 	return fmt.Sprintf("Disk:%s, volumes:%v, ecShards:%v", d.NodeImpl.String(), d.volumes, d.ecShards)
 }
 
 func (d *Disk) AddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChanged bool) {
 	d.Lock()
 	defer d.Unlock()
+
 	return d.doAddOrUpdateVolume(v)
 }
 
@@ -192,7 +203,8 @@ func (d *Disk) doAddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChanged bool)
 		}
 		d.volumes[v.Id] = v
 	}
-	return
+
+	return isNew, isChanged
 }
 
 func (d *Disk) GetVolumes() (ret []storage.VolumeInfo) {
@@ -201,6 +213,7 @@ func (d *Disk) GetVolumes() (ret []storage.VolumeInfo) {
 		ret = append(ret, v)
 	}
 	d.RUnlock()
+
 	return ret
 }
 
@@ -211,7 +224,7 @@ func (d *Disk) GetVolumesById(id needle.VolumeId) (storage.VolumeInfo, error) {
 	if ok {
 		return vInfo, nil
 	} else {
-		return storage.VolumeInfo{}, fmt.Errorf("volumeInfo not found")
+		return storage.VolumeInfo{}, errors.New("volumeInfo not found")
 	}
 }
 
@@ -226,6 +239,7 @@ func (d *Disk) GetDataCenter() *DataCenter {
 	rack := dn.Parent()
 	dcNode := rack.Parent()
 	dcValue := dcNode.GetValue()
+
 	return dcValue.(*DataCenter)
 }
 
@@ -239,22 +253,25 @@ func (d *Disk) GetTopology() *Topology {
 		p = p.Parent()
 	}
 	t := p.(*Topology)
+
 	return t
 }
 
-func (d *Disk) ToMap() interface{} {
-	ret := make(map[string]interface{})
+func (d *Disk) ToMap() any {
+	ret := make(map[string]any)
 	diskUsage := d.diskUsages.getOrCreateDisk(types.ToDiskType(string(d.Id())))
 	ret["Volumes"] = diskUsage.volumeCount
 	ret["VolumeIds"] = d.GetVolumeIds()
 	ret["EcShards"] = diskUsage.ecShardCount
 	ret["Max"] = diskUsage.maxVolumeCount
 	ret["Free"] = d.FreeSpace()
+
 	return ret
 }
 
 func (d *Disk) FreeSpace() int64 {
 	t := d.diskUsages.getOrCreateDisk(types.ToDiskType(string(d.Id())))
+
 	return t.FreeSpace()
 }
 
@@ -286,6 +303,7 @@ func (d *Disk) ToDiskInfo() *master_pb.DiskInfo {
 	for _, ecv := range ecShards {
 		m.EcShardInfos = append(m.EcShardInfos, ecv.ToVolumeEcShardInformationMessage())
 	}
+
 	return m
 }
 

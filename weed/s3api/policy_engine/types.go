@@ -2,6 +2,7 @@ package policy_engine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -48,6 +49,7 @@ func (s *StringOrStringSlice) UnmarshalJSON(data []byte) error {
 	var str string
 	if err := json.Unmarshal(data, &str); err == nil {
 		s.values = []string{str}
+
 		return nil
 	}
 
@@ -55,10 +57,11 @@ func (s *StringOrStringSlice) UnmarshalJSON(data []byte) error {
 	var strs []string
 	if err := json.Unmarshal(data, &strs); err == nil {
 		s.values = strs
+
 		return nil
 	}
 
-	return fmt.Errorf("value must be string or []string")
+	return errors.New("value must be string or []string")
 }
 
 // MarshalJSON implements json.Marshaler for StringOrStringSlice
@@ -66,6 +69,7 @@ func (s StringOrStringSlice) MarshalJSON() ([]byte, error) {
 	if len(s.values) == 1 {
 		return json.Marshal(s.values[0])
 	}
+
 	return json.Marshal(s.values)
 }
 
@@ -170,12 +174,12 @@ func ValidatePolicy(policyDoc *PolicyDocument) error {
 	}
 
 	if len(policyDoc.Statement) == 0 {
-		return fmt.Errorf("policy must contain at least one statement")
+		return errors.New("policy must contain at least one statement")
 	}
 
 	for i := range policyDoc.Statement {
 		if err := validateStatement(&policyDoc.Statement[i]); err != nil {
-			return fmt.Errorf("invalid statement %d: %v", i, err)
+			return fmt.Errorf("invalid statement %d: %w", i, err)
 		}
 	}
 
@@ -189,11 +193,11 @@ func validateStatement(stmt *PolicyStatement) error {
 	}
 
 	if len(stmt.Action.Strings()) == 0 {
-		return fmt.Errorf("action is required")
+		return errors.New("action is required")
 	}
 
 	if len(stmt.Resource.Strings()) == 0 && len(stmt.NotResource.Strings()) == 0 {
-		return fmt.Errorf("statement must specify Resource or NotResource")
+		return errors.New("statement must specify Resource or NotResource")
 	}
 
 	return nil
@@ -224,7 +228,7 @@ func CompilePolicy(policy *PolicyDocument) (*CompiledPolicy, error) {
 		stmt := &policy.Statement[i]
 		compiledStmt, err := compileStatement(stmt)
 		if err != nil {
-			return nil, fmt.Errorf("failed to compile statement %d: %v", i, err)
+			return nil, fmt.Errorf("failed to compile statement %d: %w", i, err)
 		}
 		compiled.Statements[i] = compiledStmt
 	}
@@ -276,18 +280,19 @@ func compileStatement(stmt *PolicyStatement) (*CompiledStatement, error) {
 		// Check for dynamic variables
 		if PolicyVariableRegex.MatchString(action) {
 			compiled.DynamicActionPatterns = append(compiled.DynamicActionPatterns, action)
+
 			continue
 		}
 
 		pattern, err := compilePattern(action)
 		if err != nil {
-			return nil, fmt.Errorf("failed to compile action pattern %s: %v", action, err)
+			return nil, fmt.Errorf("failed to compile action pattern %s: %w", action, err)
 		}
 		compiled.ActionPatterns = append(compiled.ActionPatterns, pattern)
 
 		matcher, err := NewWildcardMatcher(action)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create action matcher %s: %v", action, err)
+			return nil, fmt.Errorf("failed to create action matcher %s: %w", action, err)
 		}
 		compiled.ActionMatchers = append(compiled.ActionMatchers, matcher)
 	}
@@ -300,18 +305,19 @@ func compileStatement(stmt *PolicyStatement) (*CompiledStatement, error) {
 		// Check for dynamic variables
 		if PolicyVariableRegex.MatchString(resource) {
 			compiled.DynamicResourcePatterns = append(compiled.DynamicResourcePatterns, resource)
+
 			continue
 		}
 
 		pattern, err := compilePattern(resource)
 		if err != nil {
-			return nil, fmt.Errorf("failed to compile resource pattern %s: %v", resource, err)
+			return nil, fmt.Errorf("failed to compile resource pattern %s: %w", resource, err)
 		}
 		compiled.ResourcePatterns = append(compiled.ResourcePatterns, pattern)
 
 		matcher, err := NewWildcardMatcher(resource)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create resource matcher %s: %v", resource, err)
+			return nil, fmt.Errorf("failed to create resource matcher %s: %w", resource, err)
 		}
 		compiled.ResourceMatchers = append(compiled.ResourceMatchers, matcher)
 	}
@@ -325,18 +331,19 @@ func compileStatement(stmt *PolicyStatement) (*CompiledStatement, error) {
 			// Check for dynamic variables
 			if PolicyVariableRegex.MatchString(principal) {
 				compiled.DynamicPrincipalPatterns = append(compiled.DynamicPrincipalPatterns, principal)
+
 				continue
 			}
 
 			pattern, err := compilePattern(principal)
 			if err != nil {
-				return nil, fmt.Errorf("failed to compile principal pattern %s: %v", principal, err)
+				return nil, fmt.Errorf("failed to compile principal pattern %s: %w", principal, err)
 			}
 			compiled.PrincipalPatterns = append(compiled.PrincipalPatterns, pattern)
 
 			matcher, err := NewWildcardMatcher(principal)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create principal matcher %s: %v", principal, err)
+				return nil, fmt.Errorf("failed to create principal matcher %s: %w", principal, err)
 			}
 			compiled.PrincipalMatchers = append(compiled.PrincipalMatchers, matcher)
 		}
@@ -351,18 +358,19 @@ func compileStatement(stmt *PolicyStatement) (*CompiledStatement, error) {
 			// Check for dynamic variables
 			if PolicyVariableRegex.MatchString(notResource) {
 				compiled.DynamicNotResourcePatterns = append(compiled.DynamicNotResourcePatterns, notResource)
+
 				continue
 			}
 
 			pattern, err := compilePattern(notResource)
 			if err != nil {
-				return nil, fmt.Errorf("failed to compile NotResource pattern %s: %v", notResource, err)
+				return nil, fmt.Errorf("failed to compile NotResource pattern %s: %w", notResource, err)
 			}
 			compiled.NotResourcePatterns = append(compiled.NotResourcePatterns, pattern)
 
 			matcher, err := NewWildcardMatcher(notResource)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create NotResource matcher %s: %v", notResource, err)
+				return nil, fmt.Errorf("failed to create NotResource matcher %s: %w", notResource, err)
 			}
 			compiled.NotResourceMatchers = append(compiled.NotResourceMatchers, matcher)
 
@@ -384,8 +392,10 @@ func normalizeToStringSlice(value interface{}) []string {
 	result, err := normalizeToStringSliceWithError(value)
 	if err != nil {
 		glog.Warningf("unexpected type for policy value: %T, error: %v", value, err)
+
 		return []string{fmt.Sprintf("%v", value)}
 	}
+
 	return result
 }
 
@@ -401,6 +411,7 @@ func normalizeToStringSliceWithError(value interface{}) ([]string, error) {
 		for i, item := range v {
 			result[i] = fmt.Sprintf("%v", item)
 		}
+
 		return result, nil
 	case StringOrStringSlice:
 		return v.Strings(), nil
@@ -414,8 +425,10 @@ func GetBucketFromResource(resource string) string {
 	// Handle ARN format: arn:aws:s3:::bucket-name/object-path
 	if strings.HasPrefix(resource, "arn:aws:s3:::") {
 		parts := strings.SplitN(resource[13:], "/", 2)
+
 		return parts[0]
 	}
+
 	return ""
 }
 
@@ -473,6 +486,7 @@ func (cs *CompiledStatement) MatchesAction(action string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -483,6 +497,7 @@ func (cs *CompiledStatement) MatchesResource(resource string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -498,6 +513,7 @@ func (cs *CompiledStatement) MatchesPrincipal(principal string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -528,9 +544,10 @@ func (cp *CompiledPolicy) EvaluatePolicy(args *PolicyEvaluationArgs) (bool, Poli
 	// Evaluate each statement
 	for _, stmt := range cp.Statements {
 		if stmt.EvaluateStatement(args) {
-			if stmt.Statement.Effect == PolicyEffectAllow {
+			switch stmt.Statement.Effect {
+			case PolicyEffectAllow:
 				explicitAllow = true
-			} else if stmt.Statement.Effect == PolicyEffectDeny {
+			case PolicyEffectDeny:
 				explicitDeny = true
 			}
 		}
@@ -556,5 +573,6 @@ func FastMatchesWildcard(pattern, str string) bool {
 		// Fall back to the original implementation
 		return MatchesWildcard(pattern, str)
 	}
+
 	return matcher.Match(str)
 }

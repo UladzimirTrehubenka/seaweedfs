@@ -16,5 +16,6 @@ func ValidateGroup(group string) bool {
 	default:
 		valid = false
 	}
+
 	return valid
 }

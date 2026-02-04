@@ -10,6 +10,7 @@ type FullPath string
 
 func NewFullPath(dir, name string) FullPath {
 	name = strings.TrimSuffix(name, "/")
+
 	return FullPath(dir).Child(name)
 }
 
@@ -22,12 +23,14 @@ func (fp FullPath) DirAndName() (string, string) {
 	if len(dir) < 1 {
 		return "/", ""
 	}
+
 	return dir[:len(dir)-1], name
 }
 
 func (fp FullPath) Name() string {
 	_, name := filepath.Split(string(fp))
 	name = strings.ToValidUTF8(name, "?")
+
 	return name
 }
 
@@ -35,6 +38,7 @@ func (fp FullPath) IsLongerFileName(maxFilenameLength uint32) bool {
 	if maxFilenameLength == 0 {
 		return false
 	}
+
 	return uint32(len([]byte(fp.Name()))) > maxFilenameLength
 }
 
@@ -47,6 +51,7 @@ func (fp FullPath) Child(name string) FullPath {
 	if strings.HasSuffix(dir, "/") {
 		return FullPath(dir + noPrefix)
 	}
+
 	return FullPath(dir + "/" + noPrefix)
 }
 
@@ -54,6 +59,7 @@ func (fp FullPath) Child(name string) FullPath {
 func (fp FullPath) AsInode(unixTime int64) uint64 {
 	inode := uint64(HashStringToLong(string(fp)))
 	inode = inode + uint64(unixTime)*37
+
 	return inode
 }
 
@@ -62,6 +68,7 @@ func (fp FullPath) Split() []string {
 	if fp == "" || fp == "/" {
 		return []string{}
 	}
+
 	return strings.Split(string(fp)[1:], "/")
 }
 
@@ -77,6 +84,7 @@ func (fp FullPath) IsUnder(other FullPath) bool {
 	if other == "/" {
 		return true
 	}
+
 	return strings.HasPrefix(string(fp), string(other)+"/")
 }
 
@@ -84,6 +92,7 @@ func StringSplit(separatedValues string, sep string) []string {
 	if separatedValues == "" {
 		return nil
 	}
+
 	return strings.Split(separatedValues, sep)
 }
 

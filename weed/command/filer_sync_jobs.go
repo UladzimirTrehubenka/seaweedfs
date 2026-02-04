@@ -27,6 +27,7 @@ func NewMetadataProcessor(fn pb.ProcessMetadataFunc, concurrency int, offsetTsNs
 	}
 	t.processedTsWatermark.Store(offsetTsNs)
 	t.activeJobsCond = sync.NewCond(&t.activeJobsLock)
+
 	return t
 }
 
@@ -41,9 +42,8 @@ func (t *MetadataProcessor) AddSyncJob(resp *filer_pb.SubscribeMetadataResponse)
 	for len(t.activeJobs) >= t.concurrencyLimit || t.conflictsWith(resp) {
 		t.activeJobsCond.Wait()
 	}
-	t.activeJobs[resp.TsNs] = resp
+	t.activeJobs[resp.GetTsNs()] = resp
 	go func() {
-
 		if err := util.Retry("metadata processor", func() error {
 			return t.fn(resp)
 		}); err != nil {
@@ -53,18 +53,19 @@ func (t *MetadataProcessor) AddSyncJob(resp *filer_pb.SubscribeMetadataResponse)
 		t.activeJobsLock.Lock()
 		defer t.activeJobsLock.Unlock()
 
-		delete(t.activeJobs, resp.TsNs)
+		delete(t.activeJobs, resp.GetTsNs())
 
 		// if is the oldest job, write down the watermark
 		isOldest := true
 		for t := range t.activeJobs {
-			if resp.TsNs > t {
+			if resp.GetTsNs() > t {
 				isOldest = false
+
 				break
 			}
 		}
 		if isOldest {
-			t.processedTsWatermark.Store(resp.TsNs)
+			t.processedTsWatermark.Store(resp.GetTsNs())
 		}
 		t.activeJobsCond.Signal()
 	}()
@@ -76,6 +77,7 @@ func (t *MetadataProcessor) conflictsWith(resp *filer_pb.SubscribeMetadataRespon
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -103,6 +105,7 @@ func shouldWaitFor(a *filer_pb.SubscribeMetadataResponse, b *filer_pb.SubscribeM
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -123,27 +126,31 @@ func pairShouldWaitFor(aPath, bPath util.FullPath, aIsDirectory, bIsDirectory bo
 }
 
 func extractPathsFromMetadata(resp *filer_pb.SubscribeMetadataResponse) (path, newPath util.FullPath, isDirectory bool) {
-	oldEntry := resp.EventNotification.OldEntry
-	newEntry := resp.EventNotification.NewEntry
+	oldEntry := resp.GetEventNotification().GetOldEntry()
+	newEntry := resp.GetEventNotification().GetNewEntry()
 	// create
 	if filer_pb.IsCreate(resp) {
-		path = util.FullPath(resp.Directory).Child(newEntry.Name)
-		isDirectory = newEntry.IsDirectory
+		path = util.FullPath(resp.GetDirectory()).Child(newEntry.GetName())
+		isDirectory = newEntry.GetIsDirectory()
+
 		return
 	}
 	if filer_pb.IsDelete(resp) {
-		path = util.FullPath(resp.Directory).Child(oldEntry.Name)
-		isDirectory = oldEntry.IsDirectory
+		path = util.FullPath(resp.GetDirectory()).Child(oldEntry.GetName())
+		isDirectory = oldEntry.GetIsDirectory()
+
 		return
 	}
 	if filer_pb.IsUpdate(resp) {
-		path = util.FullPath(resp.Directory).Child(newEntry.Name)
-		isDirectory = newEntry.IsDirectory
+		path = util.FullPath(resp.GetDirectory()).Child(newEntry.GetName())
+		isDirectory = newEntry.GetIsDirectory()
+
 		return
 	}
 	// renaming
-	path = util.FullPath(resp.Directory).Child(oldEntry.Name)
-	isDirectory = oldEntry.IsDirectory
-	newPath = util.FullPath(resp.EventNotification.NewParentPath).Child(newEntry.Name)
+	path = util.FullPath(resp.GetDirectory()).Child(oldEntry.GetName())
+	isDirectory = oldEntry.GetIsDirectory()
+	newPath = util.FullPath(resp.GetEventNotification().GetNewParentPath()).Child(newEntry.GetName())
+
 	return
 }

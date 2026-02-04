@@ -231,6 +231,7 @@ func (m *Market) findAverageLoad() (averageLoad float32) {
 		}
 	}
 	averageLoad = float32(totalLoad) / float32(len(m.consumerInstances))
+
 	return
 }
 
@@ -253,7 +254,7 @@ func (m *Market) adjustBusyConsumers(averageLoad float32) (hasAdjustments bool) 
 			continue
 		}
 		adjustTime := time.Now()
-		for i := 0; i < delta; i++ {
+		for i := range delta {
 			adjustment := &Adjustment{
 				isAssign:  false,
 				partition: consumer.AssignedPartitions[i],
@@ -266,7 +267,8 @@ func (m *Market) adjustBusyConsumers(averageLoad float32) (hasAdjustments bool) 
 		}
 		hasAdjustments = true
 	}
-	return
+
+	return hasAdjustments
 }
 
 func (m *Market) adjustUnassignedPartitions() {
@@ -302,11 +304,13 @@ func (m *Market) unassignPartitionSlot(partition topic.Partition) {
 	partitionSlot, exists := m.partitions[partition]
 	if !exists {
 		glog.V(0).Infof("partition %+v slot is not tracked", partition)
+
 		return
 	}
 
 	if partitionSlot.AssignedTo == nil {
 		glog.V(0).Infof("partition %+v slot is not assigned to any consumer", partition)
+
 		return
 	}
 
@@ -316,12 +320,12 @@ func (m *Market) unassignPartitionSlot(partition topic.Partition) {
 			consumer.AssignedPartitions = append(consumer.AssignedPartitions[:i], consumer.AssignedPartitions[i+1:]...)
 			partitionSlot.AssignedTo = nil
 			m.balanceRequestChan <- struct{}{}
+
 			return
 		}
 	}
 
 	glog.V(0).Infof("partition %+v slot not found in assigned consumer", partition)
-
 }
 
 func (m *Market) confirmAssignPartition(partition topic.Partition, consumerInstanceId ConsumerGroupInstanceId) {
@@ -331,23 +335,25 @@ func (m *Market) confirmAssignPartition(partition topic.Partition, consumerInsta
 	partitionSlot, exists := m.partitions[partition]
 	if !exists {
 		glog.V(0).Infof("partition %+v slot is not tracked", partition)
+
 		return
 	}
 
 	if partitionSlot.AssignedTo != nil {
 		glog.V(0).Infof("partition %+v slot is already assigned to %+v", partition, partitionSlot.AssignedTo.InstanceId)
+
 		return
 	}
 
 	consumerInstance, exists := m.consumerInstances[consumerInstanceId]
 	if !exists {
 		glog.V(0).Infof("consumer %+v is not tracked", consumerInstanceId)
+
 		return
 	}
 
 	partitionSlot.AssignedTo = consumerInstance
 	consumerInstance.AssignedPartitions = append(consumerInstance.AssignedPartitions, partition)
-
 }
 
 func (m *Market) Status() {

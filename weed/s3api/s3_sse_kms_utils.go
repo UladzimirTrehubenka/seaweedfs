@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -22,7 +23,7 @@ type KMSDataKeyResult struct {
 func generateKMSDataKey(keyID string, encryptionContext map[string]string) (*KMSDataKeyResult, error) {
 	// Validate keyID to prevent injection attacks and malformed requests to KMS service
 	if !isValidKMSKeyID(keyID) {
-		return nil, fmt.Errorf("invalid KMS key ID format: key ID must be non-empty, without spaces or control characters")
+		return nil, errors.New("invalid KMS key ID format: key ID must be non-empty, without spaces or control characters")
 	}
 
 	// Validate encryption context to prevent malformed requests to KMS service
@@ -30,10 +31,10 @@ func generateKMSDataKey(keyID string, encryptionContext map[string]string) (*KMS
 		for key, value := range encryptionContext {
 			// Validate context keys and values for basic security
 			if strings.TrimSpace(key) == "" {
-				return nil, fmt.Errorf("invalid encryption context: keys cannot be empty or whitespace-only")
+				return nil, errors.New("invalid encryption context: keys cannot be empty or whitespace-only")
 			}
 			if strings.ContainsAny(key, "\x00\n\r\t") || strings.ContainsAny(value, "\x00\n\r\t") {
-				return nil, fmt.Errorf("invalid encryption context: keys and values cannot contain control characters")
+				return nil, errors.New("invalid encryption context: keys and values cannot contain control characters")
 			}
 			// AWS KMS has limits on key/value lengths
 			if len(key) > 2048 || len(value) > 2048 {
@@ -49,7 +50,7 @@ func generateKMSDataKey(keyID string, encryptionContext map[string]string) (*KMS
 	// Get KMS provider
 	kmsProvider := kms.GetGlobalKMS()
 	if kmsProvider == nil {
-		return nil, fmt.Errorf("KMS is not configured")
+		return nil, errors.New("KMS is not configured")
 	}
 
 	// Create data key request
@@ -62,7 +63,7 @@ func generateKMSDataKey(keyID string, encryptionContext map[string]string) (*KMS
 	// Generate the data key
 	dataKeyResp, err := kmsProvider.GenerateDataKey(context.Background(), generateDataKeyReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate KMS data key: %v", err)
+		return nil, fmt.Errorf("failed to generate KMS data key: %w", err)
 	}
 
 	// Create AES cipher with the plaintext data key
@@ -70,7 +71,8 @@ func generateKMSDataKey(keyID string, encryptionContext map[string]string) (*KMS
 	if err != nil {
 		// Clear sensitive data before returning error
 		kms.ClearSensitiveData(dataKeyResp.Plaintext)
-		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
+
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	return &KMSDataKeyResult{

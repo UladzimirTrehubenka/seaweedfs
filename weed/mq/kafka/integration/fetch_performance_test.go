@@ -30,6 +30,7 @@ func TestAdaptiveFetchTimeout(t *testing.T) {
 				recordsReceived++
 			} else {
 				t.Logf("Record %d timed out (readTime=%v > timeout=%v)", i+1, readTime, timeout)
+
 				break
 			}
 		}
@@ -56,6 +57,7 @@ func TestAdaptiveFetchTimeout(t *testing.T) {
 				t.Logf("Record %d received (readTime=%v)", i+1, readTime)
 			} else {
 				t.Logf("Record %d timed out (readTime=%v > timeout=%v)", i+1, readTime, timeout)
+
 				break
 			}
 		}
@@ -128,6 +130,7 @@ func TestFetchTimeoutProgression(t *testing.T) {
 		if recordNumber <= 5 {
 			return 1 * time.Second
 		}
+
 		return 100 * time.Millisecond
 	}
 

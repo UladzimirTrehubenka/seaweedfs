@@ -2,7 +2,9 @@ package s3api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
 	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
@@ -71,7 +74,6 @@ func NewS3IAMIntegration(iamManager *integration.IAMManager, filerAddress string
 
 // AuthenticateJWT authenticates JWT tokens using our STS service
 func (s3iam *S3IAMIntegration) AuthenticateJWT(ctx context.Context, r *http.Request) (*IAMIdentity, s3err.ErrorCode) {
-
 	if !s3iam.enabled {
 		return nil, s3err.ErrNotImplemented
 	}
@@ -90,6 +92,7 @@ func (s3iam *S3IAMIntegration) AuthenticateJWT(ctx context.Context, r *http.Requ
 	// Basic token format validation - reject obviously invalid tokens
 	if sessionToken == "invalid-token" || len(sessionToken) < 10 {
 		glog.V(3).Info("Session token format is invalid")
+
 		return nil, s3err.ErrAccessDenied
 	}
 
@@ -102,6 +105,7 @@ func (s3iam *S3IAMIntegration) AuthenticateJWT(ctx context.Context, r *http.Requ
 	tokenClaims, err := ParseUnverifiedJWTToken(sessionToken)
 	if err != nil {
 		glog.V(3).Infof("Failed to parse JWT token: %v", err)
+
 		return nil, s3err.ErrAccessDenied
 	}
 
@@ -111,12 +115,12 @@ func (s3iam *S3IAMIntegration) AuthenticateJWT(ctx context.Context, r *http.Requ
 	issuer, issuerOk := tokenClaims["iss"].(string)
 	if !issuerOk {
 		glog.V(3).Infof("Token missing issuer claim - invalid JWT")
+
 		return nil, s3err.ErrAccessDenied
 	}
 
 	// Check if this is an STS-issued token by examining the issuer
 	if !s3iam.isSTSIssuer(issuer) {
-
 		// Not an STS session token, try to validate as OIDC token with timeout
 		// Create a context with a reasonable timeout to prevent hanging
 		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -134,7 +138,7 @@ func (s3iam *S3IAMIntegration) AuthenticateJWT(ctx context.Context, r *http.Requ
 		}
 
 		// Create claims map and populate with standard claims and attributes
-		claims := make(map[string]interface{}, len(identity.Attributes)+5)
+		claims := make(map[string]any, len(identity.Attributes)+5)
 
 		// Add all attributes from the identity to the claims
 		// This makes attributes like "preferred_username" available for policy substitution
@@ -188,15 +192,14 @@ func (s3iam *S3IAMIntegration) AuthenticateJWT(ctx context.Context, r *http.Requ
 	sessionInfo, err := s3iam.stsService.ValidateSessionToken(ctx, sessionToken)
 	if err != nil {
 		glog.V(3).Infof("STS session validation failed: %v", err)
+
 		return nil, s3err.ErrAccessDenied
 	}
 
 	// Create claims map starting with request context (which holds custom claims)
-	claims := make(map[string]interface{})
+	claims := make(map[string]any)
 	if sessionInfo.RequestContext != nil {
-		for k, v := range sessionInfo.RequestContext {
-			claims[k] = v
-		}
+		maps.Copy(claims, sessionInfo.RequestContext)
 	}
 
 	// Add standard claims
@@ -220,14 +223,16 @@ func (s3iam *S3IAMIntegration) AuthenticateJWT(ctx context.Context, r *http.Requ
 	}
 
 	glog.V(3).Infof("JWT authentication successful for principal: %s", identity.Principal)
+
 	return identity, s3err.ErrNone
 }
 
 // ValidateSessionToken checks the validity of an STS session token
 func (s3iam *S3IAMIntegration) ValidateSessionToken(ctx context.Context, token string) (*sts.SessionInfo, error) {
 	if s3iam.stsService == nil {
-		return nil, fmt.Errorf("STS service not available")
+		return nil, errors.New("STS service not available")
 	}
+
 	return s3iam.stsService.ValidateSessionToken(ctx, token)
 }
 
@@ -305,8 +310,9 @@ func (s3iam *S3IAMIntegration) AuthorizeAction(ctx context.Context, identity *IA
 // ValidateTrustPolicyForPrincipal delegates to IAMManager to validate trust policy
 func (s3iam *S3IAMIntegration) ValidateTrustPolicyForPrincipal(ctx context.Context, roleArn, principalArn string) error {
 	if s3iam.iamManager == nil {
-		return fmt.Errorf("IAM manager not available")
+		return errors.New("IAM manager not available")
 	}
+
 	return s3iam.iamManager.ValidateTrustPolicyForPrincipal(ctx, roleArn, principalArn)
 }
 
@@ -317,7 +323,7 @@ type IAMIdentity struct {
 	SessionToken string
 	Account      *Account
 	PolicyNames  []string
-	Claims       map[string]interface{}
+	Claims       map[string]any
 }
 
 // IsAdmin checks if the identity has admin privileges
@@ -485,8 +491,8 @@ func mapLegacyActionToIAM(legacyAction Action) string {
 }
 
 // extractRequestContext extracts request context for policy conditions
-func extractRequestContext(r *http.Request) map[string]interface{} {
-	context := make(map[string]interface{})
+func extractRequestContext(r *http.Request) map[string]any {
+	context := make(map[string]any)
 
 	// Extract source IP for IP-based conditions
 	// Use AWS-compatible key name for policy variable substitution
@@ -591,7 +597,7 @@ func ParseUnverifiedJWTToken(tokenString string) (jwt.MapClaims, error) {
 		return claims, nil
 	}
 
-	return nil, fmt.Errorf("invalid token claims")
+	return nil, errors.New("invalid token claims")
 }
 
 // minInt returns the minimum of two integers
@@ -599,6 +605,7 @@ func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
+
 	return b
 }
 
@@ -615,6 +622,7 @@ func (s3a *S3ApiServer) SetIAMIntegration(iamManager *integration.IAMManager) {
 // EnhancedS3ApiServer extends S3ApiServer with IAM integration
 type EnhancedS3ApiServer struct {
 	*S3ApiServer
+
 	iamIntegration IAMIntegration
 }
 
@@ -665,6 +673,7 @@ func (enhanced *EnhancedS3ApiServer) AuthorizeRequest(r *http.Request, identity 
 
 	if sessionToken == "" || principal == "" {
 		glog.V(3).Info("No session information available for authorization")
+
 		return s3err.ErrAccessDenied
 	}
 
@@ -705,15 +714,14 @@ type OIDCIdentity struct {
 // validateExternalOIDCToken validates an external OIDC token using the STS service's secure issuer-based lookup
 // This method delegates to the STS service's validateWebIdentityToken for better security and efficiency
 func (s3iam *S3IAMIntegration) validateExternalOIDCToken(ctx context.Context, token string) (*OIDCIdentity, error) {
-
 	if s3iam.iamManager == nil {
-		return nil, fmt.Errorf("IAM manager not available")
+		return nil, errors.New("IAM manager not available")
 	}
 
 	// Get STS service for secure token validation
 	stsService := s3iam.iamManager.GetSTSService()
 	if stsService == nil {
-		return nil, fmt.Errorf("STS service not available")
+		return nil, errors.New("STS service not available")
 	}
 
 	// Use the STS service's secure validateWebIdentityToken method
@@ -724,14 +732,15 @@ func (s3iam *S3IAMIntegration) validateExternalOIDCToken(ctx context.Context, to
 	}
 
 	if externalIdentity == nil {
-		return nil, fmt.Errorf("authentication succeeded but no identity returned")
+		return nil, errors.New("authentication succeeded but no identity returned")
 	}
 
 	// Extract role from external identity attributes
 	rolesAttr, exists := externalIdentity.Attributes["roles"]
 	if !exists || rolesAttr == "" {
 		glog.V(3).Infof("No roles found in external identity")
-		return nil, fmt.Errorf("no roles found in external identity")
+
+		return nil, errors.New("no roles found in external identity")
 	}
 
 	// Parse roles (stored as comma-separated string)
@@ -749,7 +758,8 @@ func (s3iam *S3IAMIntegration) validateExternalOIDCToken(ctx context.Context, to
 
 	if len(cleanRoles) == 0 {
 		glog.V(3).Infof("Empty roles list after parsing")
-		return nil, fmt.Errorf("no valid roles found in token")
+
+		return nil, errors.New("no valid roles found in token")
 	}
 
 	// Determine the primary role using intelligent selection
@@ -775,6 +785,7 @@ func (s3iam *S3IAMIntegration) selectPrimaryRole(roles []string, externalIdentit
 
 	// Just pick the first one - keep it simple
 	selectedRole := roles[0]
+
 	return selectedRole
 }
 

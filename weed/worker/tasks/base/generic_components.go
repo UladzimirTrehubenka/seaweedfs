@@ -1,6 +1,7 @@
 package base
 
 import (
+	"slices"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/worker/types"
@@ -26,6 +27,7 @@ func (d *GenericDetector) ScanForTasks(volumeMetrics []*types.VolumeHealthMetric
 	if d.taskDef.DetectionFunc == nil {
 		return nil, nil
 	}
+
 	return d.taskDef.DetectionFunc(volumeMetrics, clusterInfo, d.taskDef.Config)
 }
 
@@ -34,6 +36,7 @@ func (d *GenericDetector) ScanInterval() time.Duration {
 	if d.taskDef.ScanInterval > 0 {
 		return d.taskDef.ScanInterval
 	}
+
 	return 30 * time.Minute // Default
 }
 
@@ -62,6 +65,7 @@ func (s *GenericScheduler) CanScheduleNow(task *types.TaskInput, runningTasks []
 	if s.taskDef.SchedulingFunc == nil {
 		return s.defaultCanSchedule(task, runningTasks, availableWorkers)
 	}
+
 	return s.taskDef.SchedulingFunc(task, runningTasks, availableWorkers, s.taskDef.Config)
 }
 
@@ -91,10 +95,8 @@ func (s *GenericScheduler) defaultCanSchedule(task *types.TaskInput, runningTask
 	// Check if we have available workers
 	for _, worker := range availableWorkers {
 		if worker.CurrentLoad < worker.MaxConcurrent {
-			for _, capability := range worker.Capabilities {
-				if capability == s.taskDef.Type {
-					return true
-				}
+			if slices.Contains(worker.Capabilities, s.taskDef.Type) {
+				return true
 			}
 		}
 	}
@@ -112,6 +114,7 @@ func (s *GenericScheduler) GetMaxConcurrent() int {
 	if s.taskDef.MaxConcurrent > 0 {
 		return s.taskDef.MaxConcurrent
 	}
+
 	return 1 // Default
 }
 
@@ -120,6 +123,7 @@ func (s *GenericScheduler) GetDefaultRepeatInterval() time.Duration {
 	if s.taskDef.RepeatInterval > 0 {
 		return s.taskDef.RepeatInterval
 	}
+
 	return 24 * time.Hour // Default
 }
 

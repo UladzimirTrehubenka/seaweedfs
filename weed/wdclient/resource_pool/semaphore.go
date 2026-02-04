@@ -1,7 +1,7 @@
 package resource_pool
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,6 +34,7 @@ func NewBoundedSemaphore(count uint) Semaphore {
 	for i := 0; i < cap(sem.slots); i++ {
 		sem.slots <- struct{}{}
 	}
+
 	return sem
 }
 
@@ -77,7 +78,7 @@ func (sem *boundedSemaphore) Release() {
 	default:
 		// slots is buffered. If a send blocks, it indicates a programming
 		// error.
-		panic(fmt.Errorf("too many releases for boundedSemaphore"))
+		panic(errors.New("too many releases for boundedSemaphore"))
 	}
 }
 
@@ -92,6 +93,7 @@ func NewUnboundedSemaphore(initialCount int) Semaphore {
 		counter: int64(initialCount),
 	}
 	res.cond.L = &res.lock
+
 	return res
 }
 
@@ -149,6 +151,7 @@ func (s *unboundedSemaphore) TryAcquire(timeout time.Duration) bool {
 			// The other thread already decided the result
 			return true
 		}
+
 		return false
 	}
 }

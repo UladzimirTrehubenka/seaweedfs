@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"maps"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
@@ -199,9 +200,7 @@ func generateSampleHybridData(topicName string, options HybridScanOptions) []Hyb
 		for _, result := range sampleData {
 			// Convert to RecordValue for predicate testing
 			recordValue := &schema_pb.RecordValue{Fields: make(map[string]*schema_pb.Value)}
-			for k, v := range result.Values {
-				recordValue.Fields[k] = v
-			}
+			maps.Copy(recordValue.GetFields(), result.Values)
 			recordValue.Fields[SW_COLUMN_NAME_TIMESTAMP] = &schema_pb.Value{Kind: &schema_pb.Value_Int64Value{Int64Value: result.Timestamp}}
 			recordValue.Fields[SW_COLUMN_NAME_KEY] = &schema_pb.Value{Kind: &schema_pb.Value_BytesValue{BytesValue: result.Key}}
 

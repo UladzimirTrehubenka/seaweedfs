@@ -73,6 +73,7 @@ func (rc *ReaderCache) MaybeCache(chunkViews *Interval[*ChunkView], count int) {
 		}
 		if rc.chunkCache.IsInCache(chunkView.FileId, true) {
 			glog.V(4).Infof("%s is in cache", chunkView.FileId)
+
 			continue
 		}
 
@@ -111,6 +112,7 @@ func (rc *ReaderCache) ReadChunkAt(ctx context.Context, buffer []byte, fileId st
 		n, err := rc.chunkCache.ReadChunkAt(buffer, fileId, uint64(offset))
 		if n > 0 {
 			rc.Unlock()
+
 			return n, err
 		}
 	}
@@ -159,7 +161,6 @@ func (rc *ReaderCache) destroy() {
 	for _, downloader := range rc.downloaders {
 		downloader.destroy()
 	}
-
 }
 
 func newSingleChunkCacher(parent *ReaderCache, fileId string, cipherKey []byte, isGzipped bool, chunkSize int, shouldCache bool) *SingleChunkCacher {
@@ -195,8 +196,9 @@ func (s *SingleChunkCacher) startCaching() {
 	urlStrings, err := s.parent.lookupFileIdFn(context.Background(), s.chunkFileId)
 	if err != nil {
 		s.Lock()
-		s.err = fmt.Errorf("operation LookupFileId %s failed, err: %v", s.chunkFileId, err)
+		s.err = fmt.Errorf("operation LookupFileId %s failed, err: %w", s.chunkFileId, err)
 		s.Unlock()
+
 		return
 	}
 

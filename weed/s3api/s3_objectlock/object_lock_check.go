@@ -28,7 +28,7 @@ func EntryHasActiveLock(entry *filer_pb.Entry, currentTime time.Time) bool {
 	}
 
 	// Check for active legal hold (case-insensitive, trimmed for defensive parsing)
-	if legalHoldBytes, exists := entry.Extended[s3_constants.ExtLegalHoldKey]; exists {
+	if legalHoldBytes, exists := entry.GetExtended()[s3_constants.ExtLegalHoldKey]; exists {
 		legalHold := strings.TrimSpace(strings.ToUpper(string(legalHoldBytes)))
 		if legalHold == s3_constants.LegalHoldOn {
 			return true
@@ -36,17 +36,18 @@ func EntryHasActiveLock(entry *filer_pb.Entry, currentTime time.Time) bool {
 	}
 
 	// Check for active retention (case-insensitive, trimmed for defensive parsing)
-	if modeBytes, exists := entry.Extended[s3_constants.ExtObjectLockModeKey]; exists {
+	if modeBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockModeKey]; exists {
 		mode := strings.TrimSpace(strings.ToUpper(string(modeBytes)))
 		if mode == s3_constants.RetentionModeCompliance || mode == s3_constants.RetentionModeGovernance {
 			// Check if retention is still active
-			if dateBytes, dateExists := entry.Extended[s3_constants.ExtRetentionUntilDateKey]; dateExists {
+			if dateBytes, dateExists := entry.GetExtended()[s3_constants.ExtRetentionUntilDateKey]; dateExists {
 				dateStr := strings.TrimSpace(string(dateBytes))
 				timestamp, err := strconv.ParseInt(dateStr, 10, 64)
 				if err != nil {
 					// Fail-safe: if we can't parse the retention date, assume the object is locked
 					// to prevent accidental data loss
 					glog.Warningf("Failed to parse retention date '%s' for entry, assuming locked: %v", dateStr, err)
+
 					return true
 				}
 				retainUntil := time.Unix(timestamp, 0)
@@ -97,16 +98,18 @@ func paginateEntries(ctx context.Context, client filer_pb.SeaweedFilerClient, di
 				if errors.Is(recvErr, io.EOF) {
 					break // Normal end of stream
 				}
+
 				return fmt.Errorf("failed to receive entry from %s: %w", dir, recvErr)
 			}
 			entriesReceived = true
-			entry := entryResp.Entry
-			lastFileName = entry.Name
+			entry := entryResp.GetEntry()
+			lastFileName = entry.GetName()
 
 			// Skip invalid entry names to prevent path traversal
-			if entry.Name == "" || entry.Name == "." || entry.Name == ".." ||
-				strings.ContainsAny(entry.Name, "/\\") {
-				glog.V(2).Infof("Skipping invalid entry name: %q in %s", entry.Name, dir)
+			if entry.GetName() == "" || entry.GetName() == "." || entry.GetName() == ".." ||
+				strings.ContainsAny(entry.GetName(), "/\\") {
+				glog.V(2).Infof("Skipping invalid entry name: %q in %s", entry.GetName(), dir)
+
 				continue
 			}
 
@@ -123,6 +126,7 @@ func paginateEntries(ctx context.Context, client filer_pb.SeaweedFilerClient, di
 			break
 		}
 	}
+
 	return nil
 }
 
@@ -138,13 +142,13 @@ func recursivelyCheckLocksWithClient(ctx context.Context, client filer_pb.Seawee
 		}
 
 		// Skip special directories
-		if entry.Name == s3_constants.MultipartUploadsFolder {
+		if entry.GetName() == s3_constants.MultipartUploadsFolder {
 			return false, nil // Continue
 		}
 
-		if entry.IsDirectory {
-			subDir := dir + "/" + entry.Name
-			if entry.Name == s3_constants.VersionsFolder {
+		if entry.GetIsDirectory() {
+			subDir := dir + "/" + entry.GetName()
+			if entry.GetName() == s3_constants.VersionsFolder {
 				// Check all version files (exact match for .versions folder)
 				if err := checkVersionsForLocksWithClient(ctx, client, subDir, hasLocks, currentTime); err != nil {
 					return false, err
@@ -159,10 +163,12 @@ func recursivelyCheckLocksWithClient(ctx context.Context, client filer_pb.Seawee
 			// Check if this object has an active lock
 			if EntryHasActiveLock(entry, currentTime) {
 				*hasLocks = true
-				glog.V(2).Infof("Found object with active lock: %s/%s", dir, entry.Name)
+				glog.V(2).Infof("Found object with active lock: %s/%s", dir, entry.GetName())
+
 				return true, nil // Stop iteration
 			}
 		}
+
 		return false, nil // Continue
 	})
 }
@@ -176,9 +182,11 @@ func checkVersionsForLocksWithClient(ctx context.Context, client filer_pb.Seawee
 
 		if EntryHasActiveLock(entry, currentTime) {
 			*hasLocks = true
-			glog.V(2).Infof("Found version with active lock: %s/%s", versionsDir, entry.Name)
+			glog.V(2).Infof("Found version with active lock: %s/%s", versionsDir, entry.GetName())
+
 			return true, nil // Stop iteration
 		}
+
 		return false, nil // Continue
 	})
 }
@@ -189,12 +197,13 @@ func IsObjectLockEnabled(entry *filer_pb.Entry) bool {
 		return false
 	}
 
-	enabledBytes, exists := entry.Extended[s3_constants.ExtObjectLockEnabledKey]
+	enabledBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockEnabledKey]
 	if !exists {
 		return false
 	}
 
 	enabled := string(enabledBytes)
+
 	return enabled == s3_constants.ObjectLockEnabled || enabled == "true"
 }
 
@@ -213,7 +222,7 @@ func CheckBucketForLockedObjects(ctx context.Context, client filer_pb.SeaweedFil
 	}
 
 	// Check if Object Lock is enabled
-	if !IsObjectLockEnabled(lookupResp.Entry) {
+	if !IsObjectLockEnabled(lookupResp.GetEntry()) {
 		return nil // No Object Lock, nothing to check
 	}
 
@@ -224,7 +233,7 @@ func CheckBucketForLockedObjects(ctx context.Context, client filer_pb.SeaweedFil
 		return fmt.Errorf("failed to check for locked objects: %w", checkErr)
 	}
 	if hasLockedObjects {
-		return fmt.Errorf("bucket has objects with active Object Lock retention or legal hold")
+		return errors.New("bucket has objects with active Object Lock retention or legal hold")
 	}
 
 	return nil

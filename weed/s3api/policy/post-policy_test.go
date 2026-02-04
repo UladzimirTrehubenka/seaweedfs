@@ -24,6 +24,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -129,6 +130,7 @@ func postPresignSignatureV4(policyBase64 string, t time.Time, secretAccessKey, l
 	signingkey := getSigningKey(secretAccessKey, t, location)
 	// Calculate signature.
 	signature := getSignature(signingkey, policyBase64)
+
 	return signature
 }
 
@@ -137,6 +139,7 @@ func postPresignSignatureV4(policyBase64 string, t time.Time, secretAccessKey, l
 func sumHMAC(key []byte, data []byte) []byte {
 	hash := hmac.New(sha256.New, key)
 	hash.Write(data)
+
 	return hash.Sum(nil)
 }
 
@@ -147,6 +150,7 @@ func getSigningKey(secretKey string, t time.Time, region string) []byte {
 	regionBytes := sumHMAC(date, []byte(region))
 	service := sumHMAC(regionBytes, []byte("s3"))
 	signingKey := sumHMAC(service, []byte("aws4_request"))
+
 	return signingKey
 }
 
@@ -160,6 +164,7 @@ func getSignature(signingKey []byte, stringToSign string) string {
 func calculateSignatureV2(stringToSign string, secret string) string {
 	hm := hmac.New(sha1.New, []byte(secret))
 	hm.Write([]byte(stringToSign))
+
 	return base64.StdEncoding.EncodeToString(hm.Sum(nil))
 }
 
@@ -210,6 +215,7 @@ func newPostRequestV2(endPoint, bucketName, objectName string, accessKey, secret
 
 	// Set form content-type.
 	req.Header.Set("Content-Type", w.FormDataContentType())
+
 	return req, nil
 }
 
@@ -223,6 +229,7 @@ func buildGenericPolicy(t time.Time, accessKey, region, bucketName, objectName s
 	if contentLengthRange {
 		policy = newPostPolicyBytesV4WithContentRange(credStr, bucketName, objectName, expirationTime)
 	}
+
 	return policy
 }
 
@@ -254,9 +261,7 @@ func newPostRequestV4Generic(endPoint, bucketName, objectName string, objData []
 	}
 
 	// Add form data
-	for k, v := range addFormData {
-		formData[k] = v
-	}
+	maps.Copy(formData, addFormData)
 
 	// Create the multipart form.
 	var buf bytes.Buffer
@@ -288,6 +293,7 @@ func newPostRequestV4Generic(endPoint, bucketName, objectName string, objData []
 
 	// Set form content-type.
 	req.Header.Set("Content-Type", w.FormDataContentType())
+
 	return req, nil
 }
 
@@ -295,6 +301,7 @@ func newPostRequestV4WithContentLength(endPoint, bucketName, objectName string, 
 	t := time.Now().UTC()
 	region := "us-east-1"
 	policy := buildGenericPolicy(t, accessKey, region, bucketName, objectName, true)
+
 	return newPostRequestV4Generic(endPoint, bucketName, objectName, objData, accessKey, secretKey, region, t, policy, nil, false, false)
 }
 
@@ -302,6 +309,7 @@ func newPostRequestV4(endPoint, bucketName, objectName string, objData []byte, a
 	t := time.Now().UTC()
 	region := "us-east-1"
 	policy := buildGenericPolicy(t, accessKey, region, bucketName, objectName, false)
+
 	return newPostRequestV4Generic(endPoint, bucketName, objectName, objData, accessKey, secretKey, region, t, policy, nil, false, false)
 }
 
@@ -317,6 +325,7 @@ func makeTestTargetURL(endPoint, bucketName, objectName string, queryValues url.
 	if len(queryValues) > 0 {
 		urlStr = urlStr + "?" + queryValues.Encode()
 	}
+
 	return urlStr
 }
 
@@ -335,14 +344,17 @@ func EncodePath(pathName string) string {
 		return pathName
 	}
 	var encodedPathname string
+	var encodedPathnameSb338 strings.Builder
 	for _, s := range pathName {
 		if 'A' <= s && s <= 'Z' || 'a' <= s && s <= 'z' || '0' <= s && s <= '9' { // §2.3 Unreserved characters (mark)
-			encodedPathname = encodedPathname + string(s)
+			encodedPathnameSb338.WriteRune(s)
+
 			continue
 		}
 		switch s {
 		case '-', '_', '.', '~', '/': // §2.3 Unreserved characters (mark)
 			encodedPathname = encodedPathname + string(s)
+
 			continue
 		default:
 			len := utf8.RuneLen(s)
@@ -358,6 +370,8 @@ func EncodePath(pathName string) string {
 			}
 		}
 	}
+	encodedPathname += encodedPathnameSb338.String()
+
 	return encodedPathname
 }
 
@@ -374,5 +388,6 @@ func getScope(t time.Time, region string) string {
 		string("s3"),
 		"aws4_request",
 	}, "/")
+
 	return scope
 }

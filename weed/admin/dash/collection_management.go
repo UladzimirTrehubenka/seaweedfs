@@ -2,6 +2,7 @@ package dash
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"time"
 
@@ -24,21 +25,21 @@ func (s *AdminServer) GetClusterCollections() (*ClusterCollectionsData, error) {
 			return err
 		}
 
-		if resp.TopologyInfo != nil {
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
-						for _, diskInfo := range node.DiskInfos {
+		if resp.GetTopologyInfo() != nil {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
+						for _, diskInfo := range node.GetDiskInfos() {
 							// Process regular volumes
-							for _, volInfo := range diskInfo.VolumeInfos {
+							for _, volInfo := range diskInfo.GetVolumeInfos() {
 								// Extract collection name from volume info
-								collectionName := volInfo.Collection
+								collectionName := volInfo.GetCollection()
 								if collectionName == "" {
 									collectionName = "default" // Default collection for volumes without explicit collection
 								}
 
 								// Get disk type from volume info, default to hdd if empty
-								diskType := volInfo.DiskType
+								diskType := volInfo.GetDiskType()
 								if diskType == "" {
 									diskType = "hdd"
 								}
@@ -46,61 +47,55 @@ func (s *AdminServer) GetClusterCollections() (*ClusterCollectionsData, error) {
 								// Get or create collection info
 								if collection, exists := collectionMap[collectionName]; exists {
 									collection.VolumeCount++
-									collection.FileCount += int64(volInfo.FileCount)
-									collection.TotalSize += int64(volInfo.Size)
+									collection.FileCount += int64(volInfo.GetFileCount())
+									collection.TotalSize += int64(volInfo.GetSize())
 
 									// Update data center if this collection spans multiple DCs
-									if collection.DataCenter != dc.Id && collection.DataCenter != "multi" {
+									if collection.DataCenter != dc.GetId() && collection.DataCenter != "multi" {
 										collection.DataCenter = "multi"
 									}
 
 									// Add disk type if not already present
-									diskTypeExists := false
-									for _, existingDiskType := range collection.DiskTypes {
-										if existingDiskType == diskType {
-											diskTypeExists = true
-											break
-										}
-									}
+									diskTypeExists := slices.Contains(collection.DiskTypes, diskType)
 									if !diskTypeExists {
 										collection.DiskTypes = append(collection.DiskTypes, diskType)
 									}
 
 									totalVolumes++
-									totalFiles += int64(volInfo.FileCount)
-									totalSize += int64(volInfo.Size)
+									totalFiles += int64(volInfo.GetFileCount())
+									totalSize += int64(volInfo.GetSize())
 								} else {
 									newCollection := CollectionInfo{
 										Name:          collectionName,
-										DataCenter:    dc.Id,
+										DataCenter:    dc.GetId(),
 										VolumeCount:   1,
 										EcVolumeCount: 0,
-										FileCount:     int64(volInfo.FileCount),
-										TotalSize:     int64(volInfo.Size),
+										FileCount:     int64(volInfo.GetFileCount()),
+										TotalSize:     int64(volInfo.GetSize()),
 										DiskTypes:     []string{diskType},
 									}
 									collectionMap[collectionName] = &newCollection
 									totalVolumes++
-									totalFiles += int64(volInfo.FileCount)
-									totalSize += int64(volInfo.Size)
+									totalFiles += int64(volInfo.GetFileCount())
+									totalSize += int64(volInfo.GetSize())
 								}
 							}
 
 							// Process EC volumes
 							ecVolumeMap := make(map[uint32]bool) // Track unique EC volumes to avoid double counting
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
 								// Extract collection name from EC shard info
-								collectionName := ecShardInfo.Collection
+								collectionName := ecShardInfo.GetCollection()
 								if collectionName == "" {
 									collectionName = "default" // Default collection for EC volumes without explicit collection
 								}
 
 								// Only count each EC volume once (not per shard)
-								if !ecVolumeMap[ecShardInfo.Id] {
-									ecVolumeMap[ecShardInfo.Id] = true
+								if !ecVolumeMap[ecShardInfo.GetId()] {
+									ecVolumeMap[ecShardInfo.GetId()] = true
 
 									// Get disk type from disk info, default to hdd if empty
-									diskType := diskInfo.Type
+									diskType := diskInfo.GetType()
 									if diskType == "" {
 										diskType = "hdd"
 									}
@@ -110,18 +105,12 @@ func (s *AdminServer) GetClusterCollections() (*ClusterCollectionsData, error) {
 										collection.EcVolumeCount++
 
 										// Update data center if this collection spans multiple DCs
-										if collection.DataCenter != dc.Id && collection.DataCenter != "multi" {
+										if collection.DataCenter != dc.GetId() && collection.DataCenter != "multi" {
 											collection.DataCenter = "multi"
 										}
 
 										// Add disk type if not already present
-										diskTypeExists := false
-										for _, existingDiskType := range collection.DiskTypes {
-											if existingDiskType == diskType {
-												diskTypeExists = true
-												break
-											}
-										}
+										diskTypeExists := slices.Contains(collection.DiskTypes, diskType)
 										if !diskTypeExists {
 											collection.DiskTypes = append(collection.DiskTypes, diskType)
 										}
@@ -130,7 +119,7 @@ func (s *AdminServer) GetClusterCollections() (*ClusterCollectionsData, error) {
 									} else {
 										newCollection := CollectionInfo{
 											Name:          collectionName,
-											DataCenter:    dc.Id,
+											DataCenter:    dc.GetId(),
 											VolumeCount:   0,
 											EcVolumeCount: 1,
 											FileCount:     0,
@@ -323,6 +312,7 @@ func (s *AdminServer) GetCollectionDetails(collectionName string, page int, page
 		if sortOrder == "desc" {
 			return !less
 		}
+
 		return less
 	})
 
@@ -330,10 +320,7 @@ func (s *AdminServer) GetCollectionDetails(collectionName string, page int, page
 	totalVolumesAndEc := len(allVolumes)
 	totalPages := (totalVolumesAndEc + pageSize - 1) / pageSize
 	startIndex := (page - 1) * pageSize
-	endIndex := startIndex + pageSize
-	if endIndex > totalVolumesAndEc {
-		endIndex = totalVolumesAndEc
-	}
+	endIndex := min(startIndex+pageSize, totalVolumesAndEc)
 
 	if startIndex >= totalVolumesAndEc {
 		startIndex = 0

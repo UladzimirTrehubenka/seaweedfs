@@ -27,7 +27,7 @@ func (bc *BrokerClient) FetchMessagesStateless(ctx context.Context, topic string
 	// Get actual partition assignment from broker
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get partition assignment: %v", err)
+		return nil, fmt.Errorf("failed to get partition assignment: %w", err)
 	}
 
 	// Create FetchMessage request
@@ -53,56 +53,56 @@ func (bc *BrokerClient) FetchMessagesStateless(ctx context.Context, topic string
 	// Call FetchMessage RPC (simple request/response)
 	resp, err := bc.client.FetchMessage(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("FetchMessage RPC failed: %v", err)
+		return nil, fmt.Errorf("FetchMessage RPC failed: %w", err)
 	}
 
 	// Check for errors in response
-	if resp.Error != "" {
+	if resp.GetError() != "" {
 		// Check if this is an "offset out of range" error
-		if resp.ErrorCode == 2 && resp.LogStartOffset > 0 && startOffset < resp.LogStartOffset {
+		if resp.GetErrorCode() == 2 && resp.GetLogStartOffset() > 0 && startOffset < resp.GetLogStartOffset() {
 			// Offset too old - broker suggests starting from LogStartOffset
 			glog.V(3).Infof("[FETCH-STATELESS-CLIENT] Requested offset %d too old, adjusting to log start %d",
-				startOffset, resp.LogStartOffset)
+				startOffset, resp.GetLogStartOffset())
 
 			// Retry with adjusted offset
-			req.StartOffset = resp.LogStartOffset
+			req.StartOffset = resp.GetLogStartOffset()
 			resp, err = bc.client.FetchMessage(ctx, req)
 			if err != nil {
-				return nil, fmt.Errorf("FetchMessage RPC failed on retry: %v", err)
+				return nil, fmt.Errorf("FetchMessage RPC failed on retry: %w", err)
 			}
-			if resp.Error != "" {
-				return nil, fmt.Errorf("broker error on retry: %s (code=%d)", resp.Error, resp.ErrorCode)
+			if resp.GetError() != "" {
+				return nil, fmt.Errorf("broker error on retry: %s (code=%d)", resp.GetError(), resp.GetErrorCode())
 			}
 			// Continue with adjusted offset response
-			startOffset = resp.LogStartOffset
+			startOffset = resp.GetLogStartOffset()
 		} else {
-			return nil, fmt.Errorf("broker error: %s (code=%d)", resp.Error, resp.ErrorCode)
+			return nil, fmt.Errorf("broker error: %s (code=%d)", resp.GetError(), resp.GetErrorCode())
 		}
 	}
 
 	// CRITICAL: If broker returns 0 messages but hwm > startOffset, something is wrong
-	if len(resp.Messages) == 0 && resp.HighWaterMark > startOffset {
+	if len(resp.GetMessages()) == 0 && resp.GetHighWaterMark() > startOffset {
 		glog.Errorf("[FETCH-STATELESS-CLIENT] CRITICAL BUG: Broker returned 0 messages for %s[%d] offset %d, but HWM=%d (should have %d messages available)",
-			topic, partition, startOffset, resp.HighWaterMark, resp.HighWaterMark-startOffset)
+			topic, partition, startOffset, resp.GetHighWaterMark(), resp.GetHighWaterMark()-startOffset)
 		glog.Errorf("[FETCH-STATELESS-CLIENT] This suggests broker's FetchMessage RPC is not returning data that exists!")
 		glog.Errorf("[FETCH-STATELESS-CLIENT] Broker metadata: logStart=%d, nextOffset=%d, endOfPartition=%v",
-			resp.LogStartOffset, resp.NextOffset, resp.EndOfPartition)
+			resp.GetLogStartOffset(), resp.GetNextOffset(), resp.GetEndOfPartition())
 	}
 
 	// Convert protobuf messages to SeaweedRecord
-	records := make([]*SeaweedRecord, 0, len(resp.Messages))
-	for i, msg := range resp.Messages {
+	records := make([]*SeaweedRecord, 0, len(resp.GetMessages()))
+	for i, msg := range resp.GetMessages() {
 		record := &SeaweedRecord{
-			Key:       msg.Key,
-			Value:     msg.Value,
-			Timestamp: msg.TsNs,
+			Key:       msg.GetKey(),
+			Value:     msg.GetValue(),
+			Timestamp: msg.GetTsNs(),
 			Offset:    startOffset + int64(i), // Sequential offset assignment
 		}
 		records = append(records, record)
 
 		// Log each message for debugging
 		glog.V(4).Infof("[FETCH-STATELESS-CLIENT] Message %d: offset=%d, keyLen=%d, valueLen=%d",
-			i, record.Offset, len(msg.Key), len(msg.Value))
+			i, record.Offset, len(msg.GetKey()), len(msg.GetValue()))
 	}
 
 	if len(records) > 0 {
@@ -113,7 +113,7 @@ func (bc *BrokerClient) FetchMessagesStateless(ctx context.Context, topic string
 	}
 
 	glog.V(4).Infof("[FETCH-STATELESS] Fetched %d records, nextOffset=%d, highWaterMark=%d, endOfPartition=%v",
-		len(records), resp.NextOffset, resp.HighWaterMark, resp.EndOfPartition)
+		len(records), resp.GetNextOffset(), resp.GetHighWaterMark(), resp.GetEndOfPartition())
 
 	return records, nil
 }
@@ -124,7 +124,7 @@ func (bc *BrokerClient) GetPartitionHighWaterMark(ctx context.Context, topic str
 	// Use FetchMessage with 0 maxRecords to just get metadata
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get partition assignment: %v", err)
+		return 0, fmt.Errorf("failed to get partition assignment: %w", err)
 	}
 
 	req := &mq_pb.FetchMessageRequest{
@@ -143,14 +143,14 @@ func (bc *BrokerClient) GetPartitionHighWaterMark(ctx context.Context, topic str
 
 	resp, err := bc.client.FetchMessage(ctx, req)
 	if err != nil {
-		return 0, fmt.Errorf("FetchMessage RPC failed: %v", err)
+		return 0, fmt.Errorf("FetchMessage RPC failed: %w", err)
 	}
 
-	if resp.Error != "" {
-		return 0, fmt.Errorf("broker error: %s", resp.Error)
+	if resp.GetError() != "" {
+		return 0, fmt.Errorf("broker error: %s", resp.GetError())
 	}
 
-	return resp.HighWaterMark, nil
+	return resp.GetHighWaterMark(), nil
 }
 
 // GetPartitionLogStartOffset returns the earliest offset available in a partition
@@ -158,7 +158,7 @@ func (bc *BrokerClient) GetPartitionHighWaterMark(ctx context.Context, topic str
 func (bc *BrokerClient) GetPartitionLogStartOffset(ctx context.Context, topic string, partition int32) (int64, error) {
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get partition assignment: %v", err)
+		return 0, fmt.Errorf("failed to get partition assignment: %w", err)
 	}
 
 	req := &mq_pb.FetchMessageRequest{
@@ -177,12 +177,12 @@ func (bc *BrokerClient) GetPartitionLogStartOffset(ctx context.Context, topic st
 
 	resp, err := bc.client.FetchMessage(ctx, req)
 	if err != nil {
-		return 0, fmt.Errorf("FetchMessage RPC failed: %v", err)
+		return 0, fmt.Errorf("FetchMessage RPC failed: %w", err)
 	}
 
-	if resp.Error != "" {
-		return 0, fmt.Errorf("broker error: %s", resp.Error)
+	if resp.GetError() != "" {
+		return 0, fmt.Errorf("broker error: %s", resp.GetError())
 	}
 
-	return resp.LogStartOffset, nil
+	return resp.GetLogStartOffset(), nil
 }

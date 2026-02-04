@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
@@ -37,7 +38,6 @@ import (
  * @param fi file information
  */
 func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (written uint32, code fuse.Status) {
-
 	// Check quota including uncommitted writes for real-time enforcement
 	if wfs.IsOverQuotaWithUncommitted() {
 		return 0, fuse.Status(syscall.ENOSPC)
@@ -62,7 +62,7 @@ func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (wr
 
 	entry.Content = nil
 	offset := int64(in.Offset)
-	oldFileSize := int64(entry.Attributes.FileSize)
+	oldFileSize := int64(entry.Attributes.GetFileSize())
 	newFileSize := max(offset+int64(len(data)), oldFileSize)
 	entry.Attributes.FileSize = uint64(newFileSize)
 
@@ -76,6 +76,7 @@ func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (wr
 
 	if err := fh.dirtyPages.AddPage(offset, data, fh.dirtyPages.writerPattern.IsSequentialMode(), tsNs); err != nil {
 		glog.Errorf("AddPage error: %v", err)
+
 		return 0, fuse.EIO
 	}
 

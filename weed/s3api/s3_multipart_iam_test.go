@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
 	"github.com/seaweedfs/seaweedfs/weed/iam/ldap"
 	"github.com/seaweedfs/seaweedfs/weed/iam/oidc"
@@ -15,8 +18,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // createTestJWTMultipart creates a test JWT token with the specified issuer, subject and signing key
@@ -33,6 +34,7 @@ func createTestJWTMultipart(t *testing.T, issuer, subject, signingKey string) st
 
 	tokenString, err := token.SignedString([]byte(signingKey))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -308,8 +310,9 @@ func TestSessionTokenExtraction(t *testing.T) {
 		{
 			name: "Bearer token in Authorization header",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt", nil)
 				req.Header.Set("Authorization", "Bearer test-session-token-123")
+
 				return req
 			},
 			expectedToken: "test-session-token-123",
@@ -317,8 +320,9 @@ func TestSessionTokenExtraction(t *testing.T) {
 		{
 			name: "X-Amz-Security-Token header",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt", nil)
 				req.Header.Set("X-Amz-Security-Token", "security-token-456")
+
 				return req
 			},
 			expectedToken: "security-token-456",
@@ -326,7 +330,8 @@ func TestSessionTokenExtraction(t *testing.T) {
 		{
 			name: "X-Amz-Security-Token query parameter",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt?X-Amz-Security-Token=query-token-789", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt?X-Amz-Security-Token=query-token-789", nil)
+
 				return req
 			},
 			expectedToken: "query-token-789",
@@ -334,15 +339,16 @@ func TestSessionTokenExtraction(t *testing.T) {
 		{
 			name: "No token present",
 			setupRequest: func() *http.Request {
-				return httptest.NewRequest("PUT", "/test-bucket/test-file.txt", nil)
+				return httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt", nil)
 			},
 			expectedToken: "",
 		},
 		{
 			name: "Authorization header without Bearer",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt", nil)
 				req.Header.Set("Authorization", "AWS access_key:signature")
+
 				return req
 			},
 			expectedToken: "",
@@ -370,9 +376,10 @@ func TestUploadPartValidation(t *testing.T) {
 		{
 			name: "Valid upload part request",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt?partNumber=1&uploadId=test-123", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt?partNumber=1&uploadId=test-123", nil)
 				req.Header.Set("Content-Type", "application/octet-stream")
 				req.ContentLength = 6 * 1024 * 1024 // 6MB
+
 				return req
 			},
 			expectedError: "",
@@ -380,9 +387,10 @@ func TestUploadPartValidation(t *testing.T) {
 		{
 			name: "Missing partNumber parameter",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt?uploadId=test-123", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt?uploadId=test-123", nil)
 				req.Header.Set("Content-Type", "application/octet-stream")
 				req.ContentLength = 6 * 1024 * 1024
+
 				return req
 			},
 			expectedError: "missing partNumber parameter",
@@ -390,9 +398,10 @@ func TestUploadPartValidation(t *testing.T) {
 		{
 			name: "Invalid partNumber format",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt?partNumber=abc&uploadId=test-123", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt?partNumber=abc&uploadId=test-123", nil)
 				req.Header.Set("Content-Type", "application/octet-stream")
 				req.ContentLength = 6 * 1024 * 1024
+
 				return req
 			},
 			expectedError: "invalid partNumber",
@@ -400,9 +409,10 @@ func TestUploadPartValidation(t *testing.T) {
 		{
 			name: "Part size too large",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("PUT", "/test-bucket/test-file.txt?partNumber=1&uploadId=test-123", nil)
+				req := httptest.NewRequest(http.MethodPut, "/test-bucket/test-file.txt?partNumber=1&uploadId=test-123", nil)
 				req.Header.Set("Content-Type", "application/octet-stream")
 				req.ContentLength = 6 * 1024 * 1024 * 1024 // 6GB exceeds 5GB limit
+
 				return req
 			},
 			expectedError: "part size",
@@ -567,7 +577,7 @@ func setupTestRolesForMultipart(ctx context.Context, manager *integration.IAMMan
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -585,7 +595,7 @@ func setupTestRolesForMultipart(ctx context.Context, manager *integration.IAMMan
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},

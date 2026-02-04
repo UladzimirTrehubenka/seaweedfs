@@ -5,8 +5,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 )
 
 // TestListPartsActionMapping tests the fix for the missing s3:ListParts action mapping
@@ -121,7 +122,7 @@ func TestListPartsActionMappingSecurityScenarios(t *testing.T) {
 
 		// Test request 1: List parts with uploadId
 		req1 := &http.Request{
-			Method: "GET",
+			Method: http.MethodGet,
 			URL:    &url.URL{Path: "/secure-bucket/confidential-document.pdf"},
 		}
 		query1 := req1.URL.Query()
@@ -131,7 +132,7 @@ func TestListPartsActionMappingSecurityScenarios(t *testing.T) {
 
 		// Test request 2: Get object without uploadId
 		req2 := &http.Request{
-			Method: "GET",
+			Method: http.MethodGet,
 			URL:    &url.URL{Path: "/secure-bucket/confidential-document.pdf"},
 		}
 		action2 := ResolveS3Action(req2, string(s3_constants.ACTION_READ), "secure-bucket", "confidential-document.pdf")
@@ -174,7 +175,7 @@ func TestListPartsActionMappingSecurityScenarios(t *testing.T) {
 
 		for _, tc := range testCases {
 			req := &http.Request{
-				Method: "GET",
+				Method: http.MethodGet,
 				URL:    &url.URL{Path: "/test-bucket/test-object"},
 			}
 
@@ -199,7 +200,7 @@ func TestListPartsActionRealWorldScenarios(t *testing.T) {
 
 		// Step 1: Initiate multipart upload (POST with uploads query)
 		req1 := &http.Request{
-			Method: "POST",
+			Method: http.MethodPost,
 			URL:    &url.URL{Path: "/data/large-dataset.csv"},
 		}
 		query1 := req1.URL.Query()
@@ -209,7 +210,7 @@ func TestListPartsActionRealWorldScenarios(t *testing.T) {
 
 		// Step 2: List existing parts (GET with uploadId query) - THIS WAS THE MISSING MAPPING
 		req2 := &http.Request{
-			Method: "GET",
+			Method: http.MethodGet,
 			URL:    &url.URL{Path: "/data/large-dataset.csv"},
 		}
 		query2 := req2.URL.Query()
@@ -219,7 +220,7 @@ func TestListPartsActionRealWorldScenarios(t *testing.T) {
 
 		// Step 3: Upload a part (PUT with uploadId and partNumber)
 		req3 := &http.Request{
-			Method: "PUT",
+			Method: http.MethodPut,
 			URL:    &url.URL{Path: "/data/large-dataset.csv"},
 		}
 		query3 := req3.URL.Query()
@@ -230,7 +231,7 @@ func TestListPartsActionRealWorldScenarios(t *testing.T) {
 
 		// Step 4: Complete multipart upload (POST with uploadId)
 		req4 := &http.Request{
-			Method: "POST",
+			Method: http.MethodPost,
 			URL:    &url.URL{Path: "/data/large-dataset.csv"},
 		}
 		query4 := req4.URL.Query()
@@ -270,7 +271,7 @@ func TestListPartsActionRealWorldScenarios(t *testing.T) {
 
 		for _, uploadId := range testUploadIds {
 			req := &http.Request{
-				Method: "GET",
+				Method: http.MethodGet,
 				URL:    &url.URL{Path: "/test-bucket/test-file.bin"},
 			}
 			query := req.URL.Query()

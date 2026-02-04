@@ -1,7 +1,7 @@
 package s3api
 
 import (
-	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
@@ -9,10 +9,11 @@ import (
 
 	"errors"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"github.com/stretchr/testify/assert"
 )
 
 // TestExtractObjectLockMetadataFromRequest tests the function that extracts
@@ -22,7 +23,7 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 	s3a := &S3ApiServer{}
 
 	t.Run("Extract COMPLIANCE mode and retention date", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -35,19 +36,19 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Verify mode was stored
-		assert.Contains(t, entry.Extended, s3_constants.ExtObjectLockModeKey)
-		assert.Equal(t, "COMPLIANCE", string(entry.Extended[s3_constants.ExtObjectLockModeKey]))
+		assert.Contains(t, entry.GetExtended(), s3_constants.ExtObjectLockModeKey)
+		assert.Equal(t, "COMPLIANCE", string(entry.GetExtended()[s3_constants.ExtObjectLockModeKey]))
 
 		// Verify retention date was stored
-		assert.Contains(t, entry.Extended, s3_constants.ExtRetentionUntilDateKey)
-		storedTimestamp, err := strconv.ParseInt(string(entry.Extended[s3_constants.ExtRetentionUntilDateKey]), 10, 64)
+		assert.Contains(t, entry.GetExtended(), s3_constants.ExtRetentionUntilDateKey)
+		storedTimestamp, err := strconv.ParseInt(string(entry.GetExtended()[s3_constants.ExtRetentionUntilDateKey]), 10, 64)
 		assert.NoError(t, err)
 		storedTime := time.Unix(storedTimestamp, 0)
 		assert.WithinDuration(t, retainUntilDate, storedTime, 1*time.Second)
 	})
 
 	t.Run("Extract GOVERNANCE mode and retention date", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(12 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "GOVERNANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -59,12 +60,12 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 		err := s3a.extractObjectLockMetadataFromRequest(req, entry)
 		assert.NoError(t, err)
 
-		assert.Equal(t, "GOVERNANCE", string(entry.Extended[s3_constants.ExtObjectLockModeKey]))
-		assert.Contains(t, entry.Extended, s3_constants.ExtRetentionUntilDateKey)
+		assert.Equal(t, "GOVERNANCE", string(entry.GetExtended()[s3_constants.ExtObjectLockModeKey]))
+		assert.Contains(t, entry.GetExtended(), s3_constants.ExtRetentionUntilDateKey)
 	})
 
 	t.Run("Extract legal hold ON", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockLegalHold, "ON")
 
 		entry := &filer_pb.Entry{
@@ -74,12 +75,12 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 		err := s3a.extractObjectLockMetadataFromRequest(req, entry)
 		assert.NoError(t, err)
 
-		assert.Contains(t, entry.Extended, s3_constants.ExtLegalHoldKey)
-		assert.Equal(t, "ON", string(entry.Extended[s3_constants.ExtLegalHoldKey]))
+		assert.Contains(t, entry.GetExtended(), s3_constants.ExtLegalHoldKey)
+		assert.Equal(t, "ON", string(entry.GetExtended()[s3_constants.ExtLegalHoldKey]))
 	})
 
 	t.Run("Extract legal hold OFF", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockLegalHold, "OFF")
 
 		entry := &filer_pb.Entry{
@@ -89,12 +90,12 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 		err := s3a.extractObjectLockMetadataFromRequest(req, entry)
 		assert.NoError(t, err)
 
-		assert.Contains(t, entry.Extended, s3_constants.ExtLegalHoldKey)
-		assert.Equal(t, "OFF", string(entry.Extended[s3_constants.ExtLegalHoldKey]))
+		assert.Contains(t, entry.GetExtended(), s3_constants.ExtLegalHoldKey)
+		assert.Equal(t, "OFF", string(entry.GetExtended()[s3_constants.ExtLegalHoldKey]))
 	})
 
 	t.Run("Handle all object lock headers together", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -108,13 +109,13 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 		assert.NoError(t, err)
 
 		// All metadata should be stored
-		assert.Equal(t, "COMPLIANCE", string(entry.Extended[s3_constants.ExtObjectLockModeKey]))
-		assert.Contains(t, entry.Extended, s3_constants.ExtRetentionUntilDateKey)
-		assert.Equal(t, "ON", string(entry.Extended[s3_constants.ExtLegalHoldKey]))
+		assert.Equal(t, "COMPLIANCE", string(entry.GetExtended()[s3_constants.ExtObjectLockModeKey]))
+		assert.Contains(t, entry.GetExtended(), s3_constants.ExtRetentionUntilDateKey)
+		assert.Equal(t, "ON", string(entry.GetExtended()[s3_constants.ExtLegalHoldKey]))
 	})
 
 	t.Run("Handle no object lock headers", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		// No object lock headers set
 
 		entry := &filer_pb.Entry{
@@ -125,13 +126,13 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 		assert.NoError(t, err)
 
 		// No object lock metadata should be stored
-		assert.NotContains(t, entry.Extended, s3_constants.ExtObjectLockModeKey)
-		assert.NotContains(t, entry.Extended, s3_constants.ExtRetentionUntilDateKey)
-		assert.NotContains(t, entry.Extended, s3_constants.ExtLegalHoldKey)
+		assert.NotContains(t, entry.GetExtended(), s3_constants.ExtObjectLockModeKey)
+		assert.NotContains(t, entry.GetExtended(), s3_constants.ExtRetentionUntilDateKey)
+		assert.NotContains(t, entry.GetExtended(), s3_constants.ExtLegalHoldKey)
 	})
 
 	t.Run("Handle invalid retention date - should return error", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "GOVERNANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, "invalid-date")
 
@@ -141,15 +142,15 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 
 		err := s3a.extractObjectLockMetadataFromRequest(req, entry)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidRetentionDateFormat))
+		assert.ErrorIs(t, err, ErrInvalidRetentionDateFormat)
 
 		// Mode should be stored but not invalid date
-		assert.Equal(t, "GOVERNANCE", string(entry.Extended[s3_constants.ExtObjectLockModeKey]))
-		assert.NotContains(t, entry.Extended, s3_constants.ExtRetentionUntilDateKey)
+		assert.Equal(t, "GOVERNANCE", string(entry.GetExtended()[s3_constants.ExtObjectLockModeKey]))
+		assert.NotContains(t, entry.GetExtended(), s3_constants.ExtRetentionUntilDateKey)
 	})
 
 	t.Run("Handle invalid legal hold value - should return error", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockLegalHold, "INVALID")
 
 		entry := &filer_pb.Entry{
@@ -158,10 +159,10 @@ func TestExtractObjectLockMetadataFromRequest(t *testing.T) {
 
 		err := s3a.extractObjectLockMetadataFromRequest(req, entry)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidLegalHoldStatus))
+		assert.ErrorIs(t, err, ErrInvalidLegalHoldStatus)
 
 		// No legal hold metadata should be stored due to error
-		assert.NotContains(t, entry.Extended, s3_constants.ExtLegalHoldKey)
+		assert.NotContains(t, entry.GetExtended(), s3_constants.ExtLegalHoldKey)
 	})
 }
 
@@ -354,7 +355,7 @@ func TestObjectLockHeaderRoundTrip(t *testing.T) {
 
 	t.Run("Complete round trip for COMPLIANCE mode", func(t *testing.T) {
 		// 1. Create request with object lock headers
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -382,7 +383,7 @@ func TestObjectLockHeaderRoundTrip(t *testing.T) {
 	})
 
 	t.Run("Complete round trip for GOVERNANCE mode", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(12 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "GOVERNANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -405,7 +406,7 @@ func TestValidateObjectLockHeaders(t *testing.T) {
 	s3a := &S3ApiServer{}
 
 	t.Run("Valid COMPLIANCE mode with retention date on versioned bucket", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -415,7 +416,7 @@ func TestValidateObjectLockHeaders(t *testing.T) {
 	})
 
 	t.Run("Valid GOVERNANCE mode with retention date on versioned bucket", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(12 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "GOVERNANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -425,7 +426,7 @@ func TestValidateObjectLockHeaders(t *testing.T) {
 	})
 
 	t.Run("Valid legal hold ON on versioned bucket", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockLegalHold, "ON")
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
@@ -433,7 +434,7 @@ func TestValidateObjectLockHeaders(t *testing.T) {
 	})
 
 	t.Run("Valid legal hold OFF on versioned bucket", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockLegalHold, "OFF")
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
@@ -441,87 +442,87 @@ func TestValidateObjectLockHeaders(t *testing.T) {
 	})
 
 	t.Run("Invalid object lock mode", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "INVALID_MODE")
 		retainUntilDate := time.Now().Add(24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidObjectLockMode))
+		assert.ErrorIs(t, err, ErrInvalidObjectLockMode)
 	})
 
 	t.Run("Invalid legal hold status", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockLegalHold, "INVALID_STATUS")
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidLegalHoldStatus))
+		assert.ErrorIs(t, err, ErrInvalidLegalHoldStatus)
 	})
 
 	t.Run("Object lock headers on non-versioned bucket", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 		retainUntilDate := time.Now().Add(24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
 
 		err := s3a.validateObjectLockHeaders(req, false) // non-versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrObjectLockVersioningRequired))
+		assert.ErrorIs(t, err, ErrObjectLockVersioningRequired)
 	})
 
 	t.Run("Invalid retention date format", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, "invalid-date-format")
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidRetentionDateFormat))
+		assert.ErrorIs(t, err, ErrInvalidRetentionDateFormat)
 	})
 
 	t.Run("Retention date in the past", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 		pastDate := time.Now().Add(-24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, pastDate.Format(time.RFC3339))
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrRetentionDateMustBeFuture))
+		assert.ErrorIs(t, err, ErrRetentionDateMustBeFuture)
 	})
 
 	t.Run("Mode without retention date", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "COMPLIANCE")
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrObjectLockModeRequiresDate))
+		assert.ErrorIs(t, err, ErrObjectLockModeRequiresDate)
 	})
 
 	t.Run("Retention date without mode", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(24 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrRetentionDateRequiresMode))
+		assert.ErrorIs(t, err, ErrRetentionDateRequiresMode)
 	})
 
 	t.Run("Governance bypass header on non-versioned bucket", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set("x-amz-bypass-governance-retention", "true")
 
 		err := s3a.validateObjectLockHeaders(req, false) // non-versioned bucket
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrGovernanceBypassVersioningRequired))
+		assert.ErrorIs(t, err, ErrGovernanceBypassVersioningRequired)
 	})
 
 	t.Run("Governance bypass header on versioned bucket should pass", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		req.Header.Set("x-amz-bypass-governance-retention", "true")
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
@@ -529,7 +530,7 @@ func TestValidateObjectLockHeaders(t *testing.T) {
 	})
 
 	t.Run("No object lock headers should pass", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		// No object lock headers set
 
 		err := s3a.validateObjectLockHeaders(req, true) // versioned bucket
@@ -537,7 +538,7 @@ func TestValidateObjectLockHeaders(t *testing.T) {
 	})
 
 	t.Run("Mixed valid headers should pass", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/bucket/object", nil)
+		req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 		retainUntilDate := time.Now().Add(48 * time.Hour)
 		req.Header.Set(s3_constants.AmzObjectLockMode, "GOVERNANCE")
 		req.Header.Set(s3_constants.AmzObjectLockRetainUntilDate, retainUntilDate.Format(time.RFC3339))
@@ -597,7 +598,7 @@ func TestMapValidationErrorToS3Error(t *testing.T) {
 		},
 		{
 			name:         "Unknown error defaults to ErrInvalidRequest",
-			inputError:   fmt.Errorf("unknown error"),
+			inputError:   errors.New("unknown error"),
 			expectedCode: s3err.ErrInvalidRequest,
 		},
 	}

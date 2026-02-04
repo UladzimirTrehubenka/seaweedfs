@@ -2,6 +2,7 @@ package shell
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -51,7 +52,6 @@ func (c *commandFsConfigure) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsConfigure) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	fsConfigureCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	locationPrefix := fsConfigureCommand.String("locationPrefix", "", "path prefix, required to update the path-specific configuration")
 	collection := fsConfigureCommand.String("collection", "", "assign writes to this collection")
@@ -101,14 +101,14 @@ func (c *commandFsConfigure) Do(args []string, commandEnv *CommandEnv, writer io
 
 		// check collection
 		if *collection != "" && strings.HasPrefix(*locationPrefix, "/buckets/") {
-			return fmt.Errorf("one s3 bucket goes to one collection and not customizable")
+			return errors.New("one s3 bucket goes to one collection and not customizable")
 		}
 
 		// check replication
 		if *replication != "" {
 			rp, err := super_block.NewReplicaPlacementFromString(*replication)
 			if err != nil {
-				return fmt.Errorf("parse replication %s: %v", *replication, err)
+				return fmt.Errorf("parse replication %s: %w", *replication, err)
 			}
 			if *volumeGrowthCount%rp.GetCopyCount() != 0 {
 				return fmt.Errorf("volumeGrowthCount %d should be divided by replication copy count %d", *volumeGrowthCount, rp.GetCopyCount())
@@ -121,7 +121,7 @@ func (c *commandFsConfigure) Do(args []string, commandEnv *CommandEnv, writer io
 			match, _ := regexp.MatchString(regex, *ttl)
 
 			if !match {
-				return fmt.Errorf("ttl should be of the following format [1 to 255][unit] (e.g., 5m, 2h, 180d, 1w, 2y)")
+				return errors.New("ttl should be of the following format [1 to 255][unit] (e.g., 5m, 2h, 180d, 1w, 2y)")
 			}
 		}
 
@@ -140,17 +140,14 @@ func (c *commandFsConfigure) Do(args []string, commandEnv *CommandEnv, writer io
 	fmt.Fprintln(writer)
 
 	if *apply {
-
 		if err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 			return filer.SaveInsideFiler(client, filer.DirectoryEtcSeaweedFS, filer.FilerConfName, buf2.Bytes())
-		}); err != nil && err != filer_pb.ErrNotFound {
+		}); err != nil && !errors.Is(err, filer_pb.ErrNotFound) {
 			return err
 		}
-
 	}
 
 	return nil
-
 }
 
 func infoAboutSimulationMode(writer io.Writer, forceMode bool, forceModeOption string) {

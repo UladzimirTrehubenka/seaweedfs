@@ -37,7 +37,7 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 		return nil, errors.New("invalid range")
 	}
 	var ranges []httpRange
-	for _, ra := range strings.Split(s[len(b):], ",") {
+	for ra := range strings.SplitSeq(s[len(b):], ",") {
 		ra = strings.TrimSpace(ra)
 		if ra == "" {
 			continue
@@ -82,6 +82,7 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 		}
 		ranges = append(ranges, r)
 	}
+
 	return ranges, nil
 }
 
@@ -90,6 +91,7 @@ type countingWriter int64
 
 func (w *countingWriter) Write(p []byte) (n int, err error) {
 	*w += countingWriter(len(p))
+
 	return len(p), nil
 }
 
@@ -104,6 +106,7 @@ func rangesMIMESize(ranges []httpRange, contentType string, contentSize int64) (
 	}
 	mw.Close()
 	encSize += int64(w)
+
 	return
 }
 
@@ -111,5 +114,6 @@ func sumRangesSize(ranges []httpRange) (size int64) {
 	for _, ra := range ranges {
 		size += ra.length
 	}
+
 	return
 }

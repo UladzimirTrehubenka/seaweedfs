@@ -2,6 +2,7 @@ package topology
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -92,10 +93,8 @@ func (at *ActiveTopology) areTaskTypesConflicting(existing, new TaskType) bool {
 	}
 
 	if conflicts, exists := conflictMap[existing]; exists {
-		for _, conflictType := range conflicts {
-			if conflictType == new {
-				return true
-			}
+		if slices.Contains(conflicts, new) {
+			return true
 		}
 	}
 

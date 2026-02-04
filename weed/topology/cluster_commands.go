@@ -6,6 +6,7 @@ import (
 
 	hashicorpRaft "github.com/hashicorp/raft"
 	"github.com/seaweedfs/raft"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 )
@@ -27,7 +28,7 @@ func (c *MaxVolumeIdCommand) CommandName() string {
 }
 
 // deprecatedCommandApply represents the old interface to apply a command to the server.
-func (c *MaxVolumeIdCommand) Apply(server raft.Server) (interface{}, error) {
+func (c *MaxVolumeIdCommand) Apply(server raft.Server) (any, error) {
 	topo := server.Context().(*Topology)
 	before := topo.GetMaxVolumeId()
 	topo.UpAdjustMaxVolumeId(c.MaxVolumeId)
@@ -56,8 +57,10 @@ func (s *MaxVolumeIdCommand) Persist(sink hashicorpRaft.SnapshotSink) error {
 	_, err = sink.Write(b)
 	if err != nil {
 		sink.Cancel()
+
 		return fmt.Errorf("sink.Write(): %w", err)
 	}
+
 	return sink.Close()
 }
 

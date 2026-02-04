@@ -40,7 +40,7 @@ type ChunkedUploadOption struct {
 }
 
 var chunkBufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }
@@ -49,7 +49,6 @@ var chunkBufferPool = sync.Pool{
 // This prevents OOM by processing the stream in fixed-size chunks
 // Returns file chunks, MD5 hash, total size, and any small content stored inline
 func UploadReaderInChunks(ctx context.Context, reader io.Reader, opt *ChunkedUploadOption) (*ChunkedUploadResult, error) {
-
 	md5Hash := md5.New()
 	var partReader = io.TeeReader(reader, md5Hash)
 
@@ -73,6 +72,7 @@ uploadLoop:
 		if uploadErr != nil {
 			<-bytesBufferLimitChan
 			uploadErrLock.Unlock()
+
 			break
 		}
 		uploadErrLock.Unlock()
@@ -86,6 +86,7 @@ uploadLoop:
 				uploadErr = ctx.Err()
 			}
 			uploadErrLock.Unlock()
+
 			break uploadLoop
 		default:
 		}
@@ -106,6 +107,7 @@ uploadLoop:
 				uploadErr = err
 			}
 			uploadErrLock.Unlock()
+
 			break
 		}
 		// If no data was read, we've reached EOF
@@ -158,6 +160,7 @@ uploadLoop:
 					uploadErr = fmt.Errorf("assign volume: %w", assignErr)
 				}
 				uploadErrLock.Unlock()
+
 				return
 			}
 
@@ -194,6 +197,7 @@ uploadLoop:
 						uploadErr = fmt.Errorf("create uploader: %w", uploaderErr)
 					}
 					uploadErrLock.Unlock()
+
 					return
 				}
 				uploadResult, uploadResultErr = uploader.UploadData(ctx, buf.Bytes(), uploadOption)
@@ -205,6 +209,7 @@ uploadLoop:
 					uploadErr = fmt.Errorf("upload chunk: %w", uploadResultErr)
 				}
 				uploadErrLock.Unlock()
+
 				return
 			}
 
@@ -225,9 +230,8 @@ uploadLoop:
 			}
 			fileChunksLock.Lock()
 			fileChunks = append(fileChunks, chunk)
-			glog.V(4).Infof("uploaded chunk %d to %s [%d,%d)", len(fileChunks), chunk.FileId, offset, offset+int64(chunk.Size))
+			glog.V(4).Infof("uploaded chunk %d to %s [%d,%d)", len(fileChunks), chunk.GetFileId(), offset, offset+int64(chunk.GetSize()))
 			fileChunksLock.Unlock()
-
 		}(chunkOffset, bytesBuffer)
 
 		// Update offset for next chunk
@@ -244,7 +248,7 @@ uploadLoop:
 
 	// Sort chunks by offset (do this even if there's an error, for cleanup purposes)
 	sort.Slice(fileChunks, func(i, j int) bool {
-		return fileChunks[i].Offset < fileChunks[j].Offset
+		return fileChunks[i].GetOffset() < fileChunks[j].GetOffset()
 	})
 
 	// Check for errors - return partial results for cleanup

@@ -87,6 +87,7 @@ func TestConsumerGroupPosition_JSONExamples(t *testing.T) {
 		var position ConsumerGroupPosition
 		if err := json.Unmarshal([]byte(jsonStr), &position); err != nil {
 			t.Errorf("Example %d: Failed to parse JSON: %v", i, err)
+
 			continue
 		}
 

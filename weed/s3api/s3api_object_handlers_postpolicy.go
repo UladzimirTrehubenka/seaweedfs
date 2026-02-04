@@ -13,6 +13,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -20,7 +21,6 @@ import (
 )
 
 func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.Request) {
-
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-HTTPPOSTConstructPolicy.html
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-post-example.html
 
@@ -31,11 +31,13 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 	reader, err := r.MultipartReader()
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedPOSTRequest)
+
 		return
 	}
 	form, err := reader.ReadForm(int64(5 * humanize.MiByte))
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedPOSTRequest)
+
 		return
 	}
 	defer form.RemoveAll()
@@ -43,10 +45,12 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 	fileBody, fileName, fileContentType, fileSize, formValues, err := extractPostPolicyFormValues(form)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedPOSTRequest)
+
 		return
 	}
 	if fileBody == nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrPOSTFileRequired)
+
 		return
 	}
 	defer fileBody.Close()
@@ -54,7 +58,7 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 	formValues.Set("Bucket", bucket)
 
 	if fileName != "" && strings.Contains(formValues.Get("Key"), "${filename}") {
-		formValues.Set("Key", strings.Replace(formValues.Get("Key"), "${filename}", fileName, -1))
+		formValues.Set("Key", strings.ReplaceAll(formValues.Get("Key"), "${filename}", fileName))
 	}
 	object := s3_constants.NormalizeObjectKey(formValues.Get("Key"))
 
@@ -65,6 +69,7 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 		redirectURL, err = url.Parse(successRedirect)
 		if err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrMalformedPOSTRequest)
+
 			return
 		}
 	}
@@ -73,21 +78,23 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 	errCode := s3a.iam.doesPolicySignatureMatch(formValues)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
 	policyBytes, err := base64.StdEncoding.DecodeString(formValues.Get("Policy"))
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedPOSTRequest)
+
 		return
 	}
 
 	// Handle policy if it is set.
 	if len(policyBytes) > 0 {
-
 		postPolicyForm, err := policy.ParsePostPolicyForm(string(policyBytes))
 		if err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrPostPolicyConditionInvalidFormat)
+
 			return
 		}
 
@@ -95,6 +102,7 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 		if err = policy.CheckPostPolicy(formValues, postPolicyForm); err != nil {
 			w.Header().Set("Location", r.URL.Path)
 			w.WriteHeader(http.StatusTemporaryRedirect)
+
 			return
 		}
 
@@ -104,11 +112,13 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 		if lengthRange.Valid {
 			if fileSize < lengthRange.Min {
 				s3err.WriteErrorResponse(w, r, s3err.ErrEntityTooSmall)
+
 				return
 			}
 
 			if fileSize > lengthRange.Max {
 				s3err.WriteErrorResponse(w, r, s3err.ErrEntityTooLarge)
+
 				return
 			}
 		}
@@ -125,9 +135,10 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 	r.Header.Set("Content-Type", contentType)
 
 	// Add s3 postpolicy support header
-	for k, _ := range formValues {
+	for k := range formValues {
 		if k == "Cache-Control" || k == "Expires" || k == "Content-Disposition" {
 			r.Header.Set(k, formValues.Get(k))
+
 			continue
 		}
 
@@ -140,6 +151,7 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -148,6 +160,7 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 		redirectURL.RawQuery = getRedirectPostRawQuery(bucket, object, etag)
 		w.Header().Set("Location", redirectURL.String())
 		s3err.WriteEmptyResponse(w, r, http.StatusSeeOther)
+
 		return
 	}
 
@@ -173,7 +186,6 @@ func (s3a *S3ApiServer) PostPolicyBucketHandler(w http.ResponseWriter, r *http.R
 	default:
 		s3err.WriteEmptyResponse(w, r, http.StatusNoContent)
 	}
-
 }
 
 // Extract form fields and file data from a HTTP POST Policy
@@ -203,6 +215,7 @@ func extractPostPolicyFormValues(form *multipart.Form) (filePart io.ReadCloser, 
 		}
 		fileSize = int64(b.Len())
 		filePart = io.NopCloser(b)
+
 		return filePart, fileName, fileContentType, fileSize, formValues, nil
 	}
 
@@ -238,6 +251,7 @@ func extractPostPolicyFormValues(form *multipart.Form) (filePart io.ReadCloser, 
 			break
 		}
 	}
+
 	return filePart, fileName, fileContentType, fileSize, formValues, nil
 }
 
@@ -260,6 +274,7 @@ func getRedirectPostRawQuery(bucket, key, etag string) string {
 	redirectValues.Set("bucket", bucket)
 	redirectValues.Set("key", key)
 	redirectValues.Set("etag", "\""+etag+"\"")
+
 	return redirectValues.Encode()
 }
 
@@ -269,5 +284,6 @@ func (iam *IdentityAccessManagement) doesPolicySignatureMatch(formValues http.He
 	if _, ok := formValues["Signature"]; ok {
 		return iam.doesPolicySignatureV2Match(formValues)
 	}
+
 	return iam.doesPolicySignatureV4Match(formValues)
 }

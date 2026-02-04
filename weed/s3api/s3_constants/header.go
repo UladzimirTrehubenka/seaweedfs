@@ -141,6 +141,7 @@ func GetBucketAndObject(r *http.Request) (bucket, object string) {
 	vars := mux.Vars(r)
 	bucket = vars["bucket"]
 	object = NormalizeObjectKey(vars["object"])
+
 	return
 }
 
@@ -184,6 +185,7 @@ func removeDuplicateSlashes(s string) string {
 			lastWasSlash = false
 		}
 	}
+
 	return result.String()
 }
 
@@ -191,6 +193,7 @@ func GetPrefix(r *http.Request) string {
 	query := r.URL.Query()
 	prefix := query.Get("prefix")
 	prefix = removeDuplicateSlashes(prefix)
+
 	return prefix
 }
 
@@ -224,6 +227,7 @@ func SetIdentityNameInContext(ctx context.Context, identityName string) context.
 	if identityName != "" {
 		return context.WithValue(ctx, contextKeyIdentityName, identityName)
 	}
+
 	return ctx
 }
 
@@ -234,20 +238,22 @@ func GetIdentityNameFromContext(r *http.Request) string {
 	if name, ok := r.Context().Value(contextKeyIdentityName).(string); ok {
 		return name
 	}
+
 	return ""
 }
 
 // SetIdentityInContext stores the full authenticated identity object in the request context
 // This is used to pass the full identity (including for JWT users) to handlers
-func SetIdentityInContext(ctx context.Context, identity interface{}) context.Context {
+func SetIdentityInContext(ctx context.Context, identity any) context.Context {
 	if identity != nil {
 		return context.WithValue(ctx, contextKeyIdentityObject, identity)
 	}
+
 	return ctx
 }
 
 // GetIdentityFromContext retrieves the full identity object from the request context
 // Returns nil if no identity is set (unauthenticated request)
-func GetIdentityFromContext(r *http.Request) interface{} {
+func GetIdentityFromContext(r *http.Request) any {
 	return r.Context().Value(contextKeyIdentityObject)
 }

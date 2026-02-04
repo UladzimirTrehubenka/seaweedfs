@@ -8,7 +8,7 @@ import (
 
 func BenchmarkMemDb(b *testing.B) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		nm := NewMemDb()
 
 		nid := types.NeedleId(345)
@@ -19,5 +19,4 @@ func BenchmarkMemDb(b *testing.B) {
 		nm.Set(nid, offset, 324)
 		nm.Close()
 	}
-
 }

@@ -7,9 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
-	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/security"
@@ -68,13 +69,13 @@ var cmdUpload = &Command{
 }
 
 func runUpload(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 
 	defaultReplication, err := readMasterConfiguration(grpcDialOption, pb.ServerAddress(*upload.master))
 	if err != nil {
 		fmt.Printf("upload: %v", err)
+
 		return false
 	}
 	if *upload.replication == "" {
@@ -114,16 +115,19 @@ func runUpload(cmd *Command, args []string) bool {
 			} else {
 				fmt.Println(err)
 			}
+
 			return err
 		})
 		if err != nil {
 			fmt.Println(err.Error())
+
 			return false
 		}
 	} else {
 		parts, e := operation.NewFileParts(args)
 		if e != nil {
 			fmt.Println(e.Error())
+
 			return false
 		}
 		results, err := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) }, grpcDialOption, parts, operation.StoragePreference{
@@ -136,11 +140,13 @@ func runUpload(cmd *Command, args []string) bool {
 		}, *upload.usePublicUrl)
 		if err != nil {
 			fmt.Println(err.Error())
+
 			return false
 		}
 		bytes, _ := json.Marshal(results)
 		fmt.Println(string(bytes))
 	}
+
 	return true
 }
 
@@ -148,10 +154,12 @@ func readMasterConfiguration(grpcDialOption grpc.DialOption, masterAddress pb.Se
 	err = pb.WithMasterClient(false, masterAddress, grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 		resp, err := client.GetMasterConfiguration(context.Background(), &master_pb.GetMasterConfigurationRequest{})
 		if err != nil {
-			return fmt.Errorf("get master %s configuration: %v", masterAddress, err)
+			return fmt.Errorf("get master %s configuration: %w", masterAddress, err)
 		}
-		replication = resp.DefaultReplication
+		replication = resp.GetDefaultReplication()
+
 		return nil
 	})
+
 	return
 }

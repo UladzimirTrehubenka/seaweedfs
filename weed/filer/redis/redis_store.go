@@ -2,6 +2,7 @@ package redis
 
 import (
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
@@ -32,5 +33,6 @@ func (store *RedisStore) initialize(hostPort string, password string, database i
 		Password: password,
 		DB:       database,
 	})
+
 	return
 }

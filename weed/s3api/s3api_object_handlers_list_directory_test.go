@@ -3,8 +3,9 @@ package s3api
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
 // TestDirectoryListedAsCommonPrefix tests that regular directories (without MIME)
@@ -46,10 +47,10 @@ func TestDirectoryListedAsCommonPrefix(t *testing.T) {
 		false,
 		"xoa-bucket",
 		func(dir string, entry *filer_pb.Entry) {
-			if entry.IsDirectory {
-				seenDirs = append(seenDirs, entry.Name)
+			if entry.GetIsDirectory() {
+				seenDirs = append(seenDirs, entry.GetName())
 			} else {
-				seenFiles = append(seenFiles, entry.Name)
+				seenFiles = append(seenFiles, entry.GetName())
 			}
 		},
 	)

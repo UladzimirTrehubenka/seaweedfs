@@ -1,6 +1,7 @@
 package types
 
 import (
+	"maps"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
@@ -125,9 +126,8 @@ func (r *UIRegistry) GetProvider(taskType TaskType) TaskUIProvider {
 // GetAllProviders returns all registered UI providers
 func (r *UIRegistry) GetAllProviders() map[TaskType]TaskUIProvider {
 	result := make(map[TaskType]TaskUIProvider)
-	for k, v := range r.providers {
-		result[k] = v
-	}
+	maps.Copy(result, r.providers)
+
 	return result
 }
 

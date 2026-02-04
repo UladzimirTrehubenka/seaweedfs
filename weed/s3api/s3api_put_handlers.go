@@ -3,6 +3,7 @@ package s3api
 import (
 	"encoding/base64"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -29,11 +30,13 @@ func calculatePartOffset(partNumber int) int64 {
 	// AWS S3 part numbers must start from 1, never 0 or negative
 	if partNumber < 1 {
 		glog.Errorf("Invalid partNumber: %d. Must be >= 1.", partNumber)
+
 		return 0
 	}
 	// Using a large multiplier to ensure block offsets for different parts do not overlap.
 	// S3 part size limit is 5GB, so this provides a large safety margin.
 	partOffset := int64(partNumber-1) * s3_constants.PartOffsetMultiplier
+
 	return partOffset
 }
 
@@ -45,6 +48,7 @@ func (s3a *S3ApiServer) handleSSECEncryption(r *http.Request, dataReader io.Read
 		glog.Errorf("SSE-C header validation failed: %v", err)
 		// Use shared error mapping helper
 		errCode := MapSSECErrorToS3Error(err)
+
 		return nil, nil, nil, errCode
 	}
 
@@ -86,9 +90,7 @@ func (s3a *S3ApiServer) handleSSEKMSEncryption(r *http.Request, dataReader io.Re
 			return nil, nil, nil, s3err.ErrInvalidRequest
 		}
 		// Merge user context with default context
-		for k, v := range userContext {
-			encryptionContext[k] = v
-		}
+		maps.Copy(encryptionContext, userContext)
 	}
 
 	// Check if a base IV is provided (for multipart uploads)
@@ -102,10 +104,12 @@ func (s3a *S3ApiServer) handleSSEKMSEncryption(r *http.Request, dataReader io.Re
 		baseIV, decodeErr := base64.StdEncoding.DecodeString(baseIVHeader)
 		if decodeErr != nil {
 			glog.Errorf("handleSSEKMSEncryption: failed to decode base IV: %v", decodeErr)
+
 			return nil, nil, nil, s3err.ErrInternalError
 		}
 		if len(baseIV) != 16 {
 			glog.Errorf("handleSSEKMSEncryption: invalid base IV length: %d (expected 16)", len(baseIV))
+
 			return nil, nil, nil, s3err.ErrInternalError
 		}
 		// Use the provided base IV with unique part offset for multipart upload consistency
@@ -119,6 +123,7 @@ func (s3a *S3ApiServer) handleSSEKMSEncryption(r *http.Request, dataReader io.Re
 
 	if encErr != nil {
 		glog.Errorf("handleSSEKMSEncryption: encryption failed: %v", encErr)
+
 		return nil, nil, nil, s3err.ErrInternalError
 	}
 	glog.V(3).Infof("handleSSEKMSEncryption: encryption successful, keyID=%s", keyID)
@@ -173,6 +178,7 @@ func (s3a *S3ApiServer) handleSSES3MultipartEncryption(r *http.Request, dataRead
 
 	glog.V(4).Infof("handleSSES3MultipartEncryption: using base IV %x, derived IV %x for offset %d",
 		baseIV[:8], derivedIV[:8], partOffset)
+
 	return encryptedReader, key, s3err.ErrNone
 }
 
@@ -236,6 +242,7 @@ func (s3a *S3ApiServer) handleSSES3Encryption(r *http.Request, dataReader io.Rea
 	}
 
 	glog.V(3).Infof("handleSSES3Encryption: prepared SSE-S3 metadata for object")
+
 	return encryptedReader, sseS3Key, sseS3Metadata, s3err.ErrNone
 }
 

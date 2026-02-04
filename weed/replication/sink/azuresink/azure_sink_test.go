@@ -11,12 +11,12 @@ import (
 
 // MockConfiguration for testing
 type mockConfiguration struct {
-	values map[string]interface{}
+	values map[string]any
 }
 
 func newMockConfiguration() *mockConfiguration {
 	return &mockConfiguration{
-		values: make(map[string]interface{}),
+		values: make(map[string]any),
 	}
 }
 
@@ -24,6 +24,7 @@ func (m *mockConfiguration) GetString(key string) string {
 	if v, ok := m.values[key]; ok {
 		return v.(string)
 	}
+
 	return ""
 }
 
@@ -31,6 +32,7 @@ func (m *mockConfiguration) GetBool(key string) bool {
 	if v, ok := m.values[key]; ok {
 		return v.(bool)
 	}
+
 	return false
 }
 
@@ -38,6 +40,7 @@ func (m *mockConfiguration) GetInt(key string) int {
 	if v, ok := m.values[key]; ok {
 		return v.(int)
 	}
+
 	return 0
 }
 
@@ -45,6 +48,7 @@ func (m *mockConfiguration) GetInt64(key string) int64 {
 	if v, ok := m.values[key]; ok {
 		return v.(int64)
 	}
+
 	return 0
 }
 
@@ -52,6 +56,7 @@ func (m *mockConfiguration) GetFloat64(key string) float64 {
 	if v, ok := m.values[key]; ok {
 		return v.(float64)
 	}
+
 	return 0.0
 }
 
@@ -59,10 +64,11 @@ func (m *mockConfiguration) GetStringSlice(key string) []string {
 	if v, ok := m.values[key]; ok {
 		return v.([]string)
 	}
+
 	return nil
 }
 
-func (m *mockConfiguration) SetDefault(key string, value interface{}) {
+func (m *mockConfiguration) SetDefault(key string, value any) {
 	if _, exists := m.values[key]; !exists {
 		m.values[key] = value
 	}
@@ -337,6 +343,7 @@ func getBlobContentLength(t *testing.T, sink *AzureSink, key string) int64 {
 	if props.ContentLength == nil {
 		return 0
 	}
+
 	return *props.ContentLength
 }
 
@@ -450,8 +457,7 @@ func BenchmarkCleanKey(b *testing.B) {
 		"/complex/path/with/many/segments/file.txt",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		cleanKey(keys[i%len(keys)])
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/app"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/layout"
@@ -37,6 +38,7 @@ func NewAdminHandlers(adminServer *dash.AdminServer) *AdminHandlers {
 	maintenanceHandlers := NewMaintenanceHandlers(adminServer)
 	mqHandlers := NewMessageQueueHandlers(adminServer)
 	serviceAccountHandlers := NewServiceAccountHandlers(adminServer)
+
 	return &AdminHandlers{
 		adminServer:            adminServer,
 		authHandlers:           authHandlers,
@@ -438,6 +440,7 @@ func (h *AdminHandlers) ShowDashboard(c *gin.Context) {
 	err := layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -454,6 +457,7 @@ func (h *AdminHandlers) ShowS3Buckets(c *gin.Context) {
 	err := layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -465,6 +469,7 @@ func (h *AdminHandlers) ShowS3TablesBuckets(c *gin.Context) {
 	data, err := h.adminServer.GetS3TablesBucketsData(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get S3 Tables buckets: " + err.Error()})
+
 		return
 	}
 	data.Username = username
@@ -485,12 +490,14 @@ func (h *AdminHandlers) ShowS3TablesNamespaces(c *gin.Context) {
 	arn, err := buildS3TablesBucketArn(bucketName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
 	}
 
 	data, err := h.adminServer.GetS3TablesNamespacesData(c.Request.Context(), arn)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get S3 Tables namespaces: " + err.Error()})
+
 		return
 	}
 	data.Username = username
@@ -512,12 +519,14 @@ func (h *AdminHandlers) ShowS3TablesTables(c *gin.Context) {
 	arn, err := buildS3TablesBucketArn(bucketName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
 	}
 
 	data, err := h.adminServer.GetS3TablesTablesData(c.Request.Context(), arn, namespace)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get S3 Tables tables: " + err.Error()})
+
 		return
 	}
 	data.Username = username
@@ -540,6 +549,7 @@ func (h *AdminHandlers) getUsername(c *gin.Context) string {
 	if username == "" {
 		username = "admin"
 	}
+
 	return username
 }
 
@@ -548,6 +558,7 @@ func (h *AdminHandlers) ShowIcebergCatalog(c *gin.Context) {
 	data, err := h.adminServer.GetIcebergCatalogData(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get Iceberg catalog data: " + err.Error()})
+
 		return
 	}
 	data.Username = h.getUsername(c)
@@ -566,12 +577,14 @@ func (h *AdminHandlers) ShowIcebergNamespaces(c *gin.Context) {
 	arn, err := buildS3TablesBucketArn(catalogName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
 	}
 
 	data, err := h.adminServer.GetIcebergNamespacesData(c.Request.Context(), catalogName, arn)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get Iceberg namespaces: " + err.Error()})
+
 		return
 	}
 	data.Username = h.getUsername(c)
@@ -591,12 +604,14 @@ func (h *AdminHandlers) ShowIcebergTables(c *gin.Context) {
 	arn, err := buildS3TablesBucketArn(catalogName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
 	}
 
 	data, err := h.adminServer.GetIcebergTablesData(c.Request.Context(), catalogName, arn, namespace)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get Iceberg tables: " + err.Error()})
+
 		return
 	}
 	data.Username = h.getUsername(c)
@@ -615,6 +630,7 @@ func (h *AdminHandlers) ShowBucketDetails(c *gin.Context) {
 	details, err := h.adminServer.GetBucketDetails(bucketName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get bucket details: " + err.Error()})
+
 		return
 	}
 	c.JSON(http.StatusOK, details)
@@ -641,6 +657,7 @@ func (h *AdminHandlers) getS3BucketsData(c *gin.Context) dash.S3BucketsData {
 	}
 
 	data.Username = username
+
 	return data
 }
 

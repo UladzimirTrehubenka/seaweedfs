@@ -9,12 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/protocol"
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/schema"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // resolveAdvertisedAddress resolves the appropriate address to advertise to Kafka clients
@@ -24,6 +25,7 @@ func resolveAdvertisedAddress() string {
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		glog.V(1).Infof("Failed to get network interfaces, using localhost: %v", err)
+
 		return "127.0.0.1"
 	}
 
@@ -50,6 +52,7 @@ func resolveAdvertisedAddress() string {
 
 	// Fallback to localhost if no suitable interface found
 	glog.V(1).Infof("No non-loopback interface found, using localhost")
+
 	return "127.0.0.1"
 }
 
@@ -168,6 +171,7 @@ func (s *Server) Start() error {
 		// Start coordinator registry
 		if err := s.coordinatorRegistry.Start(); err != nil {
 			glog.Errorf("Failed to start coordinator registry: %v", err)
+
 			return err
 		}
 
@@ -201,11 +205,13 @@ func (s *Server) Start() error {
 			}(conn)
 		}
 	}()
+
 	return nil
 }
 
 func (s *Server) Wait() error {
 	s.wg.Wait()
+
 	return nil
 }
 
@@ -257,6 +263,7 @@ func (s *Server) Addr() string {
 	}
 	// Normalize to an address reachable by clients
 	host, port := s.GetListenerAddr()
+
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
@@ -275,8 +282,8 @@ func (s *Server) GetListenerAddr() (string, int) {
 
 	addr := s.ln.Addr().String()
 	// Parse [::]:port or host:port format - use exact match for kafka-go compatibility
-	if strings.HasPrefix(addr, "[::]:") {
-		port := strings.TrimPrefix(addr, "[::]:")
+	if after, ok := strings.CutPrefix(addr, "[::]:"); ok {
+		port := after
 		if p, err := strconv.Atoi(port); err == nil {
 			// Resolve appropriate address when bound to IPv6 all interfaces
 			return resolveAdvertisedAddress(), p
@@ -290,11 +297,13 @@ func (s *Server) GetListenerAddr() (string, int) {
 			if host == "::" || host == "" || host == "0.0.0.0" {
 				host = resolveAdvertisedAddress()
 			}
+
 			return host, p
 		}
 	}
 
 	// This should not happen if the listener was set up correctly
 	glog.Warningf("Unable to parse listener address: %s", addr)
+
 	return "", 0
 }

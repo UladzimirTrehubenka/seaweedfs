@@ -3,15 +3,17 @@ package hbase
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+
+	"github.com/tsuna/gohbase"
+	"github.com/tsuna/gohbase/hrpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"github.com/tsuna/gohbase"
-	"github.com/tsuna/gohbase/hrpc"
 )
 
 func init() {
@@ -52,7 +54,7 @@ func (store *HbaseStore) initialize(zkquorum, table string) (err error) {
 		return fmt.Errorf("NewGet returned an error: %w", err)
 	}
 	_, err = store.Client.Get(get)
-	if err != gohbase.TableNotFound {
+	if !errors.Is(err, gohbase.TableNotFound) {
 		return nil
 	}
 
@@ -74,7 +76,7 @@ func (store *HbaseStore) initialize(zkquorum, table string) (err error) {
 func (store *HbaseStore) InsertEntry(ctx context.Context, entry *filer.Entry) error {
 	value, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encoding %s %+v: %v", entry.FullPath, entry.Attr, err)
+		return fmt.Errorf("encoding %s %+v: %w", entry.FullPath, entry.Attr, err)
 	}
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
 		value = util.MaybeGzipData(value)
@@ -90,9 +92,10 @@ func (store *HbaseStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (e
 func (store *HbaseStore) FindEntry(ctx context.Context, path util.FullPath) (entry *filer.Entry, err error) {
 	value, err := store.doGet(ctx, store.cfMetaDir, []byte(path))
 	if err != nil {
-		if err == filer.ErrKvNotFound {
+		if errors.Is(err, filer.ErrKvNotFound) {
 			return nil, filer_pb.ErrNotFound
 		}
+
 		return nil, err
 	}
 
@@ -101,8 +104,9 @@ func (store *HbaseStore) FindEntry(ctx context.Context, path util.FullPath) (ent
 	}
 	err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData(value))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
+
 	return entry, nil
 }
 
@@ -111,7 +115,6 @@ func (store *HbaseStore) DeleteEntry(ctx context.Context, path util.FullPath) (e
 }
 
 func (store *HbaseStore) DeleteFolderChildren(ctx context.Context, path util.FullPath) (err error) {
-
 	family := map[string][]string{store.cfMetaDir: {COLUMN_NAME}}
 	expectedPrefix := []byte(path.Child(""))
 	scan, err := hrpc.NewScanRange(ctx, store.table, expectedPrefix, nil, hrpc.Families(family))
@@ -144,9 +147,9 @@ func (store *HbaseStore) DeleteFolderChildren(ctx context.Context, path util.Ful
 		if err != nil {
 			break
 		}
-
 	}
-	return
+
+	return err
 }
 
 func (store *HbaseStore) ListDirectoryEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, eachEntryFunc filer.ListEachEntryFunc) (string, error) {
@@ -165,7 +168,7 @@ func (store *HbaseStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPa
 	defer scanner.Close()
 	for {
 		res, scanErr := scanner.Next()
-		if scanErr == io.EOF {
+		if errors.Is(scanErr, io.EOF) {
 			break
 		}
 		if scanErr != nil {
@@ -205,6 +208,7 @@ func (store *HbaseStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPa
 		if decodeErr := entry.DecodeAttributesAndChunks(util.MaybeDecompressData(value)); decodeErr != nil {
 			err = decodeErr
 			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
+
 			break
 		}
 

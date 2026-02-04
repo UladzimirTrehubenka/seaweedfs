@@ -23,16 +23,16 @@ func TestSMQOffsetIntegration_PublishRecord(t *testing.T) {
 		t.Fatalf("Failed to publish record: %v", err)
 	}
 
-	if response.Error != "" {
-		t.Errorf("Expected no error, got: %s", response.Error)
+	if response.GetError() != "" {
+		t.Errorf("Expected no error, got: %s", response.GetError())
 	}
 
-	if response.BaseOffset != 0 {
-		t.Errorf("Expected base offset 0, got %d", response.BaseOffset)
+	if response.GetBaseOffset() != 0 {
+		t.Errorf("Expected base offset 0, got %d", response.GetBaseOffset())
 	}
 
-	if response.LastOffset != 0 {
-		t.Errorf("Expected last offset 0, got %d", response.LastOffset)
+	if response.GetLastOffset() != 0 {
+		t.Errorf("Expected last offset 0, got %d", response.GetLastOffset())
 	}
 }
 
@@ -54,16 +54,16 @@ func TestSMQOffsetIntegration_PublishRecordBatch(t *testing.T) {
 		t.Fatalf("Failed to publish record batch: %v", err)
 	}
 
-	if response.Error != "" {
-		t.Errorf("Expected no error, got: %s", response.Error)
+	if response.GetError() != "" {
+		t.Errorf("Expected no error, got: %s", response.GetError())
 	}
 
-	if response.BaseOffset != 0 {
-		t.Errorf("Expected base offset 0, got %d", response.BaseOffset)
+	if response.GetBaseOffset() != 0 {
+		t.Errorf("Expected base offset 0, got %d", response.GetBaseOffset())
 	}
 
-	if response.LastOffset != 2 {
-		t.Errorf("Expected last offset 2, got %d", response.LastOffset)
+	if response.GetLastOffset() != 2 {
+		t.Errorf("Expected last offset 2, got %d", response.GetLastOffset())
 	}
 
 	// Verify high water mark
@@ -88,7 +88,7 @@ func TestSMQOffsetIntegration_EmptyBatch(t *testing.T) {
 		t.Fatalf("Failed to publish empty batch: %v", err)
 	}
 
-	if response.Error == "" {
+	if response.GetError() == "" {
 		t.Error("Expected error for empty batch")
 	}
 }
@@ -163,12 +163,12 @@ func TestSMQOffsetIntegration_SubscribeRecords(t *testing.T) {
 	}
 
 	// Check offset progression
-	if responses[0].Offset != 0 {
-		t.Errorf("Expected first record offset 0, got %d", responses[0].Offset)
+	if responses[0].GetOffset() != 0 {
+		t.Errorf("Expected first record offset 0, got %d", responses[0].GetOffset())
 	}
 
-	if responses[1].Offset != 1 {
-		t.Errorf("Expected second record offset 1, got %d", responses[1].Offset)
+	if responses[1].GetOffset() != 1 {
+		t.Errorf("Expected second record offset 1, got %d", responses[1].GetOffset())
 	}
 
 	// Check subscription advancement
@@ -252,8 +252,8 @@ func TestSMQOffsetIntegration_SeekSubscription(t *testing.T) {
 		t.Errorf("Expected 2 responses after seek, got %d", len(responses))
 	}
 
-	if responses[0].Offset != 3 {
-		t.Errorf("Expected first record offset 3 after seek, got %d", responses[0].Offset)
+	if responses[0].GetOffset() != 3 {
+		t.Errorf("Expected first record offset 3 after seek, got %d", responses[0].GetOffset())
 	}
 }
 

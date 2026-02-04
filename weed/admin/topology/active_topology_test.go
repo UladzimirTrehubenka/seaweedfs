@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 )
 
 // Helper function to find a disk by ID for testing - reduces code duplication
@@ -17,6 +18,7 @@ func findDiskByID(disks []*DiskInfo, diskID uint32) *DiskInfo {
 			return disk
 		}
 	}
+
 	return nil
 }
 
@@ -27,9 +29,9 @@ func TestActiveTopologyBasicOperations(t *testing.T) {
 	assert.Equal(t, 10, topology.recentTaskWindowSeconds)
 
 	// Test empty topology
-	assert.Equal(t, 0, len(topology.nodes))
-	assert.Equal(t, 0, len(topology.disks))
-	assert.Equal(t, 0, len(topology.pendingTasks))
+	assert.Empty(t, topology.nodes)
+	assert.Empty(t, topology.disks)
+	assert.Empty(t, topology.pendingTasks)
 }
 
 // TestActiveTopologyUpdate tests topology updates from master
@@ -43,15 +45,15 @@ func TestActiveTopologyUpdate(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify topology structure
-	assert.Equal(t, 2, len(topology.nodes)) // 2 nodes
-	assert.Equal(t, 4, len(topology.disks)) // 4 disks total (2 per node)
+	assert.Len(t, topology.nodes, 2) // 2 nodes
+	assert.Len(t, topology.disks, 4) // 4 disks total (2 per node)
 
 	// Verify node structure
 	node1, exists := topology.nodes["10.0.0.1:8080"]
 	require.True(t, exists)
 	assert.Equal(t, "dc1", node1.dataCenter)
 	assert.Equal(t, "rack1", node1.rack)
-	assert.Equal(t, 2, len(node1.disks))
+	assert.Len(t, node1.disks, 2)
 
 	// Verify disk structure
 	disk1, exists := topology.disks["10.0.0.1:8080:0"]
@@ -84,9 +86,9 @@ func TestTaskLifecycle(t *testing.T) {
 	assert.NoError(t, err, "Should add pending task successfully")
 
 	// Verify pending state
-	assert.Equal(t, 1, len(topology.pendingTasks))
-	assert.Equal(t, 0, len(topology.assignedTasks))
-	assert.Equal(t, 0, len(topology.recentTasks))
+	assert.Len(t, topology.pendingTasks, 1)
+	assert.Empty(t, topology.assignedTasks)
+	assert.Empty(t, topology.recentTasks)
 
 	task := topology.pendingTasks[taskID]
 	assert.Equal(t, TaskStatusPending, task.Status)
@@ -95,35 +97,35 @@ func TestTaskLifecycle(t *testing.T) {
 	// Verify task assigned to disks
 	sourceDisk := topology.disks["10.0.0.1:8080:0"]
 	targetDisk := topology.disks["10.0.0.2:8080:1"]
-	assert.Equal(t, 1, len(sourceDisk.pendingTasks))
-	assert.Equal(t, 1, len(targetDisk.pendingTasks))
+	assert.Len(t, sourceDisk.pendingTasks, 1)
+	assert.Len(t, targetDisk.pendingTasks, 1)
 
 	// 2. Assign task
 	err = topology.AssignTask(taskID)
 	require.NoError(t, err)
 
 	// Verify assigned state
-	assert.Equal(t, 0, len(topology.pendingTasks))
-	assert.Equal(t, 1, len(topology.assignedTasks))
-	assert.Equal(t, 0, len(topology.recentTasks))
+	assert.Empty(t, topology.pendingTasks)
+	assert.Len(t, topology.assignedTasks, 1)
+	assert.Empty(t, topology.recentTasks)
 
 	task = topology.assignedTasks[taskID]
 	assert.Equal(t, TaskStatusInProgress, task.Status)
 
 	// Verify task moved to assigned on disks
-	assert.Equal(t, 0, len(sourceDisk.pendingTasks))
-	assert.Equal(t, 1, len(sourceDisk.assignedTasks))
-	assert.Equal(t, 0, len(targetDisk.pendingTasks))
-	assert.Equal(t, 1, len(targetDisk.assignedTasks))
+	assert.Empty(t, sourceDisk.pendingTasks)
+	assert.Len(t, sourceDisk.assignedTasks, 1)
+	assert.Empty(t, targetDisk.pendingTasks)
+	assert.Len(t, targetDisk.assignedTasks, 1)
 
 	// 3. Complete task
 	err = topology.CompleteTask(taskID)
 	require.NoError(t, err)
 
 	// Verify completed state
-	assert.Equal(t, 0, len(topology.pendingTasks))
-	assert.Equal(t, 0, len(topology.assignedTasks))
-	assert.Equal(t, 1, len(topology.recentTasks))
+	assert.Empty(t, topology.pendingTasks)
+	assert.Empty(t, topology.assignedTasks)
+	assert.Len(t, topology.recentTasks, 1)
 
 	task = topology.recentTasks[taskID]
 	assert.Equal(t, TaskStatusCompleted, task.Status)
@@ -142,6 +144,7 @@ func TestTaskDetectionScenarios(t *testing.T) {
 			scenario: func() *ActiveTopology {
 				topology := NewActiveTopology(10)
 				topology.UpdateTopology(createEmptyTopology())
+
 				return topology
 			},
 			expectedTasks: map[string]bool{
@@ -155,6 +158,7 @@ func TestTaskDetectionScenarios(t *testing.T) {
 			scenario: func() *ActiveTopology {
 				topology := NewActiveTopology(10)
 				topology.UpdateTopology(createUnbalancedTopology())
+
 				return topology
 			},
 			expectedTasks: map[string]bool{
@@ -168,6 +172,7 @@ func TestTaskDetectionScenarios(t *testing.T) {
 			scenario: func() *ActiveTopology {
 				topology := NewActiveTopology(10)
 				topology.UpdateTopology(createHighGarbageTopology())
+
 				return topology
 			},
 			expectedTasks: map[string]bool{
@@ -181,6 +186,7 @@ func TestTaskDetectionScenarios(t *testing.T) {
 			scenario: func() *ActiveTopology {
 				topology := NewActiveTopology(10)
 				topology.UpdateTopology(createLargeVolumeTopology())
+
 				return topology
 			},
 			expectedTasks: map[string]bool{
@@ -201,6 +207,7 @@ func TestTaskDetectionScenarios(t *testing.T) {
 					Status:      TaskStatusCompleted,
 					CompletedAt: time.Now().Add(-5 * time.Second), // 5 seconds ago
 				}
+
 				return topology
 			},
 			expectedTasks: map[string]bool{
@@ -272,7 +279,7 @@ func TestTargetSelectionScenarios(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			availableDisks := tt.topology.GetAvailableDisks(tt.taskType, tt.excludeNode)
-			assert.Equal(t, tt.expectedTargets, len(availableDisks),
+			assert.Len(t, availableDisks, tt.expectedTargets,
 				"Expected %d available disks, got %d", tt.expectedTargets, len(availableDisks))
 
 			// Verify disks are actually available
@@ -382,6 +389,7 @@ func TestTaskConflictDetection(t *testing.T) {
 	for _, disk := range availableDisks {
 		if disk.NodeID == "10.0.0.1:8080" && disk.DiskID == 0 {
 			sourceDiskAvailable = true
+
 			break
 		}
 	}
@@ -395,13 +403,13 @@ func TestPublicInterfaces(t *testing.T) {
 
 	// Test GetAllNodes
 	nodes := topology.GetAllNodes()
-	assert.Equal(t, 2, len(nodes))
+	assert.Len(t, nodes, 2)
 	assert.Contains(t, nodes, "10.0.0.1:8080")
 	assert.Contains(t, nodes, "10.0.0.2:8080")
 
 	// Test GetNodeDisks
 	disks := topology.GetNodeDisks("10.0.0.1:8080")
-	assert.Equal(t, 2, len(disks))
+	assert.Len(t, disks, 2)
 
 	// Test with non-existent node
 	disks = topology.GetNodeDisks("non-existent")
@@ -532,6 +540,7 @@ func createTopologyWithLoad() *ActiveTopology {
 func createTopologyForEC() *ActiveTopology {
 	topology := NewActiveTopology(10)
 	topology.UpdateTopology(createSampleTopology())
+
 	return topology
 }
 
@@ -586,7 +595,7 @@ func TestDestinationPlanning(t *testing.T) {
 	// Test that GetAvailableDisks works for destination planning
 	t.Run("GetAvailableDisks functionality", func(t *testing.T) {
 		availableDisks := topology.GetAvailableDisks(TaskTypeBalance, "10.0.0.1:8080")
-		assert.Greater(t, len(availableDisks), 0)
+		assert.NotEmpty(t, availableDisks)
 
 		// Should exclude the source node
 		for _, disk := range availableDisks {
@@ -598,10 +607,10 @@ func TestDestinationPlanning(t *testing.T) {
 	t.Run("Topology provides planning information", func(t *testing.T) {
 		topologyInfo := topology.GetTopologyInfo()
 		assert.NotNil(t, topologyInfo)
-		assert.Greater(t, len(topologyInfo.DataCenterInfos), 0)
+		assert.NotEmpty(t, topologyInfo.GetDataCenterInfos())
 
 		// Test getting node disks
 		disks := topology.GetNodeDisks("10.0.0.1:8080")
-		assert.Greater(t, len(disks), 0)
+		assert.NotEmpty(t, disks)
 	})
 }

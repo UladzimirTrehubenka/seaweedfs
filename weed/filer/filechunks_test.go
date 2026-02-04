@@ -30,11 +30,9 @@ func TestCompactFileChunks(t *testing.T) {
 	if len(garbage) != 1 {
 		t.Fatalf("unexpected garbage: %d", len(garbage))
 	}
-
 }
 
 func TestCompactFileChunks2(t *testing.T) {
-
 	chunks := []*filer_pb.FileChunk{
 		{Offset: 0, Size: 100, FileId: "abc", ModifiedTsNs: 50},
 		{Offset: 100, Size: 100, FileId: "def", ModifiedTsNs: 100},
@@ -46,7 +44,7 @@ func TestCompactFileChunks2(t *testing.T) {
 
 	k := 3
 
-	for n := 0; n < k; n++ {
+	for n := range k {
 		chunks = append(chunks, &filer_pb.FileChunk{
 			Offset: int64(n * 100), Size: 100, FileId: fmt.Sprintf("fileId%d", n), ModifiedTsNs: int64(n),
 		})
@@ -66,11 +64,10 @@ func TestCompactFileChunks2(t *testing.T) {
 }
 
 func TestRandomFileChunksCompact(t *testing.T) {
-
 	data := make([]byte, 1024)
 
 	var chunks []*filer_pb.FileChunk
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		start, stop := rand.IntN(len(data)), rand.IntN(len(data))
 		if start > stop {
 			start, stop = stop, start
@@ -99,11 +96,9 @@ func TestRandomFileChunksCompact(t *testing.T) {
 			assert.Equal(t, strconv.Itoa(int(data[x])), v.fileId)
 		}
 	}
-
 }
 
 func TestIntervalMerging(t *testing.T) {
-
 	testcases := []struct {
 		Chunks   []*filer_pb.FileChunk
 		Expected []*VisibleInterval
@@ -261,13 +256,10 @@ func TestIntervalMerging(t *testing.T) {
 		if intervals.Len() != len(testcase.Expected) {
 			t.Fatalf("failed to compact test case %d, len %d expected %d", i, intervals.Len(), len(testcase.Expected))
 		}
-
 	}
-
 }
 
 func TestChunksReading(t *testing.T) {
-
 	testcases := []struct {
 		Chunks   []*filer_pb.FileChunk
 		Offset   int64
@@ -455,16 +447,14 @@ func TestChunksReading(t *testing.T) {
 			t.Fatalf("failed to read test case %d, len %d expected %d", i, chunks.Len(), len(testcase.Expected))
 		}
 	}
-
 }
 
 func BenchmarkCompactFileChunks(b *testing.B) {
-
 	var chunks []*filer_pb.FileChunk
 
 	k := 1024
 
-	for n := 0; n < k; n++ {
+	for n := range k {
 		chunks = append(chunks, &filer_pb.FileChunk{
 			Offset: int64(n * 100), Size: 100, FileId: fmt.Sprintf("fileId%d", n), ModifiedTsNs: int64(n),
 		})
@@ -473,7 +463,7 @@ func BenchmarkCompactFileChunks(b *testing.B) {
 		})
 	}
 
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		CompactFileChunks(context.Background(), nil, chunks)
 	}
 }
@@ -510,7 +500,6 @@ func TestViewFromVisibleIntervals(t *testing.T) {
 	if views.Len() != visibles.Len() {
 		assert.Equal(t, visibles.Len(), views.Len(), "ViewFromVisibleIntervals error")
 	}
-
 }
 
 func TestViewFromVisibleIntervals2(t *testing.T) {
@@ -531,7 +520,6 @@ func TestViewFromVisibleIntervals2(t *testing.T) {
 	if views.Len() != visibles.Len() {
 		assert.Equal(t, visibles.Len(), views.Len(), "ViewFromVisibleIntervals error")
 	}
-
 }
 
 func TestViewFromVisibleIntervals3(t *testing.T) {
@@ -552,7 +540,6 @@ func TestViewFromVisibleIntervals3(t *testing.T) {
 	if views.Len() != visibles.Len() {
 		assert.Equal(t, visibles.Len(), views.Len(), "ViewFromVisibleIntervals error")
 	}
-
 }
 
 func TestCompactFileChunks3(t *testing.T) {

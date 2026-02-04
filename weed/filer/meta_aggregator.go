@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -50,6 +51,7 @@ func NewMetaAggregator(filer *Filer, self pb.ServerAddress, grpcDialOption grpc.
 			t.ListenersCond.Broadcast()
 		}
 	})
+
 	return t
 }
 
@@ -57,8 +59,8 @@ func (ma *MetaAggregator) OnPeerUpdate(update *master_pb.ClusterNodeUpdate, star
 	ma.peerChansLock.Lock()
 	defer ma.peerChansLock.Unlock()
 
-	address := pb.ServerAddress(update.Address)
-	if update.IsAdd {
+	address := pb.ServerAddress(update.GetAddress())
+	if update.GetIsAdd() {
 		// cancel previous subscription if any
 		if prevChan, found := ma.peerChans[address]; found {
 			close(prevChan)
@@ -84,6 +86,7 @@ func (ma *MetaAggregator) loopSubscribeToOneFiler(f *Filer, self pb.ServerAddres
 		select {
 		case <-stopChan:
 			glog.V(0).Infof("stop subscribing peer %s meta change", peer)
+
 			return
 		default:
 		}
@@ -103,7 +106,6 @@ func (ma *MetaAggregator) loopSubscribeToOneFiler(f *Filer, self pb.ServerAddres
 }
 
 func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress, peer pb.ServerAddress, startFrom int64) (int64, error) {
-
 	/*
 		Each filer reads the "filer.store.id", which is the store's signature when filer starts.
 
@@ -120,7 +122,7 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 
 	peerSignature, err := ma.readFilerStoreSignature(peer)
 	if err != nil {
-		return lastTsNs, fmt.Errorf("connecting to peer filer %s: %v", peer, err)
+		return lastTsNs, fmt.Errorf("connecting to peer filer %s: %w", peer, err)
 	}
 
 	// when filer store is not shared by multiple filers
@@ -144,13 +146,14 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 		maybeReplicateMetadataChange = func(event *filer_pb.SubscribeMetadataResponse) {
 			if err := Replay(f.Store, event); err != nil {
 				glog.Errorf("failed to reply metadata change from %v: %v", peer, err)
+
 				return
 			}
 			counter++
 			if lastPersistTime.Add(time.Minute).Before(time.Now()) {
-				if err := ma.updateOffset(f, peer, peerSignature, event.TsNs); err == nil {
-					if event.TsNs < time.Now().Add(-2*time.Minute).UnixNano() {
-						glog.V(0).Infof("sync with %s progressed to: %v %0.2f/sec", peer, time.Unix(0, event.TsNs), float64(counter)/60.0)
+				if err := ma.updateOffset(f, peer, peerSignature, event.GetTsNs()); err == nil {
+					if event.GetTsNs() < time.Now().Add(-2*time.Minute).UnixNano() {
+						glog.V(0).Infof("sync with %s progressed to: %v %0.2f/sec", peer, time.Unix(0, event.GetTsNs()), float64(counter)/60.0)
 					} else if !synced {
 						synced = true
 						glog.V(0).Infof("synced with %s", peer)
@@ -168,17 +171,20 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 		data, err := proto.Marshal(event)
 		if err != nil {
 			glog.Errorf("failed to marshal subscribed filer_pb.SubscribeMetadataResponse %+v: %v", event, err)
+
 			return err
 		}
-		dir := event.Directory
+		dir := event.GetDirectory()
 		// println("received meta change", dir, "size", len(data))
-		if err := ma.MetaLogBuffer.AddDataToBuffer([]byte(dir), data, event.TsNs); err != nil {
+		if err := ma.MetaLogBuffer.AddDataToBuffer([]byte(dir), data, event.GetTsNs()); err != nil {
 			glog.Errorf("failed to add data to log buffer for %s: %v", dir, err)
+
 			return err
 		}
 		if maybeReplicateMetadataChange != nil {
 			maybeReplicateMetadataChange(event)
 		}
+
 		return nil
 	}
 
@@ -196,28 +202,32 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 		})
 		if err != nil {
 			glog.V(0).Infof("SubscribeLocalMetadata %v: %v", peer, err)
+
 			return fmt.Errorf("subscribe: %w", err)
 		}
 
 		for {
 			resp, listenErr := stream.Recv()
-			if listenErr == io.EOF {
+			if errors.Is(listenErr, io.EOF) {
 				return nil
 			}
 			if listenErr != nil {
 				glog.V(0).Infof("SubscribeLocalMetadata stream %v: %v", peer, listenErr)
+
 				return listenErr
 			}
 
 			if err := processEventFn(resp); err != nil {
 				glog.V(0).Infof("SubscribeLocalMetadata process %v: %v", resp, err)
+
 				return fmt.Errorf("process %v: %w", resp, err)
 			}
 
 			f.onMetadataChangeEvent(resp)
-			lastTsNs = resp.TsNs
+			lastTsNs = resp.GetTsNs()
 		}
 	})
+
 	return lastTsNs, err
 }
 
@@ -227,9 +237,11 @@ func (ma *MetaAggregator) readFilerStoreSignature(peer pb.ServerAddress) (sig in
 		if err != nil {
 			return err
 		}
-		sig = resp.Signature
+		sig = resp.GetSignature()
+
 		return nil
 	})
+
 	return
 }
 
@@ -240,17 +252,17 @@ const (
 func GetPeerMetaOffsetKey(peerSignature int32) []byte {
 	key := []byte(MetaOffsetPrefix + "xxxx")
 	util.Uint32toBytes(key[len(MetaOffsetPrefix):], uint32(peerSignature))
+
 	return key
 }
 
 func (ma *MetaAggregator) readOffset(f *Filer, peer pb.ServerAddress, peerSignature int32) (lastTsNs int64, err error) {
-
 	key := GetPeerMetaOffsetKey(peerSignature)
 
 	value, err := f.Store.KvGet(context.Background(), key)
 
 	if err != nil {
-		return 0, fmt.Errorf("readOffset %s : %v", peer, err)
+		return 0, fmt.Errorf("readOffset %s : %w", peer, err)
 	}
 
 	lastTsNs = int64(util.BytesToUint64(value))
@@ -261,7 +273,6 @@ func (ma *MetaAggregator) readOffset(f *Filer, peer pb.ServerAddress, peerSignat
 }
 
 func (ma *MetaAggregator) updateOffset(f *Filer, peer pb.ServerAddress, peerSignature int32, lastTsNs int64) (err error) {
-
 	key := GetPeerMetaOffsetKey(peerSignature)
 
 	value := make([]byte, 8)
@@ -270,7 +281,7 @@ func (ma *MetaAggregator) updateOffset(f *Filer, peer pb.ServerAddress, peerSign
 	err = f.Store.KvPut(context.Background(), key, value)
 
 	if err != nil {
-		return fmt.Errorf("updateOffset %s : %v", peer, err)
+		return fmt.Errorf("updateOffset %s : %w", peer, err)
 	}
 
 	glog.V(4).Infof("updateOffset %s : %d", peer, lastTsNs)

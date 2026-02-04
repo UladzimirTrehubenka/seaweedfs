@@ -78,6 +78,7 @@ func (t *BaseTask) Type() types.TaskType {
 func (t *BaseTask) GetProgress() float64 {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
+
 	return t.progress
 }
 
@@ -147,6 +148,7 @@ func (t *BaseTask) SetCurrentStage(stage string) {
 func (t *BaseTask) GetCurrentStage() string {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
+
 	return t.currentStage
 }
 
@@ -173,6 +175,7 @@ func (t *BaseTask) Cancel() error {
 func (t *BaseTask) IsCancelled() bool {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
+
 	return t.cancelled
 }
 
@@ -183,7 +186,7 @@ func (t *BaseTask) SetStartTime(startTime time.Time) {
 	t.startTime = startTime
 
 	if t.logger != nil {
-		t.logger.LogStatus("running", fmt.Sprintf("Task started at %s", startTime.Format(time.RFC3339)))
+		t.logger.LogStatus("running", "Task started at "+startTime.Format(time.RFC3339))
 	}
 }
 
@@ -191,6 +194,7 @@ func (t *BaseTask) SetStartTime(startTime time.Time) {
 func (t *BaseTask) GetStartTime() time.Time {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
+
 	return t.startTime
 }
 
@@ -201,7 +205,7 @@ func (t *BaseTask) SetEstimatedDuration(duration time.Duration) {
 	t.estimatedDuration = duration
 
 	if t.logger != nil {
-		t.logger.LogWithFields("INFO", "Estimated duration set", map[string]interface{}{
+		t.logger.LogWithFields("INFO", "Estimated duration set", map[string]any{
 			"estimated_duration": duration.String(),
 			"estimated_seconds":  duration.Seconds(),
 		})
@@ -212,6 +216,7 @@ func (t *BaseTask) SetEstimatedDuration(duration time.Duration) {
 func (t *BaseTask) GetEstimatedDuration() time.Duration {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
+
 	return t.estimatedDuration
 }
 
@@ -233,6 +238,7 @@ func (t *BaseTask) SetLoggerConfig(config TaskLoggerConfig) {
 func (t *BaseTask) GetLogger() TaskLogger {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
+
 	return t.logger
 }
 
@@ -240,39 +246,40 @@ func (t *BaseTask) GetLogger() TaskLogger {
 func (t *BaseTask) GetTaskLogger() TaskLogger {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
+
 	return t.logger
 }
 
 // LogInfo logs an info message
-func (t *BaseTask) LogInfo(message string, args ...interface{}) {
+func (t *BaseTask) LogInfo(message string, args ...any) {
 	if t.logger != nil {
 		t.logger.Info(message, args...)
 	}
 }
 
 // LogWarning logs a warning message
-func (t *BaseTask) LogWarning(message string, args ...interface{}) {
+func (t *BaseTask) LogWarning(message string, args ...any) {
 	if t.logger != nil {
 		t.logger.Warning(message, args...)
 	}
 }
 
 // LogError logs an error message
-func (t *BaseTask) LogError(message string, args ...interface{}) {
+func (t *BaseTask) LogError(message string, args ...any) {
 	if t.logger != nil {
 		t.logger.Error(message, args...)
 	}
 }
 
 // LogDebug logs a debug message
-func (t *BaseTask) LogDebug(message string, args ...interface{}) {
+func (t *BaseTask) LogDebug(message string, args ...any) {
 	if t.logger != nil {
 		t.logger.Debug(message, args...)
 	}
 }
 
 // LogWithFields logs a message with structured fields
-func (t *BaseTask) LogWithFields(level string, message string, fields map[string]interface{}) {
+func (t *BaseTask) LogWithFields(level string, message string, fields map[string]any) {
 	if t.logger != nil {
 		t.logger.LogWithFields(level, message, fields)
 	}
@@ -285,7 +292,7 @@ func (t *BaseTask) FinishTask(success bool, errorMsg string) error {
 			t.logger.LogStatus("completed", "Task completed successfully")
 			t.logger.Info("Task %s finished successfully", t.taskID)
 		} else {
-			t.logger.LogStatus("failed", fmt.Sprintf("Task failed: %s", errorMsg))
+			t.logger.LogStatus("failed", "Task failed: "+errorMsg)
 			t.logger.Error("Task %s failed: %s", t.taskID, errorMsg)
 		}
 
@@ -317,9 +324,9 @@ func (t *BaseTask) ExecuteTask(ctx context.Context, params types.TaskParams, exe
 	t.SetProgress(0)
 
 	if t.logger != nil {
-		t.logger.LogWithFields("INFO", "Task execution started", map[string]interface{}{
+		t.logger.LogWithFields("INFO", "Task execution started", map[string]any{
 			"volume_id":  params.VolumeID,
-			"server":     getServerFromSources(params.TypedParams.Sources),
+			"server":     getServerFromSources(params.TypedParams.GetSources()),
 			"collection": params.Collection,
 		})
 	}
@@ -349,18 +356,21 @@ func (t *BaseTask) ExecuteTask(ctx context.Context, params types.TaskParams, exe
 	if err != nil {
 		t.LogError("Task executor failed: %v", err)
 		t.FinishTask(false, err.Error())
+
 		return err
 	}
 
 	if t.IsCancelled() {
 		t.LogWarning("Task was cancelled during execution")
 		t.FinishTask(false, "cancelled")
+
 		return context.Canceled
 	}
 
 	t.SetProgress(100)
 	t.LogInfo("Task executor completed successfully")
 	t.FinishTask(true, "")
+
 	return nil
 }
 
@@ -408,7 +418,7 @@ func ValidateParams(params types.TaskParams, requiredFields ...string) error {
 				return &ValidationError{Field: field, Message: "volume_id is required"}
 			}
 		case "server":
-			if len(params.TypedParams.Sources) == 0 {
+			if len(params.TypedParams.GetSources()) == 0 {
 				return &ValidationError{Field: field, Message: "server is required"}
 			}
 		case "collection":
@@ -417,6 +427,7 @@ func ValidateParams(params types.TaskParams, requiredFields ...string) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -433,7 +444,8 @@ func (e *ValidationError) Error() string {
 // getServerFromSources extracts the server address from unified sources
 func getServerFromSources(sources []*worker_pb.TaskSource) string {
 	if len(sources) > 0 {
-		return sources[0].Node
+		return sources[0].GetNode()
 	}
+
 	return ""
 }

@@ -6,7 +6,7 @@ type AsyncRequest struct {
 	ActualSize     int64
 	offset         uint64
 	size           uint64
-	doneChan       chan interface{}
+	doneChan       chan any
 	isUnchanged    bool
 	err            error
 }
@@ -16,7 +16,7 @@ func NewAsyncRequest(n *Needle, isWriteRequest bool) *AsyncRequest {
 		offset:         0,
 		size:           0,
 		ActualSize:     0,
-		doneChan:       make(chan interface{}),
+		doneChan:       make(chan any),
 		N:              n,
 		isUnchanged:    false,
 		IsWriteRequest: isWriteRequest,
@@ -26,6 +26,7 @@ func NewAsyncRequest(n *Needle, isWriteRequest bool) *AsyncRequest {
 
 func (r *AsyncRequest) WaitComplete() (uint64, uint64, bool, error) {
 	<-r.doneChan
+
 	return r.offset, r.size, r.isUnchanged, r.err
 }
 

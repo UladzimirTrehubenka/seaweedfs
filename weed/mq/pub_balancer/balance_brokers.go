@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 )
 
@@ -34,6 +35,7 @@ func BalanceTopicPartitionOnBrokers(brokers cmap.ConcurrentMap[string, *BrokerSt
 			for topicPartitionStats := range brokerStats.Val.TopicPartitionStats.IterBuffered() {
 				if index == randomPartitionIndex {
 					candidatePartition = &topicPartitionStats.Val.TopicPartition
+
 					break
 				} else {
 					index++

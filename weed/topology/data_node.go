@@ -1,8 +1,10 @@
 package topology
 
 import (
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync/atomic"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -16,6 +18,7 @@ import (
 
 type DataNode struct {
 	NodeImpl
+
 	Ip            string
 	Port          int
 	GrpcPort      int
@@ -34,19 +37,22 @@ func NewDataNode(id string) *DataNode {
 	dn.diskUsages = newDiskUsages()
 	dn.children = make(map[NodeId]Node)
 	dn.capacityReservations = newCapacityReservations()
-	dn.NodeImpl.value = dn
+	dn.value = dn
+
 	return dn
 }
 
 func (dn *DataNode) String() string {
 	dn.RLock()
 	defer dn.RUnlock()
+
 	return fmt.Sprintf("Node:%s, Ip:%s, Port:%d, PublicUrl:%s", dn.NodeImpl.String(), dn.Ip, dn.Port, dn.PublicUrl)
 }
 
 func (dn *DataNode) AddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChangedRO bool) {
 	dn.Lock()
 	defer dn.Unlock()
+
 	return dn.doAddOrUpdateVolume(v)
 }
 
@@ -57,18 +63,19 @@ func (dn *DataNode) getOrCreateDisk(diskType string) *Disk {
 		dn.doLinkChildNode(c)
 	}
 	disk := c.(*Disk)
+
 	return disk
 }
 
 func (dn *DataNode) doAddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChanged bool) {
 	disk := dn.getOrCreateDisk(v.DiskType)
+
 	return disk.AddOrUpdateVolume(v)
 }
 
 // UpdateVolumes detects new/deleted/changed volumes on a volume server
 // used in master to notify master clients of these changes.
 func (dn *DataNode) UpdateVolumes(actualVolumes []storage.VolumeInfo) (newVolumes, deletedVolumes, changedVolumes []storage.VolumeInfo) {
-
 	actualVolumeMap := make(map[needle.VolumeId]storage.VolumeInfo)
 	for _, v := range actualVolumes {
 		actualVolumeMap[v.Id] = v
@@ -107,7 +114,8 @@ func (dn *DataNode) UpdateVolumes(actualVolumes []storage.VolumeInfo) (newVolume
 			changedVolumes = append(changedVolumes, v)
 		}
 	}
-	return
+
+	return newVolumes, deletedVolumes, changedVolumes
 }
 
 func (dn *DataNode) DeltaUpdateVolumes(newVolumes, deletedVolumes []storage.VolumeInfo) {
@@ -136,6 +144,7 @@ func (dn *DataNode) DeltaUpdateVolumes(newVolumes, deletedVolumes []storage.Volu
 	for _, v := range newVolumes {
 		dn.doAddOrUpdateVolume(v)
 	}
+
 	return
 }
 
@@ -165,6 +174,7 @@ func (dn *DataNode) GetVolumes() (ret []storage.VolumeInfo) {
 		ret = append(ret, disk.GetVolumes()...)
 	}
 	dn.RUnlock()
+
 	return ret
 }
 
@@ -177,13 +187,14 @@ func (dn *DataNode) GetVolumesById(id needle.VolumeId) (vInfo storage.VolumeInfo
 		vInfo, err = disk.GetVolumesById(id)
 		if err == nil {
 			found = true
+
 			break
 		}
 	}
 	if found {
 		return vInfo, nil
 	} else {
-		return storage.VolumeInfo{}, fmt.Errorf("volumeInfo not found")
+		return storage.VolumeInfo{}, errors.New("volumeInfo not found")
 	}
 }
 
@@ -197,6 +208,7 @@ func (dn *DataNode) GetDataCenter() *DataCenter {
 		return nil
 	}
 	dcValue := dcNode.GetValue()
+
 	return dcValue.(*DataCenter)
 }
 
@@ -204,6 +216,7 @@ func (dn *DataNode) GetDataCenterId() string {
 	if dc := dn.GetDataCenter(); dc != nil {
 		return string(dc.Id())
 	}
+
 	return ""
 }
 
@@ -217,6 +230,7 @@ func (dn *DataNode) GetTopology() *Topology {
 		p = p.Parent()
 	}
 	t := p.(*Topology)
+
 	return t
 }
 
@@ -254,10 +268,12 @@ func (dn *DataNode) ToInfo() (info DataNodeInfo) {
 		maxVolumeCount += diskUsage.maxVolumeCount
 	}
 
+	var volumeIdsSb257 strings.Builder
 	for _, disk := range dn.Children() {
 		d := disk.(*Disk)
-		volumeIds += " " + d.GetVolumeIds()
+		volumeIdsSb257.WriteString(" " + d.GetVolumeIds())
 	}
+	volumeIds += volumeIdsSb257.String()
 
 	info.Volumes = volumeCount
 	info.EcShards = ecShardCount
@@ -278,6 +294,7 @@ func (dn *DataNode) ToDataNodeInfo() *master_pb.DataNodeInfo {
 		disk := c.(*Disk)
 		m.DiskInfos[string(disk.Id())] = disk.ToDiskInfo()
 	}
+
 	return m
 }
 
@@ -303,5 +320,6 @@ func (dn *DataNode) getVolumes() []storage.VolumeInfo {
 		disk := c.(*Disk)
 		existingVolumes = append(existingVolumes, disk.GetVolumes()...)
 	}
+
 	return existingVolumes
 }

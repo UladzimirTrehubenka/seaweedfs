@@ -15,7 +15,7 @@ type Collector struct {
 	client       *Client
 	topo         *topology.Topology
 	cluster      *cluster.Cluster
-	masterServer interface{} // Will be set to *weed_server.MasterServer to access client tracking
+	masterServer any // Will be set to *weed_server.MasterServer to access client tracking
 	version      string
 	os           string
 }
@@ -43,7 +43,7 @@ func (c *Collector) SetOS(os string) {
 }
 
 // SetMasterServer sets a reference to the master server for client tracking
-func (c *Collector) SetMasterServer(masterServer interface{}) {
+func (c *Collector) SetMasterServer(masterServer any) {
 	c.masterServer = masterServer
 }
 
@@ -52,6 +52,7 @@ func (c *Collector) isLeader() bool {
 	if c.topo == nil {
 		return false
 	}
+
 	return c.topo.IsLeader()
 }
 
@@ -76,6 +77,7 @@ func (c *Collector) CollectAndSendAsync() {
 func (c *Collector) StartPeriodicCollection(interval time.Duration) {
 	if !c.client.IsEnabled() {
 		glog.V(1).Infof("Telemetry is disabled, skipping periodic collection")
+
 		return
 	}
 
@@ -145,6 +147,7 @@ func (c *Collector) countVolumeServers() int {
 			}
 		}
 	}
+
 	return count
 }
 
@@ -180,6 +183,7 @@ func (c *Collector) countFilers() int {
 		nodes := c.cluster.ListClusterNode(cluster.FilerGroupName(groupName), cluster.FilerType)
 		count += len(nodes)
 	}
+
 	return count
 }
 
@@ -191,6 +195,7 @@ func (c *Collector) countBrokers() int {
 		nodes := c.cluster.ListClusterNode(cluster.FilerGroupName(groupName), cluster.BrokerType)
 		count += len(nodes)
 	}
+
 	return count
 }
 

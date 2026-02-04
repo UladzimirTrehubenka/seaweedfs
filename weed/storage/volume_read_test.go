@@ -3,10 +3,11 @@ package storage
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestReadNeedMetaWithWritesAndUpdates(t *testing.T) {
@@ -36,7 +37,7 @@ func TestReadNeedMetaWithWritesAndUpdates(t *testing.T) {
 		writeInfos[i-1] = WriteInfo{offset: int64(offset), size: int32(n.Size)}
 	}
 	expectedLastUpdateTime := uint64(1000000000000)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		testNeedle := new(needle.Needle)
 		testNeedle.Id = types.Uint64ToNeedleId(uint64(i + 1%20))
 		testNeedle.Flags = 0x08
@@ -84,7 +85,7 @@ func TestReadNeedMetaWithDeletesThenWrites(t *testing.T) {
 	}
 
 	expectedLastUpdateTime := uint64(1000000000000)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		testNeedle := new(needle.Needle)
 		testNeedle.Id = types.Uint64ToNeedleId(uint64(i + 1%5))
 		testNeedle.Flags = 0x08

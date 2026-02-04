@@ -33,10 +33,7 @@ func TestSpaceCalculation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Calculate space needed using the same logic as our fix
 			estimatedCompactSize := int64(tc.volumeSize + tc.indexSize)
-			spaceNeeded := tc.preallocate
-			if estimatedCompactSize > tc.preallocate {
-				spaceNeeded = estimatedCompactSize
-			}
+			spaceNeeded := max(estimatedCompactSize, tc.preallocate)
 			// Add 10% safety buffer
 			spaceNeeded = spaceNeeded + (spaceNeeded / 10)
 

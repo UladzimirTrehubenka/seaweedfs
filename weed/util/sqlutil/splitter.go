@@ -39,6 +39,7 @@ func SplitStatements(query string) []string {
 			if i < len(runes) {
 				i++
 			}
+
 			continue
 		}
 
@@ -53,10 +54,12 @@ func SplitStatements(query string) []string {
 				if runes[i] == '*' && i+1 < len(runes) && runes[i+1] == '/' {
 					i++ // Skip the *
 					i++ // Skip the /
+
 					break
 				}
 				i++
 			}
+
 			continue
 		}
 
@@ -83,6 +86,7 @@ func SplitStatements(query string) []string {
 				i++
 			}
 			i++
+
 			continue
 		}
 
@@ -109,6 +113,7 @@ func SplitStatements(query string) []string {
 				i++
 			}
 			i++
+
 			continue
 		}
 

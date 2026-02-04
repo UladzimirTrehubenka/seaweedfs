@@ -3,6 +3,7 @@ package sftpd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,12 +12,13 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	filer_pb "github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 type SftpServer struct {
@@ -29,7 +31,6 @@ type SftpServer struct {
 
 // NewSftpServer constructs the server.
 func NewSftpServer(filerAddr pb.ServerAddress, grpcDialOption grpc.DialOption, dataCenter, filerGroup string, user *user.User) SftpServer {
-
 	return SftpServer{
 		filerAddr:      filerAddr,
 		grpcDialOption: grpcDialOption,
@@ -84,7 +85,7 @@ func (fs *SftpServer) Filelist(req *sftp.Request) (sftp.ListerAt, error) {
 // EnsureHomeDirectory creates the user's home directory if it doesn't exist
 func (fs *SftpServer) EnsureHomeDirectory() error {
 	if fs.user.HomeDir == "" {
-		return fmt.Errorf("user has no home directory configured")
+		return errors.New("user has no home directory configured")
 	}
 
 	glog.V(0).Infof("Ensuring home directory exists for user %s: %s", fs.user.Username, fs.user.HomeDir)
@@ -93,12 +94,14 @@ func (fs *SftpServer) EnsureHomeDirectory() error {
 	entry, err := fs.getEntry(fs.user.HomeDir)
 	if err == nil && entry != nil {
 		// Directory exists, just ensure proper ownership
-		if entry.Attributes.Uid != fs.user.Uid || entry.Attributes.Gid != fs.user.Gid {
+		if entry.GetAttributes().GetUid() != fs.user.Uid || entry.GetAttributes().GetGid() != fs.user.Gid {
 			dir, _ := util.FullPath(fs.user.HomeDir).DirAndName()
 			entry.Attributes.Uid = fs.user.Uid
 			entry.Attributes.Gid = fs.user.Gid
+
 			return fs.updateEntry(dir, entry)
 		}
+
 		return nil
 	}
 
@@ -126,5 +129,6 @@ func (fs *SftpServer) EnsureHomeDirectory() error {
 	}
 
 	glog.V(0).Infof("Successfully created home directory for user %s: %s", fs.user.Username, fs.user.HomeDir)
+
 	return nil
 }

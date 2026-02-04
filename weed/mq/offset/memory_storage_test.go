@@ -1,7 +1,7 @@
 package offset
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -49,6 +49,7 @@ func (s *InMemoryOffsetStorage) SaveCheckpoint(namespace, topicName string, part
 	// Use TopicPartitionKey for consistency with other storage implementations
 	key := TopicPartitionKey(namespace, topicName, partition)
 	s.checkpoints[key] = offset
+
 	return nil
 }
 
@@ -61,7 +62,7 @@ func (s *InMemoryOffsetStorage) LoadCheckpoint(namespace, topicName string, part
 	key := TopicPartitionKey(namespace, topicName, partition)
 	offset, exists := s.checkpoints[key]
 	if !exists {
-		return -1, fmt.Errorf("no checkpoint found")
+		return -1, errors.New("no checkpoint found")
 	}
 
 	return offset, nil
@@ -76,7 +77,7 @@ func (s *InMemoryOffsetStorage) GetHighestOffset(namespace, topicName string, pa
 	key := TopicPartitionKey(namespace, topicName, partition)
 	offsets, exists := s.records[key]
 	if !exists || len(offsets) == 0 {
-		return -1, fmt.Errorf("no records found")
+		return -1, errors.New("no records found")
 	}
 
 	var highest int64 = -1
@@ -124,8 +125,10 @@ func (s *InMemoryOffsetStorage) GetRecordCount(namespace, topicName string, part
 				count++
 			}
 		}
+
 		return count
 	}
+
 	return 0
 }
 
@@ -142,6 +145,7 @@ func (s *InMemoryOffsetStorage) Clear() {
 // Reset removes all data (implements resettable interface for shutdown)
 func (s *InMemoryOffsetStorage) Reset() error {
 	s.Clear()
+
 	return nil
 }
 
@@ -181,7 +185,7 @@ func (s *InMemoryOffsetStorage) cleanupIfNeeded() {
 			}
 
 			// Sort by timestamp (newest first)
-			for i := 0; i < len(entries)-1; i++ {
+			for i := range len(entries) - 1 {
 				for j := i + 1; j < len(entries); j++ {
 					if entries[i].time.Before(entries[j].time) {
 						entries[i], entries[j] = entries[j], entries[i]
@@ -207,7 +211,7 @@ func (s *InMemoryOffsetStorage) cleanupIfNeeded() {
 }
 
 // GetMemoryStats returns memory usage statistics for monitoring
-func (s *InMemoryOffsetStorage) GetMemoryStats() map[string]interface{} {
+func (s *InMemoryOffsetStorage) GetMemoryStats() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -218,7 +222,7 @@ func (s *InMemoryOffsetStorage) GetMemoryStats() map[string]interface{} {
 		totalRecords += len(offsets)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total_partitions":          partitionCount,
 		"total_records":             totalRecords,
 		"max_records_per_partition": s.maxRecordsPerPartition,

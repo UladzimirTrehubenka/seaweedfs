@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/config"
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/maintenance"
@@ -43,6 +45,7 @@ func (h *MaintenanceHandlers) ShowTaskDetail(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("DEBUG ShowTaskDetail: error getting task detail for %s: %v", taskID, err)
 		c.String(http.StatusNotFound, "Task not found: %s (Error: %v)", taskID, err)
+
 		return
 	}
 
@@ -53,9 +56,9 @@ func (h *MaintenanceHandlers) ShowTaskDetail(c *gin.Context) {
 	if err != nil {
 		glog.Errorf("DEBUG ShowTaskDetail: render error: %v", err)
 		c.String(http.StatusInternalServerError, "Failed to render template: %v", err)
+
 		return
 	}
-
 }
 
 // ShowMaintenanceQueue displays the maintenance queue page
@@ -81,6 +84,7 @@ func (h *MaintenanceHandlers) ShowMaintenanceQueue(c *gin.Context) {
 		if res.err != nil {
 			glog.V(1).Infof("ShowMaintenanceQueue: error getting data: %v", res.err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": res.err.Error()})
+
 			return
 		}
 
@@ -94,6 +98,7 @@ func (h *MaintenanceHandlers) ShowMaintenanceQueue(c *gin.Context) {
 		if err != nil {
 			glog.V(1).Infof("ShowMaintenanceQueue: render error: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 			return
 		}
 
@@ -105,6 +110,7 @@ func (h *MaintenanceHandlers) ShowMaintenanceQueue(c *gin.Context) {
 			"error":      "Request timeout - maintenance data retrieval took too long. This may indicate a system issue.",
 			"suggestion": "Try refreshing the page or contact system administrator if the problem persists.",
 		})
+
 		return
 	}
 }
@@ -114,6 +120,7 @@ func (h *MaintenanceHandlers) ShowMaintenanceWorkers(c *gin.Context) {
 	workersData, err := h.adminServer.GetMaintenanceWorkersData()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 
@@ -124,6 +131,7 @@ func (h *MaintenanceHandlers) ShowMaintenanceWorkers(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -133,6 +141,7 @@ func (h *MaintenanceHandlers) ShowMaintenanceConfig(c *gin.Context) {
 	config, err := h.getMaintenanceConfig()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 
@@ -146,6 +155,7 @@ func (h *MaintenanceHandlers) ShowMaintenanceConfig(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -158,6 +168,7 @@ func (h *MaintenanceHandlers) ShowTaskConfig(c *gin.Context) {
 	schema := tasks.GetTaskConfigSchema(taskTypeName)
 	if schema == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Task type not found or no schema available"})
+
 		return
 	}
 
@@ -169,12 +180,14 @@ func (h *MaintenanceHandlers) ShowTaskConfig(c *gin.Context) {
 	for workerTaskType := range typesRegistry.GetAllDetectors() {
 		if string(workerTaskType) == taskTypeName {
 			provider = uiRegistry.GetProvider(workerTaskType)
+
 			break
 		}
 	}
 
 	if provider == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "UI provider not found for task type"})
+
 		return
 	}
 
@@ -199,6 +212,7 @@ func (h *MaintenanceHandlers) ShowTaskConfig(c *gin.Context) {
 	err := layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -212,6 +226,7 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 	err := c.Request.ParseForm()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse form data: " + err.Error()})
+
 		return
 	}
 
@@ -225,6 +240,7 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 	schema := tasks.GetTaskConfigSchema(taskTypeName)
 	if schema == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Schema not found for task type: " + taskTypeName})
+
 		return
 	}
 
@@ -239,12 +255,14 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 		config = &erasure_coding.Config{}
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported task type: " + taskTypeName})
+
 		return
 	}
 
 	// Apply schema defaults first using type-safe method
 	if err := schema.ApplyDefaultsToConfig(config); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to apply defaults: " + err.Error()})
+
 		return
 	}
 
@@ -256,6 +274,7 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 	for workerTaskType := range currentTypesRegistry.GetAllDetectors() {
 		if string(workerTaskType) == string(taskType) {
 			currentProvider = currentUIRegistry.GetProvider(workerTaskType)
+
 			break
 		}
 	}
@@ -276,6 +295,7 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 	err = h.parseTaskConfigFromForm(c.Request.PostForm, schema, config)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse configuration: " + err.Error()})
+
 		return
 	}
 
@@ -305,6 +325,7 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 			errorMessages[i] = err.Error()
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Configuration validation failed", "details": errorMessages})
+
 		return
 	}
 
@@ -316,12 +337,14 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 	for workerTaskType := range typesRegistry.GetAllDetectors() {
 		if string(workerTaskType) == string(taskType) {
 			provider = uiRegistry.GetProvider(workerTaskType)
+
 			break
 		}
 	}
 
 	if provider == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "UI provider not found for task type"})
+
 		return
 	}
 
@@ -329,6 +352,7 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 	err = provider.ApplyTaskConfig(config)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to apply configuration: " + err.Error()})
+
 		return
 	}
 
@@ -358,14 +382,14 @@ func (h *MaintenanceHandlers) UpdateTaskConfig(c *gin.Context) {
 }
 
 // parseTaskConfigFromForm parses form data using schema definitions
-func (h *MaintenanceHandlers) parseTaskConfigFromForm(formData map[string][]string, schema *tasks.TaskConfigSchema, config interface{}) error {
+func (h *MaintenanceHandlers) parseTaskConfigFromForm(formData map[string][]string, schema *tasks.TaskConfigSchema, config any) error {
 	configValue := reflect.ValueOf(config)
 	if configValue.Kind() == reflect.Ptr {
 		configValue = configValue.Elem()
 	}
 
 	if configValue.Kind() != reflect.Struct {
-		return fmt.Errorf("config must be a struct or pointer to struct")
+		return errors.New("config must be a struct or pointer to struct")
 	}
 
 	configType := configValue.Type()
@@ -380,6 +404,7 @@ func (h *MaintenanceHandlers) parseTaskConfigFromForm(formData map[string][]stri
 			if err != nil {
 				return fmt.Errorf("error parsing embedded struct %s: %w", fieldType.Name, err)
 			}
+
 			continue
 		}
 
@@ -477,12 +502,14 @@ func (h *MaintenanceHandlers) UpdateMaintenanceConfig(c *gin.Context) {
 	var config maintenance.MaintenanceConfig
 	if err := c.ShouldBind(&config); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
 	}
 
 	err := h.updateMaintenanceConfig(&config)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 
@@ -536,6 +563,7 @@ func (h *MaintenanceHandlers) getMaintenanceTasks() ([]*maintenance.MaintenanceT
 	// Get recent tasks only (last 100) to prevent slow page loads
 	// Users can view more tasks via pagination if needed
 	allTasks := manager.GetTasks("", "", 100)
+
 	return allTasks, nil
 }
 
@@ -551,6 +579,7 @@ func (h *MaintenanceHandlers) getMaintenanceWorkers() ([]*maintenance.Maintenanc
 
 	// Get workers from the maintenance manager
 	workers := h.adminServer.GetMaintenanceManager().GetWorkers()
+
 	return workers, nil
 }
 
@@ -568,7 +597,7 @@ func (h *MaintenanceHandlers) updateMaintenanceConfig(config *maintenance.Mainte
 func (h *MaintenanceHandlers) saveTaskConfigToProtobuf(taskType types.TaskType, config TaskConfig) error {
 	configPersistence := h.adminServer.GetConfigPersistence()
 	if configPersistence == nil {
-		return fmt.Errorf("config persistence not available")
+		return errors.New("config persistence not available")
 	}
 
 	// Use the new ToTaskPolicy method - much simpler and more maintainable!

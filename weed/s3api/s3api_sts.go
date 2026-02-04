@@ -95,6 +95,7 @@ func NewSTSHandlers(stsService *sts.STSService, iam *IdentityAccessManagement) *
 func (h *STSHandlers) HandleSTSRequest(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.writeSTSErrorResponse(w, r, STSErrInvalidParameterValue, err)
+
 		return
 	}
 
@@ -103,6 +104,7 @@ func (h *STSHandlers) HandleSTSRequest(w http.ResponseWriter, r *http.Request) {
 	if version != "" && version != stsAPIVersion {
 		h.writeSTSErrorResponse(w, r, STSErrInvalidParameterValue,
 			fmt.Errorf("invalid STS API version %s, expecting %s", version, stsAPIVersion))
+
 		return
 	}
 
@@ -133,19 +135,22 @@ func (h *STSHandlers) handleAssumeRoleWithWebIdentity(w http.ResponseWriter, r *
 	// Validate required parameters
 	if webIdentityToken == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("WebIdentityToken is required"))
+			errors.New("WebIdentityToken is required"))
+
 		return
 	}
 
 	if roleArn == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("RoleArn is required"))
+			errors.New("RoleArn is required"))
+
 		return
 	}
 
 	if roleSessionName == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("RoleSessionName is required"))
+			errors.New("RoleSessionName is required"))
+
 		return
 	}
 
@@ -153,13 +158,15 @@ func (h *STSHandlers) handleAssumeRoleWithWebIdentity(w http.ResponseWriter, r *
 	durationSeconds, errCode, err := parseDurationSeconds(r)
 	if err != nil {
 		h.writeSTSErrorResponse(w, r, errCode, err)
+
 		return
 	}
 
 	// Check if STS service is initialized
 	if h.stsService == nil || !h.stsService.IsInitialized() {
 		h.writeSTSErrorResponse(w, r, STSErrSTSNotReady,
-			fmt.Errorf("STS service not initialized"))
+			errors.New("STS service not initialized"))
+
 		return
 	}
 
@@ -192,6 +199,7 @@ func (h *STSHandlers) handleAssumeRoleWithWebIdentity(w http.ResponseWriter, r *
 		}
 
 		h.writeSTSErrorResponse(w, r, errCode, err)
+
 		return
 	}
 
@@ -207,7 +215,7 @@ func (h *STSHandlers) handleAssumeRoleWithWebIdentity(w http.ResponseWriter, r *
 			SubjectFromWebIdentityToken: response.AssumedRoleUser.Subject,
 		},
 	}
-	xmlResponse.ResponseMetadata.RequestId = fmt.Sprintf("%d", time.Now().UnixNano())
+	xmlResponse.ResponseMetadata.RequestId = strconv.FormatInt(time.Now().UnixNano(), 10)
 
 	s3err.WriteXMLResponse(w, r, http.StatusOK, xmlResponse)
 }
@@ -222,13 +230,15 @@ func (h *STSHandlers) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 	// Validate required parameters
 	if roleArn == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("RoleArn is required"))
+			errors.New("RoleArn is required"))
+
 		return
 	}
 
 	if roleSessionName == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("RoleSessionName is required"))
+			errors.New("RoleSessionName is required"))
+
 		return
 	}
 
@@ -236,20 +246,23 @@ func (h *STSHandlers) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 	durationSeconds, errCode, err := parseDurationSeconds(r)
 	if err != nil {
 		h.writeSTSErrorResponse(w, r, errCode, err)
+
 		return
 	}
 
 	// Check if STS service is initialized
 	if h.stsService == nil || !h.stsService.IsInitialized() {
 		h.writeSTSErrorResponse(w, r, STSErrSTSNotReady,
-			fmt.Errorf("STS service not initialized"))
+			errors.New("STS service not initialized"))
+
 		return
 	}
 
 	// Check if IAM is available for SigV4 verification
 	if h.iam == nil {
 		h.writeSTSErrorResponse(w, r, STSErrSTSNotReady,
-			fmt.Errorf("IAM not configured for STS"))
+			errors.New("IAM not configured for STS"))
+
 		return
 	}
 
@@ -259,12 +272,14 @@ func (h *STSHandlers) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 		glog.V(2).Infof("AssumeRole SigV4 verification failed: %v", sigErrCode)
 		h.writeSTSErrorResponse(w, r, STSErrAccessDenied,
 			fmt.Errorf("invalid AWS signature: %v", sigErrCode))
+
 		return
 	}
 
 	if identity == nil {
 		h.writeSTSErrorResponse(w, r, STSErrAccessDenied,
-			fmt.Errorf("unable to identify caller"))
+			errors.New("unable to identify caller"))
+
 		return
 	}
 
@@ -277,6 +292,7 @@ func (h *STSHandlers) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 		glog.V(2).Infof("AssumeRole: caller %s is not authorized to assume role %s", identity.Name, roleArn)
 		h.writeSTSErrorResponse(w, r, STSErrAccessDenied,
 			fmt.Errorf("user %s is not authorized to assume role %s", identity.Name, roleArn))
+
 		return
 	}
 
@@ -284,7 +300,8 @@ func (h *STSHandlers) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 	// This ensures the role's trust policy explicitly allows the principal to assume it
 	if err := h.iam.ValidateTrustPolicyForPrincipal(r.Context(), roleArn, identity.PrincipalArn); err != nil {
 		glog.V(2).Infof("AssumeRole: trust policy validation failed for %s to assume %s: %v", identity.Name, roleArn, err)
-		h.writeSTSErrorResponse(w, r, STSErrAccessDenied, fmt.Errorf("trust policy denies access"))
+		h.writeSTSErrorResponse(w, r, STSErrAccessDenied, errors.New("trust policy denies access"))
+
 		return
 	}
 
@@ -292,6 +309,7 @@ func (h *STSHandlers) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 	stsCreds, assumedUser, err := h.prepareSTSCredentials(roleArn, roleSessionName, identity.PrincipalArn, durationSeconds, nil)
 	if err != nil {
 		h.writeSTSErrorResponse(w, r, STSErrInternalError, err)
+
 		return
 	}
 
@@ -302,7 +320,7 @@ func (h *STSHandlers) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 			AssumedRoleUser: assumedUser,
 		},
 	}
-	xmlResponse.ResponseMetadata.RequestId = fmt.Sprintf("%d", time.Now().UnixNano())
+	xmlResponse.ResponseMetadata.RequestId = strconv.FormatInt(time.Now().UnixNano(), 10)
 
 	s3err.WriteXMLResponse(w, r, http.StatusOK, xmlResponse)
 }
@@ -318,25 +336,29 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 	// Validate required parameters
 	if roleArn == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("RoleArn is required"))
+			errors.New("RoleArn is required"))
+
 		return
 	}
 
 	if roleSessionName == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("RoleSessionName is required"))
+			errors.New("RoleSessionName is required"))
+
 		return
 	}
 
 	if ldapUsername == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("LDAPUsername is required"))
+			errors.New("LDAPUsername is required"))
+
 		return
 	}
 
 	if ldapPassword == "" {
 		h.writeSTSErrorResponse(w, r, STSErrMissingParameter,
-			fmt.Errorf("LDAPPassword is required"))
+			errors.New("LDAPPassword is required"))
+
 		return
 	}
 
@@ -344,13 +366,15 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 	durationSeconds, errCode, err := parseDurationSeconds(r)
 	if err != nil {
 		h.writeSTSErrorResponse(w, r, errCode, err)
+
 		return
 	}
 
 	// Check if STS service is initialized
 	if h.stsService == nil || !h.stsService.IsInitialized() {
 		h.writeSTSErrorResponse(w, r, STSErrSTSNotReady,
-			fmt.Errorf("STS service not initialized"))
+			errors.New("STS service not initialized"))
+
 		return
 	}
 
@@ -365,6 +389,7 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 		if p, ok := provider.(*ldap.LDAPProvider); ok {
 			if ldapProviderName != "" && p.Name() == ldapProviderName {
 				ldapProvider = p
+
 				break
 			} else if ldapProviderName == "" && ldapProvider == nil {
 				ldapProvider = p
@@ -380,7 +405,8 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 	if ldapProvider == nil {
 		glog.V(2).Infof("AssumeRoleWithLDAPIdentity: no LDAP provider configured")
 		h.writeSTSErrorResponse(w, r, STSErrSTSNotReady,
-			fmt.Errorf("no LDAP provider configured - please add an LDAP provider to IAM configuration"))
+			errors.New("no LDAP provider configured - please add an LDAP provider to IAM configuration"))
+
 		return
 	}
 
@@ -391,7 +417,8 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 	if err != nil {
 		glog.V(2).Infof("AssumeRoleWithLDAPIdentity: LDAP authentication failed for user %s: %v", ldapUsername, err)
 		h.writeSTSErrorResponse(w, r, STSErrAccessDenied,
-			fmt.Errorf("authentication failed"))
+			errors.New("authentication failed"))
+
 		return
 	}
 
@@ -421,7 +448,8 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 	// The LDAP user doesn't have identity policies, so we strictly check if the Role trusts this principal.
 	if err := h.iam.ValidateTrustPolicyForPrincipal(r.Context(), roleArn, ldapUserIdentity.PrincipalArn); err != nil {
 		glog.V(2).Infof("AssumeRoleWithLDAPIdentity: trust policy validation failed for %s to assume %s: %v", ldapUsername, roleArn, err)
-		h.writeSTSErrorResponse(w, r, STSErrAccessDenied, fmt.Errorf("trust policy denies access"))
+		h.writeSTSErrorResponse(w, r, STSErrAccessDenied, errors.New("trust policy denies access"))
+
 		return
 	}
 
@@ -433,6 +461,7 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 	stsCreds, assumedUser, err := h.prepareSTSCredentials(roleArn, roleSessionName, ldapUserIdentity.PrincipalArn, durationSeconds, modifyClaims)
 	if err != nil {
 		h.writeSTSErrorResponse(w, r, STSErrInternalError, err)
+
 		return
 	}
 
@@ -443,7 +472,7 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 			AssumedRoleUser: assumedUser,
 		},
 	}
-	xmlResponse.ResponseMetadata.RequestId = fmt.Sprintf("%d", time.Now().UnixNano())
+	xmlResponse.ResponseMetadata.RequestId = strconv.FormatInt(time.Now().UnixNano(), 10)
 
 	s3err.WriteXMLResponse(w, r, http.StatusOK, xmlResponse)
 }
@@ -451,7 +480,6 @@ func (h *STSHandlers) handleAssumeRoleWithLDAPIdentity(w http.ResponseWriter, r 
 // prepareSTSCredentials extracts common shared logic for credential generation
 func (h *STSHandlers) prepareSTSCredentials(roleArn, roleSessionName, principalArn string,
 	durationSeconds *int64, modifyClaims func(*sts.STSSessionClaims)) (STSCredentials, *AssumedRoleUser, error) {
-
 	// Calculate duration
 	duration := time.Hour // Default 1 hour
 	if durationSeconds != nil {
@@ -643,7 +671,7 @@ func (h *STSHandlers) writeSTSErrorResponse(w http.ResponseWriter, r *http.Reque
 	}
 
 	response := STSErrorResponse{
-		RequestId: fmt.Sprintf("%d", time.Now().UnixNano()),
+		RequestId: strconv.FormatInt(time.Now().UnixNano(), 10),
 	}
 
 	// Server-side errors use "Receiver" type per AWS spec

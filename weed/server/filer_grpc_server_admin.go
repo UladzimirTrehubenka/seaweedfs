@@ -15,21 +15,21 @@ import (
 )
 
 func (fs *FilerServer) Statistics(ctx context.Context, req *filer_pb.StatisticsRequest) (resp *filer_pb.StatisticsResponse, err error) {
-
 	var output *master_pb.StatisticsResponse
 
 	err = fs.filer.MasterClient.WithClient(false, func(masterClient master_pb.SeaweedClient) error {
 		grpcResponse, grpcErr := masterClient.Statistics(context.Background(), &master_pb.StatisticsRequest{
-			Replication: req.Replication,
-			Collection:  req.Collection,
-			Ttl:         req.Ttl,
-			DiskType:    req.DiskType,
+			Replication: req.GetReplication(),
+			Collection:  req.GetCollection(),
+			Ttl:         req.GetTtl(),
+			DiskType:    req.GetDiskType(),
 		})
 		if grpcErr != nil {
 			return grpcErr
 		}
 
 		output = grpcResponse
+
 		return nil
 	})
 
@@ -38,9 +38,9 @@ func (fs *FilerServer) Statistics(ctx context.Context, req *filer_pb.StatisticsR
 	}
 
 	return &filer_pb.StatisticsResponse{
-		TotalSize: output.TotalSize,
-		UsedSize:  output.UsedSize,
-		FileCount: output.FileCount,
+		TotalSize: output.GetTotalSize(),
+		UsedSize:  output.GetUsedSize(),
+		FileCount: output.GetFileCount(),
 	}, nil
 }
 
@@ -48,42 +48,45 @@ func (fs *FilerServer) Ping(ctx context.Context, req *filer_pb.PingRequest) (res
 	resp = &filer_pb.PingResponse{
 		StartTimeNs: time.Now().UnixNano(),
 	}
-	if req.TargetType == cluster.FilerType {
-		pingErr = pb.WithFilerClient(false, 0, pb.ServerAddress(req.Target), fs.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+	if req.GetTargetType() == cluster.FilerType {
+		pingErr = pb.WithFilerClient(false, 0, pb.ServerAddress(req.GetTarget()), fs.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			pingResp, err := client.Ping(ctx, &filer_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
-	if req.TargetType == cluster.VolumeServerType {
-		pingErr = pb.WithVolumeServerClient(false, pb.ServerAddress(req.Target), fs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
+	if req.GetTargetType() == cluster.VolumeServerType {
+		pingErr = pb.WithVolumeServerClient(false, pb.ServerAddress(req.GetTarget()), fs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
 			pingResp, err := client.Ping(ctx, &volume_server_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
-	if req.TargetType == cluster.MasterType {
-		pingErr = pb.WithMasterClient(false, pb.ServerAddress(req.Target), fs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
+	if req.GetTargetType() == cluster.MasterType {
+		pingErr = pb.WithMasterClient(false, pb.ServerAddress(req.GetTarget()), fs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 			pingResp, err := client.Ping(ctx, &master_pb.PingRequest{})
 			if pingResp != nil {
-				resp.RemoteTimeNs = pingResp.StartTimeNs
+				resp.RemoteTimeNs = pingResp.GetStartTimeNs()
 			}
+
 			return err
 		})
 	}
 	if pingErr != nil {
-		pingErr = fmt.Errorf("ping %s %s: %v", req.TargetType, req.Target, pingErr)
+		pingErr = fmt.Errorf("ping %s %s: %w", req.GetTargetType(), req.GetTarget(), pingErr)
 	}
 	resp.StopTimeNs = time.Now().UnixNano()
-	return
+
+	return resp, pingErr
 }
 
 func (fs *FilerServer) GetFilerConfiguration(ctx context.Context, req *filer_pb.GetFilerConfigurationRequest) (resp *filer_pb.GetFilerConfigurationResponse, err error) {
-
 	t := &filer_pb.GetFilerConfigurationResponse{
 		Masters:            fs.option.Masters.GetInstancesAsStrings(),
 		Collection:         fs.option.Collection,

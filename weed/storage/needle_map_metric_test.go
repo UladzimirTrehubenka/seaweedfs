@@ -10,11 +10,10 @@ import (
 )
 
 func TestFastLoadingNeedleMapMetrics(t *testing.T) {
-
-	idxFile, _ := os.CreateTemp("", "tmp.idx")
+	idxFile, _ := os.CreateTemp(t.TempDir(), "tmp.idx")
 	nm := NewCompactNeedleMap(idxFile)
 
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		nm.Put(Uint64ToNeedleId(uint64(i+1)), Uint32ToOffset(uint32(0)), Size(1))
 		if rand.Float32() < 0.2 && i > 0 {
 			nm.Delete(Uint64ToNeedleId(uint64(rand.Int63n(int64(i))+1)), Uint32ToOffset(uint32(0)))

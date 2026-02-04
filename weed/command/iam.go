@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/iamapi"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -72,6 +73,7 @@ func runIam(cmd *Command, args []string) bool {
 	glog.Warningf("The IAM API is now embedded in 'weed s3' by default (use -iam=true, which is the default).")
 	glog.Warningf("Please migrate to using 'weed s3' which provides both S3 and IAM APIs on the same port.")
 	glog.Warningf("================================================================================")
+
 	return iamStandaloneOptions.startIamServer()
 }
 
@@ -84,9 +86,10 @@ func (iamopt *IamOptions) startIamServer() bool {
 		err := pb.WithOneOfGrpcFilerClients(false, filerAddresses, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 			resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 			if err != nil {
-				return fmt.Errorf("get filer configuration: %v", err)
+				return fmt.Errorf("get filer configuration: %w", err)
 			}
 			glog.V(0).Infof("IAM read filer configuration: %s", resp)
+
 			return nil
 		})
 		if err != nil {
@@ -94,6 +97,7 @@ func (iamopt *IamOptions) startIamServer() bool {
 			time.Sleep(time.Second)
 		} else {
 			glog.V(0).Infof("connected to filers %v", filerAddresses)
+
 			break
 		}
 	}

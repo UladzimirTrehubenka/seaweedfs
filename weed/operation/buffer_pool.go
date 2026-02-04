@@ -13,6 +13,7 @@ func GetBuffer() *bytebufferpool.ByteBuffer {
 		atomic.AddInt64(&bufferCounter, 1)
 		// println("+", bufferCounter)
 	}()
+
 	return bytebufferpool.Get()
 }
 

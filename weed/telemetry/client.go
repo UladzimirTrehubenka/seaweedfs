@@ -2,15 +2,17 @@ package telemetry
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	protobuf "google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/telemetry/proto"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
-	protobuf "google.golang.org/protobuf/proto"
 )
 
 type Client struct {
@@ -54,7 +56,7 @@ func (c *Client) SendTelemetry(data *proto.TelemetryData) error {
 	// Work on a copy to avoid mutating the caller's TelemetryData
 	clonedData, ok := protobuf.Clone(data).(*proto.TelemetryData)
 	if !ok {
-		return fmt.Errorf("failed to clone telemetry data")
+		return errors.New("failed to clone telemetry data")
 	}
 
 	// Set the topology ID
@@ -91,13 +93,13 @@ func (c *Client) sendProtobuf(data *proto.TelemetryData) error {
 		return fmt.Errorf("failed to marshal protobuf: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.url, bytes.NewBuffer(body))
+	httpReq, err := http.NewRequest(http.MethodPost, c.url, bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", fmt.Sprintf("SeaweedFS/%s", data.Version))
+	httpReq.Header.Set("User-Agent", "SeaweedFS/"+data.GetVersion())
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -110,6 +112,7 @@ func (c *Client) sendProtobuf(data *proto.TelemetryData) error {
 	}
 
 	glog.V(2).Infof("Telemetry sent successfully via protobuf")
+
 	return nil
 }
 

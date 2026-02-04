@@ -84,7 +84,7 @@ func (store *EtcdStore) initialize(servers, username, password string, timeout t
 		TLS:         tlsConfig,
 	})
 	if err != nil {
-		return fmt.Errorf("connect to etcd %s: %s", servers, err)
+		return fmt.Errorf("connect to etcd %s: %w", servers, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), store.timeout)
@@ -93,7 +93,8 @@ func (store *EtcdStore) initialize(servers, username, password string, timeout t
 	resp, err := client.Status(ctx, client.Endpoints()[0])
 	if err != nil {
 		client.Close()
-		return fmt.Errorf("error checking etcd connection: %s", err)
+
+		return fmt.Errorf("error checking etcd connection: %w", err)
 	}
 
 	glog.V(0).InfofCtx(ctx, "сonnection to etcd has been successfully verified. etcd version: %s", resp.Version)
@@ -117,7 +118,7 @@ func (store *EtcdStore) InsertEntry(ctx context.Context, entry *filer.Entry) (er
 
 	meta, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encoding %s %+v: %v", entry.FullPath, entry.Attr, err)
+		return fmt.Errorf("encoding %s %+v: %w", entry.FullPath, entry.Attr, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -125,7 +126,7 @@ func (store *EtcdStore) InsertEntry(ctx context.Context, entry *filer.Entry) (er
 	}
 
 	if _, err := store.client.Put(ctx, store.etcdKeyPrefix+string(key), string(meta)); err != nil {
-		return fmt.Errorf("persisting %s : %v", entry.FullPath, err)
+		return fmt.Errorf("persisting %s : %w", entry.FullPath, err)
 	}
 
 	return nil
@@ -140,7 +141,7 @@ func (store *EtcdStore) FindEntry(ctx context.Context, fullpath weed_util.FullPa
 
 	resp, err := store.client.Get(ctx, store.etcdKeyPrefix+string(key))
 	if err != nil {
-		return nil, fmt.Errorf("get %s : %v", fullpath, err)
+		return nil, fmt.Errorf("get %s : %w", fullpath, err)
 	}
 
 	if len(resp.Kvs) == 0 {
@@ -152,7 +153,7 @@ func (store *EtcdStore) FindEntry(ctx context.Context, fullpath weed_util.FullPa
 	}
 	err = entry.DecodeAttributesAndChunks(weed_util.MaybeDecompressData(resp.Kvs[0].Value))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
@@ -162,7 +163,7 @@ func (store *EtcdStore) DeleteEntry(ctx context.Context, fullpath weed_util.Full
 	key := genKey(fullpath.DirAndName())
 
 	if _, err := store.client.Delete(ctx, store.etcdKeyPrefix+string(key)); err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -172,7 +173,7 @@ func (store *EtcdStore) DeleteFolderChildren(ctx context.Context, fullpath weed_
 	directoryPrefix := genDirectoryKeyPrefix(fullpath, "")
 
 	if _, err := store.client.Delete(ctx, store.etcdKeyPrefix+string(directoryPrefix), clientv3.WithPrefix()); err != nil {
-		return fmt.Errorf("deleteFolderChildren %s : %v", fullpath, err)
+		return fmt.Errorf("deleteFolderChildren %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -189,7 +190,7 @@ func (store *EtcdStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPat
 		clientv3.WithRange(clientv3.GetPrefixRangeEnd(store.etcdKeyPrefix+string(directoryPrefix))),
 		clientv3.WithLimit(limit+1))
 	if err != nil {
-		return lastFileName, fmt.Errorf("list %s : %v", dirPath, err)
+		return lastFileName, fmt.Errorf("list %s : %w", dirPath, err)
 	}
 
 	for _, kv := range resp.Kvs {
@@ -210,12 +211,14 @@ func (store *EtcdStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPat
 		if decodeErr := entry.DecodeAttributesAndChunks(weed_util.MaybeDecompressData(kv.Value)); decodeErr != nil {
 			err = decodeErr
 			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
+
 			break
 		}
 
 		resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 		if resEachEntryFuncErr != nil {
 			err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 			break
 		}
 
@@ -237,6 +240,7 @@ func genKey(dirPath, fileName string) (key []byte) {
 	key = []byte(dirPath)
 	key = append(key, DIR_FILE_SEPARATOR)
 	key = append(key, []byte(fileName)...)
+
 	return key
 }
 
@@ -246,6 +250,7 @@ func genDirectoryKeyPrefix(fullpath weed_util.FullPath, startFileName string) (k
 	if len(startFileName) > 0 {
 		keyPrefix = append(keyPrefix, []byte(startFileName)...)
 	}
+
 	return keyPrefix
 }
 

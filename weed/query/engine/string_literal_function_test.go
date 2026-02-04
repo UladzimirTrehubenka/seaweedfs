@@ -28,6 +28,7 @@ func TestSQLEngine_StringFunctionsAndLiterals(t *testing.T) {
 			validateFirstRow: func(t *testing.T, row []string) {
 				if len(row) != 3 {
 					t.Errorf("Expected 3 columns, got %d", len(row))
+
 					return
 				}
 				// Status should exist, UPPER should be uppercase version, LENGTH should be numeric
@@ -56,6 +57,7 @@ func TestSQLEngine_StringFunctionsAndLiterals(t *testing.T) {
 			validateFirstRow: func(t *testing.T, row []string) {
 				if len(row) != 3 {
 					t.Errorf("Expected 3 columns, got %d", len(row))
+
 					return
 				}
 
@@ -73,6 +75,7 @@ func TestSQLEngine_StringFunctionsAndLiterals(t *testing.T) {
 			validateFirstRow: func(t *testing.T, row []string) {
 				if len(row) != 4 {
 					t.Errorf("Expected 4 columns, got %d", len(row))
+
 					return
 				}
 
@@ -97,6 +100,7 @@ func TestSQLEngine_StringFunctionsAndLiterals(t *testing.T) {
 			validateFirstRow: func(t *testing.T, row []string) {
 				if len(row) != 5 {
 					t.Errorf("Expected 5 columns, got %d", len(row))
+
 					return
 				}
 

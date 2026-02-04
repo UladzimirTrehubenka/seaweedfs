@@ -16,7 +16,7 @@ import (
 
 /*
 What is an inode?
-If the file is an hardlinked file:
+If the file is an hardline file:
 	use the hardlink id as inode
 Otherwise:
 	use the file path as inode
@@ -37,11 +37,11 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 
 	newParentPath, code := wfs.inodeToPath.GetPath(in.NodeId)
 	if code != fuse.OK {
-		return
+		return code
 	}
 	oldEntryPath, code := wfs.inodeToPath.GetPath(in.Oldnodeid)
 	if code != fuse.OK {
-		return
+		return code
 	}
 	oldParentPath, _ := oldEntryPath.DirAndName()
 
@@ -56,7 +56,7 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 	}
 
 	// update old file to hardlink mode
-	if len(oldEntry.HardLinkId) == 0 {
+	if len(oldEntry.GetHardLinkId()) == 0 {
 		oldEntry.HardLinkId = filer.NewHardLinkId()
 		oldEntry.HardLinkCounter = 1
 	}
@@ -74,11 +74,11 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 		Entry: &filer_pb.Entry{
 			Name:            name,
 			IsDirectory:     false,
-			Attributes:      oldEntry.Attributes,
+			Attributes:      oldEntry.GetAttributes(),
 			Chunks:          oldEntry.GetChunks(),
-			Extended:        oldEntry.Extended,
-			HardLinkId:      oldEntry.HardLinkId,
-			HardLinkCounter: oldEntry.HardLinkCounter,
+			Extended:        oldEntry.GetExtended(),
+			HardLinkId:      oldEntry.GetHardLinkId(),
+			HardLinkCounter: oldEntry.GetHardLinkCounter(),
 		},
 		Signatures:               []int32{wfs.signature},
 		SkipCheckParentDirectory: true,
@@ -86,16 +86,15 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 
 	// apply changes to the filer, and also apply to local metaCache
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
-		wfs.mapPbIdFromLocalToFiler(request.Entry)
-		defer wfs.mapPbIdFromFilerToLocal(request.Entry)
+		wfs.mapPbIdFromLocalToFiler(request.GetEntry())
+		defer wfs.mapPbIdFromFilerToLocal(request.GetEntry())
 
 		if err := filer_pb.UpdateEntry(context.Background(), client, updateOldEntryRequest); err != nil {
 			return err
 		}
 		// Only update cache if the directory is cached
-		if wfs.metaCache.IsDirectoryCached(util.FullPath(updateOldEntryRequest.Directory)) {
-			if err := wfs.metaCache.UpdateEntry(context.Background(), filer.FromPbEntry(updateOldEntryRequest.Directory, updateOldEntryRequest.Entry)); err != nil {
+		if wfs.metaCache.IsDirectoryCached(util.FullPath(updateOldEntryRequest.GetDirectory())) {
+			if err := wfs.metaCache.UpdateEntry(context.Background(), filer.FromPbEntry(updateOldEntryRequest.GetDirectory(), updateOldEntryRequest.GetEntry())); err != nil {
 				return fmt.Errorf("update meta cache for %s: %w", oldEntryPath, err)
 			}
 		}
@@ -106,7 +105,7 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 
 		// Only cache the entry if the parent directory is already cached.
 		if wfs.metaCache.IsDirectoryCached(newParentPath) {
-			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, request.Entry)); err != nil {
+			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.GetDirectory(), request.GetEntry())); err != nil {
 				return fmt.Errorf("insert meta cache for %s: %w", newParentPath.Child(name), err)
 			}
 		}
@@ -118,12 +117,13 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 
 	if err != nil {
 		glog.V(0).Infof("Link %v -> %s: %v", oldEntryPath, newEntryPath, err)
+
 		return fuse.EIO
 	}
 
-	wfs.inodeToPath.AddPath(oldEntry.Attributes.Inode, newEntryPath)
+	wfs.inodeToPath.AddPath(oldEntry.GetAttributes().GetInode(), newEntryPath)
 
-	wfs.outputPbEntry(out, oldEntry.Attributes.Inode, request.Entry)
+	wfs.outputPbEntry(out, oldEntry.GetAttributes().GetInode(), request.GetEntry())
 
 	return fuse.OK
 }

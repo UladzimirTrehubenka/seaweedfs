@@ -73,11 +73,13 @@ func TestConvertOffsetToMessagePosition(t *testing.T) {
 
 			if tt.expectError && err == nil {
 				t.Error("Expected error but got none")
+
 				return
 			}
 
 			if !tt.expectError && err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
@@ -92,7 +94,6 @@ func TestConvertOffsetToMessagePosition(t *testing.T) {
 				position.Time.IsZero() {
 				t.Error("Expected non-zero timestamp")
 			}
-
 		})
 	}
 }
@@ -144,7 +145,6 @@ func TestConvertOffsetToMessagePosition_OffsetEncoding(t *testing.T) {
 			if extractedOffset := pos.GetOffset(); extractedOffset != tc.offset {
 				t.Errorf("Expected extracted offset %d, got %d", tc.offset, extractedOffset)
 			}
-
 		})
 	}
 }
@@ -161,7 +161,7 @@ func TestConvertOffsetToMessagePosition_ConsistentResults(t *testing.T) {
 
 	// Call multiple times within a short period
 	positions := make([]log_buffer.MessagePosition, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		pos, err := broker.convertOffsetToMessagePosition(subscription)
 		if err != nil {
 			t.Fatalf("Unexpected error on iteration %d: %v", i, err)
@@ -179,13 +179,12 @@ func TestConvertOffsetToMessagePosition_ConsistentResults(t *testing.T) {
 
 	// With NewMessagePositionFromOffset, timestamps should be identical (zero time for offset-based)
 	expectedTime := time.Time{}
-	for i := 0; i < len(positions); i++ {
+	for i := range positions {
 		if !positions[i].Time.Equal(expectedTime) {
 			t.Errorf("Expected all timestamps to be sentinel time (%v), got %v at index %d",
 				expectedTime, positions[i].Time, i)
 		}
 	}
-
 }
 
 func TestConvertOffsetToMessagePosition_FixVerification(t *testing.T) {
@@ -205,7 +204,7 @@ func TestConvertOffsetToMessagePosition_FixVerification(t *testing.T) {
 	var positions []log_buffer.MessagePosition
 	var timestamps []int64
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		pos, err := broker.convertOffsetToMessagePosition(subscription)
 		if err != nil {
 			t.Fatalf("Unexpected error on iteration %d: %v", i, err)
@@ -238,7 +237,6 @@ func TestConvertOffsetToMessagePosition_FixVerification(t *testing.T) {
 			t.Errorf("Extracted offset variance at call %d: expected %d, got %d", i, expectedOffset, extractedOffset)
 		}
 	}
-
 }
 
 func TestPartitionIdentityConsistency(t *testing.T) {
@@ -262,21 +260,21 @@ func TestPartitionIdentityConsistency(t *testing.T) {
 
 	// Simulate the partition creation logic from SubscribeWithOffset
 	p := topic.Partition{
-		RingSize:   initMessage.PartitionOffset.Partition.RingSize,
-		RangeStart: initMessage.PartitionOffset.Partition.RangeStart,
-		RangeStop:  initMessage.PartitionOffset.Partition.RangeStop,
-		UnixTimeNs: initMessage.PartitionOffset.Partition.UnixTimeNs,
+		RingSize:   initMessage.GetPartitionOffset().GetPartition().GetRingSize(),
+		RangeStart: initMessage.GetPartitionOffset().GetPartition().GetRangeStart(),
+		RangeStop:  initMessage.GetPartitionOffset().GetPartition().GetRangeStop(),
+		UnixTimeNs: initMessage.GetPartitionOffset().GetPartition().GetUnixTimeNs(),
 	}
 
 	// Verify that the partition preserves the original UnixTimeNs
-	if p.UnixTimeNs != partition.UnixTimeNs {
+	if p.UnixTimeNs != partition.GetUnixTimeNs() {
 		t.Errorf("Partition UnixTimeNs not preserved: expected %d, got %d",
-			partition.UnixTimeNs, p.UnixTimeNs)
+			partition.GetUnixTimeNs(), p.UnixTimeNs)
 	}
 
 	// Verify partition key consistency
 	expectedKey := fmt.Sprintf("ring:%d:range:%d-%d:time:%d",
-		partition.RingSize, partition.RangeStart, partition.RangeStop, partition.UnixTimeNs)
+		partition.GetRingSize(), partition.GetRangeStart(), partition.GetRangeStop(), partition.GetUnixTimeNs())
 
 	actualKey := fmt.Sprintf("ring:%d:range:%d-%d:time:%d",
 		p.RingSize, p.RangeStart, p.RangeStop, p.UnixTimeNs)
@@ -284,7 +282,6 @@ func TestPartitionIdentityConsistency(t *testing.T) {
 	if actualKey != expectedKey {
 		t.Errorf("Partition key mismatch: expected %s, got %s", expectedKey, actualKey)
 	}
-
 }
 
 func TestBrokerOffsetManager_GetSubscription_Fixed(t *testing.T) {
@@ -334,7 +331,6 @@ func TestBrokerOffsetManager_GetSubscription_Fixed(t *testing.T) {
 	if retrievedSub.OffsetType != subscription.OffsetType {
 		t.Errorf("Expected offset type %v, got %v", subscription.OffsetType, retrievedSub.OffsetType)
 	}
-
 }
 
 func TestBrokerOffsetManager_ListActiveSubscriptions_Fixed(t *testing.T) {
@@ -398,7 +394,6 @@ func TestBrokerOffsetManager_ListActiveSubscriptions_Fixed(t *testing.T) {
 			t.Errorf("Subscription %s should be active", sub.ID)
 		}
 	}
-
 }
 
 func TestMessageQueueBroker_ListActiveSubscriptions_Fixed(t *testing.T) {
@@ -481,7 +476,6 @@ func TestMessageQueueBroker_ListActiveSubscriptions_Fixed(t *testing.T) {
 		if isActive, ok := info["is_active"].(bool); !ok || !isActive {
 			t.Errorf("Expected is_active to be true, got %v", info["is_active"])
 		}
-
 	}
 }
 
@@ -580,7 +574,6 @@ func TestSingleWriterPerPartitionCorrectness(t *testing.T) {
 	if lag2 != 0 {
 		t.Errorf("Expected lag 0 on follower subscription (no local data), got %d", lag2)
 	}
-
 }
 
 func TestEndToEndWorkflowAfterFixes(t *testing.T) {
@@ -638,6 +631,7 @@ func TestEndToEndWorkflowAfterFixes(t *testing.T) {
 	for _, info := range activeList {
 		if info["subscription_id"] == subscriptionID {
 			found = true
+
 			break
 		}
 	}
@@ -703,5 +697,4 @@ func TestEndToEndWorkflowAfterFixes(t *testing.T) {
 	if partitionKey1 != partitionKey2 {
 		t.Errorf("Partition key inconsistency: %s != %s", partitionKey1, partitionKey2)
 	}
-
 }

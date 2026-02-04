@@ -20,23 +20,23 @@ func (vs *VolumeServer) FetchAndWriteNeedle(ctx context.Context, req *volume_ser
 	}
 
 	resp = &volume_server_pb.FetchAndWriteNeedleResponse{}
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return nil, fmt.Errorf("not found volume id %d", req.VolumeId)
+		return nil, fmt.Errorf("not found volume id %d", req.GetVolumeId())
 	}
 
-	remoteConf := req.RemoteConf
+	remoteConf := req.GetRemoteConf()
 
 	client, getClientErr := remote_storage.GetRemoteStorage(remoteConf)
 	if getClientErr != nil {
 		return nil, fmt.Errorf("get remote client: %w", getClientErr)
 	}
 
-	remoteStorageLocation := req.RemoteLocation
+	remoteStorageLocation := req.GetRemoteLocation()
 
-	data, ReadRemoteErr := client.ReadFile(remoteStorageLocation, req.Offset, req.Size)
+	data, ReadRemoteErr := client.ReadFile(remoteStorageLocation, req.GetOffset(), req.GetSize())
 	if ReadRemoteErr != nil {
-		return nil, fmt.Errorf("read from remote %+v: %v", remoteStorageLocation, ReadRemoteErr)
+		return nil, fmt.Errorf("read from remote %+v: %w", remoteStorageLocation, ReadRemoteErr)
 	}
 
 	var wg sync.WaitGroup
@@ -44,8 +44,8 @@ func (vs *VolumeServer) FetchAndWriteNeedle(ctx context.Context, req *volume_ser
 	go func() {
 		defer wg.Done()
 		n := new(needle.Needle)
-		n.Id = types.NeedleId(req.NeedleId)
-		n.Cookie = types.Cookie(req.Cookie)
+		n.Id = types.NeedleId(req.GetNeedleId())
+		n.Cookie = types.Cookie(req.GetCookie())
 		n.Data, n.DataSize = data, uint32(len(data))
 		// copied from *Needle.prepareWriteBuffer()
 		n.Size = 4 + types.Size(n.DataSize) + 1
@@ -54,15 +54,15 @@ func (vs *VolumeServer) FetchAndWriteNeedle(ctx context.Context, req *volume_ser
 		n.SetHasLastModifiedDate()
 		if _, localWriteErr := vs.store.WriteVolumeNeedle(v.Id, n, true, false); localWriteErr != nil {
 			if err == nil {
-				err = fmt.Errorf("local write needle %d size %d: %v", req.NeedleId, req.Size, localWriteErr)
+				err = fmt.Errorf("local write needle %d size %d: %w", req.GetNeedleId(), req.GetSize(), localWriteErr)
 			}
 		} else {
 			resp.ETag = n.Etag()
 		}
 	}()
-	if len(req.Replicas) > 0 {
-		fileId := needle.NewFileId(v.Id, req.NeedleId, req.Cookie)
-		for _, replica := range req.Replicas {
+	if len(req.GetReplicas()) > 0 {
+		fileId := needle.NewFileId(v.Id, req.GetNeedleId(), req.GetCookie())
+		for _, replica := range req.GetReplicas() {
 			wg.Add(1)
 			go func(targetVolumeServer string) {
 				defer wg.Done()
@@ -73,19 +73,20 @@ func (vs *VolumeServer) FetchAndWriteNeedle(ctx context.Context, req *volume_ser
 					IsInputCompressed: false,
 					MimeType:          "",
 					PairMap:           nil,
-					Jwt:               security.EncodedJwt(req.Auth),
+					Jwt:               security.EncodedJwt(req.GetAuth()),
 				}
 
 				uploader, uploaderErr := operation.NewUploader()
 				if uploaderErr != nil && err == nil {
-					err = fmt.Errorf("remote write needle %d size %d: %v", req.NeedleId, req.Size, uploaderErr)
+					err = fmt.Errorf("remote write needle %d size %d: %w", req.GetNeedleId(), req.GetSize(), uploaderErr)
+
 					return
 				}
 
 				if _, replicaWriteErr := uploader.UploadData(ctx, data, uploadOption); replicaWriteErr != nil && err == nil {
-					err = fmt.Errorf("remote write needle %d size %d: %v", req.NeedleId, req.Size, replicaWriteErr)
+					err = fmt.Errorf("remote write needle %d size %d: %w", req.GetNeedleId(), req.GetSize(), replicaWriteErr)
 				}
-			}(replica.Url)
+			}(replica.GetUrl())
 		}
 	}
 

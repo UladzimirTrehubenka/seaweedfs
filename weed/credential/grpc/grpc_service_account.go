@@ -11,6 +11,7 @@ func (store *IamGrpcStore) CreateServiceAccount(ctx context.Context, sa *iam_pb.
 		_, err := client.CreateServiceAccount(ctx, &iam_pb.CreateServiceAccountRequest{
 			ServiceAccount: sa,
 		})
+
 		return err
 	})
 }
@@ -21,6 +22,7 @@ func (store *IamGrpcStore) UpdateServiceAccount(ctx context.Context, id string, 
 			Id:             id,
 			ServiceAccount: sa,
 		})
+
 		return err
 	})
 }
@@ -30,6 +32,7 @@ func (store *IamGrpcStore) DeleteServiceAccount(ctx context.Context, id string) 
 		_, err := client.DeleteServiceAccount(ctx, &iam_pb.DeleteServiceAccountRequest{
 			Id: id,
 		})
+
 		return err
 	})
 }
@@ -43,9 +46,11 @@ func (store *IamGrpcStore) GetServiceAccount(ctx context.Context, id string) (*i
 		if err != nil {
 			return err
 		}
-		sa = resp.ServiceAccount
+		sa = resp.GetServiceAccount()
+
 		return nil
 	})
+
 	return sa, err
 }
 
@@ -56,9 +61,11 @@ func (store *IamGrpcStore) ListServiceAccounts(ctx context.Context) ([]*iam_pb.S
 		if err != nil {
 			return err
 		}
-		accounts = resp.ServiceAccounts
+		accounts = resp.GetServiceAccounts()
+
 		return nil
 	})
+
 	return accounts, err
 }
 
@@ -71,8 +78,10 @@ func (store *IamGrpcStore) GetServiceAccountByAccessKey(ctx context.Context, acc
 		if err != nil {
 			return err
 		}
-		sa = resp.ServiceAccount
+		sa = resp.GetServiceAccount()
+
 		return nil
 	})
+
 	return sa, err
 }

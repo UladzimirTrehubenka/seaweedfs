@@ -239,6 +239,7 @@ func countDataAndParityShardsPerRack(ecNodes []*EcNode, vid needle.VolumeId, dat
 			}
 		}
 	}
+
 	return
 }
 

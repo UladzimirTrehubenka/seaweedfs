@@ -29,6 +29,7 @@ func TestFolderWritable(folder string) (err error) {
 	if 0200&perm != 0 {
 		return nil
 	}
+
 	return errors.New("Not writable!")
 }
 
@@ -37,27 +38,26 @@ func GetFileSize(file *os.File) (size int64, err error) {
 	if fi, err = file.Stat(); err == nil {
 		size = fi.Size()
 	}
+
 	return
 }
 
 func FileExists(filename string) bool {
-
 	_, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return false
 	}
-	return true
 
+	return true
 }
 
 func FolderExists(folder string) bool {
-
 	fileInfo, err := os.Stat(folder)
 	if err != nil {
 		return false
 	}
-	return fileInfo.IsDir()
 
+	return fileInfo.IsDir()
 }
 
 func CheckFile(filename string) (exists, canRead, canWrite bool, modTime time.Time, fileSize int64) {
@@ -65,10 +65,12 @@ func CheckFile(filename string) (exists, canRead, canWrite bool, modTime time.Ti
 	fi, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		exists = false
+
 		return
 	}
 	if err != nil {
 		glog.Errorf("check %s: %v", filename, err)
+
 		return
 	}
 	if fi.Mode()&0400 != 0 {
@@ -79,11 +81,11 @@ func CheckFile(filename string) (exists, canRead, canWrite bool, modTime time.Ti
 	}
 	modTime = fi.ModTime()
 	fileSize = fi.Size()
+
 	return
 }
 
 func ResolvePath(path string) string {
-
 	if !strings.Contains(path, "~") {
 		return path
 	}
@@ -108,6 +110,7 @@ func FileNameBase(filename string) string {
 	if lastDotIndex < 0 {
 		return filename
 	}
+
 	return filename[:lastDotIndex]
 }
 
@@ -119,8 +122,10 @@ func ToShortFileName(path string) string {
 		fileExt := fileName[len(fileNameBase):]
 		fileNameBaseBates := bytes.ToValidUTF8([]byte(fileNameBase)[:maxFilenameLength-len([]byte(fileExt))-8], []byte{})
 		shortFileName := string(fileNameBaseBates) + shaStr[len(shaStr)-8:]
+
 		return filepath.Join(filepath.Dir(path), shortFileName) + fileExt
 	}
+
 	return path
 }
 
@@ -138,5 +143,6 @@ func WriteFile(name string, data []byte, perm os.FileMode) error {
 	if err1 := f.Close(); err1 != nil && err == nil {
 		err = err1
 	}
+
 	return err
 }

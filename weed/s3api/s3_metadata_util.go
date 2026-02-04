@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,9 +20,7 @@ func ParseS3Metadata(r *http.Request, existing map[string][]byte, isReplace bool
 
 	// Copy existing metadata unless replacing
 	if !isReplace {
-		for k, v := range existing {
-			metadata[k] = v
-		}
+		maps.Copy(metadata, existing)
 	}
 
 	// Storage class
@@ -57,6 +56,7 @@ func ParseS3Metadata(r *http.Request, existing map[string][]byte, isReplace bool
 		if err != nil {
 			// Return proper S3 error instead of silently dropping tags
 			glog.Warningf("Invalid S3 tag format in header '%s': %v", tags, err)
+
 			return nil, s3err.ErrInvalidTag
 		}
 
@@ -64,6 +64,7 @@ func ParseS3Metadata(r *http.Request, existing map[string][]byte, isReplace bool
 		for key, values := range parsedTags {
 			if len(values) > 1 {
 				glog.Warningf("Duplicate tag key '%s' in header '%s'", key, tags)
+
 				return nil, s3err.ErrInvalidTag
 			}
 			// Tag value can be an empty string but not nil

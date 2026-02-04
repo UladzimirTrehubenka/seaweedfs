@@ -55,6 +55,7 @@ func (bt *BaseTypedTask) Cancel() error {
 	bt.mutex.Lock()
 	defer bt.mutex.Unlock()
 	bt.cancelled = true
+
 	return nil
 }
 
@@ -62,6 +63,7 @@ func (bt *BaseTypedTask) Cancel() error {
 func (bt *BaseTypedTask) IsCancelled() bool {
 	bt.mutex.RLock()
 	defer bt.mutex.RUnlock()
+
 	return bt.cancelled
 }
 
@@ -69,6 +71,7 @@ func (bt *BaseTypedTask) IsCancelled() bool {
 func (bt *BaseTypedTask) GetProgress() float64 {
 	bt.mutex.RLock()
 	defer bt.mutex.RUnlock()
+
 	return bt.progress
 }
 
@@ -116,6 +119,7 @@ func (bt *BaseTypedTask) SetCurrentStage(stage string) {
 func (bt *BaseTypedTask) GetCurrentStage() string {
 	bt.mutex.RLock()
 	defer bt.mutex.RUnlock()
+
 	return bt.currentStage
 }
 
@@ -163,11 +167,12 @@ func (bt *BaseTypedTask) InitializeTaskLogger(taskID string, workerID string, pa
 func (bt *BaseTypedTask) GetTaskLogger() types.TaskLogger {
 	bt.mutex.RLock()
 	defer bt.mutex.RUnlock()
+
 	return bt.logger
 }
 
 // LogInfo logs an info message
-func (bt *BaseTypedTask) LogInfo(message string, args ...interface{}) {
+func (bt *BaseTypedTask) LogInfo(message string, args ...any) {
 	bt.mutex.RLock()
 	logger := bt.logger
 	bt.mutex.RUnlock()
@@ -178,7 +183,7 @@ func (bt *BaseTypedTask) LogInfo(message string, args ...interface{}) {
 }
 
 // LogWarning logs a warning message
-func (bt *BaseTypedTask) LogWarning(message string, args ...interface{}) {
+func (bt *BaseTypedTask) LogWarning(message string, args ...any) {
 	bt.mutex.RLock()
 	logger := bt.logger
 	bt.mutex.RUnlock()
@@ -189,7 +194,7 @@ func (bt *BaseTypedTask) LogWarning(message string, args ...interface{}) {
 }
 
 // LogError logs an error message
-func (bt *BaseTypedTask) LogError(message string, args ...interface{}) {
+func (bt *BaseTypedTask) LogError(message string, args ...any) {
 	bt.mutex.RLock()
 	logger := bt.logger
 	bt.mutex.RUnlock()
@@ -200,7 +205,7 @@ func (bt *BaseTypedTask) LogError(message string, args ...interface{}) {
 }
 
 // LogDebug logs a debug message
-func (bt *BaseTypedTask) LogDebug(message string, args ...interface{}) {
+func (bt *BaseTypedTask) LogDebug(message string, args ...any) {
 	bt.mutex.RLock()
 	logger := bt.logger
 	bt.mutex.RUnlock()
@@ -211,7 +216,7 @@ func (bt *BaseTypedTask) LogDebug(message string, args ...interface{}) {
 }
 
 // LogWithFields logs a message with structured fields
-func (bt *BaseTypedTask) LogWithFields(level string, message string, fields map[string]interface{}) {
+func (bt *BaseTypedTask) LogWithFields(level string, message string, fields map[string]any) {
 	bt.mutex.RLock()
 	logger := bt.logger
 	bt.mutex.RUnlock()
@@ -226,12 +231,13 @@ func (bt *BaseTypedTask) ValidateTyped(params *worker_pb.TaskParams) error {
 	if params == nil {
 		return errors.New("task parameters cannot be nil")
 	}
-	if params.VolumeId == 0 {
+	if params.GetVolumeId() == 0 {
 		return errors.New("volume_id is required")
 	}
-	if len(params.Sources) == 0 {
+	if len(params.GetSources()) == 0 {
 		return errors.New("at least one source is required")
 	}
+
 	return nil
 }
 

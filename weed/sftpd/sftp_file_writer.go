@@ -24,7 +24,7 @@ func (fi *FileInfo) Size() int64        { return fi.size }
 func (fi *FileInfo) Mode() os.FileMode  { return fi.mode }
 func (fi *FileInfo) ModTime() time.Time { return fi.modTime }
 func (fi *FileInfo) IsDir() bool        { return fi.isDir }
-func (fi *FileInfo) Sys() interface{}   { return nil }
+func (fi *FileInfo) Sys() any           { return nil }
 
 // bufferReader wraps a byte slice to io.ReaderAt.
 type bufferReader struct {
@@ -40,6 +40,7 @@ func (r *bufferReader) Read(p []byte) (int, error) {
 	}
 	n := copy(p, r.b[r.i:])
 	r.i += int64(n)
+
 	return n, nil
 }
 
@@ -51,6 +52,7 @@ func (r *bufferReader) ReadAt(p []byte, off int64) (int, error) {
 	if n < len(p) {
 		return n, io.EOF
 	}
+
 	return n, nil
 }
 
@@ -65,6 +67,7 @@ func (l listerat) ListAt(ls []os.FileInfo, offset int64) (int, error) {
 	if n < len(ls) {
 		return n, io.EOF
 	}
+
 	return n, nil
 }
 
@@ -86,12 +89,14 @@ func (w *SeaweedSftpFileWriter) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	n, err := w.tmpFile.WriteAt(p, w.offset)
 	w.offset += int64(n)
+
 	return n, err
 }
 
 func (w *SeaweedSftpFileWriter) WriteAt(p []byte, off int64) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
 	return w.tmpFile.WriteAt(p, off)
 }
 

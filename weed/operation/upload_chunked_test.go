@@ -162,17 +162,17 @@ func TestUploadReaderInChunksSuccessPath(t *testing.T) {
 	// VERIFICATION 6: Chunk should have expected properties
 	if len(result.FileChunks) > 0 {
 		chunk := result.FileChunks[0]
-		if chunk.FileId != "test-fid,1234" {
-			t.Errorf("Expected chunk FileId='test-fid,1234', got '%s'", chunk.FileId)
+		if chunk.GetFileId() != "test-fid,1234" {
+			t.Errorf("Expected chunk FileId='test-fid,1234', got '%s'", chunk.GetFileId())
 		}
-		if chunk.Offset != 0 {
-			t.Errorf("Expected chunk Offset=0, got %d", chunk.Offset)
+		if chunk.GetOffset() != 0 {
+			t.Errorf("Expected chunk Offset=0, got %d", chunk.GetOffset())
 		}
-		if chunk.Size != uint64(len(testData)) {
-			t.Errorf("Expected chunk Size=%d, got %d", len(testData), chunk.Size)
+		if chunk.GetSize() != uint64(len(testData)) {
+			t.Errorf("Expected chunk Size=%d, got %d", len(testData), chunk.GetSize())
 		}
 		t.Logf("✓ Chunk properties validated: FileId=%s, Offset=%d, Size=%d",
-			chunk.FileId, chunk.Offset, chunk.Size)
+			chunk.GetFileId(), chunk.GetOffset(), chunk.GetSize())
 	}
 }
 
@@ -242,13 +242,7 @@ func (m *mockFailingReader) Read(p []byte) (n int, err error) {
 	}
 
 	remaining := m.failAfter - m.pos
-	toRead := len(p)
-	if toRead > remaining {
-		toRead = remaining
-	}
-	if toRead > len(m.data)-m.pos {
-		toRead = len(m.data) - m.pos
-	}
+	toRead := min(min(len(p), remaining), len(m.data)-m.pos)
 
 	if toRead == 0 {
 		return 0, io.EOF
@@ -256,6 +250,7 @@ func (m *mockFailingReader) Read(p []byte) (n int, err error) {
 
 	copy(p, m.data[m.pos:m.pos+toRead])
 	m.pos += toRead
+
 	return toRead, nil
 }
 

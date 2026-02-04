@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fluent/fluent-logger-golang/fluent"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 )
@@ -18,19 +19,19 @@ type AccessLogExtend struct {
 }
 
 type AccessLog struct {
-	Bucket           string `msg:"bucket" json:"bucket"`                   // awsexamplebucket1
-	Time             int64  `msg:"time" json:"time"`                       // [06/Feb/2019:00:00:38 +0000]
-	RemoteIP         string `msg:"remote_ip" json:"remote_ip,omitempty"`   // 192.0.2.3
-	Requester        string `msg:"requester" json:"requester,omitempty"`   // IAM user id
-	RequestID        string `msg:"request_id" json:"request_id,omitempty"` // 3E57427F33A59F07
-	Operation        string `msg:"operation" json:"operation,omitempty"`   // REST.HTTP_method.resource_type REST.PUT.OBJECT
-	Key              string `msg:"key" json:"key,omitempty"`               // /photos/2019/08/puppy.jpg
-	ErrorCode        string `msg:"error_code" json:"error_code,omitempty"`
-	HostId           string `msg:"host_id" json:"host_id,omitempty"`
-	HostHeader       string `msg:"host_header" json:"host_header,omitempty"` // s3.us-west-2.amazonaws.com
-	UserAgent        string `msg:"user_agent" json:"user_agent,omitempty"`
-	HTTPStatus       int    `msg:"status" json:"status,omitempty"`
-	SignatureVersion string `msg:"signature_version" json:"signature_version,omitempty"`
+	Bucket           string `json:"bucket"                      msg:"bucket"`     // awsexamplebucket1
+	Time             int64  `json:"time"                        msg:"time"`       // [06/Feb/2019:00:00:38 +0000]
+	RemoteIP         string `json:"remote_ip,omitempty"         msg:"remote_ip"`  // 192.0.2.3
+	Requester        string `json:"requester,omitempty"         msg:"requester"`  // IAM user id
+	RequestID        string `json:"request_id,omitempty"        msg:"request_id"` // 3E57427F33A59F07
+	Operation        string `json:"operation,omitempty"         msg:"operation"`  // REST.HTTP_method.resource_type REST.PUT.OBJECT
+	Key              string `json:"key,omitempty"               msg:"key"`        // /photos/2019/08/puppy.jpg
+	ErrorCode        string `json:"error_code,omitempty"        msg:"error_code"`
+	HostId           string `json:"host_id,omitempty"           msg:"host_id"`
+	HostHeader       string `json:"host_header,omitempty"       msg:"host_header"` // s3.us-west-2.amazonaws.com
+	UserAgent        string `json:"user_agent,omitempty"        msg:"user_agent"`
+	HTTPStatus       int    `json:"status,omitempty"            msg:"status"`
+	SignatureVersion string `json:"signature_version,omitempty" msg:"signature_version"`
 }
 
 type AccessLogHTTP struct {
@@ -58,11 +59,13 @@ func InitAuditLog(config string) {
 	configContent, readErr := os.ReadFile(config)
 	if readErr != nil {
 		glog.Errorf("fail to read fluent config %s : %v", config, readErr)
+
 		return
 	}
 	fluentConfig := &fluent.Config{}
 	if err := json.Unmarshal(configContent, fluentConfig); err != nil {
 		glog.Errorf("fail to parse fluent config %s : %v", string(configContent), err)
+
 		return
 	}
 	if len(fluentConfig.TagPrefix) == 0 && len(environment) > 0 {
@@ -115,7 +118,7 @@ func getOperation(object string, r *http.Request) string {
 	queries := r.URL.Query()
 	var operation string
 	var queryFound bool
-	for key, _ := range queries {
+	for key := range queries {
 		operation, queryFound = getResourceType(object, key, r.Method)
 		if queryFound {
 			return operation
@@ -124,6 +127,7 @@ func getOperation(object string, r *http.Request) string {
 	if len(queries) == 0 {
 		operation, _ = getResourceType(object, "", r.Method)
 	}
+
 	return operation
 }
 
@@ -148,6 +152,7 @@ func GetAccessLog(r *http.Request, HTTPStatusCode int, s3errCode ErrorCode) *Acc
 	if len(hostHeader) == 0 {
 		hostHeader = r.Host
 	}
+
 	return &AccessLog{
 		HostHeader:       hostHeader,
 		RequestID:        r.Header.Get("X-Request-ID"),

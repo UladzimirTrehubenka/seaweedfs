@@ -73,32 +73,30 @@ func TestDoMaybeManifestize(t *testing.T) {
 		actual, _ := doMaybeManifestize(nil, mtest.inputs, 2, mockMerge)
 		assertEqualChunks(t, mtest.expected, actual)
 	}
-
 }
 
 func assertEqualChunks(t *testing.T, expected, actual []*filer_pb.FileChunk) {
-	assert.Equal(t, len(expected), len(actual))
-	for i := 0; i < len(actual); i++ {
+	assert.Len(t, actual, len(expected))
+	for i := range actual {
 		assertEqualChunk(t, actual[i], expected[i])
 	}
 }
 func assertEqualChunk(t *testing.T, expected, actual *filer_pb.FileChunk) {
-	assert.Equal(t, expected.FileId, actual.FileId)
-	assert.Equal(t, expected.IsChunkManifest, actual.IsChunkManifest)
+	assert.Equal(t, expected.GetFileId(), actual.GetFileId())
+	assert.Equal(t, expected.GetIsChunkManifest(), actual.GetIsChunkManifest())
 }
 
 func mockMerge(saveFunc SaveDataAsChunkFunctionType, dataChunks []*filer_pb.FileChunk) (manifestChunk *filer_pb.FileChunk, err error) {
-
 	var buf bytes.Buffer
 	minOffset, maxOffset := int64(math.MaxInt64), int64(math.MinInt64)
-	for k := 0; k < len(dataChunks); k++ {
+	for k := range dataChunks {
 		chunk := dataChunks[k]
-		buf.WriteString(chunk.FileId)
-		if minOffset > int64(chunk.Offset) {
-			minOffset = chunk.Offset
+		buf.WriteString(chunk.GetFileId())
+		if minOffset > int64(chunk.GetOffset()) {
+			minOffset = chunk.GetOffset()
 		}
-		if maxOffset < int64(chunk.Size)+chunk.Offset {
-			maxOffset = int64(chunk.Size) + chunk.Offset
+		if maxOffset < int64(chunk.GetSize())+chunk.GetOffset() {
+			maxOffset = int64(chunk.GetSize()) + chunk.GetOffset()
 		}
 	}
 

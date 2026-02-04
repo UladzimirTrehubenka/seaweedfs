@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/karlseguin/ccache/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
@@ -77,6 +78,7 @@ func (c *CachedStore[T]) Get(ctx context.Context, filerAddress string, key strin
 		// Cache hit - return cached item (DO NOT extend TTL)
 		value := item.Value().(T)
 		glog.V(4).Infof("Cache hit for key %s", key)
+
 		return c.copyFunc(value), nil
 	}
 
@@ -85,12 +87,14 @@ func (c *CachedStore[T]) Get(ctx context.Context, filerAddress string, key strin
 	value, err := c.baseStore.Get(ctx, filerAddress, key)
 	if err != nil {
 		var zero T
+
 		return zero, err
 	}
 
 	// Cache the result with TTL
 	c.cache.Set(key, c.copyFunc(value), c.ttl)
 	glog.V(3).Infof("Cached key %s with TTL %v", key, c.ttl)
+
 	return value, nil
 }
 
@@ -107,6 +111,7 @@ func (c *CachedStore[T]) Store(ctx context.Context, filerAddress string, key str
 	c.listCache.Clear() // Invalidate list cache
 
 	glog.V(3).Infof("Stored and invalidated cache for key %s", key)
+
 	return nil
 }
 
@@ -123,6 +128,7 @@ func (c *CachedStore[T]) Delete(ctx context.Context, filerAddress string, key st
 	c.listCache.Clear() // Invalidate list cache
 
 	glog.V(3).Infof("Deleted and invalidated cache for key %s", key)
+
 	return nil
 }
 
@@ -136,6 +142,7 @@ func (c *CachedStore[T]) List(ctx context.Context, filerAddress string) ([]strin
 		// Cache hit - return cached list (DO NOT extend TTL)
 		items := item.Value().([]string)
 		glog.V(4).Infof("List cache hit, returning %d items", len(items))
+
 		return append([]string(nil), items...), nil // Return a copy
 	}
 
@@ -150,6 +157,7 @@ func (c *CachedStore[T]) List(ctx context.Context, filerAddress string) ([]strin
 	itemsCopy := append([]string(nil), items...)
 	c.listCache.Set(listCacheKey, itemsCopy, c.listTTL)
 	glog.V(3).Infof("Cached list with %d entries, TTL %v", len(items), c.listTTL)
+
 	return items, nil
 }
 
@@ -161,13 +169,13 @@ func (c *CachedStore[T]) ClearCache() {
 }
 
 // GetCacheStats returns cache statistics
-func (c *CachedStore[T]) GetCacheStats() map[string]interface{} {
-	return map[string]interface{}{
-		"itemCache": map[string]interface{}{
+func (c *CachedStore[T]) GetCacheStats() map[string]any {
+	return map[string]any{
+		"itemCache": map[string]any{
 			"size": c.cache.ItemCount(),
 			"ttl":  c.ttl.String(),
 		},
-		"listCache": map[string]interface{}{
+		"listCache": map[string]any{
 			"size": c.listCache.ItemCount(),
 			"ttl":  c.listTTL.String(),
 		},

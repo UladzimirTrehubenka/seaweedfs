@@ -4,8 +4,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestTimestampQueryFixes tests all the timestamp query fixes comprehensively
@@ -27,19 +28,19 @@ func TestTimestampQueryFixes(t *testing.T) {
 		}
 
 		// Test equality comparison
-		result := engine.valuesEqual(testRecord.Fields["_ts_ns"], largeTimestamp1)
+		result := engine.valuesEqual(testRecord.GetFields()["_ts_ns"], largeTimestamp1)
 		assert.True(t, result, "Large timestamp equality should work without precision loss")
 
 		// Test inequality comparison
-		result = engine.valuesEqual(testRecord.Fields["_ts_ns"], largeTimestamp1+1)
+		result = engine.valuesEqual(testRecord.GetFields()["_ts_ns"], largeTimestamp1+1)
 		assert.False(t, result, "Large timestamp inequality should be detected accurately")
 
 		// Test less than comparison
-		result = engine.valueLessThan(testRecord.Fields["_ts_ns"], largeTimestamp1+1)
+		result = engine.valueLessThan(testRecord.GetFields()["_ts_ns"], largeTimestamp1+1)
 		assert.True(t, result, "Large timestamp less-than should work without precision loss")
 
 		// Test greater than comparison
-		result = engine.valueGreaterThan(testRecord.Fields["_ts_ns"], largeTimestamp1-1)
+		result = engine.valueGreaterThan(testRecord.GetFields()["_ts_ns"], largeTimestamp1-1)
 		assert.True(t, result, "Large timestamp greater-than should work without precision loss")
 	})
 
@@ -168,7 +169,7 @@ func TestTimestampQueryFixes(t *testing.T) {
 		}
 
 		// Test equality with maximum int64
-		result := engine.valuesEqual(testRecord.Fields["_ts_ns"], maxInt64)
+		result := engine.valuesEqual(testRecord.GetFields()["_ts_ns"], maxInt64)
 		assert.True(t, result, "Should handle maximum int64 value correctly")
 
 		// Test with zero timestamp
@@ -178,7 +179,7 @@ func TestTimestampQueryFixes(t *testing.T) {
 			},
 		}
 
-		result = engine.valuesEqual(zeroRecord.Fields["_ts_ns"], int64(0))
+		result = engine.valuesEqual(zeroRecord.GetFields()["_ts_ns"], int64(0))
 		assert.True(t, result, "Should handle zero timestamp correctly")
 	})
 }

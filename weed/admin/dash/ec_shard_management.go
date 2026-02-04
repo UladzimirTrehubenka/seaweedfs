@@ -3,6 +3,7 @@ package dash
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -52,14 +53,14 @@ func (s *AdminServer) GetClusterEcShards(page int, pageSize int, sortBy string, 
 			return err
 		}
 
-		if resp.TopologyInfo != nil {
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
-						for _, diskInfo := range node.DiskInfos {
+		if resp.GetTopologyInfo() != nil {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
+						for _, diskInfo := range node.GetDiskInfos() {
 							// Process EC shard information
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
-								volumeId := ecShardInfo.Id
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+								volumeId := ecShardInfo.GetId()
 
 								// Initialize volume shards map if needed
 								if volumeShardsMap[volumeId] == nil {
@@ -67,8 +68,8 @@ func (s *AdminServer) GetClusterEcShards(page int, pageSize int, sortBy string, 
 								}
 
 								// Create individual shard entries for each shard this server has
-								shardBits := ecShardInfo.EcIndexBits
-								for shardId := 0; shardId < erasure_coding.MaxShardCount; shardId++ {
+								shardBits := ecShardInfo.GetEcIndexBits()
+								for shardId := range erasure_coding.MaxShardCount {
 									if (shardBits & (1 << uint(shardId))) != 0 {
 										// Mark this shard as present for this volume
 										volumeShardsMap[volumeId][shardId] = true
@@ -76,15 +77,15 @@ func (s *AdminServer) GetClusterEcShards(page int, pageSize int, sortBy string, 
 										ecShard := EcShardWithInfo{
 											VolumeID:     volumeId,
 											ShardID:      uint32(shardId),
-											Collection:   ecShardInfo.Collection,
+											Collection:   ecShardInfo.GetCollection(),
 											Size:         0, // EC shards don't have individual size in the API response
-											Server:       node.Id,
-											DataCenter:   dc.Id,
-											Rack:         rack.Id,
-											DiskType:     diskInfo.Type,
+											Server:       node.GetId(),
+											DataCenter:   dc.GetId(),
+											Rack:         rack.GetId(),
+											DiskType:     diskInfo.GetType(),
 											ModifiedTime: 0, // Not available in current API
-											EcIndexBits:  ecShardInfo.EcIndexBits,
-											ShardCount:   getShardCount(ecShardInfo.EcIndexBits),
+											EcIndexBits:  ecShardInfo.GetEcIndexBits(),
+											ShardCount:   getShardCount(ecShardInfo.GetEcIndexBits()),
 										}
 										ecShards = append(ecShards, ecShard)
 									}
@@ -113,7 +114,7 @@ func (s *AdminServer) GetClusterEcShards(page int, pageSize int, sortBy string, 
 
 		// Find which shards are missing for this volume across ALL servers
 		// Uses default 10+4 (14 total shards)
-		for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+		for shardId := range erasure_coding.TotalShardsCount {
 			if !shardsPresent[shardId] {
 				missingShards = append(missingShards, shardId)
 			}
@@ -168,10 +169,7 @@ func (s *AdminServer) GetClusterEcShards(page int, pageSize int, sortBy string, 
 	totalShards := len(ecShards)
 	totalPages := (totalShards + pageSize - 1) / pageSize
 	startIndex := (page - 1) * pageSize
-	endIndex := startIndex + pageSize
-	if endIndex > totalShards {
-		endIndex = totalShards
-	}
+	endIndex := min(startIndex+pageSize, totalShards)
 
 	if startIndex >= totalShards {
 		startIndex = 0
@@ -224,18 +222,21 @@ func (s *AdminServer) GetClusterEcShards(page int, pageSize int, sortBy string, 
 	if len(dataCenters) == 1 {
 		for dc := range dataCenters {
 			data.SingleDataCenter = dc
+
 			break
 		}
 	}
 	if len(racks) == 1 {
 		for rack := range racks {
 			data.SingleRack = rack
+
 			break
 		}
 	}
 	if len(collections) == 1 {
 		for col := range collections {
 			data.SingleCollection = col
+
 			break
 		}
 	}
@@ -269,20 +270,20 @@ func (s *AdminServer) GetClusterEcVolumes(page int, pageSize int, sortBy string,
 			return err
 		}
 
-		if resp.TopologyInfo != nil {
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
-						for _, diskInfo := range node.DiskInfos {
+		if resp.GetTopologyInfo() != nil {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
+						for _, diskInfo := range node.GetDiskInfos() {
 							// Process EC shard information
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
-								volumeId := ecShardInfo.Id
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+								volumeId := ecShardInfo.GetId()
 
 								// Initialize volume data if needed
 								if volumeData[volumeId] == nil {
 									volumeData[volumeId] = &EcVolumeWithShards{
 										VolumeID:       volumeId,
-										Collection:     ecShardInfo.Collection,
+										Collection:     ecShardInfo.GetCollection(),
 										TotalShards:    0,
 										IsComplete:     false,
 										MissingShards:  []int{},
@@ -297,46 +298,28 @@ func (s *AdminServer) GetClusterEcVolumes(page int, pageSize int, sortBy string,
 								volume := volumeData[volumeId]
 
 								// Track data centers and servers
-								dcExists := false
-								for _, existingDc := range volume.DataCenters {
-									if existingDc == dc.Id {
-										dcExists = true
-										break
-									}
-								}
+								dcExists := slices.Contains(volume.DataCenters, dc.GetId())
 								if !dcExists {
-									volume.DataCenters = append(volume.DataCenters, dc.Id)
+									volume.DataCenters = append(volume.DataCenters, dc.GetId())
 								}
 
-								serverExists := false
-								for _, existingServer := range volume.Servers {
-									if existingServer == node.Id {
-										serverExists = true
-										break
-									}
-								}
+								serverExists := slices.Contains(volume.Servers, node.GetId())
 								if !serverExists {
-									volume.Servers = append(volume.Servers, node.Id)
+									volume.Servers = append(volume.Servers, node.GetId())
 								}
 
 								// Track racks
-								rackExists := false
-								for _, existingRack := range volume.Racks {
-									if existingRack == rack.Id {
-										rackExists = true
-										break
-									}
-								}
+								rackExists := slices.Contains(volume.Racks, rack.GetId())
 								if !rackExists {
-									volume.Racks = append(volume.Racks, rack.Id)
+									volume.Racks = append(volume.Racks, rack.GetId())
 								}
 
 								// Process each shard this server has for this volume
-								shardBits := ecShardInfo.EcIndexBits
-								for shardId := 0; shardId < erasure_coding.MaxShardCount; shardId++ {
+								shardBits := ecShardInfo.GetEcIndexBits()
+								for shardId := range erasure_coding.MaxShardCount {
 									if (shardBits & (1 << uint(shardId))) != 0 {
 										// Record shard location
-										volume.ShardLocations[shardId] = node.Id
+										volume.ShardLocations[shardId] = node.GetId()
 										totalShards++
 									}
 								}
@@ -370,12 +353,13 @@ func (s *AdminServer) GetClusterEcVolumes(page int, pageSize int, sortBy string,
 				})
 				if err != nil {
 					glog.V(1).Infof("Failed to get EC shard info from %s for volume %d: %v", server, volumeId, err)
+
 					return nil // Continue with other servers, don't fail the entire request
 				}
 
 				// Update shard sizes
-				for _, shardInfo := range resp.EcShardInfos {
-					volume.ShardSizes[int(shardInfo.ShardId)] = shardInfo.Size
+				for _, shardInfo := range resp.GetEcShardInfos() {
+					volume.ShardSizes[int(shardInfo.GetShardId())] = shardInfo.GetSize()
 				}
 
 				return nil
@@ -395,7 +379,7 @@ func (s *AdminServer) GetClusterEcVolumes(page int, pageSize int, sortBy string,
 
 		// Find missing shards (default 10+4 = 14 total shards)
 		var missingShards []int
-		for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+		for shardId := range erasure_coding.TotalShardsCount {
 			if _, exists := volume.ShardLocations[shardId]; !exists {
 				missingShards = append(missingShards, shardId)
 			}
@@ -440,10 +424,7 @@ func (s *AdminServer) GetClusterEcVolumes(page int, pageSize int, sortBy string,
 	totalVolumes := len(ecVolumes)
 	totalPages := (totalVolumes + pageSize - 1) / pageSize
 	startIndex := (page - 1) * pageSize
-	endIndex := startIndex + pageSize
-	if endIndex > totalVolumes {
-		endIndex = totalVolumes
-	}
+	endIndex := min(startIndex+pageSize, totalVolumes)
 
 	if startIndex >= totalVolumes {
 		startIndex = 0
@@ -517,6 +498,7 @@ func sortEcVolumes(volumes []EcVolumeWithShards, sortBy string, sortOrder string
 		if sortOrder == "desc" {
 			return !less
 		}
+
 		return less
 	})
 }
@@ -524,11 +506,12 @@ func sortEcVolumes(volumes []EcVolumeWithShards, sortBy string, sortOrder string
 // getShardCount returns the number of shards represented by the bitmap
 func getShardCount(ecIndexBits uint32) int {
 	count := 0
-	for i := 0; i < erasure_coding.MaxShardCount; i++ {
+	for i := range erasure_coding.MaxShardCount {
 		if (ecIndexBits & (1 << uint(i))) != 0 {
 			count++
 		}
 	}
+
 	return count
 }
 
@@ -536,11 +519,12 @@ func getShardCount(ecIndexBits uint32) int {
 // Assumes default 10+4 EC configuration (14 total shards)
 func getMissingShards(ecIndexBits uint32) []int {
 	var missing []int
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		if (ecIndexBits & (1 << uint(i))) == 0 {
 			missing = append(missing, i)
 		}
 	}
+
 	return missing
 }
 
@@ -576,6 +560,7 @@ func sortEcShards(shards []EcShardWithInfo, sortBy string, sortOrder string) {
 		if sortOrder == "desc" {
 			return !less
 		}
+
 		return less
 	})
 }
@@ -602,34 +587,34 @@ func (s *AdminServer) GetEcVolumeDetails(volumeID uint32, sortBy string, sortOrd
 			return err
 		}
 
-		if resp.TopologyInfo != nil {
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
-				for _, rack := range dc.RackInfos {
-					for _, node := range rack.DataNodeInfos {
-						for _, diskInfo := range node.DiskInfos {
+		if resp.GetTopologyInfo() != nil {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
+				for _, rack := range dc.GetRackInfos() {
+					for _, node := range rack.GetDataNodeInfos() {
+						for _, diskInfo := range node.GetDiskInfos() {
 							// Process EC shard information for this specific volume
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
-								if ecShardInfo.Id == volumeID {
-									collection = ecShardInfo.Collection
-									dataCenters[dc.Id] = true
-									servers[node.Id] = true
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+								if ecShardInfo.GetId() == volumeID {
+									collection = ecShardInfo.GetCollection()
+									dataCenters[dc.GetId()] = true
+									servers[node.GetId()] = true
 
 									// Create individual shard entries for each shard this server has
-									shardBits := ecShardInfo.EcIndexBits
-									for shardId := 0; shardId < erasure_coding.MaxShardCount; shardId++ {
+									shardBits := ecShardInfo.GetEcIndexBits()
+									for shardId := range erasure_coding.MaxShardCount {
 										if (shardBits & (1 << uint(shardId))) != 0 {
 											ecShard := EcShardWithInfo{
-												VolumeID:     ecShardInfo.Id,
+												VolumeID:     ecShardInfo.GetId(),
 												ShardID:      uint32(shardId),
-												Collection:   ecShardInfo.Collection,
+												Collection:   ecShardInfo.GetCollection(),
 												Size:         0, // EC shards don't have individual size in the API response
-												Server:       node.Id,
-												DataCenter:   dc.Id,
-												Rack:         rack.Id,
-												DiskType:     diskInfo.Type,
+												Server:       node.GetId(),
+												DataCenter:   dc.GetId(),
+												Rack:         rack.GetId(),
+												DiskType:     diskInfo.GetType(),
 												ModifiedTime: 0, // Not available in current API
-												EcIndexBits:  ecShardInfo.EcIndexBits,
-												ShardCount:   getShardCount(ecShardInfo.EcIndexBits),
+												EcIndexBits:  ecShardInfo.GetEcIndexBits(),
+												ShardCount:   getShardCount(ecShardInfo.GetEcIndexBits()),
 											}
 											shards = append(shards, ecShard)
 										}
@@ -665,13 +650,14 @@ func (s *AdminServer) GetEcVolumeDetails(volumeID uint32, sortBy string, sortOrd
 				})
 				if err != nil {
 					glog.V(1).Infof("Failed to get EC shard info from %s for volume %d: %v", server, volumeID, err)
+
 					return nil // Continue with other servers, don't fail the entire request
 				}
 
 				// Store shard sizes for this server
 				shardSizeMap[server] = make(map[uint32]uint64)
-				for _, shardInfo := range resp.EcShardInfos {
-					shardSizeMap[server][shardInfo.ShardId] = uint64(shardInfo.Size)
+				for _, shardInfo := range resp.GetEcShardInfos() {
+					shardSizeMap[server][shardInfo.GetShardId()] = uint64(shardInfo.GetSize())
 				}
 
 				return nil
@@ -705,7 +691,7 @@ func (s *AdminServer) GetEcVolumeDetails(volumeID uint32, sortBy string, sortOrd
 
 	// Calculate missing shards
 	var missingShards []int
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+	for i := range erasure_coding.TotalShardsCount {
 		if !foundShards[i] {
 			missingShards = append(missingShards, i)
 		}

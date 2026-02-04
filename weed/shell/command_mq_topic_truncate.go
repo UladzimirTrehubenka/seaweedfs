@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -48,10 +49,10 @@ func (c *commandMqTopicTruncate) Do(args []string, commandEnv *CommandEnv, write
 	}
 
 	if *namespace == "" {
-		return fmt.Errorf("namespace is required")
+		return errors.New("namespace is required")
 	}
 	if *topicName == "" {
-		return fmt.Errorf("topic name is required")
+		return errors.New("topic name is required")
 	}
 
 	// Verify topic exists by trying to read its configuration
@@ -60,8 +61,9 @@ func (c *commandMqTopicTruncate) Do(args []string, commandEnv *CommandEnv, write
 	err := commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		_, err := t.ReadConfFile(client)
 		if err != nil {
-			return fmt.Errorf("topic %s.%s does not exist or cannot be read: %v", *namespace, *topicName, err)
+			return fmt.Errorf("topic %s.%s does not exist or cannot be read: %w", *namespace, *topicName, err)
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -73,11 +75,12 @@ func (c *commandMqTopicTruncate) Do(args []string, commandEnv *CommandEnv, write
 	// Discover and clear all partitions using centralized logic
 	partitions, err := t.DiscoverPartitions(context.Background(), commandEnv)
 	if err != nil {
-		return fmt.Errorf("failed to discover topic partitions: %v", err)
+		return fmt.Errorf("failed to discover topic partitions: %w", err)
 	}
 
 	if len(partitions) == 0 {
 		fmt.Fprintf(writer, "No partitions found for topic %s.%s\n", *namespace, *topicName)
+
 		return nil
 	}
 
@@ -89,6 +92,7 @@ func (c *commandMqTopicTruncate) Do(args []string, commandEnv *CommandEnv, write
 		filesDeleted, err := c.clearPartitionData(commandEnv, partitionPath, writer)
 		if err != nil {
 			fmt.Fprintf(writer, "Warning: failed to clear partition %s: %v\n", partitionPath, err)
+
 			continue
 		}
 		totalFilesDeleted += filesDeleted
@@ -107,11 +111,11 @@ func (c *commandMqTopicTruncate) clearPartitionData(commandEnv *CommandEnv, part
 	filesDeleted := 0
 
 	err := filer_pb.ReadDirAllEntries(context.Background(), commandEnv, util.FullPath(partitionPath), "", func(entry *filer_pb.Entry, isLast bool) error {
-		if entry.IsDirectory {
+		if entry.GetIsDirectory() {
 			return nil // Skip subdirectories
 		}
 
-		fileName := entry.Name
+		fileName := entry.GetName()
 
 		// Preserve configuration files
 		if strings.HasSuffix(fileName, ".conf") ||
@@ -119,6 +123,7 @@ func (c *commandMqTopicTruncate) clearPartitionData(commandEnv *CommandEnv, part
 			fileName == "topic.conf" ||
 			fileName == "partition.conf" {
 			fmt.Fprintf(writer, "  Preserving config file: %s\n", fileName)
+
 			return nil
 		}
 

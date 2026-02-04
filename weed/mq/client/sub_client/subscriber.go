@@ -4,10 +4,11 @@ import (
 	"context"
 	"sync"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"google.golang.org/grpc"
 )
 
 type SubscriberConfiguration struct {

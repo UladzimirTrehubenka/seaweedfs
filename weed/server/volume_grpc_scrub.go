@@ -2,6 +2,7 @@ package weed_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
@@ -58,15 +59,16 @@ func (vs *VolumeServer) ScrubVolume(ctx context.Context, req *volume_server_pb.S
 		BrokenVolumeIds: brokenVolumeIds,
 		Details:         details,
 	}
+
 	return res, nil
 }
 
 func scrubVolumeIndex(ctx context.Context, v *storage.Volume) (uint64, []error) {
-	return 0, []error{fmt.Errorf("scrubVolumeIndex(): not implemented")}
+	return 0, []error{errors.New("scrubVolumeIndex(): not implemented")}
 }
 
 func scrubVolumeFull(ctx context.Context, v *storage.Volume) (uint64, []error) {
-	return 0, []error{fmt.Errorf("scrubVolumeFull(): not implemented")}
+	return 0, []error{errors.New("scrubVolumeFull(): not implemented")}
 }
 
 func (vs *VolumeServer) ScrubEcVolume(ctx context.Context, req *volume_server_pb.ScrubEcVolumeRequest) (*volume_server_pb.ScrubEcVolumeResponse, error) {
@@ -121,13 +123,14 @@ func (vs *VolumeServer) ScrubEcVolume(ctx context.Context, req *volume_server_pb
 		BrokenShardInfos: brokenShardInfos,
 		Details:          details,
 	}
+
 	return res, nil
 }
 
 func scrubEcVolumeIndex(ecv *erasure_coding.EcVolume) (uint64, []*volume_server_pb.EcShardInfo, []error) {
-	return 0, nil, []error{fmt.Errorf("scrubEcVolumeIndex(): not implemented")}
+	return 0, nil, []error{errors.New("scrubEcVolumeIndex(): not implemented")}
 }
 
 func scrubEcVolumeFull(ctx context.Context, v *erasure_coding.EcVolume) (uint64, []*volume_server_pb.EcShardInfo, []error) {
-	return 0, nil, []error{fmt.Errorf("scrubEcVolumeFull(): not implemented")}
+	return 0, nil, []error{errors.New("scrubEcVolumeFull(): not implemented")}
 }

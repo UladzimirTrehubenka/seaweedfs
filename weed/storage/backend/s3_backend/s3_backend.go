@@ -1,6 +1,7 @@
 package s3_backend
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -61,6 +62,7 @@ func newS3BackendStorage(configuration backend.StringProperties, configPrefix st
 	s.conn, err = createSession(s.aws_access_key_id, s.aws_secret_access_key, s.region, s.endpoint, s.forcePathStyle)
 
 	glog.V(0).Infof("created backend storage s3.%s for region %s bucket %s", s.id, s.region, s.bucket)
+
 	return
 }
 
@@ -73,6 +75,7 @@ func (s *S3BackendStorage) ToProperties() map[string]string {
 	m["endpoint"] = s.endpoint
 	m["storage_class"] = s.storageClass
 	m["force_path_style"] = util.BoolToString(s.forcePathStyle)
+
 	return m
 }
 
@@ -98,6 +101,7 @@ func (s *S3BackendStorage) CopyFile(f *os.File, fn func(progressed int64, percen
 
 	util.Retry("upload to S3", func() error {
 		size, err = uploadToS3(s.conn, f.Name(), s.bucket, key, s.storageClass, fn)
+
 		return err
 	})
 
@@ -105,7 +109,6 @@ func (s *S3BackendStorage) CopyFile(f *os.File, fn func(progressed int64, percen
 }
 
 func (s *S3BackendStorage) DownloadFile(fileName string, key string, fn func(progressed int64, percentage float32) error) (size int64, err error) {
-
 	glog.V(1).Infof("download dat file of %s from remote s3.%s as %s", fileName, s.id, key)
 
 	size, err = downloadFromS3(s.conn, fileName, s.bucket, key, fn)
@@ -114,7 +117,6 @@ func (s *S3BackendStorage) DownloadFile(fileName string, key string, fn func(pro
 }
 
 func (s *S3BackendStorage) DeleteFile(key string) (err error) {
-
 	glog.V(1).Infof("delete dat file %s from remote", key)
 
 	err = deleteFromS3(s.conn, s.bucket, key)
@@ -144,7 +146,7 @@ func (s3backendStorageFile S3BackendStorageFile) ReadAt(p []byte, off int64) (n 
 	})
 
 	if getObjectErr != nil {
-		return 0, fmt.Errorf("bucket %s GetObject %s: %v", s3backendStorageFile.backendStorage.bucket, s3backendStorageFile.key, getObjectErr)
+		return 0, fmt.Errorf("bucket %s GetObject %s: %w", s3backendStorageFile.backendStorage.bucket, s3backendStorageFile.key, getObjectErr)
 	}
 	defer getObjectOutput.Body.Close()
 
@@ -166,7 +168,7 @@ func (s3backendStorageFile S3BackendStorageFile) ReadAt(p []byte, off int64) (n 
 		err = nil
 	}
 
-	return
+	return n, err
 }
 
 func (s3backendStorageFile S3BackendStorageFile) WriteAt(p []byte, off int64) (n int, err error) {
@@ -182,16 +184,16 @@ func (s3backendStorageFile S3BackendStorageFile) Close() error {
 }
 
 func (s3backendStorageFile S3BackendStorageFile) GetStat() (datSize int64, modTime time.Time, err error) {
-
 	files := s3backendStorageFile.tierInfo.GetFiles()
 
 	if len(files) == 0 {
-		err = fmt.Errorf("remote file info not found")
+		err = errors.New("remote file info not found")
+
 		return
 	}
 
-	datSize = int64(files[0].FileSize)
-	modTime = time.Unix(int64(files[0].ModifiedTime), 0)
+	datSize = int64(files[0].GetFileSize())
+	modTime = time.Unix(int64(files[0].GetModifiedTime()), 0)
 
 	return
 }

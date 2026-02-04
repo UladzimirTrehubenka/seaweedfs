@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/filer/abstract_sql"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -57,7 +58,6 @@ func (store *MysqlStore) Initialize(configuration util.Configuration, prefix str
 
 func (store *MysqlStore) initialize(dsn string, upsertQuery string, enableUpsert bool, user, password, hostname string, port int, database string, maxIdle, maxOpen,
 	maxLifetimeSeconds int, interpolateParams bool, enableTls bool, caCrtDir string, clientCrtDir string, clientKeyDir string) (err error) {
-
 	store.SupportBucketTable = false
 	if !enableUpsert {
 		upsertQuery = ""
@@ -78,6 +78,7 @@ func (store *MysqlStore) initialize(dsn string, upsertQuery string, enableUpsert
 				return true
 			}
 		}
+
 		return false
 	}
 
@@ -88,7 +89,7 @@ func (store *MysqlStore) initialize(dsn string, upsertQuery string, enableUpsert
 			return err
 		}
 		if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
-			return fmt.Errorf("failed to append root certificate")
+			return errors.New("failed to append root certificate")
 		}
 
 		clientCert := make([]tls.Certificate, 0)
@@ -127,7 +128,8 @@ func (store *MysqlStore) initialize(dsn string, upsertQuery string, enableUpsert
 	if dbErr != nil {
 		store.DB.Close()
 		store.DB = nil
-		return fmt.Errorf("can not connect to %s error:%v", strings.ReplaceAll(dsn, cfg.Passwd, "<ADAPTED>"), err)
+
+		return fmt.Errorf("can not connect to %s error:%w", strings.ReplaceAll(dsn, cfg.Passwd, "<ADAPTED>"), err)
 	}
 
 	store.DB.SetMaxIdleConns(maxIdle)
@@ -135,7 +137,7 @@ func (store *MysqlStore) initialize(dsn string, upsertQuery string, enableUpsert
 	store.DB.SetConnMaxLifetime(time.Duration(maxLifetimeSeconds) * time.Second)
 
 	if err = store.DB.Ping(); err != nil {
-		return fmt.Errorf("connect to %s error:%v", strings.ReplaceAll(dsn, cfg.Passwd, "<ADAPTED>"), err)
+		return fmt.Errorf("connect to %s error:%w", strings.ReplaceAll(dsn, cfg.Passwd, "<ADAPTED>"), err)
 	}
 
 	return nil

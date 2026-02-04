@@ -7,12 +7,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/cluster/lock_manager"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 type LockClient struct {
@@ -58,6 +59,7 @@ func (lc *LockClient) NewShortLivedLock(key string, owner string) (lock *LiveLoc
 		lc:             lc,
 	}
 	lock.retryUntilLocked(5 * time.Second)
+
 	return
 }
 
@@ -120,7 +122,8 @@ func (lc *LockClient) StartLongLivedLock(key string, owner string, onLockOwnerCh
 			}
 		}
 	}()
-	return
+
+	return lock
 }
 
 func (lock *LiveLock) retryUntilLocked(lockDuration time.Duration) {
@@ -130,6 +133,7 @@ func (lock *LiveLock) retryUntilLocked(lockDuration time.Duration) {
 		if err != nil {
 			glog.Warningf("create lock %s: %s", lock.key, err)
 		}
+
 		return lock.renewToken == ""
 	})
 }
@@ -140,6 +144,7 @@ func (lock *LiveLock) AttemptToLock(lockDuration time.Duration) error {
 	if err != nil {
 		glog.V(1).Infof("LOCK: doLock failed for key=%s: %v", lock.key, err)
 		time.Sleep(time.Second)
+
 		return err
 	}
 	if errorMessage != "" {
@@ -149,6 +154,7 @@ func (lock *LiveLock) AttemptToLock(lockDuration time.Duration) error {
 			glog.V(2).Infof("LOCK: doLock returned error message for key=%s: %s", lock.key, errorMessage)
 		}
 		time.Sleep(time.Second)
+
 		return fmt.Errorf("%v", errorMessage)
 	}
 	if atomic.LoadInt32(&lock.isLocked) == 0 {
@@ -156,6 +162,7 @@ func (lock *LiveLock) AttemptToLock(lockDuration time.Duration) error {
 		glog.V(1).Infof("LOCK: Successfully acquired key=%s owner=%s", lock.key, lock.self)
 	}
 	atomic.StoreInt32(&lock.isLocked, 1)
+
 	return nil
 }
 
@@ -166,11 +173,13 @@ func (lock *LiveLock) StopShortLivedLock() error {
 	defer func() {
 		atomic.StoreInt32(&lock.isLocked, 0)
 	}()
+
 	return pb.WithFilerClient(false, 0, lock.hostFiler, lock.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		_, err := client.DistributedUnlock(context.Background(), &filer_pb.UnlockRequest{
 			Name:       lock.key,
 			RenewToken: lock.renewToken,
 		})
+
 		return err
 	})
 }
@@ -213,35 +222,36 @@ func (lock *LiveLock) doLock(lockDuration time.Duration) (errorMessage string, e
 		})
 		glog.V(4).Infof("LOCK: DistributedLock response - key=%s err=%v", lock.key, err)
 		if err == nil && resp != nil {
-			lock.renewToken = resp.RenewToken
+			lock.renewToken = resp.GetRenewToken()
 			lock.consecutiveFailures = 0 // Reset failure counter on success
 			glog.V(4).Infof("LOCK: Got renewToken for key=%s", lock.key)
 		} else {
-			//this can be retried. Need to remember the last valid renewToken
+			// this can be retried. Need to remember the last valid renewToken
 			lock.renewToken = ""
 			glog.V(1).Infof("LOCK: Cleared renewToken for key=%s (err=%v)", lock.key, err)
 		}
 		if resp != nil {
-			errorMessage = resp.Error
-			if resp.LockHostMovedTo != "" && resp.LockHostMovedTo != string(previousHostFiler) {
+			errorMessage = resp.GetError()
+			if resp.GetLockHostMovedTo() != "" && resp.GetLockHostMovedTo() != string(previousHostFiler) {
 				// Only log if the host actually changed
-				glog.V(2).Infof("LOCK: Host changed from %s to %s for key=%s", previousHostFiler, resp.LockHostMovedTo, lock.key)
-				lock.hostFiler = pb.ServerAddress(resp.LockHostMovedTo)
+				glog.V(2).Infof("LOCK: Host changed from %s to %s for key=%s", previousHostFiler, resp.GetLockHostMovedTo(), lock.key)
+				lock.hostFiler = pb.ServerAddress(resp.GetLockHostMovedTo())
 				// Don't update seedFiler - keep original for fallback
-			} else if resp.LockHostMovedTo != "" {
-				lock.hostFiler = pb.ServerAddress(resp.LockHostMovedTo)
+			} else if resp.GetLockHostMovedTo() != "" {
+				lock.hostFiler = pb.ServerAddress(resp.GetLockHostMovedTo())
 			}
-			if resp.LockOwner != "" && resp.LockOwner != previousOwner {
+			if resp.GetLockOwner() != "" && resp.GetLockOwner() != previousOwner {
 				// Only log if the owner actually changed
-				glog.V(2).Infof("LOCK: Owner changed from %s to %s for key=%s", previousOwner, resp.LockOwner, lock.key)
-				lock.owner = resp.LockOwner
-			} else if resp.LockOwner != "" {
-				lock.owner = resp.LockOwner
+				glog.V(2).Infof("LOCK: Owner changed from %s to %s for key=%s", previousOwner, resp.GetLockOwner(), lock.key)
+				lock.owner = resp.GetLockOwner()
+			} else if resp.GetLockOwner() != "" {
+				lock.owner = resp.GetLockOwner()
 			} else if previousOwner != "" {
 				glog.V(2).Infof("LOCK: Owner cleared for key=%s", lock.key)
 				lock.owner = ""
 			}
 		}
+
 		return err
 	})
 
@@ -257,7 +267,7 @@ func (lock *LiveLock) doLock(lockDuration time.Duration) (errorMessage string, e
 		}
 	}
 
-	return
+	return errorMessage, err
 }
 
 func (lock *LiveLock) LockOwner() string {

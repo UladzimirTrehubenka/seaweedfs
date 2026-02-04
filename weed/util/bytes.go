@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math"
@@ -33,35 +34,38 @@ func BytesToHumanReadable(b uint64) string {
 
 func BytesToUint64(b []byte) (v uint64) {
 	length := uint(len(b))
-	for i := uint(0); i < length-1; i++ {
+	for i := range uint(length - 1) {
 		v += uint64(b[i])
 		v <<= 8
 	}
 	v += uint64(b[length-1])
+
 	return
 }
 func BytesToUint32(b []byte) (v uint32) {
 	length := uint(len(b))
-	for i := uint(0); i < length-1; i++ {
+	for i := range uint(length - 1) {
 		v += uint32(b[i])
 		v <<= 8
 	}
 	v += uint32(b[length-1])
+
 	return
 }
 func BytesToUint16(b []byte) (v uint16) {
 	v += uint16(b[0])
 	v <<= 8
 	v += uint16(b[1])
+
 	return
 }
 func Uint64toBytes(b []byte, v uint64) {
-	for i := uint(0); i < 8; i++ {
+	for i := range uint(8) {
 		b[7-i] = byte(v >> (i * 8))
 	}
 }
 func Uint32toBytes(b []byte, v uint32) {
-	for i := uint(0); i < 4; i++ {
+	for i := range uint(4) {
 		b[3-i] = byte(v >> (i * 8))
 	}
 }
@@ -127,11 +131,12 @@ func Base64Md5(data []byte) string {
 func Md5(data []byte) []byte {
 	hash := md5.New()
 	hash.Write(data)
+
 	return hash.Sum(nil)
 }
 
 func Md5String(data []byte) string {
-	return fmt.Sprintf("%x", Md5(data))
+	return hex.EncodeToString(Md5(data))
 }
 
 func Base64Md5ToBytes(contentMd5 string) []byte {
@@ -139,24 +144,28 @@ func Base64Md5ToBytes(contentMd5 string) []byte {
 	if err != nil {
 		return nil
 	}
+
 	return data
 }
 
 func RandomInt32() int32 {
 	buf := make([]byte, 4)
 	rand.Read(buf)
+
 	return int32(BytesToUint32(buf))
 }
 
 func RandomUint64() int32 {
 	buf := make([]byte, 8)
 	rand.Read(buf)
+
 	return int32(BytesToUint64(buf))
 }
 
 func RandomBytes(byteCount int) []byte {
 	buf := make([]byte, byteCount)
 	rand.Read(buf)
+
 	return buf
 }
 
@@ -186,6 +195,7 @@ func IfElse(b bool, this, that string) string {
 	if b {
 		return this
 	}
+
 	return that
 }
 
@@ -201,7 +211,7 @@ func ParseBytes(s string) (uint64, error) {
 	lastDigit := 0
 	hasComma := false
 	for _, r := range s {
-		if !(unicode.IsDigit(r) || r == '.' || r == ',') {
+		if !unicode.IsDigit(r) && r != '.' && r != ',' {
 			break
 		}
 		if r == ',' {
@@ -212,7 +222,7 @@ func ParseBytes(s string) (uint64, error) {
 
 	num := s[:lastDigit]
 	if hasComma {
-		num = strings.Replace(num, ",", "", -1)
+		num = strings.ReplaceAll(num, ",", "")
 	}
 
 	f, err := strconv.ParseFloat(num, 64)
@@ -226,6 +236,7 @@ func ParseBytes(s string) (uint64, error) {
 		if f >= math.MaxUint64 {
 			return 0, fmt.Errorf("too large: %v", s)
 		}
+
 		return uint64(f), nil
 	}
 

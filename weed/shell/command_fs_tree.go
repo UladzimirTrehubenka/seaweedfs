@@ -34,7 +34,6 @@ func (c *commandFsTree) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsTree) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -53,25 +52,23 @@ func (c *commandFsTree) Do(args []string, commandEnv *CommandEnv, writer io.Writ
 	}
 
 	return terr
-
 }
 
 func treeTraverseDirectory(writer io.Writer, filerClient filer_pb.FilerClient, dir util.FullPath, name string, prefix *Prefix, level int) (directoryCount, fileCount int64, err error) {
-
 	prefix.addMarker(level)
 
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, dir, name, func(entry *filer_pb.Entry, isLast bool) error {
 		if level < 0 && name != "" {
-			if entry.Name != name {
+			if entry.GetName() != name {
 				return nil
 			}
 		}
 
-		fmt.Fprintf(writer, "%s%s\n", prefix.getPrefix(level, isLast), entry.Name)
+		fmt.Fprintf(writer, "%s%s\n", prefix.getPrefix(level, isLast), entry.GetName())
 
-		if entry.IsDirectory {
+		if entry.GetIsDirectory() {
 			directoryCount++
-			subDir := dir.Child(entry.Name)
+			subDir := dir.Child(entry.GetName())
 			dirCount, fCount, terr := treeTraverseDirectory(writer, filerClient, subDir, "", prefix, level+1)
 			directoryCount += dirCount
 			fileCount += fCount
@@ -79,8 +76,10 @@ func treeTraverseDirectory(writer io.Writer, filerClient filer_pb.FilerClient, d
 		} else {
 			fileCount++
 		}
+
 		return nil
 	})
+
 	return
 }
 
@@ -104,7 +103,7 @@ func (p *Prefix) getPrefix(level int, isLastChild bool) string {
 	if level < 0 {
 		return ""
 	}
-	for i := 0; i < level; i++ {
+	for i := range level {
 		if _, ok := p.markers[i]; ok {
 			sb.WriteString("│")
 		} else {
@@ -118,5 +117,6 @@ func (p *Prefix) getPrefix(level int, isLastChild bool) string {
 	} else {
 		sb.WriteString("├──")
 	}
+
 	return sb.String()
 }

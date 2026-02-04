@@ -19,24 +19,23 @@ func (v *Volume) GetVolumeInfo() *volume_server_pb.VolumeInfo {
 }
 
 func (v *Volume) maybeLoadVolumeInfo() (found bool) {
-
 	var err error
 	v.volumeInfo, v.hasRemoteFile, found, err = volume_info.MaybeLoadVolumeInfo(v.FileName(".vif"))
 
-	if v.volumeInfo.Version == 0 {
+	if v.volumeInfo.GetVersion() == 0 {
 		v.volumeInfo.Version = uint32(needle.GetCurrentVersion())
 	}
 
 	if v.hasRemoteFile {
 		glog.V(0).Infof("volume %d is tiered to %s as %s and read only", v.Id,
-			v.volumeInfo.Files[0].BackendName(), v.volumeInfo.Files[0].Key)
+			v.volumeInfo.GetFiles()[0].BackendName(), v.volumeInfo.GetFiles()[0].GetKey())
 	} else {
-		if v.volumeInfo.BytesOffset == 0 {
+		if v.volumeInfo.GetBytesOffset() == 0 {
 			v.volumeInfo.BytesOffset = uint32(types.OffsetSize)
 		}
 	}
 
-	if v.volumeInfo.BytesOffset != 0 && v.volumeInfo.BytesOffset != uint32(types.OffsetSize) {
+	if v.volumeInfo.GetBytesOffset() != 0 && v.volumeInfo.GetBytesOffset() != uint32(types.OffsetSize) {
 		var m string
 		if types.OffsetSize == 5 {
 			m = "without"
@@ -44,16 +43,17 @@ func (v *Volume) maybeLoadVolumeInfo() (found bool) {
 			m = "with"
 		}
 		glog.Exitf("BytesOffset mismatch in volume info file %s, try use binary version %s large_disk", v.FileName(".vif"), m)
-		return
+
+		return found
 	}
 
 	if err != nil {
 		glog.Warningf("load volume %d.vif file: %v", v.Id, err)
-		return
+
+		return found
 	}
 
-	return
-
+	return found
 }
 
 func (v *Volume) HasRemoteFile() bool {
@@ -71,20 +71,19 @@ func (v *Volume) LoadRemoteFile() error {
 		v.DataBackend.Close()
 	}
 
-	v.DataBackend = backendStorage.NewStorageFile(tierFile.Key, v.volumeInfo)
+	v.DataBackend = backendStorage.NewStorageFile(tierFile.GetKey(), v.volumeInfo)
+
 	return nil
 }
 
 func (v *Volume) SaveVolumeInfo() error {
-
 	tierFileName := v.FileName(".vif")
 	if v.Ttl != nil {
 		ttlSeconds := v.Ttl.ToSeconds()
 		if ttlSeconds > 0 {
-			v.volumeInfo.ExpireAtSec = uint64(time.Now().Unix()) + ttlSeconds //calculated destroy time from the ec volume was created
+			v.volumeInfo.ExpireAtSec = uint64(time.Now().Unix()) + ttlSeconds // calculated destroy time from the ec volume was created
 		}
 	}
 
 	return volume_info.SaveVolumeInfo(tierFileName, v.volumeInfo)
-
 }

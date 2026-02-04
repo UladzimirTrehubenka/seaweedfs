@@ -14,6 +14,7 @@ func bitCount(size int) (count int) {
 	for ; size > min_size; count++ {
 		size = (size + 1) >> 1
 	}
+
 	return
 }
 
@@ -23,8 +24,9 @@ func init() {
 	for i := 0; i < len(pools); i++ {
 		slotSize := 1024 << i
 		pools[i] = &sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				buffer := make([]byte, slotSize)
+
 				return &buffer
 			},
 		}
@@ -36,14 +38,17 @@ func getSlotPool(size int) (*sync.Pool, bool) {
 	if index >= len(pools) {
 		return nil, false
 	}
+
 	return pools[index], true
 }
 
 func Allocate(size int) []byte {
 	if pool, found := getSlotPool(size); found {
 		slab := *pool.Get().(*[]byte)
+
 		return slab[:size]
 	}
+
 	return make([]byte, size)
 }
 

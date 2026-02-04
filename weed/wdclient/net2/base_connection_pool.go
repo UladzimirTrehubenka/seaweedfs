@@ -17,7 +17,6 @@ func defaultDialFunc(network string, address string) (net.Conn, error) {
 func parseResourceLocation(resourceLocation string) (
 	network string,
 	address string) {
-
 	idx := strings.Index(resourceLocation, " ")
 	if idx >= 0 {
 		return resourceLocation[:idx], resourceLocation[idx+1:]
@@ -38,18 +37,18 @@ type connectionPoolImpl struct {
 func newBaseConnectionPool(
 	options ConnectionOptions,
 	createPool func(rp.Options) rp.ResourcePool) ConnectionPool {
-
 	dial := options.Dial
 	if dial == nil {
 		dial = defaultDialFunc
 	}
 
-	openFunc := func(loc string) (interface{}, error) {
+	openFunc := func(loc string) (any, error) {
 		network, address := parseResourceLocation(loc)
+
 		return dial(network, address)
 	}
 
-	closeFunc := func(handle interface{}) error {
+	closeFunc := func(handle any) error {
 		return handle.(net.Conn).Close()
 	}
 
@@ -126,6 +125,7 @@ func (p *connectionPoolImpl) ListRegistered() []NetworkAddress {
 				Address: address,
 			})
 	}
+
 	return result
 }
 
@@ -135,11 +135,11 @@ func (p *connectionPoolImpl) ListRegistered() []NetworkAddress {
 func (p *connectionPoolImpl) Get(
 	network string,
 	address string) (ManagedConn, error) {
-
 	handle, err := p.pool.Get(network + " " + address)
 	if err != nil {
 		return nil, err
 	}
+
 	return NewManagedConn(network, address, handle, p, p.options), nil
 }
 

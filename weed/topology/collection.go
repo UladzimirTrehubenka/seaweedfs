@@ -24,6 +24,7 @@ func NewCollection(name string, volumeSizeLimit uint64, replicationAsMin bool) *
 		replicationAsMin: replicationAsMin,
 	}
 	c.storageType2VolumeLayout = util.NewConcurrentReadMap()
+
 	return c
 }
 
@@ -39,9 +40,10 @@ func (c *Collection) GetOrCreateVolumeLayout(rp *super_block.ReplicaPlacement, t
 	if diskType != types.HardDriveType {
 		keyString += string(diskType)
 	}
-	vl := c.storageType2VolumeLayout.Get(keyString, func() interface{} {
+	vl := c.storageType2VolumeLayout.Get(keyString, func() any {
 		return NewVolumeLayout(rp, ttl, diskType, c.volumeSizeLimit, c.replicationAsMin)
 	})
+
 	return vl.(*VolumeLayout)
 }
 
@@ -54,6 +56,7 @@ func (c *Collection) GetVolumeLayout(rp *super_block.ReplicaPlacement, ttl *need
 		keyString += string(diskType)
 	}
 	vl, ok := c.storageType2VolumeLayout.Find(keyString)
+
 	return vl.(*VolumeLayout), ok
 }
 
@@ -64,6 +67,7 @@ func (c *Collection) GetAllVolumeLayouts() []*VolumeLayout {
 			vls = append(vls, vl.(*VolumeLayout))
 		}
 	}
+
 	return vls
 }
 
@@ -86,6 +90,7 @@ func (c *Collection) Lookup(vid needle.VolumeId) []*DataNode {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -97,5 +102,6 @@ func (c *Collection) ListVolumeServers() (nodes []*DataNode) {
 			}
 		}
 	}
+
 	return
 }

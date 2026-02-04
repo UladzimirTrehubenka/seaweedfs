@@ -46,7 +46,8 @@ func (e ParseError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("SQL parse error: %s (%v)", e.Message, e.Cause)
 	}
-	return fmt.Sprintf("SQL parse error: %s", e.Message)
+
+	return "SQL parse error: " + e.Message
 }
 
 // TableNotFoundError represents table/topic not found errors
@@ -59,6 +60,7 @@ func (e TableNotFoundError) Error() string {
 	if e.Database != "" {
 		return fmt.Sprintf("table %s.%s not found", e.Database, e.Table)
 	}
+
 	return fmt.Sprintf("table %s not found", e.Table)
 }
 
@@ -72,6 +74,7 @@ func (e ColumnNotFoundError) Error() string {
 	if e.Table != "" {
 		return fmt.Sprintf("column %s not found in table %s", e.Column, e.Table)
 	}
+
 	return fmt.Sprintf("column %s not found", e.Column)
 }
 
@@ -85,5 +88,6 @@ func (e UnsupportedFeatureError) Error() string {
 	if e.Reason != "" {
 		return fmt.Sprintf("feature not supported: %s (%s)", e.Feature, e.Reason)
 	}
-	return fmt.Sprintf("feature not supported: %s", e.Feature)
+
+	return "feature not supported: " + e.Feature
 }

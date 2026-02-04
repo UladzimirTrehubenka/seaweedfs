@@ -2,24 +2,27 @@ package dash
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/peer"
 )
 
 // WorkerGrpcServer implements the WorkerService gRPC interface
 type WorkerGrpcServer struct {
 	worker_pb.UnimplementedWorkerServiceServer
+
 	adminServer *AdminServer
 
 	// Worker connection management
@@ -71,13 +74,13 @@ func NewWorkerGrpcServer(adminServer *AdminServer) *WorkerGrpcServer {
 // StartWithTLS starts the gRPC server on the specified port with optional TLS
 func (s *WorkerGrpcServer) StartWithTLS(port int) error {
 	if s.running {
-		return fmt.Errorf("worker gRPC server is already running")
+		return errors.New("worker gRPC server is already running")
 	}
 
 	// Create listener
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		return fmt.Errorf("failed to listen on port %d: %v", port, err)
+		return fmt.Errorf("failed to listen on port %d: %w", port, err)
 	}
 
 	// Create gRPC server with optional TLS
@@ -133,6 +136,7 @@ func (s *WorkerGrpcServer) Stop() error {
 	}
 
 	glog.Infof("Worker gRPC server stopped")
+
 	return nil
 }
 
@@ -151,16 +155,16 @@ func (s *WorkerGrpcServer) WorkerStream(stream worker_pb.WorkerService_WorkerStr
 
 	registration := msg.GetRegistration()
 	if registration == nil {
-		return fmt.Errorf("first message must be registration")
+		return errors.New("first message must be registration")
 	}
 	registration.Address = address
 
-	workerID := registration.WorkerId
+	workerID := registration.GetWorkerId()
 	if workerID == "" {
-		return fmt.Errorf("worker ID cannot be empty")
+		return errors.New("worker ID cannot be empty")
 	}
 
-	glog.Infof("Worker %s connecting from %s", workerID, registration.Address)
+	glog.Infof("Worker %s connecting from %s", workerID, registration.GetAddress())
 
 	// Create worker connection
 	connCtx, connCancel := context.WithCancel(ctx)
@@ -168,16 +172,16 @@ func (s *WorkerGrpcServer) WorkerStream(stream worker_pb.WorkerService_WorkerStr
 		workerID:      workerID,
 		stream:        stream,
 		lastSeen:      time.Now(),
-		address:       registration.Address,
-		maxConcurrent: registration.MaxConcurrent,
+		address:       registration.GetAddress(),
+		maxConcurrent: registration.GetMaxConcurrent(),
 		outgoing:      make(chan *worker_pb.AdminMessage, 100),
 		ctx:           connCtx,
 		cancel:        connCancel,
 	}
 
 	// Convert capabilities
-	capabilities := make([]MaintenanceTaskType, len(registration.Capabilities))
-	for i, cap := range registration.Capabilities {
+	capabilities := make([]MaintenanceTaskType, len(registration.GetCapabilities()))
+	for i, cap := range registration.GetCapabilities() {
 		capabilities[i] = MaintenanceTaskType(cap)
 	}
 	conn.capabilities = capabilities
@@ -226,22 +230,25 @@ func (s *WorkerGrpcServer) WorkerStream(stream worker_pb.WorkerService_WorkerStr
 		case <-ctx.Done():
 			glog.Infof("Worker %s connection closed: %v", workerID, ctx.Err())
 			s.unregisterWorker(conn)
+
 			return nil
 		case <-connCtx.Done():
 			glog.Infof("Worker %s connection cancelled", workerID)
 			s.unregisterWorker(conn)
+
 			return nil
 		default:
 		}
 
 		msg, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				glog.Infof("Worker %s disconnected", workerID)
 			} else {
 				glog.Errorf("Error receiving from worker %s: %v", workerID, err)
 			}
 			s.unregisterWorker(conn)
+
 			return err
 		}
 
@@ -266,6 +273,7 @@ func (s *WorkerGrpcServer) handleOutgoingMessages(conn *WorkerConnection) {
 			if err := conn.stream.Send(msg); err != nil {
 				glog.Errorf("Failed to send message to worker %s: %v", conn.workerID, err)
 				conn.cancel()
+
 				return
 			}
 		}
@@ -276,7 +284,7 @@ func (s *WorkerGrpcServer) handleOutgoingMessages(conn *WorkerConnection) {
 func (s *WorkerGrpcServer) handleWorkerMessage(conn *WorkerConnection, msg *worker_pb.WorkerMessage) {
 	workerID := conn.workerID
 
-	switch m := msg.Message.(type) {
+	switch m := msg.GetMessage().(type) {
 	case *worker_pb.WorkerMessage_Heartbeat:
 		s.handleHeartbeat(conn, m.Heartbeat)
 
@@ -293,7 +301,7 @@ func (s *WorkerGrpcServer) handleWorkerMessage(conn *WorkerConnection, msg *work
 		s.handleTaskLogResponse(conn, m.TaskLogResponse)
 
 	case *worker_pb.WorkerMessage_Shutdown:
-		glog.Infof("Worker %s shutting down: %s", workerID, m.Shutdown.Reason)
+		glog.Infof("Worker %s shutting down: %s", workerID, m.Shutdown.GetReason())
 		s.unregisterWorker(conn)
 
 	default:
@@ -347,7 +355,6 @@ func (s *WorkerGrpcServer) handleHeartbeat(conn *WorkerConnection, heartbeat *wo
 
 // handleTaskRequest processes task requests from workers
 func (s *WorkerGrpcServer) handleTaskRequest(conn *WorkerConnection, request *worker_pb.TaskRequest) {
-
 	if s.adminServer.maintenanceManager == nil {
 		return
 	}
@@ -356,7 +363,6 @@ func (s *WorkerGrpcServer) handleTaskRequest(conn *WorkerConnection, request *wo
 	task := s.adminServer.maintenanceManager.GetNextTask(conn.workerID, conn.capabilities)
 
 	if task != nil {
-
 		// Use typed params directly - master client should already be configured in the params
 		var taskParams *worker_pb.TaskParams
 		if task.TypedParams != nil {
@@ -418,8 +424,8 @@ func (s *WorkerGrpcServer) handleTaskRequest(conn *WorkerConnection, request *wo
 // handleTaskUpdate processes task progress updates
 func (s *WorkerGrpcServer) handleTaskUpdate(conn *WorkerConnection, update *worker_pb.TaskUpdate) {
 	if s.adminServer.maintenanceManager != nil {
-		s.adminServer.maintenanceManager.UpdateTaskProgress(update.TaskId, float64(update.Progress))
-		glog.V(3).Infof("Updated task %s progress: %.1f%%", update.TaskId, update.Progress)
+		s.adminServer.maintenanceManager.UpdateTaskProgress(update.GetTaskId(), float64(update.GetProgress()))
+		glog.V(3).Infof("Updated task %s progress: %.1f%%", update.GetTaskId(), update.GetProgress())
 	}
 }
 
@@ -427,40 +433,41 @@ func (s *WorkerGrpcServer) handleTaskUpdate(conn *WorkerConnection, update *work
 func (s *WorkerGrpcServer) handleTaskCompletion(conn *WorkerConnection, completion *worker_pb.TaskComplete) {
 	if s.adminServer.maintenanceManager != nil {
 		errorMsg := ""
-		if !completion.Success {
-			errorMsg = completion.ErrorMessage
+		if !completion.GetSuccess() {
+			errorMsg = completion.GetErrorMessage()
 		}
-		s.adminServer.maintenanceManager.CompleteTask(completion.TaskId, errorMsg)
+		s.adminServer.maintenanceManager.CompleteTask(completion.GetTaskId(), errorMsg)
 
-		if completion.Success {
-			glog.V(1).Infof("Worker %s completed task %s successfully", conn.workerID, completion.TaskId)
+		if completion.GetSuccess() {
+			glog.V(1).Infof("Worker %s completed task %s successfully", conn.workerID, completion.GetTaskId())
 		} else {
-			glog.Errorf("Worker %s failed task %s: %s", conn.workerID, completion.TaskId, completion.ErrorMessage)
+			glog.Errorf("Worker %s failed task %s: %s", conn.workerID, completion.GetTaskId(), completion.GetErrorMessage())
 		}
 	}
 }
 
 // handleTaskLogResponse processes task log responses from workers
 func (s *WorkerGrpcServer) handleTaskLogResponse(conn *WorkerConnection, response *worker_pb.TaskLogResponse) {
-	requestKey := fmt.Sprintf("%s:%s", response.WorkerId, response.TaskId)
+	requestKey := fmt.Sprintf("%s:%s", response.GetWorkerId(), response.GetTaskId())
 
 	s.logRequestsMutex.RLock()
 	requestContext, exists := s.pendingLogRequests[requestKey]
 	s.logRequestsMutex.RUnlock()
 
 	if !exists {
-		glog.Warningf("Received unexpected log response for task %s from worker %s", response.TaskId, response.WorkerId)
+		glog.Warningf("Received unexpected log response for task %s from worker %s", response.GetTaskId(), response.GetWorkerId())
+
 		return
 	}
 
-	glog.V(1).Infof("Received log response for task %s from worker %s: %d entries", response.TaskId, response.WorkerId, len(response.LogEntries))
+	glog.V(1).Infof("Received log response for task %s from worker %s: %d entries", response.GetTaskId(), response.GetWorkerId(), len(response.GetLogEntries()))
 
 	// Send response to waiting channel
 	select {
 	case requestContext.ResponseCh <- response:
 		// Response delivered successfully
 	case <-time.After(time.Second):
-		glog.Warningf("Failed to deliver log response for task %s from worker %s: timeout", response.TaskId, response.WorkerId)
+		glog.Warningf("Failed to deliver log response for task %s from worker %s: timeout", response.GetTaskId(), response.GetWorkerId())
 	}
 
 	// Clean up the pending request
@@ -486,6 +493,7 @@ func (s *WorkerGrpcServer) unregisterWorker(conn *WorkerConnection) {
 	if !exists {
 		s.connMutex.Unlock()
 		glog.V(2).Infof("unregisterWorker: worker %s not found in connections map (already unregistered)", conn.workerID)
+
 		return
 	}
 
@@ -493,6 +501,7 @@ func (s *WorkerGrpcServer) unregisterWorker(conn *WorkerConnection) {
 	if existingConn != conn {
 		s.connMutex.Unlock()
 		glog.V(1).Infof("unregisterWorker: worker %s connection replaced, skipping unregister for old connection", conn.workerID)
+
 		return
 	}
 
@@ -553,6 +562,7 @@ func (s *WorkerGrpcServer) GetConnectedWorkers() []string {
 	for workerID := range s.connections {
 		workers = append(workers, workerID)
 	}
+
 	return workers
 }
 
@@ -606,22 +616,25 @@ func (s *WorkerGrpcServer) RequestTaskLogs(workerID, taskID string, maxEntries i
 		s.logRequestsMutex.Lock()
 		delete(s.pendingLogRequests, requestKey)
 		s.logRequestsMutex.Unlock()
+
 		return nil, fmt.Errorf("timeout sending log request to worker %s", workerID)
 	}
 
 	// Wait for response
 	select {
 	case response := <-responseCh:
-		if !response.Success {
-			return nil, fmt.Errorf("worker log request failed: %s", response.ErrorMessage)
+		if !response.GetSuccess() {
+			return nil, fmt.Errorf("worker log request failed: %s", response.GetErrorMessage())
 		}
-		glog.V(1).Infof("Received %d log entries for task %s from worker %s", len(response.LogEntries), taskID, workerID)
-		return response.LogEntries, nil
+		glog.V(1).Infof("Received %d log entries for task %s from worker %s", len(response.GetLogEntries()), taskID, workerID)
+
+		return response.GetLogEntries(), nil
 	case <-time.After(10 * time.Second):
 		// Clean up pending request on timeout
 		s.logRequestsMutex.Lock()
 		delete(s.pendingLogRequests, requestKey)
 		s.logRequestsMutex.Unlock()
+
 		return nil, fmt.Errorf("timeout waiting for log response from worker %s", workerID)
 	}
 }
@@ -650,6 +663,7 @@ func (s *WorkerGrpcServer) RequestTaskLogsFromAllWorkers(taskID string, maxEntri
 					Fields:    map[string]string{"source": "admin"},
 				},
 			}
+
 			continue
 		}
 		if len(logs) > 0 {
@@ -663,11 +677,12 @@ func (s *WorkerGrpcServer) RequestTaskLogsFromAllWorkers(taskID string, maxEntri
 }
 
 // convertTaskParameters converts task parameters to protobuf format
-func convertTaskParameters(params map[string]interface{}) map[string]string {
+func convertTaskParameters(params map[string]any) map[string]string {
 	result := make(map[string]string)
 	for key, value := range params {
 		result[key] = fmt.Sprintf("%v", value)
 	}
+
 	return result
 }
 
@@ -676,11 +691,14 @@ func findClientAddress(ctx context.Context) string {
 	pr, ok := peer.FromContext(ctx)
 	if !ok {
 		glog.Error("failed to get peer from ctx")
+
 		return ""
 	}
 	if pr.Addr == net.Addr(nil) {
 		glog.Error("failed to get peer address")
+
 		return ""
 	}
+
 	return pr.Addr.String()
 }

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
@@ -38,7 +39,7 @@ type STSSessionClaims struct {
 	ProviderIssuer   string `json:"prov_iss"` // provider_issuer
 
 	// Request context (optional, for policy evaluation)
-	RequestContext map[string]interface{} `json:"req_ctx,omitempty"`
+	RequestContext map[string]any `json:"req_ctx,omitempty"`
 
 	// Session metadata
 	AssumedAt   time.Time `json:"assumed_at"`        // when role was assumed
@@ -48,6 +49,7 @@ type STSSessionClaims struct {
 // NewSTSSessionClaims creates new STS session claims with all required information
 func NewSTSSessionClaims(sessionId, issuer string, expiresAt time.Time) *STSSessionClaims {
 	now := time.Now()
+
 	return &STSSessionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
@@ -131,6 +133,7 @@ func (c *STSSessionClaims) GetExpiresAt() time.Time {
 	if c.ExpiresAt != nil {
 		return c.ExpiresAt.Time
 	}
+
 	return time.Time{}
 }
 
@@ -139,12 +142,14 @@ func (c *STSSessionClaims) WithRoleInfo(roleArn, assumedRole, principal string) 
 	c.RoleArn = roleArn
 	c.AssumedRole = assumedRole
 	c.Principal = principal
+
 	return c
 }
 
 // WithPolicies sets the policies associated with this session
 func (c *STSSessionClaims) WithPolicies(policies []string) *STSSessionClaims {
 	c.Policies = policies
+
 	return c
 }
 
@@ -153,23 +158,27 @@ func (c *STSSessionClaims) WithIdentityProvider(providerName, externalUserId, pr
 	c.IdentityProvider = providerName
 	c.ExternalUserId = externalUserId
 	c.ProviderIssuer = providerIssuer
+
 	return c
 }
 
 // WithRequestContext sets request context for policy evaluation
-func (c *STSSessionClaims) WithRequestContext(ctx map[string]interface{}) *STSSessionClaims {
+func (c *STSSessionClaims) WithRequestContext(ctx map[string]any) *STSSessionClaims {
 	c.RequestContext = ctx
+
 	return c
 }
 
 // WithMaxDuration sets the maximum session duration
 func (c *STSSessionClaims) WithMaxDuration(duration time.Duration) *STSSessionClaims {
 	c.MaxDuration = int64(duration.Seconds())
+
 	return c
 }
 
 // WithSessionName sets the session name
 func (c *STSSessionClaims) WithSessionName(sessionName string) *STSSessionClaims {
 	c.SessionName = sessionName
+
 	return c
 }

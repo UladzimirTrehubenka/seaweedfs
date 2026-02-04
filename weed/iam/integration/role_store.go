@@ -3,17 +3,19 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/karlseguin/ccache/v2"
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"google.golang.org/grpc"
 )
 
 // RoleStore defines the interface for storing IAM role definitions
@@ -47,10 +49,10 @@ func NewMemoryRoleStore() *MemoryRoleStore {
 // StoreRole stores a role definition in memory (filerAddress ignored for memory store)
 func (m *MemoryRoleStore) StoreRole(ctx context.Context, filerAddress string, roleName string, role *RoleDefinition) error {
 	if roleName == "" {
-		return fmt.Errorf("role name cannot be empty")
+		return errors.New("role name cannot be empty")
 	}
 	if role == nil {
-		return fmt.Errorf("role cannot be nil")
+		return errors.New("role cannot be nil")
 	}
 
 	m.mutex.Lock()
@@ -58,13 +60,14 @@ func (m *MemoryRoleStore) StoreRole(ctx context.Context, filerAddress string, ro
 
 	// Deep copy the role to prevent external modifications
 	m.roles[roleName] = copyRoleDefinition(role)
+
 	return nil
 }
 
 // GetRole retrieves a role definition from memory (filerAddress ignored for memory store)
 func (m *MemoryRoleStore) GetRole(ctx context.Context, filerAddress string, roleName string) (*RoleDefinition, error) {
 	if roleName == "" {
-		return nil, fmt.Errorf("role name cannot be empty")
+		return nil, errors.New("role name cannot be empty")
 	}
 
 	m.mutex.RLock()
@@ -95,13 +98,14 @@ func (m *MemoryRoleStore) ListRoles(ctx context.Context, filerAddress string) ([
 // DeleteRole deletes a role definition from memory (filerAddress ignored for memory store)
 func (m *MemoryRoleStore) DeleteRole(ctx context.Context, filerAddress string, roleName string) error {
 	if roleName == "" {
-		return fmt.Errorf("role name cannot be empty")
+		return errors.New("role name cannot be empty")
 	}
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
 	delete(m.roles, roleName)
+
 	return nil
 }
 
@@ -143,7 +147,7 @@ type FilerRoleStore struct {
 }
 
 // NewFilerRoleStore creates a new filer-based role store
-func NewFilerRoleStore(config map[string]interface{}, filerAddressProvider func() string) (*FilerRoleStore, error) {
+func NewFilerRoleStore(config map[string]any, filerAddressProvider func() string) (*FilerRoleStore, error) {
 	store := &FilerRoleStore{
 		basePath:             "/etc/iam/roles", // Default path for role storage - aligned with /etc/ convention
 		filerAddressProvider: filerAddressProvider,
@@ -168,19 +172,19 @@ func (f *FilerRoleStore) StoreRole(ctx context.Context, filerAddress string, rol
 		filerAddress = f.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return fmt.Errorf("filer address is required for FilerRoleStore")
+		return errors.New("filer address is required for FilerRoleStore")
 	}
 	if roleName == "" {
-		return fmt.Errorf("role name cannot be empty")
+		return errors.New("role name cannot be empty")
 	}
 	if role == nil {
-		return fmt.Errorf("role cannot be nil")
+		return errors.New("role cannot be nil")
 	}
 
 	// Serialize role to JSON
 	roleData, err := json.MarshalIndent(role, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to serialize role: %v", err)
+		return fmt.Errorf("failed to serialize role: %w", err)
 	}
 
 	rolePath := f.getRolePath(roleName)
@@ -206,7 +210,7 @@ func (f *FilerRoleStore) StoreRole(ctx context.Context, filerAddress string, rol
 		glog.V(3).Infof("Storing role %s at %s", roleName, rolePath)
 		_, err := client.CreateEntry(ctx, request)
 		if err != nil {
-			return fmt.Errorf("failed to store role %s: %v", roleName, err)
+			return fmt.Errorf("failed to store role %s: %w", roleName, err)
 		}
 
 		return nil
@@ -220,10 +224,10 @@ func (f *FilerRoleStore) GetRole(ctx context.Context, filerAddress string, roleN
 		filerAddress = f.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return nil, fmt.Errorf("filer address is required for FilerRoleStore")
+		return nil, errors.New("filer address is required for FilerRoleStore")
 	}
 	if roleName == "" {
-		return nil, fmt.Errorf("role name cannot be empty")
+		return nil, errors.New("role name cannot be empty")
 	}
 
 	var roleData []byte
@@ -236,14 +240,15 @@ func (f *FilerRoleStore) GetRole(ctx context.Context, filerAddress string, roleN
 		glog.V(3).Infof("Looking up role %s", roleName)
 		response, err := client.LookupDirectoryEntry(ctx, request)
 		if err != nil {
-			return fmt.Errorf("role not found: %v", err)
+			return fmt.Errorf("role not found: %w", err)
 		}
 
-		if response.Entry == nil {
-			return fmt.Errorf("role not found")
+		if response.GetEntry() == nil {
+			return errors.New("role not found")
 		}
 
-		roleData = response.Entry.Content
+		roleData = response.GetEntry().GetContent()
+
 		return nil
 	})
 
@@ -254,7 +259,7 @@ func (f *FilerRoleStore) GetRole(ctx context.Context, filerAddress string, roleN
 	// Deserialize role from JSON
 	var role RoleDefinition
 	if err := json.Unmarshal(roleData, &role); err != nil {
-		return nil, fmt.Errorf("failed to deserialize role: %v", err)
+		return nil, fmt.Errorf("failed to deserialize role: %w", err)
 	}
 
 	return &role, nil
@@ -267,7 +272,7 @@ func (f *FilerRoleStore) ListRoles(ctx context.Context, filerAddress string) ([]
 		filerAddress = f.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return nil, fmt.Errorf("filer address is required for FilerRoleStore")
+		return nil, errors.New("filer address is required for FilerRoleStore")
 	}
 
 	var roleNames []string
@@ -284,7 +289,7 @@ func (f *FilerRoleStore) ListRoles(ctx context.Context, filerAddress string) ([]
 		glog.V(3).Infof("Listing roles in %s", f.basePath)
 		stream, err := client.ListEntries(ctx, request)
 		if err != nil {
-			return fmt.Errorf("failed to list roles: %v", err)
+			return fmt.Errorf("failed to list roles: %w", err)
 		}
 
 		for {
@@ -293,14 +298,14 @@ func (f *FilerRoleStore) ListRoles(ctx context.Context, filerAddress string) ([]
 				break // End of stream or error
 			}
 
-			if resp.Entry == nil || resp.Entry.IsDirectory {
+			if resp.GetEntry() == nil || resp.GetEntry().GetIsDirectory() {
 				continue
 			}
 
 			// Extract role name from filename
-			filename := resp.Entry.Name
-			if strings.HasSuffix(filename, ".json") {
-				roleName := strings.TrimSuffix(filename, ".json")
+			filename := resp.GetEntry().GetName()
+			if before, ok := strings.CutSuffix(filename, ".json"); ok {
+				roleName := before
 				roleNames = append(roleNames, roleName)
 			}
 		}
@@ -322,10 +327,10 @@ func (f *FilerRoleStore) DeleteRole(ctx context.Context, filerAddress string, ro
 		filerAddress = f.filerAddressProvider()
 	}
 	if filerAddress == "" {
-		return fmt.Errorf("filer address is required for FilerRoleStore")
+		return errors.New("filer address is required for FilerRoleStore")
 	}
 	if roleName == "" {
-		return fmt.Errorf("role name cannot be empty")
+		return errors.New("role name cannot be empty")
 	}
 
 	return f.withFilerClient(filerAddress, func(client filer_pb.SeaweedFilerClient) error {
@@ -341,14 +346,16 @@ func (f *FilerRoleStore) DeleteRole(ctx context.Context, filerAddress string, ro
 			if strings.Contains(err.Error(), "not found") {
 				return nil // Idempotent: deletion of non-existent role is successful
 			}
-			return fmt.Errorf("failed to delete role %s: %v", roleName, err)
+
+			return fmt.Errorf("failed to delete role %s: %w", roleName, err)
 		}
 
-		if resp.Error != "" {
-			if strings.Contains(resp.Error, "not found") {
+		if resp.GetError() != "" {
+			if strings.Contains(resp.GetError(), "not found") {
 				return nil // Idempotent: deletion of non-existent role is successful
 			}
-			return fmt.Errorf("failed to delete role %s: %s", roleName, resp.Error)
+
+			return fmt.Errorf("failed to delete role %s: %s", roleName, resp.GetError())
 		}
 
 		return nil
@@ -367,8 +374,9 @@ func (f *FilerRoleStore) getRolePath(roleName string) string {
 
 func (f *FilerRoleStore) withFilerClient(filerAddress string, fn func(filer_pb.SeaweedFilerClient) error) error {
 	if filerAddress == "" {
-		return fmt.Errorf("filer address is required for FilerRoleStore")
+		return errors.New("filer address is required for FilerRoleStore")
 	}
+
 	return pb.WithGrpcFilerClient(false, 0, pb.ServerAddress(filerAddress), f.grpcDialOption, fn)
 }
 
@@ -390,7 +398,7 @@ type CachedFilerRoleStoreConfig struct {
 }
 
 // NewCachedFilerRoleStore creates a new cached filer-based role store
-func NewCachedFilerRoleStore(config map[string]interface{}) (*CachedFilerRoleStore, error) {
+func NewCachedFilerRoleStore(config map[string]any) (*CachedFilerRoleStore, error) {
 	// Create underlying filer store
 	filerStore, err := NewFilerRoleStore(config, nil)
 	if err != nil {
@@ -451,6 +459,7 @@ func (c *CachedFilerRoleStore) StoreRole(ctx context.Context, filerAddress strin
 	c.listCache.Clear() // Invalidate list cache
 
 	glog.V(3).Infof("Stored and invalidated cache for role %s", roleName)
+
 	return nil
 }
 
@@ -462,6 +471,7 @@ func (c *CachedFilerRoleStore) GetRole(ctx context.Context, filerAddress string,
 		// Cache hit - return cached role (DO NOT extend TTL)
 		role := item.Value().(*RoleDefinition)
 		glog.V(4).Infof("Cache hit for role %s", roleName)
+
 		return copyRoleDefinition(role), nil
 	}
 
@@ -475,6 +485,7 @@ func (c *CachedFilerRoleStore) GetRole(ctx context.Context, filerAddress string,
 	// Cache the result with TTL
 	c.cache.Set(roleName, copyRoleDefinition(role), c.ttl)
 	glog.V(3).Infof("Cached role %s with TTL %v", roleName, c.ttl)
+
 	return role, nil
 }
 
@@ -489,6 +500,7 @@ func (c *CachedFilerRoleStore) ListRoles(ctx context.Context, filerAddress strin
 		// Cache hit - return cached list (DO NOT extend TTL)
 		roles := item.Value().([]string)
 		glog.V(4).Infof("List cache hit, returning %d roles", len(roles))
+
 		return append([]string(nil), roles...), nil // Return a copy
 	}
 
@@ -503,6 +515,7 @@ func (c *CachedFilerRoleStore) ListRoles(ctx context.Context, filerAddress strin
 	rolesCopy := append([]string(nil), roles...)
 	c.listCache.Set(listCacheKey, rolesCopy, c.listTTL)
 	glog.V(3).Infof("Cached role list with %d entries, TTL %v", len(roles), c.listTTL)
+
 	return roles, nil
 }
 
@@ -519,6 +532,7 @@ func (c *CachedFilerRoleStore) DeleteRole(ctx context.Context, filerAddress stri
 	c.listCache.Clear() // Invalidate list cache
 
 	glog.V(3).Infof("Deleted and invalidated cache for role %s", roleName)
+
 	return nil
 }
 
@@ -530,13 +544,13 @@ func (c *CachedFilerRoleStore) ClearCache() {
 }
 
 // GetCacheStats returns cache statistics
-func (c *CachedFilerRoleStore) GetCacheStats() map[string]interface{} {
-	return map[string]interface{}{
-		"roleCache": map[string]interface{}{
+func (c *CachedFilerRoleStore) GetCacheStats() map[string]any {
+	return map[string]any{
+		"roleCache": map[string]any{
 			"size": c.cache.ItemCount(),
 			"ttl":  c.ttl.String(),
 		},
-		"listCache": map[string]interface{}{
+		"listCache": map[string]any{
 			"size": c.listCache.ItemCount(),
 			"ttl":  c.listTTL.String(),
 		},

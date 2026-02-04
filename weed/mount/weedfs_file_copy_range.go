@@ -90,6 +90,7 @@ func (wfs *WFS) CopyFileRange(cancel <-chan struct{}, in *fuse.CopyFileRangeIn) 
 		case <-cancel:
 			glog.Warningf("canceled CopyFileRange for %s (copied %d)",
 				fhIn.FullPath(), totalCopied)
+
 			return uint32(totalCopied), fuse.EINTR
 		default: // keep going
 		}
@@ -109,6 +110,7 @@ func (wfs *WFS) CopyFileRange(cancel <-chan struct{}, in *fuse.CopyFileRangeIn) 
 		if err != nil {
 			glog.Warningf("file handle read %s %d (total %d): %v",
 				fhIn.FullPath(), numBytesRead, totalCopied, err)
+
 			return 0, fuse.EIO
 		}
 
@@ -134,6 +136,7 @@ func (wfs *WFS) CopyFileRange(cancel <-chan struct{}, in *fuse.CopyFileRangeIn) 
 			fhOut.dirtyPages.writerPattern.IsSequentialMode(),
 			nowUnixNano); err != nil {
 			glog.Errorf("AddPage error: %v", err)
+
 			return 0, fuse.EIO
 		}
 
@@ -147,11 +150,12 @@ func (wfs *WFS) CopyFileRange(cancel <-chan struct{}, in *fuse.CopyFileRangeIn) 
 
 	fhOut.entry.Attributes.FileSize = uint64(max(
 		totalCopied+int64(in.OffOut),
-		int64(fhOut.entry.Attributes.FileSize),
+		int64(fhOut.entry.Attributes.GetFileSize()),
 	))
 	fhOut.entry.Content = nil
 	fhOut.dirtyMetadata = true
 
 	written = uint32(totalCopied)
+
 	return written, fuse.OK
 }

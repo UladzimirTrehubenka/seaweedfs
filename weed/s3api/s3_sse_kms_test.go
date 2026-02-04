@@ -162,7 +162,7 @@ func TestSSEKMSMetadataSerialization(t *testing.T) {
 	}
 
 	// Verify it's valid JSON
-	var jsonData map[string]interface{}
+	var jsonData map[string]any
 	if err := json.Unmarshal(serialized, &jsonData); err != nil {
 		t.Fatalf("Serialized data is not valid JSON: %v", err)
 	}

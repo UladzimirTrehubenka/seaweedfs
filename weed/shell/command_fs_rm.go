@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -39,7 +40,6 @@ func (c *commandFsRm) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -50,6 +50,7 @@ func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "-") {
 			entries = append(entries, arg)
+
 			continue
 		}
 		for _, t := range arg {
@@ -62,7 +63,7 @@ func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 		}
 	}
 	if len(entries) < 1 {
-		return fmt.Errorf("need to have arguments")
+		return errors.New("need to have arguments")
 	}
 
 	commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
@@ -70,6 +71,7 @@ func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 			targetPath, err := commandEnv.parseUrl(entry)
 			if err != nil {
 				fmt.Fprintf(writer, "rm: %s: %v\n", targetPath, err)
+
 				continue
 			}
 
@@ -82,6 +84,7 @@ func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 			_, err = filer_pb.LookupEntry(context.Background(), client, lookupRequest)
 			if err != nil {
 				fmt.Fprintf(writer, "rm: %s: %v\n", targetPath, err)
+
 				continue
 			}
 
@@ -97,13 +100,14 @@ func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 			if resp, err := client.DeleteEntry(context.Background(), request); err != nil {
 				fmt.Fprintf(writer, "rm: %s: %v\n", targetPath, err)
 			} else {
-				if resp.Error != "" {
-					fmt.Fprintf(writer, "rm: %s: %v\n", targetPath, resp.Error)
+				if resp.GetError() != "" {
+					fmt.Fprintf(writer, "rm: %s: %v\n", targetPath, resp.GetError())
 				}
 			}
 		}
+
 		return nil
 	})
 
-	return
+	return err
 }

@@ -3,11 +3,11 @@ package stats
 import "github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 
 func calculateDiskRemaining(disk *volume_server_pb.DiskStatus) {
-	disk.Used = disk.All - disk.Free
+	disk.Used = disk.GetAll() - disk.GetFree()
 
-	if disk.All > 0 {
-		disk.PercentFree = float32((float64(disk.Free) / float64(disk.All)) * 100)
-		disk.PercentUsed = float32((float64(disk.Used) / float64(disk.All)) * 100)
+	if disk.GetAll() > 0 {
+		disk.PercentFree = float32((float64(disk.GetFree()) / float64(disk.GetAll())) * 100)
+		disk.PercentUsed = float32((float64(disk.GetUsed()) / float64(disk.GetAll())) * 100)
 	} else {
 		disk.PercentFree = 0
 		disk.PercentUsed = 0

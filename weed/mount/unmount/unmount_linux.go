@@ -15,7 +15,9 @@ func unmount(dir string) error {
 			msg := err.Error() + ": " + string(output)
 			err = errors.New(msg)
 		}
+
 		return err
 	}
+
 	return nil
 }

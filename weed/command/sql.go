@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/peterh/liner"
+
 	"github.com/seaweedfs/seaweedfs/weed/query/engine"
 	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 	"github.com/seaweedfs/seaweedfs/weed/util/sqlutil"
@@ -128,6 +131,7 @@ func determineOutputFormat(specified string, interactive bool) OutputFormat {
 		if interactive {
 			return OutputTable
 		}
+
 		return OutputJSON
 	}
 }
@@ -140,6 +144,7 @@ func executeSingleQuery(ctx *SQLContext, query string) bool {
 	}
 
 	fmt.Printf("Executing query against %s...\n", *sqlMaster)
+
 	return executeAndDisplay(ctx, query, true)
 }
 
@@ -148,6 +153,7 @@ func executeFileQueries(ctx *SQLContext, filename string) bool {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Printf("Error reading file %s: %v\n", filename, err)
+
 		return false
 	}
 
@@ -231,14 +237,16 @@ func runInteractiveShell(ctx *SQLContext) bool {
 		// Read line with readline support
 		input, err := line.Prompt(prompt)
 		if err != nil {
-			if err == liner.ErrPromptAborted {
+			if errors.Is(err, liner.ErrPromptAborted) {
 				fmt.Println("Query cancelled")
 				queryBuffer.Reset()
+
 				continue
 			}
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				fmt.Printf("Input error: %v\n", err)
 			}
+
 			break
 		}
 
@@ -273,12 +281,14 @@ func runInteractiveShell(ctx *SQLContext) bool {
 
 		if cleanQuery == "exit" || cleanQuery == "quit" || cleanQuery == "\\q" {
 			fmt.Println("Goodbye!")
+
 			break
 		}
 
 		if cleanQuery == "help" {
 			showEnhancedHelp()
 			queryBuffer.Reset()
+
 			continue
 		}
 
@@ -295,19 +305,20 @@ func runInteractiveShell(ctx *SQLContext) bool {
 				if len(result.Rows) > 0 && len(result.Rows[0]) > 0 {
 					message := result.Rows[0][0].ToString()
 					// Extract database name from "Database changed to: dbname"
-					if strings.HasPrefix(message, "Database changed to: ") {
-						ctx.currentDatabase = strings.TrimPrefix(message, "Database changed to: ")
+					if after, ok := strings.CutPrefix(message, "Database changed to: "); ok {
+						ctx.currentDatabase = after
 					}
 					fmt.Printf("%s\n\n", message)
 				}
 			}
 			queryBuffer.Reset()
+
 			continue
 		}
 
 		// Handle output format switching
-		if strings.HasPrefix(strings.ToUpper(cleanQuery), "\\FORMAT ") {
-			format := strings.TrimSpace(strings.TrimPrefix(strings.ToUpper(cleanQuery), "\\FORMAT "))
+		if after, ok := strings.CutPrefix(strings.ToUpper(cleanQuery), "\\FORMAT "); ok {
+			format := strings.TrimSpace(after)
 			switch format {
 			case "TABLE":
 				ctx.outputFormat = OutputTable
@@ -322,6 +333,7 @@ func runInteractiveShell(ctx *SQLContext) bool {
 				fmt.Printf("Invalid format: %s. Supported: table, json, csv\n", format)
 			}
 			queryBuffer.Reset()
+
 			continue
 		}
 
@@ -345,10 +357,8 @@ func isSpecialCommand(query string) bool {
 		"exit", "quit", "\\q", "help",
 	}
 
-	for _, cmd := range specialCommands {
-		if cleanQuery == cmd {
-			return true
-		}
+	if slices.Contains(specialCommands, cleanQuery) {
+		return true
 	}
 
 	// Commands that are exactly specific commands (not just prefixes)
@@ -356,6 +366,7 @@ func isSpecialCommand(query string) bool {
 	if len(parts) == 0 {
 		return false
 	}
+
 	return (parts[0] == "USE" && len(parts) >= 2) ||
 		strings.HasPrefix(strings.ToUpper(cleanQuery), "\\FORMAT ")
 }
@@ -371,7 +382,7 @@ func executeAndDisplay(ctx *SQLContext, query string, showTiming bool) bool {
 	result, err := ctx.engine.ExecuteSQL(execCtx, query)
 	if err != nil {
 		if ctx.outputFormat == OutputJSON {
-			errorResult := map[string]interface{}{
+			errorResult := map[string]any{
 				"error": err.Error(),
 				"query": query,
 			}
@@ -380,12 +391,13 @@ func executeAndDisplay(ctx *SQLContext, query string, showTiming bool) bool {
 		} else {
 			fmt.Printf("Error: %v\n", err)
 		}
+
 		return false
 	}
 
 	if result.Error != nil {
 		if ctx.outputFormat == OutputJSON {
-			errorResult := map[string]interface{}{
+			errorResult := map[string]any{
 				"error": result.Error.Error(),
 				"query": query,
 			}
@@ -394,6 +406,7 @@ func executeAndDisplay(ctx *SQLContext, query string, showTiming bool) bool {
 		} else {
 			fmt.Printf("Query Error: %v\n", result.Error)
 		}
+
 		return false
 	}
 
@@ -421,6 +434,7 @@ func executeAndDisplay(ctx *SQLContext, query string, showTiming bool) bool {
 func displayTableResult(result *engine.QueryResult) {
 	if len(result.Columns) == 0 {
 		fmt.Println("Empty result set")
+
 		return
 	}
 
@@ -485,27 +499,28 @@ func displayTableResult(result *engine.QueryResult) {
 // displayJSONResult outputs query results in JSON format
 func displayJSONResult(result *engine.QueryResult) {
 	// Convert result to JSON-friendly format
-	jsonResult := map[string]interface{}{
+	jsonResult := map[string]any{
 		"columns": result.Columns,
-		"rows":    make([]map[string]interface{}, len(result.Rows)),
+		"rows":    make([]map[string]any, len(result.Rows)),
 		"count":   len(result.Rows),
 	}
 
 	// Convert rows to JSON objects
 	for i, row := range result.Rows {
-		rowObj := make(map[string]interface{})
+		rowObj := make(map[string]any)
 		for j, val := range row {
 			if j < len(result.Columns) {
 				rowObj[result.Columns[j]] = val.ToString()
 			}
 		}
-		jsonResult["rows"].([]map[string]interface{})[i] = rowObj
+		jsonResult["rows"].([]map[string]any)[i] = rowObj
 	}
 
 	// Marshal and print JSON
 	jsonBytes, err := json.MarshalIndent(jsonResult, "", "  ")
 	if err != nil {
 		fmt.Printf("Error formatting JSON: %v\n", err)
+
 		return
 	}
 
@@ -522,6 +537,7 @@ func displayCSVResult(result *engine.QueryResult) {
 				fmt.Println(row[0].ToString())
 			}
 		}
+
 		return
 	}
 
@@ -532,6 +548,7 @@ func displayCSVResult(result *engine.QueryResult) {
 	// Write headers
 	if err := writer.Write(result.Columns); err != nil {
 		fmt.Printf("Error writing CSV headers: %v\n", err)
+
 		return
 	}
 
@@ -543,6 +560,7 @@ func displayCSVResult(result *engine.QueryResult) {
 		}
 		if err := writer.Write(csvRow); err != nil {
 			fmt.Printf("Error writing CSV row: %v\n", err)
+
 			return
 		}
 	}

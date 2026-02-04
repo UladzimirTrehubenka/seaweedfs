@@ -270,7 +270,7 @@ func TestValidateSTSSessionTokenIntegration(t *testing.T) {
 	}
 	iam.SetIAMIntegration(s3iam)
 	// Create a mock HTTP request with STS session token
-	req, err := http.NewRequest("PUT", "/test-bucket/test-object.txt", nil)
+	req, err := http.NewRequest(http.MethodPut, "/test-bucket/test-object.txt", nil)
 	require.NoError(t, err)
 
 	// Generate session token
@@ -318,7 +318,7 @@ func TestSTSIdentityClaimsPopulation(t *testing.T) {
 	iam.SetIAMIntegration(s3iam)
 
 	// Create a mock HTTP request
-	req, err := http.NewRequest("PUT", "/test-bucket/test-object.txt", nil)
+	req, err := http.NewRequest(http.MethodPut, "/test-bucket/test-object.txt", nil)
 	require.NoError(t, err)
 
 	// Generate session token with RequestContext containing user claims
@@ -329,7 +329,7 @@ func TestSTSIdentityClaimsPopulation(t *testing.T) {
 		WithRoleInfo("arn:aws:iam::role/S3UserRole", "arn:aws:sts::assumed-role/S3UserRole/claims-test", "arn:aws:sts::assumed-role/S3UserRole/claims-test")
 
 	// Add RequestContext with user claims (simulating AssumeRoleWithWebIdentity)
-	sessionClaims.RequestContext = map[string]interface{}{
+	sessionClaims.RequestContext = map[string]any{
 		"preferred_username": "f2wbnp",
 		"email":              "user@example.com",
 		"name":               "Test User",
@@ -382,6 +382,7 @@ func setupTestSTSService(t *testing.T) (*sts.STSService, *sts.STSConfig) {
 	}
 	err := stsService.Initialize(config)
 	require.NoError(t, err, "STS service should initialize successfully")
+
 	return stsService, config
 }
 

@@ -17,8 +17,8 @@ func (balancer *PubBalancer) LookupTopicPartitions(topic *schema_pb.Topic) (assi
 		broker, brokerStats := brokerStatsItem.Key, brokerStatsItem.Val
 		for topicPartitionStatsItem := range brokerStats.TopicPartitionStats.IterBuffered() {
 			topicPartitionStat := topicPartitionStatsItem.Val
-			if topicPartitionStat.TopicPartition.Namespace == topic.Namespace &&
-				topicPartitionStat.TopicPartition.Name == topic.Name {
+			if topicPartitionStat.Namespace == topic.GetNamespace() &&
+				topicPartitionStat.Name == topic.GetName() {
 				assignment := &mq_pb.BrokerPartitionAssignment{
 					Partition: &schema_pb.Partition{
 						RingSize:   MaxPartitionCount,
@@ -33,5 +33,6 @@ func (balancer *PubBalancer) LookupTopicPartitions(topic *schema_pb.Topic) (assi
 			}
 		}
 	}
+
 	return
 }

@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -26,7 +27,7 @@ func (bc *BrokerClient) PublishRecord(ctx context.Context, topic string, partiti
 	}
 
 	if session.Stream == nil {
-		return 0, fmt.Errorf("publisher session stream cannot be nil")
+		return 0, errors.New("publisher session stream cannot be nil")
 	}
 
 	// CRITICAL: Lock to prevent concurrent Send/Recv causing response mix-ups
@@ -48,11 +49,11 @@ func (bc *BrokerClient) PublishRecord(ctx context.Context, topic string, partiti
 
 	// DEBUG: Log message being published for GitHub Actions debugging
 	valuePreview := ""
-	if len(dataMsg.Value) > 0 {
-		if len(dataMsg.Value) <= 50 {
-			valuePreview = string(dataMsg.Value)
+	if len(dataMsg.GetValue()) > 0 {
+		if len(dataMsg.GetValue()) <= 50 {
+			valuePreview = string(dataMsg.GetValue())
 		} else {
-			valuePreview = fmt.Sprintf("%s...(total %d bytes)", string(dataMsg.Value[:50]), len(dataMsg.Value))
+			valuePreview = fmt.Sprintf("%s...(total %d bytes)", string(dataMsg.GetValue()[:50]), len(dataMsg.GetValue()))
 		}
 	} else {
 		valuePreview = "<empty>"
@@ -75,14 +76,14 @@ func (bc *BrokerClient) PublishRecord(ctx context.Context, topic string, partiti
 	select {
 	case err := <-sendErrChan:
 		if err != nil {
-			return 0, fmt.Errorf("failed to send data: %v", err)
+			return 0, fmt.Errorf("failed to send data: %w", err)
 		}
 	case <-ctx.Done():
 		return 0, fmt.Errorf("context cancelled while sending: %w", ctx.Err())
 	}
 
 	// Read acknowledgment with context timeout enforcement
-	recvErrChan := make(chan interface{}, 1)
+	recvErrChan := make(chan any, 1)
 	go func() {
 		resp, err := session.Stream.Recv()
 		if err != nil {
@@ -96,7 +97,7 @@ func (bc *BrokerClient) PublishRecord(ctx context.Context, topic string, partiti
 	select {
 	case result := <-recvErrChan:
 		if err, isErr := result.(error); isErr {
-			return 0, fmt.Errorf("failed to receive ack: %v", err)
+			return 0, fmt.Errorf("failed to receive ack: %w", err)
 		}
 		resp = result.(*mq_pb.PublishMessageResponse)
 	case <-ctx.Done():
@@ -112,8 +113,9 @@ func (bc *BrokerClient) PublishRecord(ctx context.Context, topic string, partiti
 	}
 
 	// Use the assigned offset from SMQ, not the timestamp
-	glog.V(1).Infof("[PUBLISH_ACK] topic=%s partition=%d assignedOffset=%d", topic, partition, resp.AssignedOffset)
-	return resp.AssignedOffset, nil
+	glog.V(1).Infof("[PUBLISH_ACK] topic=%s partition=%d assignedOffset=%d", topic, partition, resp.GetAssignedOffset())
+
+	return resp.GetAssignedOffset(), nil
 }
 
 // PublishRecordValue publishes a RecordValue message to SeaweedMQ via broker
@@ -130,7 +132,7 @@ func (bc *BrokerClient) PublishRecordValue(ctx context.Context, topic string, pa
 	}
 
 	if session.Stream == nil {
-		return 0, fmt.Errorf("publisher session stream cannot be nil")
+		return 0, errors.New("publisher session stream cannot be nil")
 	}
 
 	// CRITICAL: Lock to prevent concurrent Send/Recv causing response mix-ups
@@ -154,13 +156,13 @@ func (bc *BrokerClient) PublishRecordValue(ctx context.Context, topic string, pa
 			Data: dataMsg,
 		},
 	}); err != nil {
-		return 0, fmt.Errorf("failed to send RecordValue data: %v", err)
+		return 0, fmt.Errorf("failed to send RecordValue data: %w", err)
 	}
 
 	// Read acknowledgment
 	resp, err := session.Stream.Recv()
 	if err != nil {
-		return 0, fmt.Errorf("failed to receive RecordValue ack: %v", err)
+		return 0, fmt.Errorf("failed to receive RecordValue ack: %w", err)
 	}
 
 	// Handle structured broker errors
@@ -172,7 +174,7 @@ func (bc *BrokerClient) PublishRecordValue(ctx context.Context, topic string, pa
 	}
 
 	// Use the assigned offset from SMQ, not the timestamp
-	return resp.AssignedOffset, nil
+	return resp.GetAssignedOffset(), nil
 }
 
 // getOrCreatePublisher gets or creates a publisher stream for a topic-partition
@@ -183,6 +185,7 @@ func (bc *BrokerClient) getOrCreatePublisher(topic string, partition int32) (*Br
 	bc.publishersLock.RLock()
 	if session, exists := bc.publishers[key]; exists {
 		bc.publishersLock.RUnlock()
+
 		return session, nil
 	}
 	bc.publishersLock.RUnlock()
@@ -224,6 +227,7 @@ func (bc *BrokerClient) getOrCreatePublisher(topic string, partition int32) (*Br
 	bc.publishersLock.RLock()
 	if session, exists := bc.publishers[key]; exists {
 		bc.publishersLock.RUnlock()
+
 		return session, nil
 	}
 	bc.publishersLock.RUnlock()
@@ -231,13 +235,13 @@ func (bc *BrokerClient) getOrCreatePublisher(topic string, partition int32) (*Br
 	// Create the stream
 	stream, err := bc.client.PublishMessage(bc.ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create publish stream: %v", err)
+		return nil, fmt.Errorf("failed to create publish stream: %w", err)
 	}
 
 	// Get the actual partition assignment from the broker
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actual partition assignment: %v", err)
+		return nil, fmt.Errorf("failed to get actual partition assignment: %w", err)
 	}
 
 	// Send init message
@@ -254,16 +258,16 @@ func (bc *BrokerClient) getOrCreatePublisher(topic string, partition int32) (*Br
 			},
 		},
 	}); err != nil {
-		return nil, fmt.Errorf("failed to send init message: %v", err)
+		return nil, fmt.Errorf("failed to send init message: %w", err)
 	}
 
 	// Consume the "hello" message sent by broker after init
 	helloResp, err := stream.Recv()
 	if err != nil {
-		return nil, fmt.Errorf("failed to receive hello message: %v", err)
+		return nil, fmt.Errorf("failed to receive hello message: %w", err)
 	}
-	if helloResp.ErrorCode != 0 {
-		return nil, fmt.Errorf("broker init error (code %d): %s", helloResp.ErrorCode, helloResp.Error)
+	if helloResp.GetErrorCode() != 0 {
+		return nil, fmt.Errorf("broker init error (code %d): %s", helloResp.GetErrorCode(), helloResp.GetError())
 	}
 
 	session := &BrokerPublisherSession{
@@ -296,6 +300,7 @@ func (bc *BrokerClient) ClosePublisher(topic string, partition int32) error {
 		session.Stream.CloseSend()
 	}
 	delete(bc.publishers, key)
+
 	return nil
 }
 
@@ -324,24 +329,24 @@ func (bc *BrokerClient) getActualPartitionAssignment(topic string, kafkaPartitio
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to lookup topic brokers: %v", err)
+		return nil, fmt.Errorf("failed to lookup topic brokers: %w", err)
 	}
 
-	if len(lookupResp.BrokerPartitionAssignments) == 0 {
+	if len(lookupResp.GetBrokerPartitionAssignments()) == 0 {
 		return nil, fmt.Errorf("no partition assignments found for topic %s", topic)
 	}
 
 	// Cache the assignments
 	bc.partitionAssignmentCacheMu.Lock()
 	bc.partitionAssignmentCache[topic] = &partitionAssignmentCacheEntry{
-		assignments: lookupResp.BrokerPartitionAssignments,
+		assignments: lookupResp.GetBrokerPartitionAssignments(),
 		expiresAt:   time.Now().Add(bc.partitionAssignmentCacheTTL),
 	}
 	bc.partitionAssignmentCacheMu.Unlock()
 	glog.V(4).Infof("Cached partition assignments for topic %s", topic)
 
 	// Use freshly fetched assignments to find partition
-	return bc.findPartitionInAssignments(topic, kafkaPartition, lookupResp.BrokerPartitionAssignments)
+	return bc.findPartitionInAssignments(topic, kafkaPartition, lookupResp.GetBrokerPartitionAssignments())
 }
 
 // findPartitionInAssignments finds the SeaweedFS partition for a given Kafka partition ID
@@ -370,16 +375,17 @@ func (bc *BrokerClient) findPartitionInAssignments(topic string, kafkaPartition 
 
 	// Find the broker assignment that matches this range
 	for _, assignment := range assignments {
-		if assignment.Partition == nil {
+		if assignment.GetPartition() == nil {
 			continue
 		}
 
 		// Check if this assignment's range matches our expected range
-		if assignment.Partition.RangeStart == expectedRangeStart && assignment.Partition.RangeStop == expectedRangeStop {
+		if assignment.GetPartition().GetRangeStart() == expectedRangeStart && assignment.GetPartition().GetRangeStop() == expectedRangeStop {
 			glog.V(1).Infof("found matching partition assignment for %s[%d]: {RingSize: %d, RangeStart: %d, RangeStop: %d, UnixTimeNs: %d}",
-				topic, kafkaPartition, assignment.Partition.RingSize, assignment.Partition.RangeStart,
-				assignment.Partition.RangeStop, assignment.Partition.UnixTimeNs)
-			return assignment.Partition, nil
+				topic, kafkaPartition, assignment.GetPartition().GetRingSize(), assignment.GetPartition().GetRangeStart(),
+				assignment.GetPartition().GetRangeStop(), assignment.GetPartition().GetUnixTimeNs())
+
+			return assignment.GetPartition(), nil
 		}
 	}
 
@@ -388,9 +394,9 @@ func (bc *BrokerClient) findPartitionInAssignments(topic string, kafkaPartition 
 		kafkaPartition, topic, expectedRangeStart, expectedRangeStop)
 	glog.Warningf("Available assignments:")
 	for i, assignment := range assignments {
-		if assignment.Partition != nil {
+		if assignment.GetPartition() != nil {
 			glog.Warningf("  Assignment[%d]: {RangeStart: %d, RangeStop: %d, RingSize: %d}",
-				i, assignment.Partition.RangeStart, assignment.Partition.RangeStop, assignment.Partition.RingSize)
+				i, assignment.GetPartition().GetRangeStart(), assignment.GetPartition().GetRangeStop(), assignment.GetPartition().GetRingSize())
 		}
 	}
 

@@ -39,7 +39,7 @@ func TestSTSSessionClaimsToSessionInfo(t *testing.T) {
 	assert.NotEmpty(t, sessionInfo.Credentials.AccessKeyId, "access key should be generated")
 	assert.NotEmpty(t, sessionInfo.Credentials.SecretAccessKey, "secret key should be generated")
 	// Credential expiration may have sub-second differences, so just check they're close
-	assert.True(t, sessionInfo.Credentials.Expiration.Sub(expiresAt) < time.Second, "credential expiration should match session expiration")
+	assert.Less(t, sessionInfo.Credentials.Expiration.Sub(expiresAt), time.Second, "credential expiration should match session expiration")
 
 	// Verify expiration is preserved (within 1 second tolerance for timing differences)
 	assert.WithinDuration(t, expiresAt, sessionInfo.ExpiresAt, 1*time.Second)
@@ -89,7 +89,7 @@ func TestSTSSessionClaimsToSessionInfoPreservesAllFields(t *testing.T) {
 	expiresAt := time.Now().Add(2 * time.Hour)
 
 	policies := []string{"policy1", "policy2"}
-	requestContext := map[string]interface{}{
+	requestContext := map[string]any{
 		"sourceIp":  "192.168.1.1",
 		"userAgent": "test-agent",
 	}

@@ -3,7 +3,6 @@ package util
 import "testing"
 
 func TestEnqueueAndConsume(t *testing.T) {
-
 	q := NewUnboundedQueue()
 
 	q.EnQueue("1", "2", "3")
@@ -21,5 +20,4 @@ func TestEnqueueAndConsume(t *testing.T) {
 	q.EnQueue("4", "5")
 	q.EnQueue("6", "7")
 	q.Consume(f)
-
 }

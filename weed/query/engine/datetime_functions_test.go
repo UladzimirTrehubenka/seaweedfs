@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -24,12 +23,14 @@ func TestDateTimeFunctions(t *testing.T) {
 
 		if result == nil {
 			t.Errorf("CurrentDate returned nil result")
+
 			return
 		}
 
-		stringVal, ok := result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, ok := result.GetKind().(*schema_pb.Value_StringValue)
 		if !ok {
-			t.Errorf("CurrentDate should return string value, got %T", result.Kind)
+			t.Errorf("CurrentDate should return string value, got %T", result.GetKind())
+
 			return
 		}
 
@@ -54,16 +55,18 @@ func TestDateTimeFunctions(t *testing.T) {
 
 		if result == nil {
 			t.Errorf("CurrentTimestamp returned nil result")
+
 			return
 		}
 
-		timestampVal, ok := result.Kind.(*schema_pb.Value_TimestampValue)
+		timestampVal, ok := result.GetKind().(*schema_pb.Value_TimestampValue)
 		if !ok {
-			t.Errorf("CurrentTimestamp should return timestamp value, got %T", result.Kind)
+			t.Errorf("CurrentTimestamp should return timestamp value, got %T", result.GetKind())
+
 			return
 		}
 
-		timestamp := time.UnixMicro(timestampVal.TimestampValue.TimestampMicros)
+		timestamp := time.UnixMicro(timestampVal.TimestampValue.GetTimestampMicros())
 
 		// Check that timestamp is within reasonable range with small tolerance buffer
 		// Allow for small timing variations, clock precision differences, and NTP adjustments
@@ -85,13 +88,14 @@ func TestDateTimeFunctions(t *testing.T) {
 
 		if result == nil {
 			t.Errorf("Now returned nil result")
+
 			return
 		}
 
 		// Should return same type as CurrentTimestamp
-		_, ok := result.Kind.(*schema_pb.Value_TimestampValue)
+		_, ok := result.GetKind().(*schema_pb.Value_TimestampValue)
 		if !ok {
-			t.Errorf("Now should return timestamp value, got %T", result.Kind)
+			t.Errorf("Now should return timestamp value, got %T", result.GetKind())
 		}
 	})
 
@@ -103,12 +107,14 @@ func TestDateTimeFunctions(t *testing.T) {
 
 		if result == nil {
 			t.Errorf("CurrentTime returned nil result")
+
 			return
 		}
 
-		stringVal, ok := result.Kind.(*schema_pb.Value_StringValue)
+		stringVal, ok := result.GetKind().(*schema_pb.Value_StringValue)
 		if !ok {
-			t.Errorf("CurrentTime should return string value, got %T", result.Kind)
+			t.Errorf("CurrentTime should return string value, got %T", result.GetKind())
+
 			return
 		}
 
@@ -234,22 +240,26 @@ func TestExtractFunction(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
 			if result == nil {
 				t.Errorf("Extract returned nil result")
+
 				return
 			}
 
-			intVal, ok := result.Kind.(*schema_pb.Value_Int64Value)
+			intVal, ok := result.GetKind().(*schema_pb.Value_Int64Value)
 			if !ok {
-				t.Errorf("Extract should return int64 value, got %T", result.Kind)
+				t.Errorf("Extract should return int64 value, got %T", result.GetKind())
+
 				return
 			}
 
@@ -377,6 +387,7 @@ func TestDateTruncFunction(t *testing.T) {
 			expectedCheck: func(result time.Time) bool {
 				// The result should be the start of day 2023-06-15 in local timezone
 				expectedDay := time.Date(2023, 6, 15, 0, 0, 0, 0, result.Location())
+
 				return result.Equal(expectedDay)
 			},
 		},
@@ -404,26 +415,30 @@ func TestDateTruncFunction(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
 			if result == nil {
 				t.Errorf("DateTrunc returned nil result")
+
 				return
 			}
 
-			timestampVal, ok := result.Kind.(*schema_pb.Value_TimestampValue)
+			timestampVal, ok := result.GetKind().(*schema_pb.Value_TimestampValue)
 			if !ok {
-				t.Errorf("DateTrunc should return timestamp value, got %T", result.Kind)
+				t.Errorf("DateTrunc should return timestamp value, got %T", result.GetKind())
+
 				return
 			}
 
-			resultTime := time.UnixMicro(timestampVal.TimestampValue.TimestampMicros)
+			resultTime := time.UnixMicro(timestampVal.TimestampValue.GetTimestampMicros())
 
 			if !tt.expectedCheck(resultTime) {
 				t.Errorf("DateTrunc result check failed for precision %s, got time: %v", tt.precision, resultTime)
@@ -622,7 +637,7 @@ func TestExtractFunctionSQL(t *testing.T) {
 				}
 				yearStr := result.Rows[0][0].ToString()
 				currentYear := time.Now().Year()
-				if yearStr != fmt.Sprintf("%d", currentYear) {
+				if yearStr != strconv.Itoa(currentYear) {
 					t.Errorf("Expected current year %d, got %s", currentYear, yearStr)
 				}
 			},
@@ -637,7 +652,7 @@ func TestExtractFunctionSQL(t *testing.T) {
 				}
 				monthStr := result.Rows[0][0].ToString()
 				currentMonth := time.Now().Month()
-				if monthStr != fmt.Sprintf("%d", int(currentMonth)) {
+				if monthStr != strconv.Itoa(int(currentMonth)) {
 					t.Errorf("Expected current month %d, got %s", int(currentMonth), monthStr)
 				}
 			},
@@ -652,7 +667,7 @@ func TestExtractFunctionSQL(t *testing.T) {
 				}
 				dayStr := result.Rows[0][0].ToString()
 				currentDay := time.Now().Day()
-				if dayStr != fmt.Sprintf("%d", currentDay) {
+				if dayStr != strconv.Itoa(currentDay) {
 					t.Errorf("Expected current day %d, got %s", currentDay, dayStr)
 				}
 			},
@@ -728,21 +743,21 @@ func TestExtractFunctionSQL(t *testing.T) {
 				// Check year
 				yearStr := result.Rows[0][0].ToString()
 				currentYear := time.Now().Year()
-				if yearStr != fmt.Sprintf("%d", currentYear) {
+				if yearStr != strconv.Itoa(currentYear) {
 					t.Errorf("Expected current year %d, got %s", currentYear, yearStr)
 				}
 
 				// Check month
 				monthStr := result.Rows[0][1].ToString()
 				currentMonth := time.Now().Month()
-				if monthStr != fmt.Sprintf("%d", int(currentMonth)) {
+				if monthStr != strconv.Itoa(int(currentMonth)) {
 					t.Errorf("Expected current month %d, got %s", int(currentMonth), monthStr)
 				}
 
 				// Check day
 				dayStr := result.Rows[0][2].ToString()
 				currentDay := time.Now().Day()
-				if dayStr != fmt.Sprintf("%d", currentDay) {
+				if dayStr != strconv.Itoa(currentDay) {
 					t.Errorf("Expected current day %d, got %s", currentDay, dayStr)
 				}
 			},
@@ -775,16 +790,19 @@ func TestExtractFunctionSQL(t *testing.T) {
 				if err == nil && result.Error == nil {
 					t.Errorf("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
 			if result.Error != nil {
 				t.Errorf("Query result has error: %v", result.Error)
+
 				return
 			}
 
@@ -870,16 +888,19 @@ func TestDateTruncFunctionSQL(t *testing.T) {
 				if err == nil && result.Error == nil {
 					t.Errorf("Expected error but got none")
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
+
 				return
 			}
 
 			if result.Error != nil {
 				t.Errorf("Query result has error: %v", result.Error)
+
 				return
 			}
 

@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 
 	"github.com/bwmarrin/snowflake"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
@@ -22,16 +23,19 @@ func NewSnowflakeSequencer(nodeid string, snowflakeId int) (*SnowflakeSequencer,
 	node, err := snowflake.NewNode(int64(nodeid_hash))
 	if err != nil {
 		fmt.Println(err)
+
 		return nil, err
 	}
 
 	sequencer := &SnowflakeSequencer{node: node}
+
 	return sequencer, nil
 }
 
 func hash(s string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(s))
+
 	return h.Sum32()
 }
 

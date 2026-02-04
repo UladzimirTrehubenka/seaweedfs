@@ -1,6 +1,7 @@
 package erasure_coding
 
 import (
+	"maps"
 	"sync"
 	"time"
 )
@@ -143,14 +144,10 @@ func (m *ErasureCodingMetrics) GetMetrics() ErasureCodingMetrics {
 
 	// Create deep copy of maps
 	shardsPerDC := make(map[string]int64)
-	for k, v := range m.ShardsPerDataCenter {
-		shardsPerDC[k] = v
-	}
+	maps.Copy(shardsPerDC, m.ShardsPerDataCenter)
 
 	shardsPerRack := make(map[string]int64)
-	for k, v := range m.ShardsPerRack {
-		shardsPerRack[k] = v
-	}
+	maps.Copy(shardsPerRack, m.ShardsPerRack)
 
 	// Create a copy without the mutex to avoid copying lock value
 	return ErasureCodingMetrics{
@@ -183,6 +180,7 @@ func (m *ErasureCodingMetrics) GetSuccessRate() float64 {
 	if total == 0 {
 		return 100.0
 	}
+
 	return float64(m.SuccessfulOperations) / float64(total) * 100.0
 }
 
@@ -194,6 +192,7 @@ func (m *ErasureCodingMetrics) GetAverageDataProcessed() float64 {
 	if m.VolumesEncoded == 0 {
 		return 0
 	}
+
 	return float64(m.TotalDataProcessed) / float64(m.VolumesEncoded)
 }
 
@@ -205,6 +204,7 @@ func (m *ErasureCodingMetrics) GetSourceRemovalRate() float64 {
 	if m.VolumesEncoded == 0 {
 		return 0
 	}
+
 	return float64(m.TotalSourcesRemoved) / float64(m.VolumesEncoded) * 100.0
 }
 

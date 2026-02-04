@@ -1,13 +1,13 @@
 //go:build tikv
-// +build tikv
 
 package tikv
 
 import (
 	"context"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/tikv/client-go/v2/txnkv"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 )
 
 func (store *TikvStore) KvPut(ctx context.Context, key []byte, value []byte) error {

@@ -75,33 +75,33 @@ var topologyLayout = `
 `
 
 func setup(topologyLayout string) *Topology {
-	var data interface{}
+	var data any
 	err := json.Unmarshal([]byte(topologyLayout), &data)
 	if err != nil {
 		fmt.Println("error:", err)
 	}
 	fmt.Println("data:", data)
 
-	//need to connect all nodes first before server adding volumes
+	// need to connect all nodes first before server adding volumes
 	topo := NewTopology("weedfs", sequence.NewMemorySequencer(), 32*1024, 5, false)
-	mTopology := data.(map[string]interface{})
+	mTopology := data.(map[string]any)
 	for dcKey, dcValue := range mTopology {
 		dc := NewDataCenter(dcKey)
-		dcMap := dcValue.(map[string]interface{})
+		dcMap := dcValue.(map[string]any)
 		topo.LinkChildNode(dc)
 		for rackKey, rackValue := range dcMap {
 			dcRack := NewRack(rackKey)
-			rackMap := rackValue.(map[string]interface{})
+			rackMap := rackValue.(map[string]any)
 			dc.LinkChildNode(dcRack)
 			for serverKey, serverValue := range rackMap {
 				server := NewDataNode(serverKey)
-				serverMap := serverValue.(map[string]interface{})
+				serverMap := serverValue.(map[string]any)
 				if ip, ok := serverMap["ip"]; ok {
 					server.Ip = ip.(string)
 				}
 				dcRack.LinkChildNode(server)
-				for _, v := range serverMap["volumes"].([]interface{}) {
-					m := v.(map[string]interface{})
+				for _, v := range serverMap["volumes"].([]any) {
+					m := v.(map[string]any)
 					vi := storage.VolumeInfo{
 						Id:      needle.VolumeId(int64(m["id"].(float64))),
 						Size:    uint64(m["size"].(float64)),
@@ -126,7 +126,6 @@ func setup(topologyLayout string) *Topology {
 				disk.UpAdjustDiskUsageDelta("", &DiskUsageCounts{
 					maxVolumeCount: int64(serverMap["limit"].(float64)),
 				})
-
 			}
 		}
 	}
@@ -344,7 +343,7 @@ func TestFindEmptySlotsForOneVolumeScheduleByWeight(t *testing.T) {
 
 	distribution := map[NodeId]int{}
 	// assign 1000 volumes
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		servers, _, err := vg.findEmptySlotsForOneVolume(topo, volumeGrowOption, false)
 		if err != nil {
 			fmt.Println("finding empty slots error :", err)

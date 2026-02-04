@@ -37,7 +37,7 @@ func TestMemoryStorageFetchNonExistent(t *testing.T) {
 	offset, metadata, err := storage.FetchOffset("non-existent", "topic", 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(-1), offset)
-	assert.Equal(t, "", metadata)
+	assert.Empty(t, metadata)
 }
 
 func TestMemoryStorageFetchAllOffsets(t *testing.T) {
@@ -57,7 +57,7 @@ func TestMemoryStorageFetchAllOffsets(t *testing.T) {
 	// Fetch all offsets
 	offsets, err := storage.FetchAllOffsets(group)
 	require.NoError(t, err)
-	assert.Equal(t, 3, len(offsets))
+	assert.Len(t, offsets, 3)
 
 	// Verify each offset
 	tp1 := TopicPartition{Topic: "topic1", Partition: 0}
@@ -103,7 +103,7 @@ func TestMemoryStorageListGroups(t *testing.T) {
 	// Initially empty
 	groups, err := storage.ListGroups()
 	require.NoError(t, err)
-	assert.Equal(t, 0, len(groups))
+	assert.Empty(t, groups)
 
 	// Commit offsets for multiple groups
 	err = storage.CommitOffset("group1", "topic", 0, 10, "")
@@ -116,7 +116,7 @@ func TestMemoryStorageListGroups(t *testing.T) {
 	// List groups
 	groups, err = storage.ListGroups()
 	require.NoError(t, err)
-	assert.Equal(t, 3, len(groups))
+	assert.Len(t, groups, 3)
 	assert.Contains(t, groups, "group1")
 	assert.Contains(t, groups, "group2")
 	assert.Contains(t, groups, "group3")
@@ -134,7 +134,7 @@ func TestMemoryStorageConcurrency(t *testing.T) {
 	wg.Add(numGoroutines)
 
 	// Launch multiple goroutines to commit offsets concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(partition int32, offset int64) {
 			defer wg.Done()
 			err := storage.CommitOffset(group, topic, partition, offset, "")
@@ -147,7 +147,7 @@ func TestMemoryStorageConcurrency(t *testing.T) {
 	// Verify we can fetch offsets without errors
 	offsets, err := storage.FetchAllOffsets(group)
 	require.NoError(t, err)
-	assert.Greater(t, len(offsets), 0)
+	assert.NotEmpty(t, offsets)
 }
 
 func TestMemoryStorageInvalidInputs(t *testing.T) {

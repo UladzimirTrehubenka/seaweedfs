@@ -67,12 +67,14 @@ func runMqKafkaGateway(cmd *Command, args []string) bool {
 	// Validate required options
 	if *mqKafkaGatewayOptions.master == "" {
 		glog.Fatalf("SeaweedFS master address is required (-master)")
+
 		return false
 	}
 
 	// Schema Registry URL is required for schema management
 	if *mqKafkaGatewayOptions.schemaRegistryURL == "" {
 		glog.Fatalf("Schema Registry URL is required (-schema-registry-url)")
+
 		return false
 	}
 
@@ -123,6 +125,7 @@ func runMqKafkaGateway(cmd *Command, args []string) bool {
 
 	if err := srv.Start(); err != nil {
 		glog.Fatalf("mq kafka gateway start: %v", err)
+
 		return false
 	}
 
@@ -137,7 +140,9 @@ func runMqKafkaGateway(cmd *Command, args []string) bool {
 	// Serve blocks until closed
 	if err := srv.Wait(); err != nil {
 		glog.Errorf("mq kafka gateway wait: %v", err)
+
 		return false
 	}
+
 	return true
 }

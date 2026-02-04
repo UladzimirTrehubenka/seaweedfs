@@ -2,9 +2,12 @@ package vacuum
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
@@ -13,12 +16,12 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
 	"github.com/seaweedfs/seaweedfs/weed/worker/types"
 	"github.com/seaweedfs/seaweedfs/weed/worker/types/base"
-	"google.golang.org/grpc"
 )
 
 // VacuumTask implements the Task interface
 type VacuumTask struct {
 	*base.BaseTask
+
 	server           string
 	volumeID         uint32
 	collection       string
@@ -40,17 +43,17 @@ func NewVacuumTask(id string, server string, volumeID uint32, collection string)
 // Execute implements the UnifiedTask interface
 func (t *VacuumTask) Execute(ctx context.Context, params *worker_pb.TaskParams) error {
 	if params == nil {
-		return fmt.Errorf("task parameters are required")
+		return errors.New("task parameters are required")
 	}
 
 	vacuumParams := params.GetVacuumParams()
 	if vacuumParams == nil {
-		return fmt.Errorf("vacuum parameters are required")
+		return errors.New("vacuum parameters are required")
 	}
 
-	t.garbageThreshold = vacuumParams.GarbageThreshold
+	t.garbageThreshold = vacuumParams.GetGarbageThreshold()
 
-	t.GetLogger().WithFields(map[string]interface{}{
+	t.GetLogger().WithFields(map[string]any{
 		"volume_id":         t.volumeID,
 		"server":            t.server,
 		"collection":        t.collection,
@@ -62,27 +65,28 @@ func (t *VacuumTask) Execute(ctx context.Context, params *worker_pb.TaskParams) 
 	t.GetLogger().Info("Checking volume status")
 	eligible, currentGarbageRatio, err := t.checkVacuumEligibility()
 	if err != nil {
-		return fmt.Errorf("failed to check vacuum eligibility: %v", err)
+		return fmt.Errorf("failed to check vacuum eligibility: %w", err)
 	}
 
 	if !eligible {
-		t.GetLogger().WithFields(map[string]interface{}{
+		t.GetLogger().WithFields(map[string]any{
 			"current_garbage_ratio": currentGarbageRatio,
 			"required_threshold":    t.garbageThreshold,
 		}).Info("Volume does not meet vacuum criteria, skipping")
 		t.ReportProgress(100.0)
+
 		return nil
 	}
 
 	// Step 2: Perform vacuum operation
 	t.ReportProgress(50.0)
-	t.GetLogger().WithFields(map[string]interface{}{
+	t.GetLogger().WithFields(map[string]any{
 		"garbage_ratio": currentGarbageRatio,
 		"threshold":     t.garbageThreshold,
 	}).Info("Performing vacuum operation")
 
 	if err := t.performVacuum(); err != nil {
-		return fmt.Errorf("failed to perform vacuum: %v", err)
+		return fmt.Errorf("failed to perform vacuum: %w", err)
 	}
 
 	// Step 3: Verify vacuum results
@@ -96,29 +100,31 @@ func (t *VacuumTask) Execute(ctx context.Context, params *worker_pb.TaskParams) 
 	t.ReportProgress(100.0)
 	glog.Infof("Vacuum task completed successfully: volume %d from %s (garbage ratio was %.2f%%)",
 		t.volumeID, t.server, currentGarbageRatio*100)
+
 	return nil
 }
 
 // Validate implements the UnifiedTask interface
 func (t *VacuumTask) Validate(params *worker_pb.TaskParams) error {
 	if params == nil {
-		return fmt.Errorf("task parameters are required")
+		return errors.New("task parameters are required")
 	}
 
 	vacuumParams := params.GetVacuumParams()
 	if vacuumParams == nil {
-		return fmt.Errorf("vacuum parameters are required")
+		return errors.New("vacuum parameters are required")
 	}
 
-	if params.VolumeId != t.volumeID {
-		return fmt.Errorf("volume ID mismatch: expected %d, got %d", t.volumeID, params.VolumeId)
+	if params.GetVolumeId() != t.volumeID {
+		return fmt.Errorf("volume ID mismatch: expected %d, got %d", t.volumeID, params.GetVolumeId())
 	}
 
 	// Validate that at least one source matches our server
 	found := false
-	for _, source := range params.Sources {
-		if source.Node == t.server {
+	for _, source := range params.GetSources() {
+		if source.GetNode() == t.server {
 			found = true
+
 			break
 		}
 	}
@@ -126,8 +132,8 @@ func (t *VacuumTask) Validate(params *worker_pb.TaskParams) error {
 		return fmt.Errorf("no source matches expected server %s", t.server)
 	}
 
-	if vacuumParams.GarbageThreshold < 0 || vacuumParams.GarbageThreshold > 1.0 {
-		return fmt.Errorf("invalid garbage threshold: %f (must be between 0.0 and 1.0)", vacuumParams.GarbageThreshold)
+	if vacuumParams.GetGarbageThreshold() < 0 || vacuumParams.GetGarbageThreshold() > 1.0 {
+		return fmt.Errorf("invalid garbage threshold: %f (must be between 0.0 and 1.0)", vacuumParams.GetGarbageThreshold())
 	}
 
 	return nil
@@ -156,10 +162,10 @@ func (t *VacuumTask) checkVacuumEligibility() (bool, float64, error) {
 				VolumeId: t.volumeID,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to check volume vacuum status: %v", err)
+				return fmt.Errorf("failed to check volume vacuum status: %w", err)
 			}
 
-			garbageRatio = resp.GarbageRatio
+			garbageRatio = resp.GetGarbageRatio()
 
 			return nil
 		})
@@ -185,19 +191,20 @@ func (t *VacuumTask) performVacuum() error {
 				VolumeId: t.volumeID,
 			})
 			if err != nil {
-				return fmt.Errorf("vacuum compact failed: %v", err)
+				return fmt.Errorf("vacuum compact failed: %w", err)
 			}
 
 			// Read compact progress
 			for {
 				resp, recvErr := stream.Recv()
 				if recvErr != nil {
-					if recvErr == io.EOF {
+					if errors.Is(recvErr, io.EOF) {
 						break
 					}
-					return fmt.Errorf("vacuum compact stream error: %v", recvErr)
+
+					return fmt.Errorf("vacuum compact stream error: %w", recvErr)
 				}
-				glog.V(2).Infof("Volume %d compact progress: %d bytes processed", t.volumeID, resp.ProcessedBytes)
+				glog.V(2).Infof("Volume %d compact progress: %d bytes processed", t.volumeID, resp.GetProcessedBytes())
 			}
 
 			// Step 2: Commit the vacuum
@@ -206,7 +213,7 @@ func (t *VacuumTask) performVacuum() error {
 				VolumeId: t.volumeID,
 			})
 			if err != nil {
-				return fmt.Errorf("vacuum commit failed: %v", err)
+				return fmt.Errorf("vacuum commit failed: %w", err)
 			}
 
 			// Step 3: Cleanup old files
@@ -215,10 +222,11 @@ func (t *VacuumTask) performVacuum() error {
 				VolumeId: t.volumeID,
 			})
 			if err != nil {
-				return fmt.Errorf("vacuum cleanup failed: %v", err)
+				return fmt.Errorf("vacuum cleanup failed: %w", err)
 			}
 
 			glog.V(1).Infof("Volume %d vacuum operation completed successfully", t.volumeID)
+
 			return nil
 		})
 }
@@ -231,10 +239,10 @@ func (t *VacuumTask) verifyVacuumResults() error {
 				VolumeId: t.volumeID,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to verify vacuum results: %v", err)
+				return fmt.Errorf("failed to verify vacuum results: %w", err)
 			}
 
-			postVacuumGarbageRatio := resp.GarbageRatio
+			postVacuumGarbageRatio := resp.GetGarbageRatio()
 
 			glog.V(1).Infof("Volume %d post-vacuum garbage ratio: %.2f%%",
 				t.volumeID, postVacuumGarbageRatio*100)

@@ -8,7 +8,6 @@ import (
 )
 
 func (store *EtcdStore) KvPut(ctx context.Context, key []byte, value []byte) (err error) {
-
 	_, err = store.client.Put(ctx, store.etcdKeyPrefix+string(key), string(value))
 
 	if err != nil {
@@ -19,7 +18,6 @@ func (store *EtcdStore) KvPut(ctx context.Context, key []byte, value []byte) (er
 }
 
 func (store *EtcdStore) KvGet(ctx context.Context, key []byte) (value []byte, err error) {
-
 	resp, err := store.client.Get(ctx, store.etcdKeyPrefix+string(key))
 
 	if err != nil {
@@ -34,7 +32,6 @@ func (store *EtcdStore) KvGet(ctx context.Context, key []byte) (value []byte, er
 }
 
 func (store *EtcdStore) KvDelete(ctx context.Context, key []byte) (err error) {
-
 	_, err = store.client.Delete(ctx, store.etcdKeyPrefix+string(key))
 
 	if err != nil {

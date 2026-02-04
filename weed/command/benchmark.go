@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -22,7 +24,6 @@ import (
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"github.com/seaweedfs/seaweedfs/weed/util/version"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/grpc"
 )
 
 type BenchmarkOptions struct {
@@ -114,7 +115,6 @@ var (
 )
 
 func runBenchmark(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	b.grpcDialOption = security.LoadClientTLS(util.GetViper(), "grpc.client")
 
@@ -138,6 +138,7 @@ func runBenchmark(cmd *Command, args []string) bool {
 	// -writeOnly: only write
 	if *b.readOnly && *b.writeOnly {
 		fmt.Fprintln(os.Stderr, "Error: -readOnly and -writeOnly are mutually exclusive.")
+
 		return false
 	}
 
@@ -171,14 +172,14 @@ func benchWrite() {
 	writeStats = newStats(*b.concurrency)
 	idChan := make(chan int)
 	go writeFileIds(*b.idListFile, fileIdLineChan, finishChan)
-	for i := 0; i < *b.concurrency; i++ {
+	for i := range *b.concurrency {
 		wait.Add(1)
 		go writeFiles(idChan, fileIdLineChan, &writeStats.localStats[i])
 	}
 	writeStats.start = time.Now()
 	writeStats.total = *b.numberOfFiles
 	go writeStats.checkProgress("Writing Benchmark", finishChan)
-	for i := 0; i < *b.numberOfFiles; i++ {
+	for i := range *b.numberOfFiles {
 		idChan <- i
 	}
 	close(idChan)
@@ -200,7 +201,7 @@ func benchRead() {
 	readStats.start = time.Now()
 	readStats.total = *b.numberOfFiles
 	go readStats.checkProgress("Randomly Reading Benchmark", finishChan)
-	for i := 0; i < *b.concurrency; i++ {
+	for i := range *b.concurrency {
 		wait.Add(1)
 		go readFiles(fileIdLineChan, &readStats.localStats[i])
 	}
@@ -223,13 +224,13 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 	delayedDeleteChan := make(chan *delayedFile, 100)
 	var waitForDeletions sync.WaitGroup
 
-	for i := 0; i < 7; i++ {
+	for range 7 {
 		waitForDeletions.Add(1)
 		go func() {
 			defer waitForDeletions.Done()
 			for df := range delayedDeleteChan {
 				if df.enterTime.After(time.Now()) {
-					time.Sleep(df.enterTime.Sub(time.Now()))
+					time.Sleep(time.Until(df.enterTime))
 				}
 				var jwtAuthorization security.EncodedJwt
 				if isSecure {
@@ -279,7 +280,7 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 				s.failed++
 				fmt.Printf("Failed to write with error:%v\n", err)
 			}
-			writeStats.addSample(time.Now().Sub(start))
+			writeStats.addSample(time.Since(start))
 			if *cmdBenchmark.IsDebug {
 				fmt.Printf("writing %d file %s\n", id, fp.Fid)
 			}
@@ -312,6 +313,7 @@ func readFiles(fileIdLineChan chan string, s *stat) {
 		if err != nil {
 			s.failed++
 			println("!!!! ", fid, " location not found!!!!!")
+
 			continue
 		}
 		var bytes []byte
@@ -325,7 +327,7 @@ func readFiles(fileIdLineChan chan string, s *stat) {
 		if err == nil {
 			s.completed++
 			s.transferred += int64(bytesRead)
-			readStats.addSample(time.Now().Sub(start))
+			readStats.addSample(time.Since(start))
 		} else {
 			s.failed++
 			fmt.Printf("Failed to read %s error:%v\n", fid, err)
@@ -344,10 +346,11 @@ func writeFileIds(fileName string, fileIdLineChan chan string, finishChan chan b
 		select {
 		case <-finishChan:
 			wait.Done()
+
 			return
 		case line := <-fileIdLineChan:
-			file.Write([]byte(line))
-			file.Write([]byte("\n"))
+			file.WriteString(line)
+			file.WriteString("\n")
 		}
 	}
 }
@@ -380,7 +383,7 @@ func readFileIds(fileName string, fileIdLineChan chan string) {
 			}
 		}
 		if len(lines) > 0 {
-			for i := 0; i < readStats.total; i++ {
+			for range readStats.total {
 				fileIdLineChan <- lines[random.Intn(len(lines))]
 			}
 		}
@@ -439,6 +442,7 @@ func (s *stats) checkProgress(testName string, finishChan chan bool) {
 		select {
 		case <-finishChan:
 			wait.Done()
+
 			return
 		case t := <-ticker:
 			completed, transferred, taken, total := 0, int64(0), t.Sub(lastTime), s.total
@@ -475,7 +479,7 @@ func (s *stats) printStats() {
 	fmt.Printf("Transfer rate:          %.2f [Kbytes/sec]\n", float64(transferred)/1024/timeTaken)
 	n, sum := 0, 0
 	min, max := 10000000, 0
-	for i := 0; i < len(s.data); i++ {
+	for i := range len(s.data) {
 		n += s.data[i]
 		sum += s.data[i] * i
 		if s.data[i] > 0 {
@@ -488,7 +492,7 @@ func (s *stats) printStats() {
 		}
 	}
 	n += len(s.overflow)
-	for i := 0; i < len(s.overflow); i++ {
+	for i := range len(s.overflow) {
 		sum += s.overflow[i]
 		if min > s.overflow[i] {
 			min = s.overflow[i]
@@ -499,13 +503,13 @@ func (s *stats) printStats() {
 	}
 	avg := float64(sum) / float64(n)
 	varianceSum := 0.0
-	for i := 0; i < len(s.data); i++ {
+	for i := range len(s.data) {
 		if s.data[i] > 0 {
 			d := float64(i) - avg
 			varianceSum += d * d * float64(s.data[i])
 		}
 	}
-	for i := 0; i < len(s.overflow); i++ {
+	for i := range len(s.overflow) {
 		d := float64(s.overflow[i]) - avg
 		varianceSum += d * d
 	}
@@ -516,13 +520,13 @@ func (s *stats) printStats() {
 	// printing percentiles
 	fmt.Printf("\nPercentage of the requests served within a certain time (ms)\n")
 	percentiles := make([]int, len(percentages))
-	for i := 0; i < len(percentages); i++ {
+	for i := range percentages {
 		percentiles[i] = n * percentages[i] / 100
 	}
 	percentiles[len(percentiles)-1] = n
 	percentileIndex := 0
 	currentSum := 0
-	for i := 0; i < len(s.data); i++ {
+	for i := range len(s.data) {
 		currentSum += s.data[i]
 		if s.data[i] > 0 && percentileIndex < len(percentiles) && currentSum >= percentiles[percentileIndex] {
 			fmt.Printf("  %3d%%    %5.1f ms\n", percentages[percentileIndex], float32(i)/10.0)
@@ -533,7 +537,7 @@ func (s *stats) printStats() {
 		}
 	}
 	sort.Ints(s.overflow)
-	for i := 0; i < len(s.overflow); i++ {
+	for i := range len(s.overflow) {
 		currentSum++
 		if percentileIndex < len(percentiles) && currentSum >= percentiles[percentileIndex] {
 			fmt.Printf("  %3d%%    %5.1f ms\n", percentages[percentileIndex], float32(s.overflow[i])/10.0)
@@ -562,12 +566,13 @@ func (l *FakeReader) Read(p []byte) (n int, err error) {
 		n = len(p)
 	}
 	if n >= 8 {
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			p[i] = byte(l.id >> uint(i*8))
 		}
 		l.random.Read(p[8:])
 	}
 	l.size -= int64(n)
+
 	return
 }
 
@@ -585,6 +590,7 @@ func (l *FakeReader) WriteTo(w io.Writer) (n int64, err error) {
 		}
 		size -= count
 	}
+
 	return l.size, nil
 }
 
@@ -598,5 +604,6 @@ func Readln(r *bufio.Reader) ([]byte, error) {
 		line, isPrefix, err = r.ReadLine()
 		ln = append(ln, line...)
 	}
+
 	return ln, err
 }

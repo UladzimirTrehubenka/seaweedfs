@@ -3,9 +3,10 @@ package protocol
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/compression"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/compression"
 )
 
 // TestRecordBatchParser_ParseRecordBatch tests basic record batch parsing
@@ -191,7 +192,7 @@ func TestCreateRecordBatch(t *testing.T) {
 	t.Run("Uncompressed batch", func(t *testing.T) {
 		batch, err := CreateRecordBatch(baseOffset, recordData, compression.None)
 		require.NoError(t, err)
-		assert.True(t, len(batch) >= 61) // Minimum header size
+		assert.GreaterOrEqual(t, len(batch), 61) // Minimum header size
 
 		// Parse and verify
 		parser := NewRecordBatchParser()
@@ -204,7 +205,7 @@ func TestCreateRecordBatch(t *testing.T) {
 	t.Run("Compressed batch", func(t *testing.T) {
 		batch, err := CreateRecordBatch(baseOffset, recordData, compression.Snappy)
 		require.NoError(t, err)
-		assert.True(t, len(batch) >= 61) // Minimum header size
+		assert.GreaterOrEqual(t, len(batch), 61) // Minimum header size
 
 		// Parse and verify
 		parser := NewRecordBatchParser()
@@ -267,7 +268,7 @@ func BenchmarkRecordBatchParser(b *testing.B) {
 
 		b.Run("Parse_"+codec.String(), func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, err := parser.ParseRecordBatch(batch)
 				if err != nil {
 					b.Fatal(err)
@@ -281,7 +282,7 @@ func BenchmarkRecordBatchParser(b *testing.B) {
 				b.Fatal(err)
 			}
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, err := parsed.DecompressRecords()
 				if err != nil {
 					b.Fatal(err)

@@ -2,20 +2,21 @@ package redis3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
 const maxNameBatchSizeLimit = 1000000
 
 func insertChild(ctx context.Context, redisStore *UniversalRedis3Store, key string, name string) error {
-
 	// lock and unlock
 	mutex := redisStore.redsync.NewMutex(key + "lock")
 	if err := mutex.Lock(); err != nil {
-		return fmt.Errorf("lock %s: %v", key, err)
+		return fmt.Errorf("lock %s: %w", key, err)
 	}
 	defer func() {
 		mutex.Unlock()
@@ -24,8 +25,8 @@ func insertChild(ctx context.Context, redisStore *UniversalRedis3Store, key stri
 	client := redisStore.Client
 	data, err := client.Get(ctx, key).Result()
 	if err != nil {
-		if err != redis.Nil {
-			return fmt.Errorf("read %s: %v", key, err)
+		if !errors.Is(err, redis.Nil) {
+			return fmt.Errorf("read %s: %w", key, err)
 		}
 	}
 	store := newSkipListElementStore(key, client)
@@ -33,6 +34,7 @@ func insertChild(ctx context.Context, redisStore *UniversalRedis3Store, key stri
 
 	if err := nameList.WriteName(name); err != nil {
 		glog.ErrorfCtx(ctx, "add %s %s: %v", key, name, err)
+
 		return err
 	}
 
@@ -48,19 +50,18 @@ func insertChild(ctx context.Context, redisStore *UniversalRedis3Store, key stri
 }
 
 func removeChild(ctx context.Context, redisStore *UniversalRedis3Store, key string, name string) error {
-
 	// lock and unlock
 	mutex := redisStore.redsync.NewMutex(key + "lock")
 	if err := mutex.Lock(); err != nil {
-		return fmt.Errorf("lock %s: %v", key, err)
+		return fmt.Errorf("lock %s: %w", key, err)
 	}
 	defer mutex.Unlock()
 
 	client := redisStore.Client
 	data, err := client.Get(ctx, key).Result()
 	if err != nil {
-		if err != redis.Nil {
-			return fmt.Errorf("read %s: %v", key, err)
+		if !errors.Is(err, redis.Nil) {
+			return fmt.Errorf("read %s: %w", key, err)
 		}
 	}
 	store := newSkipListElementStore(key, client)
@@ -81,19 +82,18 @@ func removeChild(ctx context.Context, redisStore *UniversalRedis3Store, key stri
 }
 
 func removeChildren(ctx context.Context, redisStore *UniversalRedis3Store, key string, onDeleteFn func(name string) error) error {
-
 	// lock and unlock
 	mutex := redisStore.redsync.NewMutex(key + "lock")
 	if err := mutex.Lock(); err != nil {
-		return fmt.Errorf("lock %s: %v", key, err)
+		return fmt.Errorf("lock %s: %w", key, err)
 	}
 	defer mutex.Unlock()
 
 	client := redisStore.Client
 	data, err := client.Get(ctx, key).Result()
 	if err != nil {
-		if err != redis.Nil {
-			return fmt.Errorf("read %s: %v", key, err)
+		if !errors.Is(err, redis.Nil) {
+			return fmt.Errorf("read %s: %w", key, err)
 		}
 	}
 	store := newSkipListElementStore(key, client)
@@ -102,8 +102,10 @@ func removeChildren(ctx context.Context, redisStore *UniversalRedis3Store, key s
 	if err = nameList.ListNames("", func(name string) bool {
 		if err := onDeleteFn(name); err != nil {
 			glog.ErrorfCtx(ctx, "delete %s child %s: %v", key, name, err)
+
 			return false
 		}
+
 		return true
 	}); err != nil {
 		return err
@@ -114,15 +116,14 @@ func removeChildren(ctx context.Context, redisStore *UniversalRedis3Store, key s
 	}
 
 	return nil
-
 }
 
 func listChildren(ctx context.Context, redisStore *UniversalRedis3Store, key string, startFileName string, eachFn func(name string) bool) error {
 	client := redisStore.Client
 	data, err := client.Get(ctx, key).Result()
 	if err != nil {
-		if err != redis.Nil {
-			return fmt.Errorf("read %s: %v", key, err)
+		if !errors.Is(err, redis.Nil) {
+			return fmt.Errorf("read %s: %w", key, err)
 		}
 	}
 	store := newSkipListElementStore(key, client)
@@ -135,5 +136,4 @@ func listChildren(ctx context.Context, redisStore *UniversalRedis3Store, key str
 	}
 
 	return nil
-
 }

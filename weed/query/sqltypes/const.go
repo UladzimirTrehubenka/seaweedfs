@@ -117,8 +117,8 @@ const (
 
 // BindVariable represents a single bind variable in a Query.
 type BindVariable struct {
-	Type  Type   `protobuf:"varint,1,opt,name=type,enum=query.Type" json:"type,omitempty"`
-	Value []byte `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Type  Type   `json:"type,omitempty"  protobuf:"varint,1,opt,name=type,enum=query.Type"`
+	Value []byte `json:"value,omitempty" protobuf:"bytes,2,opt,name=value,proto3"`
 	// values are set if type is TUPLE.
-	Values []*Value `protobuf:"bytes,3,rep,name=values" json:"values,omitempty"`
+	Values []*Value `json:"values,omitempty" protobuf:"bytes,3,rep,name=values"`
 }

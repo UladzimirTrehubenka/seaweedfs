@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -45,7 +46,6 @@ func (s *Store) CollectErasureCodingHeartbeat() *master_pb.Heartbeat {
 		EcShards:      ecShardMessages,
 		HasNoEcShards: len(ecShardMessages) == 0,
 	}
-
 }
 
 func (s *Store) MountEcShards(collection string, vid needle.VolumeId, shardId erasure_coding.ShardId) error {
@@ -64,11 +64,12 @@ func (s *Store) MountEcShards(collection string, vid needle.VolumeId, shardId er
 				ExpireAtSec: ecVolume.ExpireAtSec,
 				DiskId:      uint32(diskId),
 			}
+
 			return nil
-		} else if err == os.ErrNotExist {
+		} else if errors.Is(err, os.ErrNotExist) {
 			continue
 		} else {
-			return fmt.Errorf("%s load ec shard %d.%d: %v", location.Directory, vid, shardId, err)
+			return fmt.Errorf("%s load ec shard %d.%d: %w", location.Directory, vid, shardId, err)
 		}
 	}
 
@@ -97,6 +98,7 @@ func (s *Store) UnmountEcShards(vid needle.VolumeId, shardId erasure_coding.Shar
 	if deleted := location.UnloadEcShard(vid, shardId); deleted {
 		glog.V(0).Infof("UnmountEcShards %d.%d", vid, shardId)
 		s.DeletedEcShardsChan <- message
+
 		return nil
 	}
 
@@ -109,6 +111,7 @@ func (s *Store) findEcShard(vid needle.VolumeId, shardId erasure_coding.ShardId)
 			return uint32(diskId), v, found
 		}
 	}
+
 	return 0, nil, false
 }
 
@@ -118,6 +121,7 @@ func (s *Store) FindEcVolume(vid needle.VolumeId) (*erasure_coding.EcVolume, boo
 			return s, true
 		}
 	}
+
 	return nil, false
 }
 
@@ -129,6 +133,7 @@ func (s *Store) CollectEcShards(vid needle.VolumeId, shardFileNames []string) (e
 			found = true
 		}
 	}
+
 	return
 }
 
@@ -141,7 +146,6 @@ func (s *Store) DestroyEcVolume(vid needle.VolumeId) {
 func (s *Store) ReadEcShardNeedle(vid needle.VolumeId, n *needle.Needle, onReadSizeFn func(size types.Size)) (int, error) {
 	for _, location := range s.Locations {
 		if localEcVolume, found := location.FindEcVolume(vid); found {
-
 			offset, size, intervals, err := localEcVolume.LocateEcShardNeedle(n.Id, localEcVolume.Version)
 			if err != nil {
 				return 0, fmt.Errorf("locate in local ec volume: %w", err)
@@ -175,13 +179,13 @@ func (s *Store) ReadEcShardNeedle(vid needle.VolumeId, n *needle.Needle, onReadS
 			return len(bytes), nil
 		}
 	}
+
 	return 0, fmt.Errorf("ec shard %d not found", vid)
 }
 
 func (s *Store) readEcShardIntervals(vid needle.VolumeId, needleId types.NeedleId, ecVolume *erasure_coding.EcVolume, intervals []erasure_coding.Interval) (data []byte, is_deleted bool, err error) {
-
 	if err = s.cachedLookupEcShardLocations(ecVolume); err != nil {
-		return nil, false, fmt.Errorf("failed to locate shard via master grpc %s: %v", s.MasterAddress, err)
+		return nil, false, fmt.Errorf("failed to locate shard via master grpc %s: %w", s.MasterAddress, err)
 	}
 
 	for i, interval := range intervals {
@@ -198,6 +202,7 @@ func (s *Store) readEcShardIntervals(vid needle.VolumeId, needleId types.NeedleI
 			}
 		}
 	}
+
 	return
 }
 
@@ -209,7 +214,8 @@ func (s *Store) readOneEcShardInterval(needleId types.NeedleId, ecVolume *erasur
 		if readSize, err = shard.ReadAt(data, actualOffset); err != nil {
 			if readSize != int(interval.Size) {
 				glog.V(0).Infof("read local ec shard %d.%d offset %d: %v", ecVolume.VolumeId, shardId, actualOffset, err)
-				return
+
+				return data, is_deleted, err
 			}
 		}
 	} else {
@@ -221,7 +227,7 @@ func (s *Store) readOneEcShardInterval(needleId types.NeedleId, ecVolume *erasur
 		if hasShardIdLocation {
 			_, is_deleted, err = s.readRemoteEcShardInterval(sourceDataNodes, needleId, ecVolume.VolumeId, shardId, data, actualOffset)
 			if err == nil {
-				return
+				return data, is_deleted, err
 			}
 			glog.V(0).Infof("clearing ec shard %d.%d locations: %v", ecVolume.VolumeId, shardId, err)
 		}
@@ -229,11 +235,12 @@ func (s *Store) readOneEcShardInterval(needleId types.NeedleId, ecVolume *erasur
 		// try reading by recovering from other shards
 		_, is_deleted, err = s.recoverOneRemoteEcShardInterval(needleId, ecVolume, shardId, data, actualOffset)
 		if err == nil {
-			return
+			return data, is_deleted, err
 		}
 		glog.V(0).Infof("recover ec shard %d.%d : %v", ecVolume.VolumeId, shardId, err)
 	}
-	return
+
+	return data, is_deleted, err
 }
 
 func forgetShardId(ecVolume *erasure_coding.EcVolume, shardId erasure_coding.ShardId) {
@@ -244,7 +251,6 @@ func forgetShardId(ecVolume *erasure_coding.EcVolume, shardId erasure_coding.Sha
 }
 
 func (s *Store) cachedLookupEcShardLocations(ecVolume *erasure_coding.EcVolume) (err error) {
-
 	shardCount := len(ecVolume.ShardLocations)
 	if shardCount < erasure_coding.DataShardsCount &&
 		ecVolume.ShardLocationsRefreshTime.Add(11*time.Second).After(time.Now()) ||
@@ -264,17 +270,17 @@ func (s *Store) cachedLookupEcShardLocations(ecVolume *erasure_coding.EcVolume) 
 		}
 		resp, err := masterClient.LookupEcVolume(context.Background(), req)
 		if err != nil {
-			return fmt.Errorf("lookup ec volume %d: %v", ecVolume.VolumeId, err)
+			return fmt.Errorf("lookup ec volume %d: %w", ecVolume.VolumeId, err)
 		}
-		if len(resp.ShardIdLocations) < erasure_coding.DataShardsCount {
-			return fmt.Errorf("only %d shards found but %d required", len(resp.ShardIdLocations), erasure_coding.DataShardsCount)
+		if len(resp.GetShardIdLocations()) < erasure_coding.DataShardsCount {
+			return fmt.Errorf("only %d shards found but %d required", len(resp.GetShardIdLocations()), erasure_coding.DataShardsCount)
 		}
 
 		ecVolume.ShardLocationsLock.Lock()
-		for _, shardIdLocations := range resp.ShardIdLocations {
-			shardId := erasure_coding.ShardId(shardIdLocations.ShardId)
+		for _, shardIdLocations := range resp.GetShardIdLocations() {
+			shardId := erasure_coding.ShardId(shardIdLocations.GetShardId())
 			delete(ecVolume.ShardLocations, shardId)
-			for _, loc := range shardIdLocations.Locations {
+			for _, loc := range shardIdLocations.GetLocations() {
 				ecVolume.ShardLocations[shardId] = append(ecVolume.ShardLocations[shardId], pb.NewServerAddressFromLocation(loc))
 			}
 		}
@@ -283,11 +289,11 @@ func (s *Store) cachedLookupEcShardLocations(ecVolume *erasure_coding.EcVolume) 
 
 		return nil
 	})
-	return
+
+	return err
 }
 
 func (s *Store) readRemoteEcShardInterval(sourceDataNodes []pb.ServerAddress, needleId types.NeedleId, vid needle.VolumeId, shardId erasure_coding.ShardId, buf []byte, offset int64) (n int, is_deleted bool, err error) {
-
 	if len(sourceDataNodes) == 0 {
 		return 0, false, fmt.Errorf("failed to find ec shard %d.%d", vid, shardId)
 	}
@@ -305,9 +311,7 @@ func (s *Store) readRemoteEcShardInterval(sourceDataNodes []pb.ServerAddress, ne
 }
 
 func (s *Store) doReadRemoteEcShardInterval(sourceDataNode pb.ServerAddress, needleId types.NeedleId, vid needle.VolumeId, shardId erasure_coding.ShardId, buf []byte, offset int64) (n int, is_deleted bool, err error) {
-
 	err = operation.WithVolumeServerClient(false, sourceDataNode, s.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
-
 		// copy data slice
 		shardReadClient, err := client.VolumeEcShardRead(context.Background(), &volume_server_pb.VolumeEcShardReadRequest{
 			VolumeId: uint32(vid),
@@ -317,31 +321,31 @@ func (s *Store) doReadRemoteEcShardInterval(sourceDataNode pb.ServerAddress, nee
 			FileKey:  uint64(needleId),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to start reading ec shard %d.%d from %s: %v", vid, shardId, sourceDataNode, err)
+			return fmt.Errorf("failed to start reading ec shard %d.%d from %s: %w", vid, shardId, sourceDataNode, err)
 		}
 
 		for {
 			resp, receiveErr := shardReadClient.Recv()
-			if receiveErr == io.EOF {
+			if errors.Is(receiveErr, io.EOF) {
 				break
 			}
 			if receiveErr != nil {
-				return fmt.Errorf("receiving ec shard %d.%d from %s: %v", vid, shardId, sourceDataNode, receiveErr)
+				return fmt.Errorf("receiving ec shard %d.%d from %s: %w", vid, shardId, sourceDataNode, receiveErr)
 			}
-			if resp.IsDeleted {
+			if resp.GetIsDeleted() {
 				is_deleted = true
 			}
-			copy(buf[n:n+len(resp.Data)], resp.Data)
-			n += len(resp.Data)
+			copy(buf[n:n+len(resp.GetData())], resp.GetData())
+			n += len(resp.GetData())
 		}
 
 		return nil
 	})
 	if err != nil {
-		return 0, is_deleted, fmt.Errorf("read ec shard %d.%d from %s: %v", vid, shardId, sourceDataNode, err)
+		return 0, is_deleted, fmt.Errorf("read ec shard %d.%d from %s: %w", vid, shardId, sourceDataNode, err)
 	}
 
-	return
+	return n, is_deleted, err
 }
 
 func (s *Store) recoverOneRemoteEcShardInterval(needleId types.NeedleId, ecVolume *erasure_coding.EcVolume, shardIdToRecover erasure_coding.ShardId, buf []byte, offset int64) (n int, is_deleted bool, err error) {
@@ -358,13 +362,13 @@ func (s *Store) recoverOneRemoteEcShardInterval(needleId types.NeedleId, ecVolum
 	var wg sync.WaitGroup
 	ecVolume.ShardLocationsLock.RLock()
 	for shardId, locations := range ecVolume.ShardLocations {
-
 		// skip current shard or empty shard
 		if shardId == shardIdToRecover {
 			continue
 		}
 		if len(locations) == 0 {
 			glog.V(3).Infof("readRemoteEcShardInterval missing %d.%d from %+v", ecVolume.VolumeId, shardId, locations)
+
 			continue
 		}
 
@@ -393,7 +397,7 @@ func (s *Store) recoverOneRemoteEcShardInterval(needleId types.NeedleId, ecVolum
 	// Count and log available shards for diagnostics
 	availableShards := make([]erasure_coding.ShardId, 0, erasure_coding.TotalShardsCount)
 	missingShards := make([]erasure_coding.ShardId, 0, erasure_coding.ParityShardsCount+1)
-	for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+	for shardId := range erasure_coding.TotalShardsCount {
 		if bufs[shardId] != nil {
 			availableShards = append(availableShards, erasure_coding.ShardId(shardId))
 		} else {
@@ -435,5 +439,6 @@ func (s *Store) EcVolumes() (ecVolumes []*erasure_coding.EcVolume) {
 	slices.SortFunc(ecVolumes, func(a, b *erasure_coding.EcVolume) int {
 		return int(a.VolumeId) - int(b.VolumeId)
 	})
+
 	return ecVolumes
 }

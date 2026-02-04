@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
@@ -11,7 +12,7 @@ import (
 // GetPolicies retrieves all IAM policies from PostgreSQL
 func (store *PostgresStore) GetPolicies(ctx context.Context) (map[string]policy_engine.PolicyDocument, error) {
 	if !store.configured {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
 
 	policies := make(map[string]policy_engine.PolicyDocument)
@@ -32,7 +33,7 @@ func (store *PostgresStore) GetPolicies(ctx context.Context) (map[string]policy_
 
 		var document policy_engine.PolicyDocument
 		if err := json.Unmarshal(documentJSON, &document); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal policy document for %s: %v", name, err)
+			return nil, fmt.Errorf("failed to unmarshal policy document for %s: %w", name, err)
 		}
 
 		policies[name] = document
@@ -44,7 +45,7 @@ func (store *PostgresStore) GetPolicies(ctx context.Context) (map[string]policy_
 // CreatePolicy creates a new IAM policy in PostgreSQL
 func (store *PostgresStore) CreatePolicy(ctx context.Context, name string, document policy_engine.PolicyDocument) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	documentJSON, err := json.Marshal(document)
@@ -70,7 +71,7 @@ func (store *PostgresStore) PutPolicy(ctx context.Context, name string, document
 // UpdatePolicy updates an existing IAM policy in PostgreSQL
 func (store *PostgresStore) UpdatePolicy(ctx context.Context, name string, document policy_engine.PolicyDocument) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	documentJSON, err := json.Marshal(document)
@@ -100,7 +101,7 @@ func (store *PostgresStore) UpdatePolicy(ctx context.Context, name string, docum
 // DeletePolicy deletes an IAM policy from PostgreSQL
 func (store *PostgresStore) DeletePolicy(ctx context.Context, name string) error {
 	if !store.configured {
-		return fmt.Errorf("store not configured")
+		return errors.New("store not configured")
 	}
 
 	result, err := store.db.ExecContext(ctx, "DELETE FROM policies WHERE name = $1", name)

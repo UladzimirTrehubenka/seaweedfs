@@ -6,9 +6,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestDoMinusChunks(t *testing.T) {
@@ -38,7 +39,7 @@ func TestDoMinusChunks(t *testing.T) {
 	// we can get the deleted chunks and newChunks
 	firstDeletedChunks := DoMinusChunks(firstOldEntry, firstNewEntry)
 	log.Println("first deleted chunks:", firstDeletedChunks)
-	//firstNewEntry := DoMinusChunks(firstNewEntry, firstOldEntry)
+	// firstNewEntry := DoMinusChunks(firstNewEntry, firstOldEntry)
 
 	// clusterA need to delete all chunks in firstDeletedChunks
 	emptiedChunksInA := DoMinusChunksBySourceFileId(chunksInA, firstDeletedChunks)
@@ -49,7 +50,6 @@ func TestDoMinusChunks(t *testing.T) {
 }
 
 func TestCompactFileChunksRealCase(t *testing.T) {
-
 	chunks := []*filer_pb.FileChunk{
 		{FileId: "2,512f31f2c0700a", Offset: 0, Size: 25 - 0, ModifiedTsNs: 5320497},
 		{FileId: "6,512f2c2e24e9e8", Offset: 868352, Size: 917585 - 868352, ModifiedTsNs: 5320492},
@@ -70,17 +70,17 @@ func TestCompactFileChunksRealCase(t *testing.T) {
 
 	printChunks("compacted", compacted)
 	printChunks("garbage", garbage)
-
 }
 
 func printChunks(name string, chunks []*filer_pb.FileChunk) {
 	slices.SortFunc(chunks, func(a, b *filer_pb.FileChunk) int {
-		if a.Offset == b.Offset {
-			return int(a.ModifiedTsNs - b.ModifiedTsNs)
+		if a.GetOffset() == b.GetOffset() {
+			return int(a.GetModifiedTsNs() - b.GetModifiedTsNs())
 		}
-		return int(a.Offset - b.Offset)
+
+		return int(a.GetOffset() - b.GetOffset())
 	})
 	for _, chunk := range chunks {
-		glog.V(0).Infof("%s chunk %s [%10d,%10d)", name, chunk.GetFileIdString(), chunk.Offset, chunk.Offset+int64(chunk.Size))
+		glog.V(0).Infof("%s chunk %s [%10d,%10d)", name, chunk.GetFileIdString(), chunk.GetOffset(), chunk.GetOffset()+int64(chunk.GetSize()))
 	}
 }

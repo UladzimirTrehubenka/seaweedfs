@@ -3,6 +3,7 @@ package s3api
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,16 +17,18 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/gorilla/mux"
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	. "github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"github.com/stretchr/testify/assert"
-	"google.golang.org/protobuf/proto"
 )
 
 // EmbeddedIamApiForTest is a testable version of EmbeddedIamApi
 type EmbeddedIamApiForTest struct {
 	*EmbeddedIamApi
+
 	mockConfig *iam_pb.S3ApiConfiguration
 }
 
@@ -41,15 +44,18 @@ func NewEmbeddedIamApiForTest() *EmbeddedIamApiForTest {
 			cloned := proto.Clone(e.mockConfig).(*iam_pb.S3ApiConfiguration)
 			proto.Merge(s3cfg, cloned)
 		}
+
 		return nil
 	}
 	e.putS3ApiConfigurationFunc = func(s3cfg *iam_pb.S3ApiConfiguration) error {
 		e.mockConfig = proto.Clone(s3cfg).(*iam_pb.S3ApiConfiguration)
+
 		return nil
 	}
 	e.reloadConfigurationFunc = func() error {
 		return nil
 	}
+
 	return e
 }
 
@@ -60,6 +66,7 @@ func (e *EmbeddedIamApiForTest) GetS3ApiConfiguration(s3cfg *iam_pb.S3ApiConfigu
 		cloned := proto.Clone(e.mockConfig).(*iam_pb.S3ApiConfiguration)
 		proto.Merge(s3cfg, cloned)
 	}
+
 	return nil
 }
 
@@ -67,6 +74,7 @@ func (e *EmbeddedIamApiForTest) GetS3ApiConfiguration(s3cfg *iam_pb.S3ApiConfigu
 func (e *EmbeddedIamApiForTest) PutS3ApiConfiguration(s3cfg *iam_pb.S3ApiConfiguration) error {
 	// Use proto.Clone for proper deep copy semantics
 	e.mockConfig = proto.Clone(s3cfg).(*iam_pb.S3ApiConfiguration)
+
 	return nil
 }
 
@@ -74,16 +82,18 @@ func (e *EmbeddedIamApiForTest) PutS3ApiConfiguration(s3cfg *iam_pb.S3ApiConfigu
 func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+
 		return
 	}
 	values := r.PostForm
 	s3cfg := &iam_pb.S3ApiConfiguration{}
 	if err := e.GetS3ApiConfiguration(s3cfg); err != nil {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
+
 		return
 	}
 
-	var response interface{}
+	var response any
 	var iamErr *iamError
 	changed := true
 
@@ -94,7 +104,8 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		case "ListUsers", "ListAccessKeys", "GetUser", "GetUserPolicy", "ListServiceAccounts", "GetServiceAccount":
 			// Allowed read-only actions
 		default:
-			e.writeIamErrorResponse(w, r, &iamError{Code: s3err.GetAPIError(s3err.ErrAccessDenied).Code, Error: fmt.Errorf("IAM write operations are disabled on this server")})
+			e.writeIamErrorResponse(w, r, &iamError{Code: s3err.GetAPIError(s3err.ErrAccessDenied).Code, Error: errors.New("IAM write operations are disabled on this server")})
+
 			return
 		}
 	}
@@ -111,6 +122,7 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.CreateUser(s3cfg, values)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 	case "GetUser":
@@ -118,6 +130,7 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.GetUser(s3cfg, userName)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 		changed = false
@@ -125,6 +138,7 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.UpdateUser(s3cfg, values)
 		if iamErr != nil {
 			http.Error(w, "Invalid request", http.StatusBadRequest)
+
 			return
 		}
 	case "DeleteUser":
@@ -132,6 +146,7 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.DeleteUser(s3cfg, userName)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 	case "CreateAccessKey":
@@ -139,6 +154,7 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.CreateAccessKey(s3cfg, values)
 		if iamErr != nil {
 			http.Error(w, "Internal error", http.StatusInternalServerError)
+
 			return
 		}
 	case "DeleteAccessKey":
@@ -148,18 +164,21 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.CreatePolicy(s3cfg, values)
 		if iamErr != nil {
 			http.Error(w, "Invalid request", http.StatusBadRequest)
+
 			return
 		}
 	case "PutUserPolicy":
 		response, iamErr = e.PutUserPolicy(s3cfg, values)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 	case "GetUserPolicy":
 		response, iamErr = e.GetUserPolicy(s3cfg, values)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 		changed = false
@@ -167,12 +186,14 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.DeleteUserPolicy(s3cfg, values)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 	case "SetUserStatus":
 		response, iamErr = e.SetUserStatus(s3cfg, values)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 	case "UpdateAccessKey":
@@ -180,16 +201,19 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 		response, iamErr = e.UpdateAccessKey(s3cfg, values)
 		if iamErr != nil {
 			e.writeIamErrorResponse(w, r, iamErr)
+
 			return
 		}
 	default:
 		http.Error(w, "Not implemented", http.StatusNotImplemented)
+
 		return
 	}
 
 	if changed {
 		if err := e.PutS3ApiConfiguration(s3cfg); err != nil {
 			http.Error(w, "Internal error", http.StatusInternalServerError)
+
 			return
 		}
 	}
@@ -200,6 +224,7 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		// This should not happen in tests, but log it for debugging
 		http.Error(w, "Internal error: failed to marshal response", http.StatusInternalServerError)
+
 		return
 	}
 	_, _ = w.Write(xmlBytes)
@@ -207,7 +232,7 @@ func (e *EmbeddedIamApiForTest) DoActions(w http.ResponseWriter, r *http.Request
 
 // executeEmbeddedIamRequest executes an IAM request against the given API instance.
 // If v is non-nil, the response body is unmarshalled into it.
-func executeEmbeddedIamRequest(api *EmbeddedIamApiForTest, req *http.Request, v interface{}) (*httptest.ResponseRecorder, error) {
+func executeEmbeddedIamRequest(api *EmbeddedIamApiForTest, req *http.Request, v any) (*httptest.ResponseRecorder, error) {
 	rr := httptest.NewRecorder()
 	apiRouter := mux.NewRouter().SkipClean(true)
 	apiRouter.Path("/").Methods(http.MethodPost).HandlerFunc(api.DoActions)
@@ -217,6 +242,7 @@ func executeEmbeddedIamRequest(api *EmbeddedIamApiForTest, req *http.Request, v 
 			return rr, err
 		}
 	}
+
 	return rr, nil
 }
 
@@ -233,6 +259,7 @@ func extractEmbeddedIamErrorCodeAndMessage(response *httptest.ResponseRecorder) 
 	if err := xml.Unmarshal(response.Body.Bytes(), &er); err != nil {
 		return "", ""
 	}
+
 	return er.Error.Code, er.Error.Message
 }
 
@@ -255,8 +282,8 @@ func TestEmbeddedIamCreateUser(t *testing.T) {
 	assert.Equal(t, "TestUser", *out.CreateUserResult.User.UserName)
 
 	// Verify user was persisted in config
-	assert.Len(t, api.mockConfig.Identities, 1)
-	assert.Equal(t, "TestUser", api.mockConfig.Identities[0].Name)
+	assert.Len(t, api.mockConfig.GetIdentities(), 1)
+	assert.Equal(t, "TestUser", api.mockConfig.GetIdentities()[0].GetName())
 }
 
 // TestEmbeddedIamListUsers tests listing users via the embedded IAM API
@@ -393,8 +420,8 @@ func TestEmbeddedIamPutUserPolicy(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.Code)
 
 	// Verify policy was attached to the user (actions should be set)
-	assert.Len(t, api.mockConfig.Identities, 1)
-	assert.NotEmpty(t, api.mockConfig.Identities[0].Actions)
+	assert.Len(t, api.mockConfig.GetIdentities(), 1)
+	assert.NotEmpty(t, api.mockConfig.GetIdentities()[0].GetActions())
 }
 
 // TestEmbeddedIamPutUserPolicyError tests error handling when user doesn't exist
@@ -481,7 +508,7 @@ func TestEmbeddedIamDeleteUserPolicy(t *testing.T) {
 	form.Set("UserName", "TestUser")
 	form.Set("PolicyName", "TestPolicy")
 
-	req, _ := http.NewRequest("POST", "/", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/", nil)
 	req.PostForm = form
 	req.Form = form
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -494,15 +521,15 @@ func TestEmbeddedIamDeleteUserPolicy(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	// CRITICAL: Verify user still exists (was NOT deleted)
-	assert.Len(t, api.mockConfig.Identities, 1, "User should NOT be deleted")
-	assert.Equal(t, "TestUser", api.mockConfig.Identities[0].Name)
+	assert.Len(t, api.mockConfig.GetIdentities(), 1, "User should NOT be deleted")
+	assert.Equal(t, "TestUser", api.mockConfig.GetIdentities()[0].GetName())
 
 	// Verify credentials are still intact
-	assert.Len(t, api.mockConfig.Identities[0].Credentials, 1, "Credentials should NOT be deleted")
-	assert.Equal(t, UserAccessKeyPrefix+"TEST12345", api.mockConfig.Identities[0].Credentials[0].AccessKey)
+	assert.Len(t, api.mockConfig.GetIdentities()[0].GetCredentials(), 1, "Credentials should NOT be deleted")
+	assert.Equal(t, UserAccessKeyPrefix+"TEST12345", api.mockConfig.GetIdentities()[0].GetCredentials()[0].GetAccessKey())
 
 	// Verify actions/policy was cleared
-	assert.Nil(t, api.mockConfig.Identities[0].Actions, "Actions should be cleared")
+	assert.Nil(t, api.mockConfig.GetIdentities()[0].GetActions(), "Actions should be cleared")
 }
 
 // TestEmbeddedIamDeleteUserPolicyUserNotFound tests error when user doesn't exist
@@ -515,7 +542,7 @@ func TestEmbeddedIamDeleteUserPolicyUserNotFound(t *testing.T) {
 	form.Set("UserName", "NonExistentUser")
 	form.Set("PolicyName", "TestPolicy")
 
-	req, _ := http.NewRequest("POST", "/", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/", nil)
 	req.PostForm = form
 	req.Form = form
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -594,7 +621,7 @@ func TestEmbeddedIamCreateAccessKey(t *testing.T) {
 	assert.Equal(t, "TestUser", *out.CreateAccessKeyResult.AccessKey.UserName)
 
 	// Verify credentials were persisted
-	assert.Len(t, api.mockConfig.Identities[0].Credentials, 1)
+	assert.Len(t, api.mockConfig.GetIdentities()[0].GetCredentials(), 1)
 }
 
 // TestEmbeddedIamDeleteAccessKey tests deleting an access key via direct form post
@@ -617,7 +644,7 @@ func TestEmbeddedIamDeleteAccessKey(t *testing.T) {
 	form.Set("UserName", "TestUser")
 	form.Set("AccessKeyId", UserAccessKeyPrefix+"TEST12345")
 
-	req, _ := http.NewRequest("POST", "/", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/", nil)
 	req.PostForm = form
 	req.Form = form
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -630,7 +657,7 @@ func TestEmbeddedIamDeleteAccessKey(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	// Verify the access key was deleted
-	assert.Len(t, api.mockConfig.Identities[0].Credentials, 0)
+	assert.Empty(t, api.mockConfig.GetIdentities()[0].GetCredentials())
 }
 
 // TestEmbeddedIamHandleImplicitUsername tests implicit username extraction from authorization header
@@ -681,11 +708,12 @@ func TestEmbeddedIamHandleImplicitUsername(t *testing.T) {
 	}
 }
 
-func mustMarshalJSON(v interface{}) []byte {
+func mustMarshalJSON(v any) []byte {
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
 	}
+
 	return data
 }
 
@@ -930,7 +958,7 @@ func TestEmbeddedIamCreateAccessKeyForExistingUser(t *testing.T) {
 	form.Set("Action", "CreateAccessKey")
 	form.Set("UserName", "ExistingUser")
 
-	req, _ := http.NewRequest("POST", "/", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/", nil)
 	req.PostForm = form
 	req.Form = form
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -942,7 +970,7 @@ func TestEmbeddedIamCreateAccessKeyForExistingUser(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	// Verify credentials were created
-	assert.Len(t, api.mockConfig.Identities[0].Credentials, 1)
+	assert.Len(t, api.mockConfig.GetIdentities()[0].GetCredentials(), 1)
 }
 
 // TestEmbeddedIamGetUserPolicyUserNotFound tests GetUserPolicy with non-existent user
@@ -1008,7 +1036,7 @@ func TestEmbeddedIamNotImplementedAction(t *testing.T) {
 	form := url.Values{}
 	form.Set("Action", "SomeUnknownAction")
 
-	req, _ := http.NewRequest("POST", "/", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/", nil)
 	req.PostForm = form
 	req.Form = form
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1088,7 +1116,7 @@ func TestEmbeddedIamSetUserStatus(t *testing.T) {
 		form.Set("UserName", "TestUser")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1100,7 +1128,7 @@ func TestEmbeddedIamSetUserStatus(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 		// Verify user is now disabled
-		assert.True(t, api.mockConfig.Identities[0].Disabled)
+		assert.True(t, api.mockConfig.GetIdentities()[0].GetDisabled())
 	})
 
 	t.Run("EnableUser", func(t *testing.T) {
@@ -1116,7 +1144,7 @@ func TestEmbeddedIamSetUserStatus(t *testing.T) {
 		form.Set("UserName", "TestUser")
 		form.Set("Status", "Active")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1128,7 +1156,7 @@ func TestEmbeddedIamSetUserStatus(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 		// Verify user is now enabled
-		assert.False(t, api.mockConfig.Identities[0].Disabled)
+		assert.False(t, api.mockConfig.GetIdentities()[0].GetDisabled())
 	})
 }
 
@@ -1147,7 +1175,7 @@ func TestEmbeddedIamSetUserStatusErrors(t *testing.T) {
 		form.Set("UserName", "NonExistentUser")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1166,7 +1194,7 @@ func TestEmbeddedIamSetUserStatusErrors(t *testing.T) {
 		form.Set("UserName", "TestUser")
 		form.Set("Status", "InvalidStatus")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1184,7 +1212,7 @@ func TestEmbeddedIamSetUserStatusErrors(t *testing.T) {
 		form.Set("Action", "SetUserStatus")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1202,7 +1230,7 @@ func TestEmbeddedIamSetUserStatusErrors(t *testing.T) {
 		form.Set("Action", "SetUserStatus")
 		form.Set("UserName", "TestUser")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1239,7 +1267,7 @@ func TestEmbeddedIamUpdateAccessKey(t *testing.T) {
 		form.Set("AccessKeyId", UserAccessKeyPrefix+"TEST12345")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1251,7 +1279,7 @@ func TestEmbeddedIamUpdateAccessKey(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 		// Verify access key is now inactive
-		assert.Equal(t, "Inactive", api.mockConfig.Identities[0].Credentials[0].Status)
+		assert.Equal(t, "Inactive", api.mockConfig.GetIdentities()[0].GetCredentials()[0].GetStatus())
 	})
 
 	t.Run("ActivateAccessKey", func(t *testing.T) {
@@ -1273,7 +1301,7 @@ func TestEmbeddedIamUpdateAccessKey(t *testing.T) {
 		form.Set("AccessKeyId", UserAccessKeyPrefix+"TEST12345")
 		form.Set("Status", "Active")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1285,7 +1313,7 @@ func TestEmbeddedIamUpdateAccessKey(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 		// Verify access key is now active
-		assert.Equal(t, "Active", api.mockConfig.Identities[0].Credentials[0].Status)
+		assert.Equal(t, "Active", api.mockConfig.GetIdentities()[0].GetCredentials()[0].GetStatus())
 	})
 }
 
@@ -1310,7 +1338,7 @@ func TestEmbeddedIamUpdateAccessKeyErrors(t *testing.T) {
 		form.Set("AccessKeyId", "NONEXISTENT123")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1330,7 +1358,7 @@ func TestEmbeddedIamUpdateAccessKeyErrors(t *testing.T) {
 		form.Set("AccessKeyId", UserAccessKeyPrefix+"TEST12345")
 		form.Set("Status", "InvalidStatus")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1349,7 +1377,7 @@ func TestEmbeddedIamUpdateAccessKeyErrors(t *testing.T) {
 		form.Set("AccessKeyId", UserAccessKeyPrefix+"TEST12345")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1368,7 +1396,7 @@ func TestEmbeddedIamUpdateAccessKeyErrors(t *testing.T) {
 		form.Set("UserName", "TestUser")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1388,7 +1416,7 @@ func TestEmbeddedIamUpdateAccessKeyErrors(t *testing.T) {
 		form.Set("AccessKeyId", UserAccessKeyPrefix+"TEST12345")
 		form.Set("Status", "Inactive")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1407,7 +1435,7 @@ func TestEmbeddedIamUpdateAccessKeyErrors(t *testing.T) {
 		form.Set("UserName", "TestUser")
 		form.Set("AccessKeyId", UserAccessKeyPrefix+"TEST12345")
 
-		req, _ := http.NewRequest("POST", "/", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/", nil)
 		req.PostForm = form
 		req.Form = form
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1576,7 +1604,7 @@ func TestAuthIamAuthenticatesBeforeParseForm(t *testing.T) {
 	dateStamp := now.Format(yyyymmdd)
 	credentialScope := dateStamp + "/us-east-1/iam/aws4_request"
 
-	req, err := http.NewRequest("POST", "http://localhost:8333/", strings.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8333/", strings.NewReader(payload))
 	assert.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
@@ -1651,7 +1679,7 @@ func TestOldCodeOrderWouldFail(t *testing.T) {
 	dateStamp := now.Format(yyyymmdd)
 	credentialScope := dateStamp + "/us-east-1/iam/aws4_request"
 
-	req, err := http.NewRequest("POST", "http://localhost:8333/", strings.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:8333/", strings.NewReader(payload))
 	assert.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
@@ -1694,7 +1722,7 @@ func TestEmbeddedIamExecuteAction(t *testing.T) {
 	api.mockConfig = &iam_pb.S3ApiConfiguration{}
 
 	// Explicitly set hook to debug panic
-	api.EmbeddedIamApi.reloadConfigurationFunc = func() error {
+	api.reloadConfigurationFunc = func() error {
 		return nil
 	}
 
@@ -1712,8 +1740,8 @@ func TestEmbeddedIamExecuteAction(t *testing.T) {
 	assert.Equal(t, "ExecuteActionUser", *createResp.CreateUserResult.User.UserName)
 
 	// Verify persistence
-	assert.Len(t, api.mockConfig.Identities, 1)
-	assert.Equal(t, "ExecuteActionUser", api.mockConfig.Identities[0].Name)
+	assert.Len(t, api.mockConfig.GetIdentities(), 1)
+	assert.Equal(t, "ExecuteActionUser", api.mockConfig.GetIdentities()[0].GetName())
 }
 
 // TestEmbeddedIamReadOnly tests that write operations are blocked when readOnly is true

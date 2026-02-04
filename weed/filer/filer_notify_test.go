@@ -11,7 +11,6 @@ import (
 )
 
 func TestProtoMarshal(t *testing.T) {
-
 	oldEntry := &Entry{
 		FullPath: util.FullPath("/this/path/to"),
 		Attr: Attr{
@@ -44,10 +43,9 @@ func TestProtoMarshal(t *testing.T) {
 	notification2 := &filer_pb.EventNotification{}
 	proto.Unmarshal(text, notification2)
 
-	if notification2.OldEntry.GetChunks()[0].SourceFileId != notification.OldEntry.GetChunks()[0].SourceFileId {
+	if notification2.GetOldEntry().GetChunks()[0].GetSourceFileId() != notification.GetOldEntry().GetChunks()[0].GetSourceFileId() {
 		t.Fatalf("marshal/unmarshal error: %s", text)
 	}
 
 	println(string(text))
-
 }

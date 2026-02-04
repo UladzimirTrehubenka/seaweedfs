@@ -1,6 +1,7 @@
 package base
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/admin/config"
@@ -13,6 +14,7 @@ import (
 // GenericFactory creates task instances using a TaskDefinition
 type GenericFactory struct {
 	*tasks.BaseTaskFactory
+
 	taskDef *TaskDefinition
 }
 
@@ -33,6 +35,7 @@ func (f *GenericFactory) Create(params *worker_pb.TaskParams) (types.Task, error
 	if f.taskDef.CreateTask == nil {
 		return nil, fmt.Errorf("no task creation function defined for %s", f.taskDef.Type)
 	}
+
 	return f.taskDef.CreateTask(params)
 }
 
@@ -107,6 +110,7 @@ func (ui *GenericUIProvider) ApplyTaskPolicy(policy *worker_pb.TaskPolicy) error
 // ApplyTaskConfig applies TaskConfig interface configuration
 func (ui *GenericUIProvider) ApplyTaskConfig(config types.TaskConfig) error {
 	taskPolicy := config.ToTaskPolicy()
+
 	return ui.taskDef.Config.FromTaskPolicy(taskPolicy)
 }
 
@@ -115,6 +119,7 @@ func RegisterTask(taskDef *TaskDefinition) {
 	// Validate task definition
 	if err := validateTaskDefinition(taskDef); err != nil {
 		glog.Errorf("Invalid task definition for %s: %v", taskDef.Type, err)
+
 		return
 	}
 
@@ -156,16 +161,17 @@ func RegisterTask(taskDef *TaskDefinition) {
 // validateTaskDefinition ensures the task definition is complete
 func validateTaskDefinition(taskDef *TaskDefinition) error {
 	if taskDef.Type == "" {
-		return fmt.Errorf("task type is required")
+		return errors.New("task type is required")
 	}
 	if taskDef.Name == "" {
-		return fmt.Errorf("task name is required")
+		return errors.New("task name is required")
 	}
 	if taskDef.Config == nil {
-		return fmt.Errorf("task config is required")
+		return errors.New("task config is required")
 	}
 	if taskDef.CreateTask == nil {
-		return fmt.Errorf("task creation function is required")
+		return errors.New("task creation function is required")
 	}
+
 	return nil
 }

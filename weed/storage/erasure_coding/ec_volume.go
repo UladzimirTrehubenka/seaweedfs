@@ -40,7 +40,7 @@ type EcVolume struct {
 	ecjFileAccessLock         sync.Mutex
 	diskType                  types.DiskType
 	datFileSize               int64
-	ExpireAtSec               uint64     //ec volume destroy time, calculated from the ec volume was created
+	ExpireAtSec               uint64     // ec volume destroy time, calculated from the ec volume was created
 	ECContext                 *ECContext // EC encoding parameters
 }
 
@@ -52,32 +52,33 @@ func NewEcVolume(diskType types.DiskType, dir string, dirIdx string, collection 
 
 	// open ecx file
 	if ev.ecxFile, err = os.OpenFile(indexBaseFileName+".ecx", os.O_RDWR, 0644); err != nil {
-		return nil, fmt.Errorf("cannot open ec volume index %s.ecx: %v", indexBaseFileName, err)
+		return nil, fmt.Errorf("cannot open ec volume index %s.ecx: %w", indexBaseFileName, err)
 	}
 	ecxFi, statErr := ev.ecxFile.Stat()
 	if statErr != nil {
 		_ = ev.ecxFile.Close()
-		return nil, fmt.Errorf("can not stat ec volume index %s.ecx: %v", indexBaseFileName, statErr)
+
+		return nil, fmt.Errorf("can not stat ec volume index %s.ecx: %w", indexBaseFileName, statErr)
 	}
 	ev.ecxFileSize = ecxFi.Size()
 	ev.ecxCreatedAt = ecxFi.ModTime()
 
 	// open ecj file
 	if ev.ecjFile, err = os.OpenFile(indexBaseFileName+".ecj", os.O_RDWR|os.O_CREATE, 0644); err != nil {
-		return nil, fmt.Errorf("cannot open ec volume journal %s.ecj: %v", indexBaseFileName, err)
+		return nil, fmt.Errorf("cannot open ec volume journal %s.ecj: %w", indexBaseFileName, err)
 	}
 
 	// read volume info
 	ev.Version = needle.Version3
 	if volumeInfo, _, found, _ := volume_info.MaybeLoadVolumeInfo(dataBaseFileName + ".vif"); found {
-		ev.Version = needle.Version(volumeInfo.Version)
-		ev.datFileSize = volumeInfo.DatFileSize
-		ev.ExpireAtSec = volumeInfo.ExpireAtSec
+		ev.Version = needle.Version(volumeInfo.GetVersion())
+		ev.datFileSize = volumeInfo.GetDatFileSize()
+		ev.ExpireAtSec = volumeInfo.GetExpireAtSec()
 
 		// Initialize EC context from .vif if present; fallback to defaults
-		if volumeInfo.EcShardConfig != nil {
-			ds := int(volumeInfo.EcShardConfig.DataShards)
-			ps := int(volumeInfo.EcShardConfig.ParityShards)
+		if volumeInfo.GetEcShardConfig() != nil {
+			ds := int(volumeInfo.GetEcShardConfig().GetDataShards())
+			ps := int(volumeInfo.GetEcShardConfig().GetParityShards())
 
 			// Validate shard counts to prevent zero or invalid values
 			if ds <= 0 || ps <= 0 || ds+ps > MaxShardCount {
@@ -103,7 +104,7 @@ func NewEcVolume(diskType types.DiskType, dir string, dirIdx string, collection 
 
 	ev.ShardLocations = make(map[ShardId][]pb.ServerAddress)
 
-	return
+	return ev, err
 }
 
 func (ev *EcVolume) AddEcVolumeShard(ecVolumeShard *EcVolumeShard) bool {
@@ -117,8 +118,10 @@ func (ev *EcVolume) AddEcVolumeShard(ecVolumeShard *EcVolumeShard) bool {
 		if a.VolumeId != b.VolumeId {
 			return int(a.VolumeId - b.VolumeId)
 		}
+
 		return int(a.ShardId - b.ShardId)
 	})
+
 	return true
 }
 
@@ -136,6 +139,7 @@ func (ev *EcVolume) DeleteEcVolumeShard(shardId ShardId) (ecVolumeShard *EcVolum
 	ecVolumeShard = ev.Shards[foundPosition]
 	ecVolumeShard.Unmount()
 	ev.Shards = append(ev.Shards[:foundPosition], ev.Shards[foundPosition+1:]...)
+
 	return ecVolumeShard, true
 }
 
@@ -145,6 +149,7 @@ func (ev *EcVolume) FindEcVolumeShard(shardId ShardId) (ecVolumeShard *EcVolumeS
 			return s, true
 		}
 	}
+
 	return nil, false
 }
 
@@ -215,6 +220,7 @@ func (ev *EcVolume) ShardSize() uint64 {
 	if len(ev.Shards) > 0 {
 		return uint64(ev.Shards[0].Size())
 	}
+
 	return 0
 }
 
@@ -224,6 +230,7 @@ func (ev *EcVolume) Size() (size uint64) {
 			size += uint64(shardSize)
 		}
 	}
+
 	return
 }
 
@@ -235,6 +242,7 @@ func (ev *EcVolume) ShardIdList() (shardIds []ShardId) {
 	for _, s := range ev.Shards {
 		shardIds = append(shardIds, s.ShardId)
 	}
+
 	return
 }
 
@@ -264,11 +272,11 @@ func (ev *EcVolume) ToVolumeEcShardInformationMessage(diskId uint32) (messages [
 	for _, m := range ecInfoPerVolume {
 		messages = append(messages, m)
 	}
+
 	return
 }
 
 func (ev *EcVolume) LocateEcShardNeedle(needleId types.NeedleId, version needle.Version) (offset types.Offset, size types.Size, intervals []Interval, err error) {
-
 	// find the needle from ecx file
 	offset, size, err = ev.FindNeedleFromEcx(needleId)
 	if err != nil {
@@ -276,6 +284,7 @@ func (ev *EcVolume) LocateEcShardNeedle(needleId types.NeedleId, version needle.
 	}
 
 	intervals = ev.LocateEcShardNeedleInterval(version, offset.ToActualOffset(), types.Size(needle.GetActualSize(size, version)))
+
 	return
 }
 
@@ -308,7 +317,7 @@ func SearchNeedleFromSortedIndex(ecxFile *os.File, ecxFileSize int64, needleId t
 		m := (l + h) / 2
 		if n, err := ecxFile.ReadAt(buf, m*types.NeedleMapEntrySize); err != nil {
 			if n != types.NeedleMapEntrySize {
-				return types.Offset{}, types.TombstoneFileSize, fmt.Errorf("ecx file %d read at %d: %v", ecxFileSize, m*types.NeedleMapEntrySize, err)
+				return types.Offset{}, types.TombstoneFileSize, fmt.Errorf("ecx file %d read at %d: %w", ecxFileSize, m*types.NeedleMapEntrySize, err)
 			}
 		}
 		key, offset, size = idx.IdxFileEntry(buf)
@@ -316,6 +325,7 @@ func SearchNeedleFromSortedIndex(ecxFile *os.File, ecxFileSize int64, needleId t
 			if processNeedleFn != nil {
 				err = processNeedleFn(ecxFile, m*types.NeedleMapEntrySize)
 			}
+
 			return
 		}
 		if key < needleId {
@@ -326,6 +336,7 @@ func SearchNeedleFromSortedIndex(ecxFile *os.File, ecxFileSize int64, needleId t
 	}
 
 	err = NotFoundError
+
 	return
 }
 

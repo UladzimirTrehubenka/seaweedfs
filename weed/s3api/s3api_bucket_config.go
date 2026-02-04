@@ -50,7 +50,7 @@ type BucketKMSCache struct {
 
 // BucketKMSCacheEntry represents a single cached KMS data key
 type BucketKMSCacheEntry struct {
-	DataKey     interface{} // Could be *kms.GenerateDataKeyResponse or similar
+	DataKey     any // Could be *kms.GenerateDataKeyResponse or similar
 	ExpiresAt   time.Time
 	KeyID       string
 	ContextHash string // Hash of encryption context for cache validation
@@ -88,7 +88,7 @@ func (bkc *BucketKMSCache) Get(contextHash string) (*BucketKMSCacheEntry, bool) 
 }
 
 // Set stores a KMS data key in the cache
-func (bkc *BucketKMSCache) Set(contextHash, keyID string, dataKey interface{}, ttl time.Duration) {
+func (bkc *BucketKMSCache) Set(contextHash, keyID string, dataKey any, ttl time.Duration) {
 	if bkc == nil {
 		return
 	}
@@ -231,10 +231,11 @@ func (bm *BucketMetadata) HasTags() bool {
 // TTL can be set to a longer duration since cache consistency is maintained
 // through real-time metadata subscription events rather than TTL expiration
 func NewBucketConfigCache(ttl time.Duration) *BucketConfigCache {
-	negativeTTL := ttl / 4 // Negative cache TTL is shorter than positive cache
-	if negativeTTL < 30*time.Second {
-		negativeTTL = 30 * time.Second // Minimum 30 seconds for negative cache
-	}
+	negativeTTL := max(
+		// Negative cache TTL is shorter than positive cache
+		ttl/4,
+		// Minimum 30 seconds for negative cache
+		30*time.Second)
 
 	return &BucketConfigCache{
 		cache:         make(map[string]*BucketConfig),
@@ -301,6 +302,7 @@ func (bcc *BucketConfigCache) IsNegativelyCached(bucket string) bool {
 		// Entry expired, remove it
 		delete(bcc.negativeCache, bucket)
 	}
+
 	return false
 }
 
@@ -326,19 +328,22 @@ func loadBucketPolicyFromExtended(entry *filer_pb.Entry, bucket string) *policy_
 		return nil
 	}
 
-	policyJSON, exists := entry.Extended[BUCKET_POLICY_METADATA_KEY]
+	policyJSON, exists := entry.GetExtended()[BUCKET_POLICY_METADATA_KEY]
 	if !exists || len(policyJSON) == 0 {
 		glog.V(4).Infof("loadBucketPolicyFromExtended: no bucket policy found for bucket %s", bucket)
+
 		return nil
 	}
 
 	var policyDoc policy_engine.PolicyDocument
 	if err := json.Unmarshal(policyJSON, &policyDoc); err != nil {
 		glog.Errorf("loadBucketPolicyFromExtended: failed to parse bucket policy for %s: %v", bucket, err)
+
 		return nil
 	}
 
 	glog.V(3).Infof("loadBucketPolicyFromExtended: loaded bucket policy for bucket %s", bucket)
+
 	return &policyDoc
 }
 
@@ -360,9 +365,11 @@ func (s3a *S3ApiServer) getBucketConfig(bucket string) (*BucketConfig, s3err.Err
 		if errors.Is(err, filer_pb.ErrNotFound) {
 			// Bucket doesn't exist - set negative cache
 			s3a.bucketConfigCache.SetNegativeCache(bucket)
+
 			return nil, s3err.ErrNoSuchBucket
 		}
 		glog.Errorf("getBucketConfig: failed to get bucket entry for %s: %v", bucket, err)
+
 		return nil, s3err.ErrInternalError
 	}
 
@@ -375,14 +382,14 @@ func (s3a *S3ApiServer) getBucketConfig(bucket string) (*BucketConfig, s3err.Err
 	// Extract configuration from extended attributes
 	if entry.Extended != nil {
 		glog.V(3).Infof("getBucketConfig: checking extended attributes for bucket %s, ExtObjectLockEnabledKey value=%s",
-			bucket, string(entry.Extended[s3_constants.ExtObjectLockEnabledKey]))
-		if versioning, exists := entry.Extended[s3_constants.ExtVersioningKey]; exists {
+			bucket, string(entry.GetExtended()[s3_constants.ExtObjectLockEnabledKey]))
+		if versioning, exists := entry.GetExtended()[s3_constants.ExtVersioningKey]; exists {
 			config.Versioning = string(versioning)
 		}
-		if ownership, exists := entry.Extended[s3_constants.ExtOwnershipKey]; exists {
+		if ownership, exists := entry.GetExtended()[s3_constants.ExtOwnershipKey]; exists {
 			config.Ownership = string(ownership)
 		}
-		if acl, exists := entry.Extended[s3_constants.ExtAmzAclKey]; exists {
+		if acl, exists := entry.GetExtended()[s3_constants.ExtAmzAclKey]; exists {
 			config.ACL = acl
 			// Parse ACL once and cache public-read status
 			config.IsPublicRead = parseAndCachePublicReadStatus(acl)
@@ -390,7 +397,7 @@ func (s3a *S3ApiServer) getBucketConfig(bucket string) (*BucketConfig, s3err.Err
 			// No ACL means private bucket
 			config.IsPublicRead = false
 		}
-		if owner, exists := entry.Extended[s3_constants.ExtAmzOwnerKey]; exists {
+		if owner, exists := entry.GetExtended()[s3_constants.ExtAmzOwnerKey]; exists {
 			config.Owner = string(owner)
 		}
 		// Parse Object Lock configuration if present
@@ -437,6 +444,7 @@ func (s3a *S3ApiServer) updateBucketConfig(bucket string, updateFn func(*BucketC
 	// Apply update function
 	if err := updateFn(config); err != nil {
 		glog.Errorf("updateBucketConfig: update function failed for bucket %s: %v", bucket, err)
+
 		return s3err.ErrInternalError
 	}
 
@@ -463,10 +471,11 @@ func (s3a *S3ApiServer) updateBucketConfig(bucket string, updateFn func(*BucketC
 		glog.V(3).Infof("updateBucketConfig: storing Object Lock config for bucket %s: %+v", bucket, config.ObjectLockConfig)
 		if err := StoreObjectLockConfigurationInExtended(config.Entry, config.ObjectLockConfig); err != nil {
 			glog.Errorf("updateBucketConfig: failed to store Object Lock configuration for bucket %s: %v", bucket, err)
+
 			return s3err.ErrInternalError
 		}
 		glog.V(3).Infof("updateBucketConfig: stored Object Lock config in extended attributes for bucket %s, key=%s, value=%s",
-			bucket, s3_constants.ExtObjectLockEnabledKey, string(config.Entry.Extended[s3_constants.ExtObjectLockEnabledKey]))
+			bucket, s3_constants.ExtObjectLockEnabledKey, string(config.Entry.GetExtended()[s3_constants.ExtObjectLockEnabledKey]))
 	}
 
 	// Save to filer
@@ -474,6 +483,7 @@ func (s3a *S3ApiServer) updateBucketConfig(bucket string, updateFn func(*BucketC
 	err := s3a.updateEntry(s3a.option.BucketsPath, config.Entry)
 	if err != nil {
 		glog.Errorf("updateBucketConfig: failed to update bucket entry for %s: %v", bucket, err)
+
 		return s3err.ErrInternalError
 	}
 	glog.V(3).Infof("updateBucketConfig: saved entry to filer for bucket %s", bucket)
@@ -491,6 +501,7 @@ func (s3a *S3ApiServer) isVersioningEnabled(bucket string) (bool, error) {
 		if errCode == s3err.ErrNoSuchBucket {
 			return false, filer_pb.ErrNotFound
 		}
+
 		return false, fmt.Errorf("failed to get bucket config: %v", errCode)
 	}
 
@@ -506,6 +517,7 @@ func (s3a *S3ApiServer) isVersioningConfigured(bucket string) (bool, error) {
 		if errCode == s3err.ErrNoSuchBucket {
 			return false, filer_pb.ErrNotFound
 		}
+
 		return false, fmt.Errorf("failed to get bucket config: %v", errCode)
 	}
 
@@ -521,6 +533,7 @@ func (s3a *S3ApiServer) isObjectLockEnabled(bucket string) (bool, error) {
 		if errCode == s3err.ErrNoSuchBucket {
 			return false, filer_pb.ErrNotFound
 		}
+
 		return false, fmt.Errorf("failed to get bucket config: %v", errCode)
 	}
 
@@ -537,6 +550,7 @@ func (s3a *S3ApiServer) getVersioningState(bucket string) (string, error) {
 			return "", filer_pb.ErrNotFound
 		}
 		glog.Errorf("getVersioningState: failed to get bucket config for %s: %v", bucket, errCode)
+
 		return "", fmt.Errorf("failed to get bucket config: %v", errCode)
 	}
 
@@ -565,8 +579,10 @@ func (s3a *S3ApiServer) getBucketVersioningStatus(bucket string) (string, s3err.
 func (s3a *S3ApiServer) setBucketVersioningStatus(bucket, status string) s3err.ErrorCode {
 	errCode := s3a.updateBucketConfig(bucket, func(config *BucketConfig) error {
 		config.Versioning = status
+
 		return nil
 	})
+
 	return errCode
 }
 
@@ -584,6 +600,7 @@ func (s3a *S3ApiServer) getBucketOwnership(bucket string) (string, s3err.ErrorCo
 func (s3a *S3ApiServer) setBucketOwnership(bucket, ownership string) s3err.ErrorCode {
 	return s3a.updateBucketConfig(bucket, func(config *BucketConfig) error {
 		config.Ownership = ownership
+
 		return nil
 	})
 }
@@ -617,6 +634,7 @@ func (s3a *S3ApiServer) updateCORSConfiguration(bucket string, corsConfig *cors.
 	err := s3a.UpdateBucketCORS(bucket, corsConfig)
 	if err != nil {
 		glog.Errorf("updateCORSConfiguration: failed to update CORS config for bucket %s: %v", bucket, err)
+
 		return s3err.ErrInternalError
 	}
 
@@ -631,6 +649,7 @@ func (s3a *S3ApiServer) removeCORSConfiguration(bucket string) s3err.ErrorCode {
 	err := s3a.ClearBucketCORS(bucket)
 	if err != nil {
 		glog.Errorf("removeCORSConfiguration: failed to remove CORS config for bucket %s: %v", bucket, err)
+
 		return s3err.ErrInternalError
 	}
 
@@ -656,19 +675,19 @@ func corsRuleFromProto(protoRule *s3_pb.CORSRule) cors.CORSRule {
 	var maxAge *int
 	// Always create the pointer if MaxAgeSeconds is >= 0
 	// This prevents nil pointer dereferences in tests and matches AWS behavior
-	if protoRule.MaxAgeSeconds >= 0 {
-		age := int(protoRule.MaxAgeSeconds)
+	if protoRule.GetMaxAgeSeconds() >= 0 {
+		age := int(protoRule.GetMaxAgeSeconds())
 		maxAge = &age
 	}
 	// Only leave maxAge as nil if MaxAgeSeconds was explicitly set to a negative value
 
 	return cors.CORSRule{
-		AllowedHeaders: protoRule.AllowedHeaders,
-		AllowedMethods: protoRule.AllowedMethods,
-		AllowedOrigins: protoRule.AllowedOrigins,
-		ExposeHeaders:  protoRule.ExposeHeaders,
+		AllowedHeaders: protoRule.GetAllowedHeaders(),
+		AllowedMethods: protoRule.GetAllowedMethods(),
+		AllowedOrigins: protoRule.GetAllowedOrigins(),
+		ExposeHeaders:  protoRule.GetExposeHeaders(),
 		MaxAgeSeconds:  maxAge,
-		ID:             protoRule.Id,
+		ID:             protoRule.GetId(),
 	}
 }
 
@@ -694,8 +713,8 @@ func corsConfigFromProto(protoConfig *s3_pb.CORSConfiguration) *cors.CORSConfigu
 		return nil
 	}
 
-	rules := make([]cors.CORSRule, len(protoConfig.CorsRules))
-	for i, protoRule := range protoConfig.CorsRules {
+	rules := make([]cors.CORSRule, len(protoConfig.GetCorsRules()))
+	for i, protoRule := range protoConfig.GetCorsRules() {
 		rules[i] = corsRuleFromProto(protoRule)
 	}
 
@@ -709,6 +728,7 @@ func getMaxAgeSecondsValue(maxAge *int) int {
 	if maxAge == nil {
 		return 0
 	}
+
 	return *maxAge
 }
 
@@ -762,18 +782,20 @@ func (s3a *S3ApiServer) extractMetadataFromConfig(config *BucketConfig) (*Bucket
 	}
 
 	// Parse metadata from entry content if available
-	if len(config.Entry.Content) > 0 {
+	if len(config.Entry.GetContent()) > 0 {
 		var protoMetadata s3_pb.BucketMetadata
-		if err := proto.Unmarshal(config.Entry.Content, &protoMetadata); err != nil {
+		if err := proto.Unmarshal(config.Entry.GetContent(), &protoMetadata); err != nil {
 			glog.Errorf("extractMetadataFromConfig: failed to unmarshal protobuf metadata for bucket %s: %v", config.Name, err)
+
 			return nil, err
 		}
 		// Convert protobuf to structured metadata
 		metadata := &BucketMetadata{
-			Tags:       protoMetadata.Tags,
-			CORS:       corsConfigFromProto(protoMetadata.Cors),
-			Encryption: protoMetadata.Encryption,
+			Tags:       protoMetadata.GetTags(),
+			CORS:       corsConfigFromProto(protoMetadata.GetCors()),
+			Encryption: protoMetadata.GetEncryption(),
 		}
+
 		return metadata, nil
 	}
 
@@ -810,6 +832,7 @@ func (s3a *S3ApiServer) loadBucketMetadataFromFiler(bucket string) (*BucketMetad
 				s3a.bucketConfigCache.SetNegativeCache(bucket)
 			}
 		}
+
 		return nil, fmt.Errorf("error retrieving bucket directory %s: %w", bucket, err)
 	}
 	if entry == nil {
@@ -817,29 +840,31 @@ func (s3a *S3ApiServer) loadBucketMetadataFromFiler(bucket string) (*BucketMetad
 		if s3a.bucketConfigCache != nil {
 			s3a.bucketConfigCache.SetNegativeCache(bucket)
 		}
+
 		return nil, fmt.Errorf("bucket directory not found %s", bucket)
 	}
 
 	// If no content, return empty metadata
-	if len(entry.Content) == 0 {
+	if len(entry.GetContent()) == 0 {
 		return NewBucketMetadata(), nil
 	}
 
 	// Unmarshal metadata from protobuf
 	var protoMetadata s3_pb.BucketMetadata
-	if err := proto.Unmarshal(entry.Content, &protoMetadata); err != nil {
+	if err := proto.Unmarshal(entry.GetContent(), &protoMetadata); err != nil {
 		glog.Errorf("getBucketMetadata: failed to unmarshal protobuf metadata for bucket %s: %v", bucket, err)
+
 		return nil, fmt.Errorf("failed to unmarshal bucket metadata for %s: %w", bucket, err)
 	}
 
 	// Convert protobuf CORS to standard CORS
-	corsConfig := corsConfigFromProto(protoMetadata.Cors)
+	corsConfig := corsConfigFromProto(protoMetadata.GetCors())
 
 	// Create and return structured metadata
 	metadata := &BucketMetadata{
-		Tags:       protoMetadata.Tags,
+		Tags:       protoMetadata.GetTags(),
 		CORS:       corsConfig,
-		Encryption: protoMetadata.Encryption,
+		Encryption: protoMetadata.GetEncryption(),
 	}
 
 	return metadata, nil
@@ -897,6 +922,7 @@ func (s3a *S3ApiServer) setBucketMetadata(bucket string, metadata *BucketMetadat
 		}
 
 		_, err = client.UpdateEntry(context.Background(), request)
+
 		return err
 	})
 
@@ -960,6 +986,7 @@ func (s3a *S3ApiServer) UpdateBucketMetadata(bucket string, update func(*BucketM
 func (s3a *S3ApiServer) UpdateBucketTags(bucket string, tags map[string]string) error {
 	return s3a.UpdateBucketMetadata(bucket, func(metadata *BucketMetadata) error {
 		metadata.Tags = tags
+
 		return nil
 	})
 }
@@ -968,6 +995,7 @@ func (s3a *S3ApiServer) UpdateBucketTags(bucket string, tags map[string]string) 
 func (s3a *S3ApiServer) UpdateBucketCORS(bucket string, corsConfig *cors.CORSConfiguration) error {
 	return s3a.UpdateBucketMetadata(bucket, func(metadata *BucketMetadata) error {
 		metadata.CORS = corsConfig
+
 		return nil
 	})
 }
@@ -976,6 +1004,7 @@ func (s3a *S3ApiServer) UpdateBucketCORS(bucket string, corsConfig *cors.CORSCon
 func (s3a *S3ApiServer) UpdateBucketEncryption(bucket string, encryptionConfig *s3_pb.EncryptionConfiguration) error {
 	return s3a.UpdateBucketMetadata(bucket, func(metadata *BucketMetadata) error {
 		metadata.Encryption = encryptionConfig
+
 		return nil
 	})
 }
@@ -984,6 +1013,7 @@ func (s3a *S3ApiServer) UpdateBucketEncryption(bucket string, encryptionConfig *
 func (s3a *S3ApiServer) ClearBucketTags(bucket string) error {
 	return s3a.UpdateBucketMetadata(bucket, func(metadata *BucketMetadata) error {
 		metadata.Tags = make(map[string]string)
+
 		return nil
 	})
 }
@@ -992,6 +1022,7 @@ func (s3a *S3ApiServer) ClearBucketTags(bucket string) error {
 func (s3a *S3ApiServer) ClearBucketCORS(bucket string) error {
 	return s3a.UpdateBucketMetadata(bucket, func(metadata *BucketMetadata) error {
 		metadata.CORS = nil
+
 		return nil
 	})
 }
@@ -1000,6 +1031,7 @@ func (s3a *S3ApiServer) ClearBucketCORS(bucket string) error {
 func (s3a *S3ApiServer) ClearBucketEncryption(bucket string) error {
 	return s3a.UpdateBucketMetadata(bucket, func(metadata *BucketMetadata) error {
 		metadata.Encryption = nil
+
 		return nil
 	})
 }

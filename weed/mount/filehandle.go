@@ -58,7 +58,7 @@ func newFileHandle(wfs *WFS, handleId FileHandleId, inode uint64, entry *filer_p
 
 	if IsDebugFileReadWrite {
 		var err error
-		fh.mirrorFile, err = os.OpenFile("/tmp/sw/"+entry.Name, os.O_RDWR|os.O_CREATE, 0600)
+		fh.mirrorFile, err = os.OpenFile("/tmp/sw/"+entry.GetName(), os.O_RDWR|os.O_CREATE, 0600)
 		if err != nil {
 			println("failed to create mirror:", err.Error())
 		}
@@ -69,6 +69,7 @@ func newFileHandle(wfs *WFS, handleId FileHandleId, inode uint64, entry *filer_p
 
 func (fh *FileHandle) FullPath() util.FullPath {
 	fp, _ := fh.wfs.inodeToPath.GetPath(fh.inode)
+
 	return fp
 }
 
@@ -81,7 +82,7 @@ func (fh *FileHandle) SetEntry(entry *filer_pb.Entry) {
 		fileSize := filer.FileSize(entry)
 		entry.Attributes.FileSize = fileSize
 		var resolveManifestErr error
-		fh.entryChunkGroup, resolveManifestErr = filer.NewChunkGroup(fh.wfs.LookupFn(), fh.wfs.chunkCache, entry.Chunks, fh.wfs.option.ConcurrentReaders)
+		fh.entryChunkGroup, resolveManifestErr = filer.NewChunkGroup(fh.wfs.LookupFn(), fh.wfs.chunkCache, entry.GetChunks(), fh.wfs.option.ConcurrentReaders)
 		if resolveManifestErr != nil {
 			glog.Warningf("failed to resolve manifest chunks in %+v", entry)
 		}
@@ -111,7 +112,6 @@ func (fh *FileHandle) AddChunks(chunks []*filer_pb.FileChunk) {
 }
 
 func (fh *FileHandle) ReleaseHandle() {
-
 	fhActiveLock := fh.wfs.fhLockTable.AcquireLock("ReleaseHandle", fh.fh, util.ExclusiveLock)
 	defer fh.wfs.fhLockTable.ReleaseLock(fh.fh, fhActiveLock)
 
@@ -122,10 +122,11 @@ func (fh *FileHandle) ReleaseHandle() {
 }
 
 func lessThan(a, b *filer_pb.FileChunk) bool {
-	if a.ModifiedTsNs == b.ModifiedTsNs {
-		return a.Fid.FileKey < b.Fid.FileKey
+	if a.GetModifiedTsNs() == b.GetModifiedTsNs() {
+		return a.GetFid().GetFileKey() < b.GetFid().GetFileKey()
 	}
-	return a.ModifiedTsNs < b.ModifiedTsNs
+
+	return a.GetModifiedTsNs() < b.GetModifiedTsNs()
 }
 
 // getCumulativeOffsets returns cached cumulative offsets for chunks, computing them if necessary
@@ -136,6 +137,7 @@ func (fh *FileHandle) getCumulativeOffsets(chunks []*filer_pb.FileChunk) []int64
 		result := make([]int64, len(fh.chunkOffsetCache))
 		copy(result, fh.chunkOffsetCache)
 		fh.chunkCacheLock.RUnlock()
+
 		return result
 	}
 	fh.chunkCacheLock.RUnlock()
@@ -148,13 +150,14 @@ func (fh *FileHandle) getCumulativeOffsets(chunks []*filer_pb.FileChunk) []int64
 	if fh.chunkCacheValid && len(fh.chunkOffsetCache) == len(chunks)+1 {
 		result := make([]int64, len(fh.chunkOffsetCache))
 		copy(result, fh.chunkOffsetCache)
+
 		return result
 	}
 
 	// Compute cumulative offsets
 	cumulativeOffsets := make([]int64, len(chunks)+1)
 	for i, chunk := range chunks {
-		cumulativeOffsets[i+1] = cumulativeOffsets[i] + int64(chunk.Size)
+		cumulativeOffsets[i+1] = cumulativeOffsets[i] + int64(chunk.GetSize())
 	}
 
 	// Cache the result

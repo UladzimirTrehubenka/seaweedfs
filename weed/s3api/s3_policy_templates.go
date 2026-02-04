@@ -152,8 +152,8 @@ func (t *S3PolicyTemplates) GetPathBasedAccessPolicy(bucketName, pathPrefix stri
 				Resource: []string{
 					"arn:aws:s3:::" + bucketName,
 				},
-				Condition: map[string]map[string]interface{}{
-					"StringLike": map[string]interface{}{
+				Condition: map[string]map[string]any{
+					"StringLike": {
 						"s3:prefix": []string{pathPrefix + "/*"},
 					},
 				},
@@ -193,8 +193,8 @@ func (t *S3PolicyTemplates) GetIPRestrictedPolicy(allowedCIDRs []string) *policy
 					"arn:aws:s3:::*",
 					"arn:aws:s3:::*/*",
 				},
-				Condition: map[string]map[string]interface{}{
-					"IpAddress": map[string]interface{}{
+				Condition: map[string]map[string]any{
+					"IpAddress": {
 						"aws:SourceIp": allowedCIDRs,
 					},
 				},
@@ -220,12 +220,12 @@ func (t *S3PolicyTemplates) GetTimeBasedAccessPolicy(startHour, endHour int) *po
 					"arn:aws:s3:::*",
 					"arn:aws:s3:::*/*",
 				},
-				Condition: map[string]map[string]interface{}{
-					"DateGreaterThan": map[string]interface{}{
+				Condition: map[string]map[string]any{
+					"DateGreaterThan": {
 						"aws:CurrentTime": time.Now().Format("2006-01-02") + "T" +
 							formatHour(startHour) + ":00:00Z",
 					},
-					"DateLessThan": map[string]interface{}{
+					"DateLessThan": {
 						"aws:CurrentTime": time.Now().Format("2006-01-02") + "T" +
 							formatHour(endHour) + ":00:00Z",
 					},
@@ -284,8 +284,8 @@ func (t *S3PolicyTemplates) GetPresignedURLPolicy(bucketName string) *policy.Pol
 				Resource: []string{
 					"arn:aws:s3:::" + bucketName + "/*",
 				},
-				Condition: map[string]map[string]interface{}{
-					"StringEquals": map[string]interface{}{
+				Condition: map[string]map[string]any{
+					"StringEquals": {
 						"s3:x-amz-signature-version": "AWS4-HMAC-SHA256",
 					},
 				},
@@ -313,8 +313,8 @@ func (t *S3PolicyTemplates) GetTemporaryAccessPolicy(bucketName string, expirati
 					"arn:aws:s3:::" + bucketName,
 					"arn:aws:s3:::" + bucketName + "/*",
 				},
-				Condition: map[string]map[string]interface{}{
-					"DateLessThan": map[string]interface{}{
+				Condition: map[string]map[string]any{
+					"DateLessThan": {
 						"aws:CurrentTime": expirationTime.UTC().Format("2006-01-02T15:04:05Z"),
 					},
 				},
@@ -340,8 +340,8 @@ func (t *S3PolicyTemplates) GetContentTypeRestrictedPolicy(bucketName string, al
 				Resource: []string{
 					"arn:aws:s3:::" + bucketName + "/*",
 				},
-				Condition: map[string]map[string]interface{}{
-					"StringEquals": map[string]interface{}{
+				Condition: map[string]map[string]any{
+					"StringEquals": {
 						"s3:content-type": allowedContentTypes,
 					},
 				},
@@ -411,6 +411,7 @@ func formatHour(hour int) string {
 	if hour < 10 {
 		return "0" + string(rune('0'+hour))
 	}
+
 	return string(rune('0'+hour/10)) + string(rune('0'+hour%10))
 }
 
@@ -602,6 +603,7 @@ func (t *S3PolicyTemplates) GetPolicyTemplateByName(name string) *PolicyTemplate
 			return &template
 		}
 	}
+
 	return nil
 }
 
@@ -614,5 +616,6 @@ func (t *S3PolicyTemplates) GetPolicyTemplatesByCategory(category string) []Poli
 			result = append(result, template)
 		}
 	}
+
 	return result
 }

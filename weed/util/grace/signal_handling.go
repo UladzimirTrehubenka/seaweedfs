@@ -1,5 +1,4 @@
 //go:build !plan9
-// +build !plan9
 
 package grace
 
@@ -20,7 +19,7 @@ var interruptHookLock sync.RWMutex
 var reloadHooks = make([]func(), 0)
 var reloadHookLock sync.RWMutex
 
-func GetFunctionName(i interface{}) string {
+func GetFunctionName(i any) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
@@ -28,12 +27,11 @@ func init() {
 	signalChan = make(chan os.Signal, 1)
 	signal.Notify(signalChan,
 		os.Interrupt,
-		os.Kill,
+
 		syscall.SIGALRM,
 		syscall.SIGHUP,
 		syscall.SIGINT,
 		syscall.SIGTERM,
-		// syscall.SIGQUIT,
 	)
 	go func() {
 		for s := range signalChan {

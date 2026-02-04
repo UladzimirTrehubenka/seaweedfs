@@ -38,10 +38,10 @@ func (p *LocalPartition) PublishWithOffset(message *mq_pb.DataMessage, assignOff
 				Data: message,
 			},
 		}); followErr != nil {
-			return 0, fmt.Errorf("send to follower %s: %v", p.Follower, followErr)
+			return 0, fmt.Errorf("send to follower %s: %w", p.Follower, followErr)
 		}
 	} else {
-		atomic.StoreInt64(&p.AckTsNs, message.TsNs)
+		atomic.StoreInt64(&p.AckTsNs, message.GetTsNs())
 	}
 
 	return offset, nil
@@ -50,7 +50,7 @@ func (p *LocalPartition) PublishWithOffset(message *mq_pb.DataMessage, assignOff
 // addToBufferWithOffset adds a message to the log buffer with a pre-assigned offset
 func (p *LocalPartition) addToBufferWithOffset(message *mq_pb.DataMessage, offset int64) error {
 	// Ensure we have a timestamp
-	processingTsNs := message.TsNs
+	processingTsNs := message.GetTsNs()
 	if processingTsNs == 0 {
 		processingTsNs = time.Now().UnixNano()
 	}
@@ -58,9 +58,9 @@ func (p *LocalPartition) addToBufferWithOffset(message *mq_pb.DataMessage, offse
 	// Build a LogEntry that preserves the assigned sequential offset
 	logEntry := &filer_pb.LogEntry{
 		TsNs:             processingTsNs,
-		PartitionKeyHash: util.HashToInt32(message.Key),
-		Data:             message.Value,
-		Key:              message.Key,
+		PartitionKeyHash: util.HashToInt32(message.GetKey()),
+		Data:             message.GetValue(),
+		Key:              message.GetKey(),
 		Offset:           offset,
 	}
 
@@ -74,8 +74,8 @@ func (p *LocalPartition) addToBufferWithOffset(message *mq_pb.DataMessage, offse
 
 // GetOffsetInfo returns offset information for this partition
 // Used for debugging and monitoring partition offset state
-func (p *LocalPartition) GetOffsetInfo() map[string]interface{} {
-	return map[string]interface{}{
+func (p *LocalPartition) GetOffsetInfo() map[string]any {
+	return map[string]any{
 		"partition_ring_size":   p.RingSize,
 		"partition_range_start": p.RangeStart,
 		"partition_range_stop":  p.RangeStop,
@@ -102,6 +102,7 @@ func NewOffsetAwarePublisher(partition *LocalPartition, assignOffsetFn OffsetAss
 // Publish publishes a message with automatic offset assignment
 func (oap *OffsetAwarePublisher) Publish(message *mq_pb.DataMessage) error {
 	_, err := oap.partition.PublishWithOffset(message, oap.assignOffsetFn)
+
 	return err
 }
 

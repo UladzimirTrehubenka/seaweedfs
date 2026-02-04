@@ -91,6 +91,7 @@ func (m *Middleware) processCORS(w http.ResponseWriter, r *http.Request, next fu
 	// 1. Basic Validation
 	if bucket == "" {
 		next()
+
 		return
 	}
 
@@ -105,6 +106,7 @@ func (m *Middleware) processCORS(w http.ResponseWriter, r *http.Request, next fu
 	// 4. Handle Non-CORS Requests
 	if corsReq.Origin == "" {
 		next()
+
 		return
 	}
 
@@ -112,9 +114,11 @@ func (m *Middleware) processCORS(w http.ResponseWriter, r *http.Request, next fu
 	if !hasConfig {
 		if corsReq.IsPreflightRequest {
 			s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 			return
 		}
 		next()
+
 		return
 	}
 
@@ -124,9 +128,11 @@ func (m *Middleware) processCORS(w http.ResponseWriter, r *http.Request, next fu
 		glog.V(3).Infof("CORS evaluation failed for bucket %s: %v", bucket, err)
 		if corsReq.IsPreflightRequest {
 			s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 			return
 		}
 		next()
+
 		return
 	}
 
@@ -135,6 +141,7 @@ func (m *Middleware) processCORS(w http.ResponseWriter, r *http.Request, next fu
 
 	if corsReq.IsPreflightRequest {
 		w.WriteHeader(http.StatusOK)
+
 		return
 	}
 

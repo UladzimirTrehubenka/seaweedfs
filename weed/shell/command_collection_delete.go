@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,7 +34,6 @@ func (c *commandCollectionDelete) HasTag(CommandTag) bool {
 }
 
 func (c *commandCollectionDelete) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	colDeleteCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	collectionName := colDeleteCommand.String("collection", "", "collection to delete. Use '_default_' for the empty-named collection.")
 	applyBalancing := colDeleteCommand.Bool("apply", false, "apply the collection")
@@ -48,11 +48,11 @@ func (c *commandCollectionDelete) Do(args []string, commandEnv *CommandEnv, writ
 	infoAboutSimulationMode(writer, *applyBalancing, "-apply")
 
 	if err = commandEnv.confirmIsLocked(args); err != nil {
-		return
+		return err
 	}
 
 	if *collectionName == "" {
-		return fmt.Errorf("empty collection name is not allowed")
+		return errors.New("empty collection name is not allowed")
 	}
 
 	if *collectionName == "_default_" {
@@ -61,6 +61,7 @@ func (c *commandCollectionDelete) Do(args []string, commandEnv *CommandEnv, writ
 
 	if !*applyBalancing {
 		fmt.Fprintf(writer, "collection '%s' will be deleted. Use -apply to apply the change.\n", *collectionName)
+
 		return nil
 	}
 
@@ -68,10 +69,11 @@ func (c *commandCollectionDelete) Do(args []string, commandEnv *CommandEnv, writ
 		_, err = client.CollectionDelete(context.Background(), &master_pb.CollectionDeleteRequest{
 			Name: *collectionName,
 		})
+
 		return err
 	})
 	if err != nil {
-		return
+		return err
 	}
 
 	fmt.Fprintf(writer, "collection %s is deleted.\n", *collectionName)

@@ -17,14 +17,14 @@ func (vs *VolumeServer) VolumeTierMoveDatToRemote(req *volume_server_pb.VolumeTi
 	}
 
 	// find existing volume
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return fmt.Errorf("volume %d not found", req.VolumeId)
+		return fmt.Errorf("volume %d not found", req.GetVolumeId())
 	}
 
 	// verify the collection
-	if v.Collection != req.Collection {
-		return fmt.Errorf("existing collection:%v unexpected input: %v", v.Collection, req.Collection)
+	if v.Collection != req.GetCollection() {
+		return fmt.Errorf("existing collection:%v unexpected input: %v", v.Collection, req.GetCollection())
 	}
 
 	// locate the disk file
@@ -34,21 +34,22 @@ func (vs *VolumeServer) VolumeTierMoveDatToRemote(req *volume_server_pb.VolumeTi
 	}
 
 	// check valid storage backend type
-	backendStorage, found := backend.BackendStorages[req.DestinationBackendName]
+	backendStorage, found := backend.BackendStorages[req.GetDestinationBackendName()]
 	if !found {
 		var keys []string
 		for key := range backend.BackendStorages {
 			keys = append(keys, key)
 		}
-		return fmt.Errorf("destination %s not found, supported: %v", req.DestinationBackendName, keys)
+
+		return fmt.Errorf("destination %s not found, supported: %v", req.GetDestinationBackendName(), keys)
 	}
 
 	// check whether the existing backend storage is the same as requested
 	// if same, skip
-	backendType, backendId := backend.BackendNameToTypeId(req.DestinationBackendName)
+	backendType, backendId := backend.BackendNameToTypeId(req.GetDestinationBackendName())
 	for _, remoteFile := range v.GetVolumeInfo().GetFiles() {
-		if remoteFile.BackendType == backendType && remoteFile.BackendId == backendId {
-			return fmt.Errorf("destination %s already exists", req.DestinationBackendName)
+		if remoteFile.GetBackendType() == backendType && remoteFile.GetBackendId() == backendId {
+			return fmt.Errorf("destination %s already exists", req.GetDestinationBackendName())
 		}
 	}
 
@@ -59,6 +60,7 @@ func (vs *VolumeServer) VolumeTierMoveDatToRemote(req *volume_server_pb.VolumeTi
 			return nil
 		}
 		startTime = now
+
 		return stream.Send(&volume_server_pb.VolumeTierMoveDatToRemoteResponse{
 			Processed:           progressed,
 			ProcessedPercentage: percentage,
@@ -68,7 +70,7 @@ func (vs *VolumeServer) VolumeTierMoveDatToRemote(req *volume_server_pb.VolumeTi
 	// copy the data file
 	key, size, err := backendStorage.CopyFile(diskFile.File, fn)
 	if err != nil {
-		return fmt.Errorf("backend %s copy file %s: %v", req.DestinationBackendName, diskFile.Name(), err)
+		return fmt.Errorf("backend %s copy file %s: %w", req.GetDestinationBackendName(), diskFile.Name(), err)
 	}
 
 	// save the remote file to volume tier info
@@ -83,14 +85,14 @@ func (vs *VolumeServer) VolumeTierMoveDatToRemote(req *volume_server_pb.VolumeTi
 	})
 
 	if err := v.SaveVolumeInfo(); err != nil {
-		return fmt.Errorf("volume %d failed to save remote file info: %v", v.Id, err)
+		return fmt.Errorf("volume %d failed to save remote file info: %w", v.Id, err)
 	}
 
 	if err := v.LoadRemoteFile(); err != nil {
-		return fmt.Errorf("volume %d failed to load remote file: %v", v.Id, err)
+		return fmt.Errorf("volume %d failed to load remote file: %w", v.Id, err)
 	}
 
-	if !req.KeepLocalDatFile {
+	if !req.GetKeepLocalDatFile() {
 		os.Remove(v.FileName(".dat"))
 	}
 

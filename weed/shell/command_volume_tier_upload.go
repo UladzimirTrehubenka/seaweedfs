@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -66,7 +67,6 @@ func (c *commandVolumeTierUpload) HasTag(CommandTag) bool {
 }
 
 func (c *commandVolumeTierUpload) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	tierCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	volumeId := tierCommand.Int("volumeId", 0, "the volume id")
 	collection := tierCommand.String("collection", "", "the collection name")
@@ -80,7 +80,7 @@ func (c *commandVolumeTierUpload) Do(args []string, commandEnv *CommandEnv, writ
 	}
 
 	if err = commandEnv.confirmIsLocked(args); err != nil {
-		return
+		return err
 	}
 
 	vid := needle.VolumeId(*volumeId)
@@ -116,19 +116,19 @@ func doVolumeTierUpload(commandEnv *CommandEnv, writer io.Writer, collection str
 	// find volume location
 	topoInfo, _, err := collectTopologyInfo(commandEnv, 0)
 	if err != nil {
-		return fmt.Errorf("collect topology info: %v", err)
+		return fmt.Errorf("collect topology info: %w", err)
 	}
 
 	var existingLocations []wdclient.Location
 	eachDataNode(topoInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
-		for _, disk := range dn.DiskInfos {
-			for _, vi := range disk.VolumeInfos {
-				if needle.VolumeId(vi.Id) == vid && (collection == "" || vi.Collection == collection) {
-					fmt.Printf("find volume %d from Url:%s, GrpcPort:%d, DC:%s\n", vid, dn.Id, dn.GrpcPort, string(dc))
+		for _, disk := range dn.GetDiskInfos() {
+			for _, vi := range disk.GetVolumeInfos() {
+				if needle.VolumeId(vi.GetId()) == vid && (collection == "" || vi.GetCollection() == collection) {
+					fmt.Printf("find volume %d from Url:%s, GrpcPort:%d, DC:%s\n", vid, dn.GetId(), dn.GetGrpcPort(), string(dc))
 					existingLocations = append(existingLocations, wdclient.Location{
-						Url:        dn.Id,
-						PublicUrl:  dn.Id,
-						GrpcPort:   int(dn.GrpcPort),
+						Url:        dn.GetId(),
+						PublicUrl:  dn.GetId(),
+						GrpcPort:   int(dn.GetGrpcPort()),
 						DataCenter: string(dc),
 					})
 				}
@@ -140,18 +140,19 @@ func doVolumeTierUpload(commandEnv *CommandEnv, writer io.Writer, collection str
 		if collection == "" {
 			return fmt.Errorf("volume %d not found", vid)
 		}
+
 		return fmt.Errorf("volume %d not found in collection %s", vid, collection)
 	}
 
 	err = markVolumeReplicasWritable(commandEnv.option.GrpcDialOption, vid, existingLocations, false, false)
 	if err != nil {
-		return fmt.Errorf("mark volume %d as readonly on %s: %v", vid, existingLocations[0].Url, err)
+		return fmt.Errorf("mark volume %d as readonly on %s: %w", vid, existingLocations[0].Url, err)
 	}
 
 	// copy the .dat file to remote tier
 	err = uploadDatToRemoteTier(commandEnv.option.GrpcDialOption, writer, vid, collection, existingLocations[0].ServerAddress(), dest, keepLocalDatFile)
 	if err != nil {
-		return fmt.Errorf("copy dat file for volume %d on %s to %s: %v", vid, existingLocations[0].Url, dest, err)
+		return fmt.Errorf("copy dat file for volume %d on %s to %s: %w", vid, existingLocations[0].Url, dest, err)
 	}
 
 	if keepLocalDatFile {
@@ -166,7 +167,7 @@ func doVolumeTierUpload(commandEnv *CommandEnv, writer io.Writer, collection str
 		fmt.Printf("delete volume %d from Url:%s\n", vid, location.Url)
 		err = deleteVolume(commandEnv.option.GrpcDialOption, vid, location.ServerAddress(), false)
 		if err != nil {
-			return fmt.Errorf("deleteVolume %s volume %d: %v", location.Url, vid, err)
+			return fmt.Errorf("deleteVolume %s volume %d: %w", location.Url, vid, err)
 		}
 	}
 
@@ -174,7 +175,6 @@ func doVolumeTierUpload(commandEnv *CommandEnv, writer io.Writer, collection str
 }
 
 func uploadDatToRemoteTier(grpcDialOption grpc.DialOption, writer io.Writer, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress, dest string, keepLocalDatFile bool) error {
-
 	err := operation.WithVolumeServerClient(true, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		stream, copyErr := volumeServerClient.VolumeTierMoveDatToRemote(context.Background(), &volume_server_pb.VolumeTierMoveDatToRemoteRequest{
 			VolumeId:               uint32(volumeId),
@@ -188,6 +188,7 @@ func uploadDatToRemoteTier(grpcDialOption grpc.DialOption, writer io.Writer, vol
 				// when the volume is already uploaded, VolumeTierMoveDatToRemote will return nil stream and nil error
 				// so we should directly return in this caseAdd commentMore actions
 				fmt.Fprintf(writer, "volume %v already uploaded", volumeId)
+
 				return nil
 			} else {
 				return copyErr
@@ -197,23 +198,22 @@ func uploadDatToRemoteTier(grpcDialOption grpc.DialOption, writer io.Writer, vol
 		for {
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break
 				} else {
 					return recvErr
 				}
 			}
 
-			processingSpeed := float64(resp.Processed-lastProcessed) / 1024.0 / 1024.0
+			processingSpeed := float64(resp.GetProcessed()-lastProcessed) / 1024.0 / 1024.0
 
-			fmt.Fprintf(writer, "copied %.2f%%, %d bytes, %.2fMB/s\n", resp.ProcessedPercentage, resp.Processed, processingSpeed)
+			fmt.Fprintf(writer, "copied %.2f%%, %d bytes, %.2fMB/s\n", resp.GetProcessedPercentage(), resp.GetProcessed(), processingSpeed)
 
-			lastProcessed = resp.Processed
+			lastProcessed = resp.GetProcessed()
 		}
 
 		return copyErr
 	})
 
 	return err
-
 }

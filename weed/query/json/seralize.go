@@ -13,5 +13,6 @@ func ToJson(buf []byte, selections []string, values []sqltypes.Value) []byte {
 		buf = append(buf, value.Raw()...)
 	}
 	buf = append(buf, '}')
+
 	return buf
 }

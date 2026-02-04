@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -75,7 +76,7 @@ type PolicyEngineConfig struct {
 	StoreType string `json:"storeType"`
 
 	// StoreConfig contains store-specific configuration
-	StoreConfig map[string]interface{} `json:"storeConfig,omitempty"`
+	StoreConfig map[string]any `json:"storeConfig,omitempty"`
 }
 
 // PolicyDocument represents an IAM policy document
@@ -99,10 +100,10 @@ type Statement struct {
 	Effect string `json:"Effect"`
 
 	// Principal specifies who the statement applies to (optional in role policies)
-	Principal interface{} `json:"Principal,omitempty"`
+	Principal any `json:"Principal,omitempty"`
 
 	// NotPrincipal specifies who the statement does NOT apply to
-	NotPrincipal interface{} `json:"NotPrincipal,omitempty"`
+	NotPrincipal any `json:"NotPrincipal,omitempty"`
 
 	// Action specifies the actions this statement applies to
 	Action StringList `json:"Action"`
@@ -117,7 +118,7 @@ type Statement struct {
 	NotResource StringList `json:"NotResource,omitempty"`
 
 	// Condition specifies conditions for when this statement applies
-	Condition map[string]map[string]interface{} `json:"Condition,omitempty"`
+	Condition map[string]map[string]any `json:"Condition,omitempty"`
 }
 
 // StringList handles fields that can be a string or a list of strings
@@ -128,14 +129,17 @@ func (sl *StringList) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		*sl = []string{s}
+
 		return nil
 	}
 	var sa []string
 	if err := json.Unmarshal(data, &sa); err == nil {
 		*sl = sa
+
 		return nil
 	}
-	return fmt.Errorf("invalid string list")
+
+	return errors.New("invalid string list")
 }
 
 // EvaluationContext provides context for policy evaluation
@@ -150,7 +154,7 @@ type EvaluationContext struct {
 	Resource string `json:"resource"`
 
 	// RequestContext contains additional request information
-	RequestContext map[string]interface{} `json:"requestContext,omitempty"`
+	RequestContext map[string]any `json:"requestContext,omitempty"`
 }
 
 // EvaluationResult contains the result of policy evaluation
@@ -221,7 +225,7 @@ func NewPolicyEngine() *PolicyEngine {
 // Initialize initializes the policy engine with configuration
 func (e *PolicyEngine) Initialize(config *PolicyEngineConfig) error {
 	if config == nil {
-		return fmt.Errorf("config cannot be nil")
+		return errors.New("config cannot be nil")
 	}
 
 	if err := e.validateConfig(config); err != nil {
@@ -238,13 +242,14 @@ func (e *PolicyEngine) Initialize(config *PolicyEngineConfig) error {
 	e.store = store
 
 	e.initialized = true
+
 	return nil
 }
 
 // InitializeWithProvider initializes the policy engine with configuration and a filer address provider
 func (e *PolicyEngine) InitializeWithProvider(config *PolicyEngineConfig, filerAddressProvider func() string) error {
 	if config == nil {
-		return fmt.Errorf("config cannot be nil")
+		return errors.New("config cannot be nil")
 	}
 
 	if err := e.validateConfig(config); err != nil {
@@ -261,6 +266,7 @@ func (e *PolicyEngine) InitializeWithProvider(config *PolicyEngineConfig, filerA
 	e.store = store
 
 	e.initialized = true
+
 	return nil
 }
 
@@ -327,15 +333,15 @@ func (e *PolicyEngine) IsInitialized() bool {
 // AddPolicy adds a policy to the engine (filerAddress ignored for memory stores)
 func (e *PolicyEngine) AddPolicy(filerAddress string, name string, policy *PolicyDocument) error {
 	if !e.initialized {
-		return fmt.Errorf("policy engine not initialized")
+		return errors.New("policy engine not initialized")
 	}
 
 	if name == "" {
-		return fmt.Errorf("policy name cannot be empty")
+		return errors.New("policy name cannot be empty")
 	}
 
 	if policy == nil {
-		return fmt.Errorf("policy cannot be nil")
+		return errors.New("policy cannot be nil")
 	}
 
 	if err := ValidatePolicyDocument(policy); err != nil {
@@ -348,11 +354,11 @@ func (e *PolicyEngine) AddPolicy(filerAddress string, name string, policy *Polic
 // Evaluate evaluates policies against a request context (filerAddress ignored for memory stores)
 func (e *PolicyEngine) Evaluate(ctx context.Context, filerAddress string, evalCtx *EvaluationContext, policyNames []string) (*EvaluationResult, error) {
 	if !e.initialized {
-		return nil, fmt.Errorf("policy engine not initialized")
+		return nil, errors.New("policy engine not initialized")
 	}
 
 	if evalCtx == nil {
-		return nil, fmt.Errorf("evaluation context cannot be nil")
+		return nil, errors.New("evaluation context cannot be nil")
 	}
 
 	result := &EvaluationResult{
@@ -387,9 +393,10 @@ func (e *PolicyEngine) Evaluate(ctx context.Context, filerAddress string, evalCt
 				}
 				matchingStatements = append(matchingStatements, match)
 
-				if statement.Effect == "Deny" {
+				switch statement.Effect {
+				case "Deny":
 					explicitDeny = true
-				} else if statement.Effect == "Allow" {
+				case "Allow":
 					hasAllow = true
 				}
 			}
@@ -415,15 +422,15 @@ func (e *PolicyEngine) Evaluate(ctx context.Context, filerAddress string, evalCt
 // This is used for AssumeRole/AssumeRoleWithWebIdentity trust policy validation
 func (e *PolicyEngine) EvaluateTrustPolicy(ctx context.Context, trustPolicy *PolicyDocument, evalCtx *EvaluationContext) (*EvaluationResult, error) {
 	if !e.initialized {
-		return nil, fmt.Errorf("policy engine not initialized")
+		return nil, errors.New("policy engine not initialized")
 	}
 
 	if evalCtx == nil {
-		return nil, fmt.Errorf("evaluation context cannot be nil")
+		return nil, errors.New("evaluation context cannot be nil")
 	}
 
 	if trustPolicy == nil {
-		return nil, fmt.Errorf("trust policy cannot be nil")
+		return nil, errors.New("trust policy cannot be nil")
 	}
 
 	result := &EvaluationResult{
@@ -451,9 +458,10 @@ func (e *PolicyEngine) EvaluateTrustPolicy(ctx context.Context, trustPolicy *Pol
 			}
 			matchingStatements = append(matchingStatements, match)
 
-			if statement.Effect == "Deny" {
+			switch statement.Effect {
+			case "Deny":
 				explicitDeny = true
-			} else if statement.Effect == "Allow" {
+			case "Allow":
 				hasAllow = true
 			}
 		}
@@ -516,6 +524,7 @@ func (e *PolicyEngine) matchesActions(actions []string, requestedAction string, 
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -526,12 +535,13 @@ func (e *PolicyEngine) matchesResources(resources []string, requestedResource st
 			return true
 		}
 	}
+
 	return false
 }
 
 // matchesPrincipal checks if the principal in the statement matches the evaluation context
 // This is used for trust policy evaluation (e.g., AssumeRole, AssumeRoleWithWebIdentity)
-func (e *PolicyEngine) matchesPrincipal(principal interface{}, evalCtx *EvaluationContext) bool {
+func (e *PolicyEngine) matchesPrincipal(principal any, evalCtx *EvaluationContext) bool {
 	// Handle plain string principal (e.g., "*" or "arn:aws:iam::...")
 	if principalStr, ok := principal.(string); ok {
 		// Check wildcard FIRST before context validation
@@ -547,11 +557,12 @@ func (e *PolicyEngine) matchesPrincipal(principal interface{}, evalCtx *Evaluati
 				return principalStr == contextPrincipalStr
 			}
 		}
+
 		return false
 	}
 
 	// Handle structured principal (e.g., {"Federated": "*"} or {"AWS": "arn:..."})
-	if principalMap, ok := principal.(map[string]interface{}); ok {
+	if principalMap, ok := principal.(map[string]any); ok {
 		// For each principal type (Federated, AWS, Service, etc.)
 		for principalType, principalValue := range principalMap {
 			// Get the context key for this principal type
@@ -561,6 +572,7 @@ func (e *PolicyEngine) matchesPrincipal(principal interface{}, evalCtx *Evaluati
 				return false
 			}
 		}
+
 		return true
 	}
 
@@ -570,7 +582,7 @@ func (e *PolicyEngine) matchesPrincipal(principal interface{}, evalCtx *Evaluati
 
 // evaluatePrincipalValue evaluates a principal value against the evaluation context
 // This handles wildcards, arrays, and context matching
-func (e *PolicyEngine) evaluatePrincipalValue(principalValue interface{}, evalCtx *EvaluationContext, contextKey string) bool {
+func (e *PolicyEngine) evaluatePrincipalValue(principalValue any, evalCtx *EvaluationContext, contextKey string) bool {
 	// Handle single string value
 	if principalStr, ok := principalValue.(string); ok {
 		// Check wildcard FIRST before context validation
@@ -588,16 +600,17 @@ func (e *PolicyEngine) evaluatePrincipalValue(principalValue interface{}, evalCt
 		if !ok {
 			return false
 		}
+
 		return principalStr == contextStr
 	}
 
 	// Handle array of strings - convert to []interface{} for unified handling
-	var principalArray []interface{}
+	var principalArray []any
 	switch arr := principalValue.(type) {
-	case []interface{}:
+	case []any:
 		principalArray = arr
 	case []string:
-		principalArray = make([]interface{}, len(arr))
+		principalArray = make([]any, len(arr))
 		for i, v := range arr {
 			principalArray[i] = v
 		}
@@ -659,7 +672,7 @@ func getPrincipalContextKey(principalType string) string {
 }
 
 // matchesConditions checks if all conditions are satisfied
-func (e *PolicyEngine) matchesConditions(conditions map[string]map[string]interface{}, evalCtx *EvaluationContext) bool {
+func (e *PolicyEngine) matchesConditions(conditions map[string]map[string]any, evalCtx *EvaluationContext) bool {
 	if len(conditions) == 0 {
 		return true // No conditions means always match
 	}
@@ -674,14 +687,14 @@ func (e *PolicyEngine) matchesConditions(conditions map[string]map[string]interf
 }
 
 // evaluateConditionBlock evaluates a single condition block
-func (e *PolicyEngine) evaluateConditionBlock(conditionType string, block map[string]interface{}, evalCtx *EvaluationContext) bool {
+func (e *PolicyEngine) evaluateConditionBlock(conditionType string, block map[string]any, evalCtx *EvaluationContext) bool {
 	// Parse set operators (prefixes)
 	forAllValues := false
 	if strings.HasPrefix(conditionType, "ForAllValues:") {
 		forAllValues = true
 		conditionType = strings.TrimPrefix(conditionType, "ForAllValues:")
-	} else if strings.HasPrefix(conditionType, "ForAnyValue:") {
-		conditionType = strings.TrimPrefix(conditionType, "ForAnyValue:")
+	} else if after, ok := strings.CutPrefix(conditionType, "ForAnyValue:"); ok {
+		conditionType = after
 		// ForAnyValue is the default behavior (Any context value matches Any condition value),
 		// so we just strip the prefix
 	}
@@ -754,7 +767,7 @@ func (e *PolicyEngine) evaluateConditionBlock(conditionType string, block map[st
 }
 
 // evaluateIPCondition evaluates IP address conditions
-func (e *PolicyEngine) evaluateIPCondition(block map[string]interface{}, evalCtx *EvaluationContext, shouldMatch bool, forAllValues bool) bool {
+func (e *PolicyEngine) evaluateIPCondition(block map[string]any, evalCtx *EvaluationContext, shouldMatch bool, forAllValues bool) bool {
 	for conditionKey, conditionValue := range block {
 		contextValue, exists := evalCtx.RequestContext[conditionKey]
 		if !exists {
@@ -762,6 +775,7 @@ func (e *PolicyEngine) evaluateIPCondition(block map[string]interface{}, evalCtx
 			if shouldMatch {
 				return false
 			}
+
 			continue
 		}
 
@@ -772,7 +786,7 @@ func (e *PolicyEngine) evaluateIPCondition(block map[string]interface{}, evalCtx
 			contextIPs = []string{v}
 		case []string:
 			contextIPs = v
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if s, ok := item.(string); ok {
 					contextIPs = append(contextIPs, s)
@@ -803,10 +817,12 @@ func (e *PolicyEngine) evaluateIPCondition(block map[string]interface{}, evalCtx
 						_, cidr, err := net.ParseCIDR(ipRange)
 						if err == nil && cidr.Contains(ctxIP) {
 							itemMatchedInRange = true
+
 							break
 						}
 					} else if ctxIPStr == ipRange {
 						itemMatchedInRange = true
+
 						break
 					}
 				}
@@ -840,10 +856,12 @@ func (e *PolicyEngine) evaluateIPCondition(block map[string]interface{}, evalCtx
 						_, cidr, err := net.ParseCIDR(ipRange)
 						if err == nil && cidr.Contains(ctxIP) {
 							itemMatchedInRange = true
+
 							break
 						}
 					} else if ctxIPStr == ipRange {
 						itemMatchedInRange = true
+
 						break
 					}
 				}
@@ -856,6 +874,7 @@ func (e *PolicyEngine) evaluateIPCondition(block map[string]interface{}, evalCtx
 
 				if satisfied {
 					anySatisfied = true
+
 					break
 				}
 			}
@@ -865,23 +884,25 @@ func (e *PolicyEngine) evaluateIPCondition(block map[string]interface{}, evalCtx
 			}
 		}
 	}
+
 	return true
 }
 
 // normalizeRanges converts policy values into a []string
-func normalizeRanges(value interface{}) []string {
+func normalizeRanges(value any) []string {
 	switch v := value.(type) {
 	case string:
 		return []string{v}
 	case []string:
 		return v
-	case []interface{}:
+	case []any:
 		var ranges []string
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				ranges = append(ranges, s)
 			}
 		}
+
 		return ranges
 	default:
 		return nil
@@ -889,7 +910,7 @@ func normalizeRanges(value interface{}) []string {
 }
 
 // EvaluateStringCondition evaluates string-based conditions
-func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, evalCtx *EvaluationContext, shouldMatch bool, useWildcard bool, forAllValues bool) bool {
+func (e *PolicyEngine) EvaluateStringCondition(block map[string]any, evalCtx *EvaluationContext, shouldMatch bool, useWildcard bool, forAllValues bool) bool {
 	// Iterate through all condition keys in the block
 	for conditionKey, conditionValue := range block {
 		// Get the context values for this condition key
@@ -899,6 +920,7 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 			if shouldMatch {
 				return false
 			}
+
 			continue
 		}
 
@@ -909,7 +931,7 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 			contextStrings = []string{v}
 		case []string:
 			contextStrings = v
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if str, ok := item.(string); ok {
 					contextStrings = append(contextStrings, str)
@@ -927,7 +949,7 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 			expectedStrings = []string{v}
 		case []string:
 			expectedStrings = v
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if str, ok := item.(string); ok {
 					expectedStrings = append(expectedStrings, str)
@@ -957,11 +979,13 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 						// Use filepath.Match for case-sensitive wildcard matching, as required by StringLike
 						if matched, _ := filepath.Match(expandedExpected, contextValue); matched {
 							contextValueMatchedSet = true
+
 							break
 						}
 					} else {
 						if expandedExpected == contextValue {
 							contextValueMatchedSet = true
+
 							break
 						}
 					}
@@ -975,6 +999,7 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 
 				if !satisfied {
 					allSatisfied = false
+
 					break
 				}
 			}
@@ -982,7 +1007,6 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 			if !allSatisfied {
 				return false
 			}
-
 		} else {
 			// ForAnyValue (default): At least one value in the request context must match at least one value in the condition policy
 			// AWS IAM treats empty request sets as "no match" for ForAnyValue
@@ -999,12 +1023,14 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 						// Use filepath.Match for case-sensitive wildcard matching, as required by StringLike
 						if matched, _ := filepath.Match(expandedExpected, contextValue); matched {
 							contextValueMatchedSet = true
+
 							break
 						}
 					} else {
 						// For StringEquals/StringNotEquals, also support policy variables but be case-sensitive
 						if expandedExpected == contextValue {
 							contextValueMatchedSet = true
+
 							break
 						}
 					}
@@ -1018,6 +1044,7 @@ func (e *PolicyEngine) EvaluateStringCondition(block map[string]interface{}, eva
 
 				if satisfied {
 					anySatisfied = true
+
 					break
 				}
 			}
@@ -1044,15 +1071,15 @@ func ValidateTrustPolicyDocument(policy *PolicyDocument) error {
 // ValidatePolicyDocumentWithType validates a policy document for specific type
 func ValidatePolicyDocumentWithType(policy *PolicyDocument, policyType string) error {
 	if policy == nil {
-		return fmt.Errorf("policy document cannot be nil")
+		return errors.New("policy document cannot be nil")
 	}
 
 	if policy.Version == "" {
-		return fmt.Errorf("version is required")
+		return errors.New("version is required")
 	}
 
 	if len(policy.Statement) == 0 {
-		return fmt.Errorf("at least one statement is required")
+		return errors.New("at least one statement is required")
 	}
 
 	for i, statement := range policy.Statement {
@@ -1076,18 +1103,19 @@ func validateStatementWithType(statement *Statement, policyType string) error {
 	}
 
 	if len(statement.Action) == 0 {
-		return fmt.Errorf("at least one action is required")
+		return errors.New("at least one action is required")
 	}
 
 	// Trust policies don't require Resource field, but resource policies do
-	if policyType == "resource" {
+	switch policyType {
+	case "resource":
 		if len(statement.Resource) == 0 {
-			return fmt.Errorf("at least one resource is required")
+			return errors.New("at least one resource is required")
 		}
-	} else if policyType == "trust" {
+	case "trust":
 		// Trust policies should have Principal field
 		if statement.Principal == nil {
-			return fmt.Errorf("trust policy statement must have Principal field")
+			return errors.New("trust policy statement must have Principal field")
 		}
 
 		// Trust policies typically have specific actions
@@ -1117,6 +1145,7 @@ func matchResource(pattern, resource string) bool {
 	// Handle simple suffix wildcard (backward compatibility)
 	if strings.HasSuffix(pattern, "*") {
 		prefix := pattern[:len(pattern)-1]
+
 		return strings.HasPrefix(resource, prefix)
 	}
 
@@ -1190,6 +1219,7 @@ func getContextValue(evalCtx *EvaluationContext, key, defaultValue string) strin
 			return str
 		}
 	}
+
 	return defaultValue
 }
 
@@ -1241,6 +1271,7 @@ func matchAction(pattern, action string) bool {
 	// Handle simple suffix wildcard (backward compatibility)
 	if strings.HasSuffix(pattern, "*") {
 		prefix := pattern[:len(pattern)-1]
+
 		return strings.HasPrefix(action, prefix)
 	}
 
@@ -1255,13 +1286,14 @@ func matchAction(pattern, action string) bool {
 }
 
 // evaluateStringConditionIgnoreCase evaluates string conditions with case insensitivity
-func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interface{}, evalCtx *EvaluationContext, shouldMatch bool, useWildcard bool, forAllValues bool) bool {
+func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]any, evalCtx *EvaluationContext, shouldMatch bool, useWildcard bool, forAllValues bool) bool {
 	for key, expectedValues := range block {
 		contextValue, exists := evalCtx.RequestContext[key]
 		if !exists {
 			if !shouldMatch {
 				continue // For NotEquals, missing key is OK
 			}
+
 			return false
 		}
 
@@ -1272,7 +1304,7 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 			contextStrings = []string{v}
 		case []string:
 			contextStrings = v
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if str, ok := item.(string); ok {
 					contextStrings = append(contextStrings, str)
@@ -1306,12 +1338,12 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 							itemMatchedSet = true
 						}
 					}
-				case []interface{}, []string:
+				case []any, []string:
 					var slice []string
 					if s, ok := v.([]string); ok {
 						slice = s
 					} else {
-						for _, item := range v.([]interface{}) {
+						for _, item := range v.([]any) {
 							if str, ok := item.(string); ok {
 								slice = append(slice, str)
 							}
@@ -1322,11 +1354,13 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 						if useWildcard {
 							if AwsWildcardMatch(expandedPattern, ctxStr) {
 								itemMatchedSet = true
+
 								break
 							}
 						} else {
 							if strings.EqualFold(expandedPattern, ctxStr) {
 								itemMatchedSet = true
+
 								break
 							}
 						}
@@ -1341,6 +1375,7 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 
 				if !satisfied {
 					allSatisfied = false
+
 					break
 				}
 			}
@@ -1348,7 +1383,6 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 			if !allSatisfied {
 				return false
 			}
-
 		} else {
 			// ForAnyValue (default): Any value in context must match any expected value
 			anySatisfied := false
@@ -1368,12 +1402,12 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 							itemMatchedSet = true
 						}
 					}
-				case []interface{}, []string:
+				case []any, []string:
 					var slice []string
 					if s, ok := v.([]string); ok {
 						slice = s
 					} else {
-						for _, item := range v.([]interface{}) {
+						for _, item := range v.([]any) {
 							if str, ok := item.(string); ok {
 								slice = append(slice, str)
 							}
@@ -1384,11 +1418,13 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 						if useWildcard {
 							if AwsWildcardMatch(expandedPattern, ctxStr) {
 								itemMatchedSet = true
+
 								break
 							}
 						} else {
 							if strings.EqualFold(expandedPattern, ctxStr) {
 								itemMatchedSet = true
+
 								break
 							}
 						}
@@ -1403,6 +1439,7 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 
 				if satisfied {
 					anySatisfied = true
+
 					break
 				}
 			}
@@ -1412,11 +1449,12 @@ func (e *PolicyEngine) evaluateStringConditionIgnoreCase(block map[string]interf
 			}
 		}
 	}
+
 	return true
 }
 
 // evaluateNumericCondition evaluates numeric conditions
-func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, evalCtx *EvaluationContext, operator string, forAllValues bool) bool {
+func (e *PolicyEngine) evaluateNumericCondition(block map[string]any, evalCtx *EvaluationContext, operator string, forAllValues bool) bool {
 	for key, expectedValues := range block {
 		contextValue, exists := evalCtx.RequestContext[key]
 		if !exists {
@@ -1426,7 +1464,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 		// Parse context values (handle single or list)
 		var contextNums []float64
 		switch v := contextValue.(type) {
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if num, err := parseNumeric(item); err == nil {
 					contextNums = append(contextNums, num)
@@ -1448,6 +1486,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 			if forAllValues {
 				continue
 			}
+
 			return false
 		}
 
@@ -1467,16 +1506,16 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 					itemMatched = compareNumbers(contextNum, float64(v), operator)
 				case int64:
 					itemMatched = compareNumbers(contextNum, float64(v), operator)
-				case []interface{}, []string:
+				case []any, []string:
 					// Convert to unified slice of interface{} if it's []string
-					var slice []interface{}
+					var slice []any
 					if s, ok := v.([]string); ok {
-						slice = make([]interface{}, len(s))
+						slice = make([]any, len(s))
 						for i, item := range s {
 							slice[i] = item
 						}
 					} else {
-						slice = v.([]interface{})
+						slice = v.([]any)
 					}
 
 					if operator == "!=" {
@@ -1486,6 +1525,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 							if expectedNum, err := parseNumeric(val); err == nil {
 								if compareNumbers(contextNum, expectedNum, "==") {
 									anyMatch = true
+
 									break
 								}
 							}
@@ -1496,6 +1536,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 							if expectedNum, err := parseNumeric(val); err == nil {
 								if compareNumbers(contextNum, expectedNum, operator) {
 									itemMatched = true
+
 									break
 								}
 							}
@@ -1504,6 +1545,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 				}
 				if !itemMatched {
 					allMatch = false
+
 					break
 				}
 			}
@@ -1526,16 +1568,16 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 					itemMatched = compareNumbers(contextNum, float64(v), operator)
 				case int64:
 					itemMatched = compareNumbers(contextNum, float64(v), operator)
-				case []interface{}, []string:
+				case []any, []string:
 					// Convert to unified slice of interface{} if it's []string
-					var slice []interface{}
+					var slice []any
 					if s, ok := v.([]string); ok {
-						slice = make([]interface{}, len(s))
+						slice = make([]any, len(s))
 						for i, item := range s {
 							slice[i] = item
 						}
 					} else {
-						slice = v.([]interface{})
+						slice = v.([]any)
 					}
 
 					if operator == "!=" {
@@ -1545,6 +1587,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 							if expectedNum, err := parseNumeric(val); err == nil {
 								if compareNumbers(contextNum, expectedNum, "==") {
 									anyMatch = true
+
 									break
 								}
 							}
@@ -1555,6 +1598,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 							if expectedNum, err := parseNumeric(val); err == nil {
 								if compareNumbers(contextNum, expectedNum, operator) {
 									itemMatched = true
+
 									break
 								}
 							}
@@ -1563,6 +1607,7 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 				}
 				if itemMatched {
 					matched = true
+
 					break
 				}
 			}
@@ -1572,11 +1617,12 @@ func (e *PolicyEngine) evaluateNumericCondition(block map[string]interface{}, ev
 			}
 		}
 	}
+
 	return true
 }
 
 // evaluateDateCondition evaluates date conditions
-func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalCtx *EvaluationContext, operator string, forAllValues bool) bool {
+func (e *PolicyEngine) evaluateDateCondition(block map[string]any, evalCtx *EvaluationContext, operator string, forAllValues bool) bool {
 	for key, expectedValues := range block {
 		contextValue, exists := evalCtx.RequestContext[key]
 		if !exists {
@@ -1586,7 +1632,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 		// Parse context values (handle single or list)
 		var contextTimes []time.Time
 		switch v := contextValue.(type) {
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if t, err := parseDateTime(item); err == nil {
 					contextTimes = append(contextTimes, t)
@@ -1608,6 +1654,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 			if forAllValues {
 				continue
 			}
+
 			return false
 		}
 
@@ -1620,16 +1667,16 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 					if expectedTime, err := parseDateTime(v); err == nil {
 						itemMatched = compareDates(contextTime, expectedTime, operator)
 					}
-				case []interface{}, []string:
+				case []any, []string:
 					// Convert to unified slice of interface{} if it's []string
-					var slice []interface{}
+					var slice []any
 					if s, ok := v.([]string); ok {
-						slice = make([]interface{}, len(s))
+						slice = make([]any, len(s))
 						for i, item := range s {
 							slice[i] = item
 						}
 					} else {
-						slice = v.([]interface{})
+						slice = v.([]any)
 					}
 
 					if operator == "!=" {
@@ -1639,6 +1686,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 							if expectedTime, err := parseDateTime(val); err == nil {
 								if compareDates(contextTime, expectedTime, "==") {
 									anyMatch = true
+
 									break
 								}
 							}
@@ -1649,6 +1697,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 							if expectedTime, err := parseDateTime(val); err == nil {
 								if compareDates(contextTime, expectedTime, operator) {
 									itemMatched = true
+
 									break
 								}
 							}
@@ -1657,6 +1706,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 				}
 				if !itemMatched {
 					allMatch = false
+
 					break
 				}
 			}
@@ -1672,16 +1722,16 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 					if expectedTime, err := parseDateTime(v); err == nil {
 						itemMatched = compareDates(contextTime, expectedTime, operator)
 					}
-				case []interface{}, []string:
+				case []any, []string:
 					// Convert to unified slice of interface{} if it's []string
-					var slice []interface{}
+					var slice []any
 					if s, ok := v.([]string); ok {
-						slice = make([]interface{}, len(s))
+						slice = make([]any, len(s))
 						for i, item := range s {
 							slice[i] = item
 						}
 					} else {
-						slice = v.([]interface{})
+						slice = v.([]any)
 					}
 
 					if operator == "!=" {
@@ -1691,6 +1741,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 							if expectedTime, err := parseDateTime(val); err == nil {
 								if compareDates(contextTime, expectedTime, "==") {
 									anyMatch = true
+
 									break
 								}
 							}
@@ -1701,6 +1752,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 							if expectedTime, err := parseDateTime(val); err == nil {
 								if compareDates(contextTime, expectedTime, operator) {
 									itemMatched = true
+
 									break
 								}
 							}
@@ -1709,6 +1761,7 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 				}
 				if itemMatched {
 					matched = true
+
 					break
 				}
 			}
@@ -1717,11 +1770,12 @@ func (e *PolicyEngine) evaluateDateCondition(block map[string]interface{}, evalC
 			}
 		}
 	}
+
 	return true
 }
 
 // evaluateBoolCondition evaluates boolean conditions
-func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalCtx *EvaluationContext, forAllValues bool) bool {
+func (e *PolicyEngine) evaluateBoolCondition(block map[string]any, evalCtx *EvaluationContext, forAllValues bool) bool {
 	for key, expectedValues := range block {
 		contextValue, exists := evalCtx.RequestContext[key]
 		if !exists {
@@ -1731,7 +1785,7 @@ func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalC
 		// Parse context values (handle single or list)
 		var contextBools []bool
 		switch v := contextValue.(type) {
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if b, err := parseBool(item); err == nil {
 					contextBools = append(contextBools, b)
@@ -1753,6 +1807,7 @@ func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalC
 			if forAllValues {
 				continue
 			}
+
 			return false
 		}
 
@@ -1767,15 +1822,15 @@ func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalC
 					}
 				case bool:
 					itemMatched = contextBool == v
-				case []interface{}, []string:
-					var slice []interface{}
+				case []any, []string:
+					var slice []any
 					if s, ok := v.([]string); ok {
-						slice = make([]interface{}, len(s))
+						slice = make([]any, len(s))
 						for i, item := range s {
 							slice[i] = item
 						}
 					} else {
-						slice = v.([]interface{})
+						slice = v.([]any)
 					}
 					for _, val := range slice {
 						expectedBool, err := parseBool(val)
@@ -1784,12 +1839,14 @@ func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalC
 						}
 						if contextBool == expectedBool {
 							itemMatched = true
+
 							break
 						}
 					}
 				}
 				if !itemMatched {
 					allMatch = false
+
 					break
 				}
 			}
@@ -1806,15 +1863,15 @@ func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalC
 					}
 				case bool:
 					matched = contextBool == v
-				case []interface{}, []string:
-					var slice []interface{}
+				case []any, []string:
+					var slice []any
 					if s, ok := v.([]string); ok {
-						slice = make([]interface{}, len(s))
+						slice = make([]any, len(s))
 						for i, item := range s {
 							slice[i] = item
 						}
 					} else {
-						slice = v.([]interface{})
+						slice = v.([]any)
 					}
 					for _, val := range slice {
 						expectedBool, err := parseBool(val)
@@ -1823,6 +1880,7 @@ func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalC
 						}
 						if contextBool == expectedBool {
 							matched = true
+
 							break
 						}
 					}
@@ -1836,11 +1894,12 @@ func (e *PolicyEngine) evaluateBoolCondition(block map[string]interface{}, evalC
 			}
 		}
 	}
+
 	return true
 }
 
 // evaluateNullCondition evaluates null conditions
-func (e *PolicyEngine) evaluateNullCondition(block map[string]interface{}, evalCtx *EvaluationContext) bool {
+func (e *PolicyEngine) evaluateNullCondition(block map[string]any, evalCtx *EvaluationContext) bool {
 	for key, expectedValues := range block {
 		_, exists := evalCtx.RequestContext[key]
 
@@ -1857,13 +1916,14 @@ func (e *PolicyEngine) evaluateNullCondition(block map[string]interface{}, evalC
 			return false
 		}
 	}
+
 	return true
 }
 
 // Helper functions for parsing and comparing values
 
 // parseNumeric parses a value as a float64
-func parseNumeric(value interface{}) (float64, error) {
+func parseNumeric(value any) (float64, error) {
 	switch v := value.(type) {
 	case float64:
 		return v, nil
@@ -1901,7 +1961,7 @@ func compareNumbers(a, b float64, operator string) bool {
 }
 
 // parseDateTime parses a value as a time.Time
-func parseDateTime(value interface{}) (time.Time, error) {
+func parseDateTime(value any) (time.Time, error) {
 	switch v := value.(type) {
 	case string:
 		// Try common date formats
@@ -1917,6 +1977,7 @@ func parseDateTime(value interface{}) (time.Time, error) {
 				return t, nil
 			}
 		}
+
 		return time.Time{}, fmt.Errorf("cannot parse date: %s", v)
 	case time.Time:
 		return v, nil
@@ -1946,7 +2007,7 @@ func compareDates(a, b time.Time, operator string) bool {
 }
 
 // parseBool parses a value as a boolean
-func parseBool(value interface{}) (bool, error) {
+func parseBool(value any) (bool, error) {
 	switch v := value.(type) {
 	case bool:
 		return v, nil

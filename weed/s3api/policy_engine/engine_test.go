@@ -19,6 +19,7 @@ func tagsToEntry(tags map[string]string) map[string][]byte {
 	for k, v := range tags {
 		entry[s3_constants.AmzObjectTaggingPrefix+k] = []byte(v)
 	}
+
 	return entry
 }
 
@@ -120,7 +121,7 @@ func TestConditionEvaluators(t *testing.T) {
 	tests := []struct {
 		name           string
 		operator       string
-		conditionValue interface{}
+		conditionValue any
 		contextValues  []string
 		expected       bool
 	}{
@@ -396,7 +397,7 @@ func TestPatternMatching(t *testing.T) {
 func TestExtractConditionValuesFromRequest(t *testing.T) {
 	// Create a test request
 	req := &http.Request{
-		Method: "GET",
+		Method: http.MethodGet,
 		URL: &url.URL{
 			Path:     "/test-bucket/test-object",
 			RawQuery: "prefix=test&delimiter=/",
@@ -586,7 +587,7 @@ func TestPolicyEngineForRequest(t *testing.T) {
 
 	// Create test request
 	req := &http.Request{
-		Method: "GET",
+		Method: http.MethodGet,
 		URL: &url.URL{
 			Path: "/test-bucket/test-object",
 		},

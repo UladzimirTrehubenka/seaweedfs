@@ -49,6 +49,7 @@ func (df *DiskFile) ReadAt(p []byte, off int64) (n int, err error) {
 	if err == io.EOF && n == len(p) {
 		err = nil
 	}
+
 	return
 }
 
@@ -64,6 +65,7 @@ func (df *DiskFile) WriteAt(p []byte, off int64) (n int, err error) {
 			df.modTime = time.Now()
 		}
 	}
+
 	return
 }
 
@@ -80,6 +82,7 @@ func (df *DiskFile) Truncate(off int64) error {
 		df.fileSize = off
 		df.modTime = time.Now()
 	}
+
 	return err
 }
 
@@ -101,6 +104,7 @@ func (df *DiskFile) Close() error {
 	if err1 != nil {
 		return err1
 	}
+
 	return nil
 }
 
@@ -108,6 +112,7 @@ func (df *DiskFile) GetStat() (datSize int64, modTime time.Time, err error) {
 	if df.File == nil {
 		err = os.ErrClosed
 	}
+
 	return df.fileSize, df.modTime, err
 }
 
@@ -122,5 +127,6 @@ func (df *DiskFile) Sync() error {
 	if isMac {
 		return nil
 	}
+
 	return df.File.Sync()
 }

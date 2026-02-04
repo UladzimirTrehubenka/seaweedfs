@@ -45,33 +45,33 @@ func TestSplitFlatSchemaToKeyValue(t *testing.T) {
 	if keySchema == nil {
 		t.Fatal("Expected key schema, got nil")
 	}
-	if len(keySchema.Fields) != 2 {
-		t.Errorf("Expected 2 key fields, got %d", len(keySchema.Fields))
+	if len(keySchema.GetFields()) != 2 {
+		t.Errorf("Expected 2 key fields, got %d", len(keySchema.GetFields()))
 	}
-	if keySchema.Fields[0].Name != "user_id" || keySchema.Fields[1].Name != "session_id" {
-		t.Errorf("Key field names incorrect: %v", []string{keySchema.Fields[0].Name, keySchema.Fields[1].Name})
+	if keySchema.GetFields()[0].GetName() != "user_id" || keySchema.GetFields()[1].GetName() != "session_id" {
+		t.Errorf("Key field names incorrect: %v", []string{keySchema.GetFields()[0].GetName(), keySchema.GetFields()[1].GetName()})
 	}
 
 	// Verify value schema
 	if valueSchema == nil {
 		t.Fatal("Expected value schema, got nil")
 	}
-	if len(valueSchema.Fields) != 2 {
-		t.Errorf("Expected 2 value fields, got %d", len(valueSchema.Fields))
+	if len(valueSchema.GetFields()) != 2 {
+		t.Errorf("Expected 2 value fields, got %d", len(valueSchema.GetFields()))
 	}
-	if valueSchema.Fields[0].Name != "event_type" || valueSchema.Fields[1].Name != "timestamp" {
-		t.Errorf("Value field names incorrect: %v", []string{valueSchema.Fields[0].Name, valueSchema.Fields[1].Name})
+	if valueSchema.GetFields()[0].GetName() != "event_type" || valueSchema.GetFields()[1].GetName() != "timestamp" {
+		t.Errorf("Value field names incorrect: %v", []string{valueSchema.GetFields()[0].GetName(), valueSchema.GetFields()[1].GetName()})
 	}
 
 	// Verify field indices are reindexed
-	for i, field := range keySchema.Fields {
-		if field.FieldIndex != int32(i) {
-			t.Errorf("Key field %s has incorrect index %d, expected %d", field.Name, field.FieldIndex, i)
+	for i, field := range keySchema.GetFields() {
+		if field.GetFieldIndex() != int32(i) {
+			t.Errorf("Key field %s has incorrect index %d, expected %d", field.GetName(), field.GetFieldIndex(), i)
 		}
 	}
-	for i, field := range valueSchema.Fields {
-		if field.FieldIndex != int32(i) {
-			t.Errorf("Value field %s has incorrect index %d, expected %d", field.Name, field.FieldIndex, i)
+	for i, field := range valueSchema.GetFields() {
+		if field.GetFieldIndex() != int32(i) {
+			t.Errorf("Value field %s has incorrect index %d, expected %d", field.GetName(), field.GetFieldIndex(), i)
 		}
 	}
 }
@@ -131,8 +131,8 @@ func TestCombineFlatSchemaFromKeyValue(t *testing.T) {
 	if flatSchema == nil {
 		t.Fatal("Expected flat schema, got nil")
 	}
-	if len(flatSchema.Fields) != 4 {
-		t.Errorf("Expected 4 fields, got %d", len(flatSchema.Fields))
+	if len(flatSchema.GetFields()) != 4 {
+		t.Errorf("Expected 4 fields, got %d", len(flatSchema.GetFields()))
 	}
 
 	// Verify key columns
@@ -143,18 +143,18 @@ func TestCombineFlatSchemaFromKeyValue(t *testing.T) {
 
 	// Verify field order (key fields first)
 	expectedNames := []string{"user_id", "session_id", "event_type", "timestamp"}
-	actualNames := make([]string, len(flatSchema.Fields))
-	for i, field := range flatSchema.Fields {
-		actualNames[i] = field.Name
+	actualNames := make([]string, len(flatSchema.GetFields()))
+	for i, field := range flatSchema.GetFields() {
+		actualNames[i] = field.GetName()
 	}
 	if !reflect.DeepEqual(actualNames, expectedNames) {
 		t.Errorf("Expected field names %v, got %v", expectedNames, actualNames)
 	}
 
 	// Verify field indices are sequential
-	for i, field := range flatSchema.Fields {
-		if field.FieldIndex != int32(i) {
-			t.Errorf("Field %s has incorrect index %d, expected %d", field.Name, field.FieldIndex, i)
+	for i, field := range flatSchema.GetFields() {
+		if field.GetFieldIndex() != int32(i) {
+			t.Errorf("Field %s has incorrect index %d, expected %d", field.GetName(), field.GetFieldIndex(), i)
 		}
 	}
 }
@@ -192,8 +192,8 @@ func TestExtractKeyColumnsFromCombinedSchema(t *testing.T) {
 	if flatSchema == nil {
 		t.Fatal("Expected flat schema, got nil")
 	}
-	if len(flatSchema.Fields) != 4 {
-		t.Errorf("Expected 4 fields, got %d", len(flatSchema.Fields))
+	if len(flatSchema.GetFields()) != 4 {
+		t.Errorf("Expected 4 fields, got %d", len(flatSchema.GetFields()))
 	}
 
 	// Verify key columns (should be sorted)
@@ -204,9 +204,9 @@ func TestExtractKeyColumnsFromCombinedSchema(t *testing.T) {
 
 	// Verify field names (key_ prefixes removed)
 	expectedNames := []string{"user_id", "session_id", "event_type", "timestamp"}
-	actualNames := make([]string, len(flatSchema.Fields))
-	for i, field := range flatSchema.Fields {
-		actualNames[i] = field.Name
+	actualNames := make([]string, len(flatSchema.GetFields()))
+	for i, field := range flatSchema.GetFields() {
+		actualNames[i] = field.GetName()
 	}
 	if !reflect.DeepEqual(actualNames, expectedNames) {
 		t.Errorf("Expected field names %v, got %v", expectedNames, actualNames)
@@ -261,5 +261,6 @@ func findInString(str, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }

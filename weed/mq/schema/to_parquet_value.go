@@ -1,25 +1,28 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
 	parquet "github.com/parquet-go/parquet-go"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 func rowBuilderVisit(rowBuilder *parquet.RowBuilder, fieldType *schema_pb.Type, levels *ParquetLevels, fieldValue *schema_pb.Value) (err error) {
-	switch fieldType.Kind.(type) {
+	switch fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		// If value is missing, write NULL at the correct column to keep rows aligned
 		if fieldValue == nil || fieldValue.Kind == nil {
 			rowBuilder.Add(levels.startColumnIndex, parquet.NullValue())
+
 			return nil
 		}
 		var parquetValue parquet.Value
 		parquetValue, err = toParquetValueForType(fieldType, fieldValue)
 		if err != nil {
-			return
+			return err
 		}
 
 		// Safety check: prevent nil byte arrays from reaching parquet library
@@ -38,14 +41,15 @@ func rowBuilderVisit(rowBuilder *parquet.RowBuilder, fieldType *schema_pb.Type, 
 			return nil
 		}
 
-		elementType := fieldType.GetListType().ElementType
-		for _, value := range fieldValue.GetListValue().Values {
+		elementType := fieldType.GetListType().GetElementType()
+		for _, value := range fieldValue.GetListValue().GetValues() {
 			if err = rowBuilderVisit(rowBuilder, elementType, levels, value); err != nil {
-				return
+				return err
 			}
 		}
 	}
-	return
+
+	return err
 }
 
 func AddRecordValue(rowBuilder *parquet.RowBuilder, recordType *schema_pb.RecordType, parquetLevels *ParquetLevels, recordValue *schema_pb.RecordValue) error {
@@ -54,6 +58,7 @@ func AddRecordValue(rowBuilder *parquet.RowBuilder, recordType *schema_pb.Record
 	}
 	fieldType := &schema_pb.Type{Kind: &schema_pb.Type_RecordType{RecordType: recordType}}
 	fieldValue := &schema_pb.Value{Kind: &schema_pb.Value_RecordValue{RecordValue: recordValue}}
+
 	return doVisitValue(fieldType, parquetLevels, fieldValue, visitor)
 }
 
@@ -65,40 +70,42 @@ type typeValueVisitor func(fieldType *schema_pb.Type, levels *ParquetLevels, fie
 // endIndex is exclusive
 // same logic as RowBuilder.configure in row_builder.go
 func doVisitValue(fieldType *schema_pb.Type, levels *ParquetLevels, fieldValue *schema_pb.Value, visitor typeValueVisitor) (err error) {
-	switch fieldType.Kind.(type) {
+	switch fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		return visitor(fieldType, levels, fieldValue)
 	case *schema_pb.Type_ListType:
 		return visitor(fieldType, levels, fieldValue)
 	case *schema_pb.Type_RecordType:
-		for _, field := range fieldType.GetRecordType().Fields {
+		for _, field := range fieldType.GetRecordType().GetFields() {
 			var fv *schema_pb.Value
 			if fieldValue != nil && fieldValue.GetRecordValue() != nil {
 				var found bool
-				fv, found = fieldValue.GetRecordValue().Fields[field.Name]
+				fv, found = fieldValue.GetRecordValue().GetFields()[field.GetName()]
 				if !found {
 					// pass nil so visitor can emit NULL for alignment
 					fv = nil
 				}
 			}
-			fieldLevels := levels.levels[field.Name]
-			err = doVisitValue(field.Type, fieldLevels, fv, visitor)
+			fieldLevels := levels.levels[field.GetName()]
+			err = doVisitValue(field.GetType(), fieldLevels, fv, visitor)
 			if err != nil {
 				return
 			}
 		}
+
 		return
 	}
+
 	return
 }
 
 func toParquetValue(value *schema_pb.Value) (parquet.Value, error) {
 	// Safety check for nil value
 	if value == nil || value.Kind == nil {
-		return parquet.NullValue(), fmt.Errorf("nil value or nil value kind")
+		return parquet.NullValue(), errors.New("nil value or nil value kind")
 	}
 
-	switch value.Kind.(type) {
+	switch value.GetKind().(type) {
 	case *schema_pb.Value_BoolValue:
 		return parquet.BooleanValue(value.GetBoolValue()), nil
 	case *schema_pb.Value_Int32Value:
@@ -115,10 +122,12 @@ func toParquetValue(value *schema_pb.Value) (parquet.Value, error) {
 		if byteData == nil {
 			byteData = []byte{} // Use empty slice instead of nil
 		}
+
 		return parquet.ByteArrayValue(byteData), nil
 	case *schema_pb.Value_StringValue:
 		// Convert string to bytes, ensuring we never pass nil
 		stringData := value.GetStringValue()
+
 		return parquet.ByteArrayValue([]byte(stringData)), nil
 	// Parquet logical types with safe conversion (preventing commit 7a4aeec60 panic)
 	case *schema_pb.Value_TimestampValue:
@@ -126,24 +135,26 @@ func toParquetValue(value *schema_pb.Value) (parquet.Value, error) {
 		if timestampValue == nil {
 			return parquet.NullValue(), nil
 		}
-		return parquet.Int64Value(timestampValue.TimestampMicros), nil
+
+		return parquet.Int64Value(timestampValue.GetTimestampMicros()), nil
 	case *schema_pb.Value_DateValue:
 		dateValue := value.GetDateValue()
 		if dateValue == nil {
 			return parquet.NullValue(), nil
 		}
-		return parquet.Int32Value(dateValue.DaysSinceEpoch), nil
+
+		return parquet.Int32Value(dateValue.GetDaysSinceEpoch()), nil
 	case *schema_pb.Value_DecimalValue:
 		decimalValue := value.GetDecimalValue()
-		if decimalValue == nil || decimalValue.Value == nil || len(decimalValue.Value) == 0 {
+		if decimalValue == nil || decimalValue.Value == nil || len(decimalValue.GetValue()) == 0 {
 			return parquet.NullValue(), nil
 		}
 
 		// Validate input data - reject unreasonably large values instead of corrupting data
-		if len(decimalValue.Value) > 64 {
+		if len(decimalValue.GetValue()) > 64 {
 			// Reject extremely large decimal values (>512 bits) as likely corrupted data
 			// Better to fail fast than silently corrupt financial/scientific data
-			return parquet.NullValue(), fmt.Errorf("decimal value too large: %d bytes (max 64)", len(decimalValue.Value))
+			return parquet.NullValue(), fmt.Errorf("decimal value too large: %d bytes (max 64)", len(decimalValue.GetValue()))
 		}
 
 		// Convert to FixedLenByteArray to match schema (DECIMAL with FixedLenByteArray physical type)
@@ -151,12 +162,12 @@ func toParquetValue(value *schema_pb.Value) (parquet.Value, error) {
 
 		// Pad or truncate to exactly 16 bytes for FixedLenByteArray
 		fixedBytes := make([]byte, 16)
-		if len(decimalValue.Value) <= 16 {
+		if len(decimalValue.GetValue()) <= 16 {
 			// Right-align the value (big-endian)
-			copy(fixedBytes[16-len(decimalValue.Value):], decimalValue.Value)
+			copy(fixedBytes[16-len(decimalValue.GetValue()):], decimalValue.GetValue())
 		} else {
 			// Truncate if too large, taking the least significant bytes
-			copy(fixedBytes, decimalValue.Value[len(decimalValue.Value)-16:])
+			copy(fixedBytes, decimalValue.GetValue()[len(decimalValue.GetValue())-16:])
 		}
 
 		return parquet.FixedLenByteArrayValue(fixedBytes), nil
@@ -165,32 +176,34 @@ func toParquetValue(value *schema_pb.Value) (parquet.Value, error) {
 		if timeValue == nil {
 			return parquet.NullValue(), nil
 		}
-		return parquet.Int64Value(timeValue.TimeMicros), nil
+
+		return parquet.Int64Value(timeValue.GetTimeMicros()), nil
 	default:
-		return parquet.NullValue(), fmt.Errorf("unknown value type: %T", value.Kind)
+		return parquet.NullValue(), fmt.Errorf("unknown value type: %T", value.GetKind())
 	}
 }
 
 // toParquetValueForType coerces a schema_pb.Value into a parquet.Value that matches the declared field type.
 func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (parquet.Value, error) {
-	switch t := fieldType.Kind.(type) {
+	switch t := fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		switch t.ScalarType {
 		case schema_pb.ScalarType_BOOL:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_BoolValue:
 				return parquet.BooleanValue(v.BoolValue), nil
 			case *schema_pb.Value_StringValue:
 				if b, err := strconv.ParseBool(v.StringValue); err == nil {
 					return parquet.BooleanValue(b), nil
 				}
+
 				return parquet.BooleanValue(false), nil
 			default:
 				return parquet.BooleanValue(false), nil
 			}
 
 		case schema_pb.ScalarType_INT32:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_Int32Value:
 				return parquet.Int32Value(v.Int32Value), nil
 			case *schema_pb.Value_Int64Value:
@@ -201,13 +214,14 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 				if i, err := strconv.ParseInt(v.StringValue, 10, 32); err == nil {
 					return parquet.Int32Value(int32(i)), nil
 				}
+
 				return parquet.Int32Value(0), nil
 			default:
 				return parquet.Int32Value(0), nil
 			}
 
 		case schema_pb.ScalarType_INT64:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_Int64Value:
 				return parquet.Int64Value(v.Int64Value), nil
 			case *schema_pb.Value_Int32Value:
@@ -218,13 +232,14 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 				if i, err := strconv.ParseInt(v.StringValue, 10, 64); err == nil {
 					return parquet.Int64Value(i), nil
 				}
+
 				return parquet.Int64Value(0), nil
 			default:
 				return parquet.Int64Value(0), nil
 			}
 
 		case schema_pb.ScalarType_FLOAT:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_FloatValue:
 				return parquet.FloatValue(v.FloatValue), nil
 			case *schema_pb.Value_DoubleValue:
@@ -235,13 +250,14 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 				if f, err := strconv.ParseFloat(v.StringValue, 32); err == nil {
 					return parquet.FloatValue(float32(f)), nil
 				}
+
 				return parquet.FloatValue(0), nil
 			default:
 				return parquet.FloatValue(0), nil
 			}
 
 		case schema_pb.ScalarType_DOUBLE:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_DoubleValue:
 				return parquet.DoubleValue(v.DoubleValue), nil
 			case *schema_pb.Value_Int64Value:
@@ -252,18 +268,20 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 				if f, err := strconv.ParseFloat(v.StringValue, 64); err == nil {
 					return parquet.DoubleValue(f), nil
 				}
+
 				return parquet.DoubleValue(0), nil
 			default:
 				return parquet.DoubleValue(0), nil
 			}
 
 		case schema_pb.ScalarType_BYTES:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_BytesValue:
 				b := v.BytesValue
 				if b == nil {
 					b = []byte{}
 				}
+
 				return parquet.ByteArrayValue(b), nil
 			case *schema_pb.Value_StringValue:
 				return parquet.ByteArrayValue([]byte(v.StringValue)), nil
@@ -279,6 +297,7 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 				if v.BoolValue {
 					return parquet.ByteArrayValue([]byte("true")), nil
 				}
+
 				return parquet.ByteArrayValue([]byte("false")), nil
 			default:
 				return parquet.ByteArrayValue([]byte{}), nil
@@ -286,30 +305,32 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 
 		case schema_pb.ScalarType_STRING:
 			// Same as bytes but semantically string
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_StringValue:
 				return parquet.ByteArrayValue([]byte(v.StringValue)), nil
 			default:
 				// Fallback through bytes coercion
 				b, _ := toParquetValueForType(&schema_pb.Type{Kind: &schema_pb.Type_ScalarType{ScalarType: schema_pb.ScalarType_BYTES}}, value)
+
 				return b, nil
 			}
 
 		case schema_pb.ScalarType_TIMESTAMP:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_Int64Value:
 				return parquet.Int64Value(v.Int64Value), nil
 			case *schema_pb.Value_StringValue:
 				if i, err := strconv.ParseInt(v.StringValue, 10, 64); err == nil {
 					return parquet.Int64Value(i), nil
 				}
+
 				return parquet.Int64Value(0), nil
 			default:
 				return parquet.Int64Value(0), nil
 			}
 
 		case schema_pb.ScalarType_DATE:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_Int32Value:
 				return parquet.Int32Value(v.Int32Value), nil
 			case *schema_pb.Value_Int64Value:
@@ -318,6 +339,7 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 				if i, err := strconv.ParseInt(v.StringValue, 10, 32); err == nil {
 					return parquet.Int32Value(int32(i)), nil
 				}
+
 				return parquet.Int32Value(0), nil
 			default:
 				return parquet.Int32Value(0), nil
@@ -328,13 +350,14 @@ func toParquetValueForType(fieldType *schema_pb.Type, value *schema_pb.Value) (p
 			return toParquetValue(value)
 
 		case schema_pb.ScalarType_TIME:
-			switch v := value.Kind.(type) {
+			switch v := value.GetKind().(type) {
 			case *schema_pb.Value_Int64Value:
 				return parquet.Int64Value(v.Int64Value), nil
 			case *schema_pb.Value_StringValue:
 				if i, err := strconv.ParseInt(v.StringValue, 10, 64); err == nil {
 					return parquet.Int64Value(i), nil
 				}
+
 				return parquet.Int64Value(0), nil
 			default:
 				return parquet.Int64Value(0), nil

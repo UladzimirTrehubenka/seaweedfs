@@ -25,6 +25,7 @@ func (s *AdminServer) GetClusterTopology() (*ClusterTopology, error) {
 	if err != nil {
 		currentMaster := s.masterClient.GetMaster(context.Background())
 		glog.Errorf("Failed to connect to master server %s: %v", currentMaster, err)
+
 		return nil, fmt.Errorf("gRPC topology request failed: %w", err)
 	}
 
@@ -43,58 +44,59 @@ func (s *AdminServer) getTopologyViaGRPC(topology *ClusterTopology) error {
 		if err != nil {
 			currentMaster := s.masterClient.GetMaster(context.Background())
 			glog.Errorf("Failed to get volume list from master %s: %v", currentMaster, err)
+
 			return err
 		}
 
-		if resp.TopologyInfo != nil {
+		if resp.GetTopologyInfo() != nil {
 			// Process gRPC response
-			for _, dc := range resp.TopologyInfo.DataCenterInfos {
+			for _, dc := range resp.GetTopologyInfo().GetDataCenterInfos() {
 				dataCenter := DataCenter{
-					ID:    dc.Id,
+					ID:    dc.GetId(),
 					Racks: []Rack{},
 				}
 
-				for _, rack := range dc.RackInfos {
+				for _, rack := range dc.GetRackInfos() {
 					rackObj := Rack{
-						ID:    rack.Id,
+						ID:    rack.GetId(),
 						Nodes: []VolumeServer{},
 					}
 
-					for _, node := range rack.DataNodeInfos {
+					for _, node := range rack.GetDataNodeInfos() {
 						// Calculate totals from disk infos
 						var totalVolumes int64
 						var totalMaxVolumes int64
 						var totalSize int64
 						var totalFiles int64
 
-						for _, diskInfo := range node.DiskInfos {
-							totalVolumes += diskInfo.VolumeCount
-							totalMaxVolumes += diskInfo.MaxVolumeCount
+						for _, diskInfo := range node.GetDiskInfos() {
+							totalVolumes += diskInfo.GetVolumeCount()
+							totalMaxVolumes += diskInfo.GetMaxVolumeCount()
 
 							// Sum up individual volume information
-							for _, volInfo := range diskInfo.VolumeInfos {
-								totalSize += int64(volInfo.Size)
-								totalFiles += int64(volInfo.FileCount)
+							for _, volInfo := range diskInfo.GetVolumeInfos() {
+								totalSize += int64(volInfo.GetSize())
+								totalFiles += int64(volInfo.GetFileCount())
 							}
 
 							// Sum up EC shard sizes
-							for _, ecShardInfo := range diskInfo.EcShardInfos {
-								for _, shardSize := range ecShardInfo.ShardSizes {
+							for _, ecShardInfo := range diskInfo.GetEcShardInfos() {
+								for _, shardSize := range ecShardInfo.GetShardSizes() {
 									totalSize += shardSize
 								}
 							}
 						}
 
 						vs := VolumeServer{
-							ID:            node.Id,
-							Address:       node.Id,
-							DataCenter:    dc.Id,
-							Rack:          rack.Id,
-							PublicURL:     node.Id,
+							ID:            node.GetId(),
+							Address:       node.GetId(),
+							DataCenter:    dc.GetId(),
+							Rack:          rack.GetId(),
+							PublicURL:     node.GetId(),
 							Volumes:       int(totalVolumes),
 							MaxVolumes:    int(totalMaxVolumes),
 							DiskUsage:     totalSize,
-							DiskCapacity:  totalMaxVolumes * int64(resp.VolumeSizeLimitMb) * 1024 * 1024,
+							DiskCapacity:  totalMaxVolumes * int64(resp.GetVolumeSizeLimitMb()) * 1024 * 1024,
 							LastHeartbeat: time.Now(),
 						}
 

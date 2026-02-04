@@ -8,6 +8,7 @@
 package placement
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 )
@@ -100,7 +101,7 @@ type PlacementResult struct {
 // 3. Third pass: Select additional disks from servers already used (maximize disk diversity)
 func SelectDestinations(disks []*DiskCandidate, config PlacementRequest) (*PlacementResult, error) {
 	if len(disks) == 0 {
-		return nil, fmt.Errorf("no disk candidates provided")
+		return nil, errors.New("no disk candidates provided")
 	}
 	if config.ShardsNeeded <= 0 {
 		return nil, fmt.Errorf("shardsNeeded must be positive, got %d", config.ShardsNeeded)
@@ -109,7 +110,7 @@ func SelectDestinations(disks []*DiskCandidate, config PlacementRequest) (*Place
 	// Filter suitable disks
 	suitable := filterSuitableDisks(disks, config)
 	if len(suitable) == 0 {
-		return nil, fmt.Errorf("no suitable disks found after filtering")
+		return nil, errors.New("no suitable disks found after filtering")
 	}
 
 	// Build indexes for efficient lookup
@@ -257,6 +258,7 @@ func filterSuitableDisks(disks []*DiskCandidate, config PlacementRequest) []*Dis
 		}
 		suitable = append(suitable, disk)
 	}
+
 	return suitable
 }
 
@@ -267,6 +269,7 @@ func groupDisksByRack(disks []*DiskCandidate) map[string][]*DiskCandidate {
 		key := getRackKey(disk)
 		result[key] = append(result[key], disk)
 	}
+
 	return result
 }
 
@@ -276,6 +279,7 @@ func groupDisksByServer(disks []*DiskCandidate) map[string][]*DiskCandidate {
 	for _, disk := range disks {
 		result[disk.NodeID] = append(result[disk.NodeID], disk)
 	}
+
 	return result
 }
 
@@ -306,6 +310,7 @@ func sortRacksByServerCount(rackToDisks map[string][]*DiskCandidate) []string {
 		// Sort by server count (descending) to pick from racks with more options first
 		return rackServerCount[keys[i]] > rackServerCount[keys[j]]
 	})
+
 	return keys
 }
 
@@ -316,6 +321,7 @@ func getSortedRackKeys(rackToDisks map[string][]*DiskCandidate) []string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+
 	return keys
 }
 
@@ -354,6 +360,7 @@ func sortDisksByScore(disks []*DiskCandidate) []*DiskCandidate {
 	sort.Slice(sorted, func(i, j int) bool {
 		return calculateDiskScore(sorted[i]) > calculateDiskScore(sorted[j])
 	})
+
 	return sorted
 }
 
@@ -402,6 +409,7 @@ func VerifySpread(result *PlacementResult, minServers, minRacks int) error {
 	if result.RacksUsed < minRacks {
 		return fmt.Errorf("only %d racks used, need at least %d", result.RacksUsed, minRacks)
 	}
+
 	return nil
 }
 
@@ -416,5 +424,6 @@ func CalculateIdealDistribution(totalShards, numServers int) (min, max int) {
 	if totalShards%numServers != 0 {
 		max = min + 1
 	}
+
 	return
 }

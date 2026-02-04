@@ -12,6 +12,7 @@ import (
 func printpath(parts ...string) string {
 	concat := strings.Join(parts, "")
 	escaped := url.PathEscape(concat)
+
 	return strings.ReplaceAll(escaped, "%2F", "/")
 }
 

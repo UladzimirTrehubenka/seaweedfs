@@ -64,8 +64,9 @@ func BytesToCookie(bytes []byte) Cookie {
 func ParseCookie(cookieString string) (Cookie, error) {
 	cookie, err := strconv.ParseUint(cookieString, 16, 32)
 	if err != nil {
-		return 0, fmt.Errorf("needle cookie %s format error: %v", cookieString, err)
+		return 0, fmt.Errorf("needle cookie %s format error: %w", cookieString, err)
 	}
+
 	return Cookie(cookie), nil
 }
 

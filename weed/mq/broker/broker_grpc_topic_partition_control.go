@@ -10,9 +10,9 @@ import (
 func (b *MessageQueueBroker) ClosePublishers(ctx context.Context, request *mq_pb.ClosePublishersRequest) (resp *mq_pb.ClosePublishersResponse, err error) {
 	resp = &mq_pb.ClosePublishersResponse{}
 
-	t := topic.FromPbTopic(request.Topic)
+	t := topic.FromPbTopic(request.GetTopic())
 
-	b.localTopicManager.ClosePublishers(t, request.UnixTimeNs)
+	b.localTopicManager.ClosePublishers(t, request.GetUnixTimeNs())
 
 	// wait until all publishers are closed
 	b.localTopicManager.WaitUntilNoPublishers(t)
@@ -23,7 +23,7 @@ func (b *MessageQueueBroker) ClosePublishers(ctx context.Context, request *mq_pb
 func (b *MessageQueueBroker) CloseSubscribers(ctx context.Context, request *mq_pb.CloseSubscribersRequest) (resp *mq_pb.CloseSubscribersResponse, err error) {
 	resp = &mq_pb.CloseSubscribersResponse{}
 
-	b.localTopicManager.CloseSubscribers(topic.FromPbTopic(request.Topic), request.UnixTimeNs)
+	b.localTopicManager.CloseSubscribers(topic.FromPbTopic(request.GetTopic()), request.GetUnixTimeNs())
 
 	return
 }

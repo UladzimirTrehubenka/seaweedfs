@@ -22,12 +22,14 @@ func (vs *VolumeServer) healthzHandler(w http.ResponseWriter, r *http.Request) {
 	// Check if the server is shutting down
 	if vs.store.IsStopping() {
 		w.WriteHeader(http.StatusServiceUnavailable)
+
 		return
 	}
 
 	// Check if we can communicate with master
 	if !vs.isHeartbeating {
 		w.WriteHeader(http.StatusServiceUnavailable)
+
 		return
 	}
 
@@ -36,7 +38,7 @@ func (vs *VolumeServer) healthzHandler(w http.ResponseWriter, r *http.Request) {
 
 func (vs *VolumeServer) statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "SeaweedFS Volume "+version.VERSION)
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["Version"] = version.Version()
 	var ds []*volume_server_pb.DiskStatus
 	for _, loc := range vs.store.Locations {
@@ -53,7 +55,7 @@ func (vs *VolumeServer) statusHandler(w http.ResponseWriter, r *http.Request) {
 
 func (vs *VolumeServer) statsDiskHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "SeaweedFS Volume "+version.VERSION)
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["Version"] = version.Version()
 	var ds []*volume_server_pb.DiskStatus
 	for _, loc := range vs.store.Locations {

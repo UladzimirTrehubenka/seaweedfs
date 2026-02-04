@@ -13,6 +13,7 @@ type TestBaseConfigForTemplate struct {
 
 type TestTaskConfigForTemplate struct {
 	TestBaseConfigForTemplate
+
 	TaskSpecificField    float64 `json:"task_specific_field"`
 	AnotherSpecificField string  `json:"another_specific_field"`
 }
@@ -31,7 +32,7 @@ func TestGetTaskFieldValue_EmbeddedStructFields(t *testing.T) {
 	// Test embedded struct fields
 	tests := []struct {
 		fieldName     string
-		expectedValue interface{}
+		expectedValue any
 		description   string
 	}{
 		{"enabled", true, "BaseConfig boolean field"},
@@ -85,7 +86,7 @@ func TestGetTaskFieldValue_EmptyStruct(t *testing.T) {
 	// Test that we can extract zero values
 	tests := []struct {
 		fieldName     string
-		expectedValue interface{}
+		expectedValue any
 		description   string
 	}{
 		{"enabled", false, "Zero value boolean"},
@@ -108,7 +109,7 @@ func TestGetTaskFieldValue_EmptyStruct(t *testing.T) {
 }
 
 func TestGetTaskFieldValue_NonStructConfig(t *testing.T) {
-	var config interface{} = "not a struct"
+	var config any = "not a struct"
 
 	result := getTaskFieldValue(config, "enabled")
 
@@ -143,6 +144,7 @@ func TestGetTaskFieldValue_FieldsWithJSONOmitempty(t *testing.T) {
 	// Test struct with omitempty tags
 	type TestConfigWithOmitempty struct {
 		TestBaseConfigForTemplate
+
 		OptionalField string `json:"optional_field,omitempty"`
 	}
 
@@ -176,11 +178,13 @@ func TestGetTaskFieldValue_DeepEmbedding(t *testing.T) {
 
 	type MiddleConfig struct {
 		DeepBaseConfig
+
 		MiddleField int `json:"middle_field"`
 	}
 
 	type TopConfig struct {
 		MiddleConfig
+
 		TopField bool `json:"top_field"`
 	}
 
@@ -223,8 +227,7 @@ func BenchmarkGetTaskFieldValue(b *testing.B) {
 		AnotherSpecificField: "benchmark_test",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Test both embedded and regular fields
 		_ = getTaskFieldValue(config, "enabled")
 		_ = getTaskFieldValue(config, "task_specific_field")

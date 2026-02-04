@@ -2,14 +2,16 @@ package pb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 type EventErrorType int
@@ -39,16 +41,15 @@ type MetadataFollowOption struct {
 type ProcessMetadataFunc func(resp *filer_pb.SubscribeMetadataResponse) error
 
 func FollowMetadata(filerAddress ServerAddress, grpcDialOption grpc.DialOption, option *MetadataFollowOption, processEventFn ProcessMetadataFunc) error {
-
 	err := WithFilerClient(true, option.SelfSignature, filerAddress, grpcDialOption, makeSubscribeMetadataFunc(option, processEventFn))
 	if err != nil {
 		return fmt.Errorf("subscribing filer meta change: %w", err)
 	}
+
 	return err
 }
 
 func WithFilerClientFollowMetadata(filerClient filer_pb.FilerClient, option *MetadataFollowOption, processEventFn ProcessMetadataFunc) error {
-
 	err := filerClient.WithFilerClient(true, makeSubscribeMetadataFunc(option, processEventFn))
 	if err != nil {
 		return fmt.Errorf("subscribing filer meta change: %w", err)
@@ -78,7 +79,7 @@ func makeSubscribeMetadataFunc(option *MetadataFollowOption, processEventFn Proc
 
 		for {
 			resp, listenErr := stream.Recv()
-			if listenErr == io.EOF {
+			if errors.Is(listenErr, io.EOF) {
 				return nil
 			}
 			if listenErr != nil {
@@ -96,6 +97,7 @@ func makeSubscribeMetadataFunc(option *MetadataFollowOption, processEventFn Proc
 						return processEventFn(resp)
 					}, func(err error) bool {
 						glog.Errorf("process %v: %v", resp, err)
+
 						return true
 					})
 				case DontLogError:
@@ -104,7 +106,7 @@ func makeSubscribeMetadataFunc(option *MetadataFollowOption, processEventFn Proc
 					glog.Errorf("process %v: %v", resp, err)
 				}
 			}
-			option.StartTsNs = resp.TsNs
+			option.StartTsNs = resp.GetTsNs()
 		}
 	}
 }
@@ -112,6 +114,7 @@ func makeSubscribeMetadataFunc(option *MetadataFollowOption, processEventFn Proc
 func AddOffsetFunc(processEventFn ProcessMetadataFunc, offsetInterval time.Duration, offsetFunc func(counter int64, offset int64) error) ProcessMetadataFunc {
 	var counter int64
 	var lastWriteTime = time.Now()
+
 	return func(resp *filer_pb.SubscribeMetadataResponse) error {
 		if err := processEventFn(resp); err != nil {
 			return err
@@ -119,12 +122,12 @@ func AddOffsetFunc(processEventFn ProcessMetadataFunc, offsetInterval time.Durat
 		counter++
 		if lastWriteTime.Add(offsetInterval).Before(time.Now()) {
 			lastWriteTime = time.Now()
-			if err := offsetFunc(counter, resp.TsNs); err != nil {
+			if err := offsetFunc(counter, resp.GetTsNs()); err != nil {
 				return err
 			}
 			counter = 0
 		}
+
 		return nil
 	}
-
 }

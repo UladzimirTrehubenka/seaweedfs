@@ -2,14 +2,16 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"strings"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/viant/ptrie"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
@@ -42,6 +44,7 @@ func NewFilerStoreWrapper(store FilerStore) *FilerStoreWrapper {
 	if innerStore, ok := store.(*FilerStoreWrapper); ok {
 		return innerStore
 	}
+
 	return &FilerStoreWrapper{
 		defaultStore:   store,
 		pathToStore:    ptrie.New[string](),
@@ -53,6 +56,7 @@ func (fsw *FilerStoreWrapper) CanDropWholeBucket() bool {
 	if ba, ok := fsw.defaultStore.(BucketAware); ok {
 		return ba.CanDropWholeBucket()
 	}
+
 	return false
 }
 
@@ -98,11 +102,13 @@ func (fsw *FilerStoreWrapper) getActualStore(path util.FullPath) (store FilerSto
 	var storeId string
 	fsw.pathToStore.MatchPrefix([]byte(path), func(key []byte, value string) bool {
 		storeId = value
+
 		return false
 	})
 	if storeId != "" {
 		store = fsw.storeIdToStore[storeId]
 	}
+
 	return
 }
 
@@ -177,12 +183,14 @@ func (fsw *FilerStoreWrapper) FindEntry(ctx context.Context, fp util.FullPath) (
 		if fsw.CanDropWholeBucket() && strings.Contains(err.Error(), "Table") && strings.Contains(err.Error(), "doesn't exist") {
 			err = filer_pb.ErrNotFound
 		}
+
 		return nil, err
 	}
 
 	fsw.maybeReadHardLink(ctx, entry)
 
 	filer_pb.AfterEntryDeserialization(entry.GetChunks())
+
 	return
 }
 
@@ -196,7 +204,7 @@ func (fsw *FilerStoreWrapper) DeleteEntry(ctx context.Context, fp util.FullPath)
 	}()
 
 	existingEntry, findErr := fsw.FindEntry(ctx, fp)
-	if findErr == filer_pb.ErrNotFound || existingEntry == nil {
+	if errors.Is(findErr, filer_pb.ErrNotFound) || existingEntry == nil {
 		return nil
 	}
 	if len(existingEntry.HardLinkId) != 0 {
@@ -264,6 +272,7 @@ func (fsw *FilerStoreWrapper) ListDirectoryEntries(ctx context.Context, dirPath 
 	return actualStore.ListDirectoryEntries(ctx, dirPath, startFileName, includeStartFile, limit, func(entry *Entry) (bool, error) {
 		fsw.maybeReadHardLink(ctx, entry)
 		filer_pb.AfterEntryDeserialization(entry.GetChunks())
+
 		return eachEntryFunc(entry)
 	})
 }
@@ -283,12 +292,14 @@ func (fsw *FilerStoreWrapper) ListDirectoryPrefixedEntries(ctx context.Context, 
 	adjustedEntryFunc := func(entry *Entry) (bool, error) {
 		fsw.maybeReadHardLink(ctx, entry)
 		filer_pb.AfterEntryDeserialization(entry.GetChunks())
+
 		return eachEntryFunc(entry)
 	}
 	lastFileName, err = actualStore.ListDirectoryPrefixedEntries(ctx, dirPath, startFileName, includeStartFile, limit, prefix, adjustedEntryFunc)
-	if err == ErrUnsupportedListDirectoryPrefixed {
+	if errors.Is(err, ErrUnsupportedListDirectoryPrefixed) {
 		lastFileName, err = fsw.prefixFilterEntries(ctx, dirPath, startFileName, includeStartFile, limit, prefix, adjustedEntryFunc)
 	}
+
 	return lastFileName, err
 }
 
@@ -302,10 +313,11 @@ func (fsw *FilerStoreWrapper) prefixFilterEntries(ctx context.Context, dirPath u
 	var notPrefixed []*Entry
 	lastFileName, err = actualStore.ListDirectoryEntries(ctx, dirPath, startFileName, includeStartFile, limit, func(entry *Entry) (bool, error) {
 		notPrefixed = append(notPrefixed, entry)
+
 		return true, nil
 	})
 	if err != nil {
-		return
+		return lastFileName, err
 	}
 
 	count := int64(0)
@@ -317,11 +329,12 @@ func (fsw *FilerStoreWrapper) prefixFilterEntries(ctx context.Context, dirPath u
 
 				if resErr != nil {
 					err = fmt.Errorf("failed to process eachEntryFunc for entry %q: %w", entry.Name(), resErr)
-					return
+
+					return lastFileName, err
 				}
 
 				if !res {
-					return
+					return lastFileName, err
 				}
 				if count >= limit {
 					break
@@ -332,30 +345,35 @@ func (fsw *FilerStoreWrapper) prefixFilterEntries(ctx context.Context, dirPath u
 			notPrefixed = notPrefixed[:0]
 			lastFileName, err = actualStore.ListDirectoryEntries(ctx, dirPath, lastFileName, false, limit, func(entry *Entry) (bool, error) {
 				notPrefixed = append(notPrefixed, entry)
+
 				return true, nil
 			})
 			if err != nil {
-				return
+				return lastFileName, err
 			}
 		} else {
 			break
 		}
 	}
-	return
+
+	return lastFileName, err
 }
 
 func (fsw *FilerStoreWrapper) BeginTransaction(ctx context.Context) (context.Context, error) {
 	ctx = context.WithoutCancel(ctx)
+
 	return fsw.getDefaultStore().BeginTransaction(ctx)
 }
 
 func (fsw *FilerStoreWrapper) CommitTransaction(ctx context.Context) error {
 	ctx = context.WithoutCancel(ctx)
+
 	return fsw.getDefaultStore().CommitTransaction(ctx)
 }
 
 func (fsw *FilerStoreWrapper) RollbackTransaction(ctx context.Context) error {
 	ctx = context.WithoutCancel(ctx)
+
 	return fsw.getDefaultStore().RollbackTransaction(ctx)
 }
 
@@ -365,14 +383,17 @@ func (fsw *FilerStoreWrapper) Shutdown() {
 
 func (fsw *FilerStoreWrapper) KvPut(ctx context.Context, key []byte, value []byte) (err error) {
 	ctx = context.WithoutCancel(ctx)
+
 	return fsw.getDefaultStore().KvPut(ctx, key, value)
 }
 func (fsw *FilerStoreWrapper) KvGet(ctx context.Context, key []byte) (value []byte, err error) {
 	ctx = context.WithoutCancel(ctx)
+
 	return fsw.getDefaultStore().KvGet(ctx, key)
 }
 func (fsw *FilerStoreWrapper) KvDelete(ctx context.Context, key []byte) (err error) {
 	ctx = context.WithoutCancel(ctx)
+
 	return fsw.getDefaultStore().KvDelete(ctx, key)
 }
 

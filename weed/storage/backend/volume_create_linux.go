@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package backend
 
@@ -19,5 +18,6 @@ func CreateVolumeFile(fileName string, preallocate int64, memoryMapSizeMB uint32
 		syscall.Fallocate(int(file.Fd()), 1, 0, preallocate)
 		glog.V(1).Infof("Preallocated %d bytes disk space for %s", preallocate, fileName)
 	}
+
 	return NewDiskFile(file), nil
 }

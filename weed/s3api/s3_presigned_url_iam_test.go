@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
 	"github.com/seaweedfs/seaweedfs/weed/iam/ldap"
 	"github.com/seaweedfs/seaweedfs/weed/iam/oidc"
@@ -15,8 +18,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // createTestJWTPresigned creates a test JWT token with the specified issuer, subject and signing key
@@ -33,6 +34,7 @@ func createTestJWTPresigned(t *testing.T, issuer, subject, signingKey string) st
 
 	tokenString, err := token.SignedString([]byte(signingKey))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -230,12 +232,13 @@ func TestPresignedURLExpiration(t *testing.T) {
 		{
 			name: "Valid non-expired URL",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-bucket/test-file.txt", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-file.txt", nil)
 				q := req.URL.Query()
 				// Set date to 30 minutes ago with 2 hours expiration for safe margin
 				q.Set("X-Amz-Date", time.Now().UTC().Add(-30*time.Minute).Format("20060102T150405Z"))
 				q.Set("X-Amz-Expires", "7200") // 2 hours
 				req.URL.RawQuery = q.Encode()
+
 				return req
 			},
 			expectedError: "",
@@ -243,12 +246,13 @@ func TestPresignedURLExpiration(t *testing.T) {
 		{
 			name: "Expired URL",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-bucket/test-file.txt", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-file.txt", nil)
 				q := req.URL.Query()
 				// Set date to 2 hours ago with 1 hour expiration
 				q.Set("X-Amz-Date", time.Now().UTC().Add(-2*time.Hour).Format("20060102T150405Z"))
 				q.Set("X-Amz-Expires", "3600") // 1 hour
 				req.URL.RawQuery = q.Encode()
+
 				return req
 			},
 			expectedError: "presigned URL has expired",
@@ -256,10 +260,11 @@ func TestPresignedURLExpiration(t *testing.T) {
 		{
 			name: "Missing date parameter",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-bucket/test-file.txt", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-file.txt", nil)
 				q := req.URL.Query()
 				q.Set("X-Amz-Expires", "3600")
 				req.URL.RawQuery = q.Encode()
+
 				return req
 			},
 			expectedError: "missing required presigned URL parameters",
@@ -267,11 +272,12 @@ func TestPresignedURLExpiration(t *testing.T) {
 		{
 			name: "Invalid date format",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-bucket/test-file.txt", nil)
+				req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-file.txt", nil)
 				q := req.URL.Query()
 				q.Set("X-Amz-Date", "invalid-date")
 				q.Set("X-Amz-Expires", "3600")
 				req.URL.RawQuery = q.Encode()
+
 				return req
 			},
 			expectedError: "invalid X-Amz-Date format",
@@ -520,7 +526,7 @@ func setupTestRolesForPresigned(ctx context.Context, manager *integration.IAMMan
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -556,7 +562,7 @@ func setupTestRolesForPresigned(ctx context.Context, manager *integration.IAMMan
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -574,7 +580,7 @@ func setupTestRolesForPresigned(ctx context.Context, manager *integration.IAMMan
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},

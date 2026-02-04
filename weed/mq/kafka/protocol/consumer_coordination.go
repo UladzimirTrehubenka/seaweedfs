@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/consumer"
@@ -98,7 +98,7 @@ func (h *Handler) handleHeartbeat(correlationID uint32, apiVersion uint16, reque
 	member.LastHeartbeat = time.Now()
 
 	// Check if rebalancing is in progress
-	var errorCode int16 = ErrorCodeNone
+	var errorCode = ErrorCodeNone
 	switch group.State {
 	case consumer.GroupStatePreparingRebalance, consumer.GroupStateCompletingRebalance:
 		// Signal the consumer that rebalancing is happening
@@ -180,6 +180,7 @@ func (h *Handler) handleLeaveGroup(correlationID uint32, apiVersion uint16, requ
 			// Select first remaining member as new leader
 			for memberID := range group.Members {
 				group.Leader = memberID
+
 				break
 			}
 		}
@@ -211,7 +212,7 @@ func (h *Handler) handleLeaveGroup(correlationID uint32, apiVersion uint16, requ
 
 func (h *Handler) parseHeartbeatRequest(data []byte, apiVersion uint16) (*HeartbeatRequest, error) {
 	if len(data) < 8 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	offset := 0
@@ -231,7 +232,7 @@ func (h *Handler) parseHeartbeatRequest(data []byte, apiVersion uint16) (*Heartb
 		// FLEXIBLE V4+ FIX: GroupID is a compact string
 		groupIDBytes, consumed := parseCompactString(data[offset:])
 		if consumed == 0 {
-			return nil, fmt.Errorf("invalid group ID compact string")
+			return nil, errors.New("invalid group ID compact string")
 		}
 		if groupIDBytes != nil {
 			groupID = string(groupIDBytes)
@@ -242,7 +243,7 @@ func (h *Handler) parseHeartbeatRequest(data []byte, apiVersion uint16) (*Heartb
 		groupIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 		offset += 2
 		if offset+groupIDLength > len(data) {
-			return nil, fmt.Errorf("invalid group ID length")
+			return nil, errors.New("invalid group ID length")
 		}
 		groupID = string(data[offset : offset+groupIDLength])
 		offset += groupIDLength
@@ -250,7 +251,7 @@ func (h *Handler) parseHeartbeatRequest(data []byte, apiVersion uint16) (*Heartb
 
 	// Generation ID (4 bytes) - always fixed-length
 	if offset+4 > len(data) {
-		return nil, fmt.Errorf("missing generation ID")
+		return nil, errors.New("missing generation ID")
 	}
 	generationID := int32(binary.BigEndian.Uint32(data[offset:]))
 	offset += 4
@@ -261,7 +262,7 @@ func (h *Handler) parseHeartbeatRequest(data []byte, apiVersion uint16) (*Heartb
 		// FLEXIBLE V4+ FIX: MemberID is a compact string
 		memberIDBytes, consumed := parseCompactString(data[offset:])
 		if consumed == 0 {
-			return nil, fmt.Errorf("invalid member ID compact string")
+			return nil, errors.New("invalid member ID compact string")
 		}
 		if memberIDBytes != nil {
 			memberID = string(memberIDBytes)
@@ -270,12 +271,12 @@ func (h *Handler) parseHeartbeatRequest(data []byte, apiVersion uint16) (*Heartb
 	} else {
 		// Non-flexible parsing (v0-v3)
 		if offset+2 > len(data) {
-			return nil, fmt.Errorf("missing member ID length")
+			return nil, errors.New("missing member ID length")
 		}
 		memberIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 		offset += 2
 		if offset+memberIDLength > len(data) {
-			return nil, fmt.Errorf("invalid member ID length")
+			return nil, errors.New("invalid member ID length")
 		}
 		memberID = string(data[offset : offset+memberIDLength])
 		offset += memberIDLength
@@ -331,7 +332,7 @@ func (h *Handler) parseHeartbeatRequest(data []byte, apiVersion uint16) (*Heartb
 
 func (h *Handler) parseLeaveGroupRequest(data []byte) (*LeaveGroupRequest, error) {
 	if len(data) < 4 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	offset := 0
@@ -340,19 +341,19 @@ func (h *Handler) parseLeaveGroupRequest(data []byte) (*LeaveGroupRequest, error
 	groupIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
 	if offset+groupIDLength > len(data) {
-		return nil, fmt.Errorf("invalid group ID length")
+		return nil, errors.New("invalid group ID length")
 	}
 	groupID := string(data[offset : offset+groupIDLength])
 	offset += groupIDLength
 
 	// MemberID (string)
 	if offset+2 > len(data) {
-		return nil, fmt.Errorf("missing member ID length")
+		return nil, errors.New("missing member ID length")
 	}
 	memberIDLength := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
 	if offset+memberIDLength > len(data) {
-		return nil, fmt.Errorf("invalid member ID length")
+		return nil, errors.New("invalid member ID length")
 	}
 	memberID := string(data[offset : offset+memberIDLength])
 	offset += memberIDLength

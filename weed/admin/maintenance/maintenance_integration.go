@@ -147,6 +147,7 @@ func (s *MaintenanceIntegration) configureDetectorFromPolicy(taskType types.Task
 	if configurableDetector, ok := detector.(types.PolicyConfigurableDetector); ok {
 		configurableDetector.ConfigureFromPolicy(s.maintenancePolicy)
 		glog.V(2).Infof("Configured detector %s using policy interface", taskType)
+
 		return
 	}
 
@@ -172,6 +173,7 @@ func (s *MaintenanceIntegration) configureSchedulerFromPolicy(taskType types.Tas
 	if configurableScheduler, ok := scheduler.(types.PolicyConfigurableScheduler); ok {
 		configurableScheduler.ConfigureFromPolicy(s.maintenancePolicy)
 		glog.V(2).Infof("Configured scheduler %s using policy interface", taskType)
+
 		return
 	}
 
@@ -179,6 +181,7 @@ func (s *MaintenanceIntegration) configureSchedulerFromPolicy(taskType types.Tas
 	maintenanceTaskType, exists := s.taskTypeMap[taskType]
 	if !exists {
 		glog.V(3).Infof("No maintenance task type mapping for %s, skipping configuration", taskType)
+
 		return
 	}
 
@@ -234,6 +237,7 @@ func (s *MaintenanceIntegration) ScanWithTaskDetectors(volumeMetrics []*types.Vo
 		results, err := detector.ScanForTasks(filteredMetrics, clusterInfo)
 		if err != nil {
 			glog.Errorf("Failed to scan for %s tasks: %v", taskType, err)
+
 			continue
 		}
 
@@ -248,6 +252,7 @@ func (s *MaintenanceIntegration) ScanWithTaskDetectors(volumeMetrics []*types.Vo
 					if existingResult.TypedParams == nil {
 						glog.Warningf("Task %s for volume %d has no typed parameters - skipping (task parameter creation may have failed)",
 							existingResult.TaskType, existingResult.VolumeID)
+
 						continue
 					}
 					allResults = append(allResults, existingResult)
@@ -318,7 +323,6 @@ func (s *MaintenanceIntegration) convertToExistingFormat(result *types.TaskDetec
 
 // CanScheduleWithTaskSchedulers determines if a task can be scheduled using task schedulers with dynamic type conversion
 func (s *MaintenanceIntegration) CanScheduleWithTaskSchedulers(task *MaintenanceTask, runningTasks []*MaintenanceTask, availableWorkers []*MaintenanceWorker) bool {
-
 	// Convert existing types to task types using mapping
 	taskType, exists := s.revTaskTypeMap[task.Type]
 	if !exists {
@@ -383,6 +387,7 @@ func (s *MaintenanceIntegration) convertTasksToTaskSystem(tasks []*MaintenanceTa
 			result = append(result, converted)
 		}
 	}
+
 	return result
 }
 
@@ -409,6 +414,7 @@ func (s *MaintenanceIntegration) convertWorkersToTaskSystem(workers []*Maintenan
 			CurrentLoad:   worker.CurrentLoad,
 		})
 	}
+
 	return result
 }
 
@@ -418,6 +424,7 @@ func (s *MaintenanceIntegration) GetTaskScheduler(taskType MaintenanceTaskType) 
 	taskSystemType, exists := s.revTaskTypeMap[taskType]
 	if !exists {
 		glog.V(3).Infof("Unknown task type %s for scheduler", taskType)
+
 		return nil
 	}
 
@@ -430,6 +437,7 @@ func (s *MaintenanceIntegration) GetUIProvider(taskType MaintenanceTaskType) typ
 	taskSystemType, exists := s.revTaskTypeMap[taskType]
 	if !exists {
 		glog.V(3).Infof("Unknown task type %s for UI provider", taskType)
+
 		return nil
 	}
 
@@ -524,18 +532,18 @@ func (s *MaintenanceIntegration) SyncTask(task *MaintenanceTask) {
 
 	if task.TypedParams != nil {
 		// Use unified sources and targets from TaskParams
-		for _, src := range task.TypedParams.Sources {
+		for _, src := range task.TypedParams.GetSources() {
 			sources = append(sources, topology.TaskSource{
-				SourceServer: src.Node,
-				SourceDisk:   src.DiskId,
+				SourceServer: src.GetNode(),
+				SourceDisk:   src.GetDiskId(),
 			})
 			// Sum estimated size from all sources
-			estimatedSize += int64(src.EstimatedSize)
+			estimatedSize += int64(src.GetEstimatedSize())
 		}
-		for _, target := range task.TypedParams.Targets {
+		for _, target := range task.TypedParams.GetTargets() {
 			destinations = append(destinations, topology.TaskDestination{
-				TargetServer: target.Node,
-				TargetDisk:   target.DiskId,
+				TargetServer: target.GetNode(),
+				TargetDisk:   target.GetDiskId(),
 			})
 		}
 

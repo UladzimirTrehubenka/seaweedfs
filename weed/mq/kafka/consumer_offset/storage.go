@@ -1,6 +1,7 @@
 package consumer_offset
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -50,9 +51,9 @@ type OffsetStorage interface {
 
 // Common errors
 var (
-	ErrGroupNotFound    = fmt.Errorf("consumer group not found")
-	ErrOffsetNotFound   = fmt.Errorf("offset not found")
-	ErrInvalidOffset    = fmt.Errorf("invalid offset value")
-	ErrInvalidPartition = fmt.Errorf("invalid partition")
-	ErrStorageClosed    = fmt.Errorf("storage is closed")
+	ErrGroupNotFound    = errors.New("consumer group not found")
+	ErrOffsetNotFound   = errors.New("offset not found")
+	ErrInvalidOffset    = errors.New("invalid offset value")
+	ErrInvalidPartition = errors.New("invalid partition")
+	ErrStorageClosed    = errors.New("storage is closed")
 )

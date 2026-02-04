@@ -113,6 +113,7 @@ func (e *KMSError) Error() string {
 	if e.KeyID != "" {
 		return fmt.Sprintf("KMS error %s for key %s: %s", e.Code, e.KeyID, e.Message)
 	}
+
 	return fmt.Sprintf("KMS error %s: %s", e.Code, e.Message)
 }
 
@@ -140,7 +141,7 @@ func BuildS3EncryptionContext(bucketName, objectKey string, useBucketKey bool) m
 
 	if useBucketKey {
 		// When using S3 Bucket Keys, use bucket ARN as encryption context
-		context[EncryptionContextS3ARN] = fmt.Sprintf("arn:aws:s3:::%s", bucketName)
+		context[EncryptionContextS3ARN] = "arn:aws:s3:::" + bucketName
 	} else {
 		// For individual object encryption, use object ARN as encryption context
 		context[EncryptionContextS3ARN] = fmt.Sprintf("arn:aws:s3:::%s/%s", bucketName, objectKey)

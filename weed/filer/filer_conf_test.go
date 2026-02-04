@@ -4,12 +4,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
 func TestFilerConf(t *testing.T) {
-
 	fc := NewFilerConf()
 
 	conf := &filer_pb.FilerConf{Locations: []*filer_pb.FilerConf_PathConf{
@@ -40,13 +40,12 @@ func TestFilerConf(t *testing.T) {
 	}}
 	fc.doLoadConf(conf)
 
-	assert.Equal(t, "abc", fc.MatchStorageRule("/buckets/abc/jasdf").Collection)
-	assert.Equal(t, "abcd", fc.MatchStorageRule("/buckets/abcd/jasdf").Collection)
-	assert.Equal(t, "001", fc.MatchStorageRule("/buckets/abc/jasdf").Replication)
+	assert.Equal(t, "abc", fc.MatchStorageRule("/buckets/abc/jasdf").GetCollection())
+	assert.Equal(t, "abcd", fc.MatchStorageRule("/buckets/abcd/jasdf").GetCollection())
+	assert.Equal(t, "001", fc.MatchStorageRule("/buckets/abc/jasdf").GetReplication())
 
-	assert.Equal(t, true, fc.MatchStorageRule("/buckets/xxx/yyy/zzz").ReadOnly)
-	assert.Equal(t, false, fc.MatchStorageRule("/buckets/other").ReadOnly)
-
+	assert.True(t, fc.MatchStorageRule("/buckets/xxx/yyy/zzz").GetReadOnly())
+	assert.False(t, fc.MatchStorageRule("/buckets/other").GetReadOnly())
 }
 
 // TestClonePathConf verifies that ClonePathConf copies all exported fields.
@@ -119,12 +118,12 @@ func TestClonePathConf(t *testing.T) {
 	// Verify mutation of clone doesn't affect source
 	clone.Collection = "modified"
 	clone.ReadOnly = false
-	assert.Equal(t, "test_collection", src.Collection, "Modifying clone should not affect source Collection")
-	assert.Equal(t, true, src.ReadOnly, "Modifying clone should not affect source ReadOnly")
+	assert.Equal(t, "test_collection", src.GetCollection(), "Modifying clone should not affect source Collection")
+	assert.True(t, src.GetReadOnly(), "Modifying clone should not affect source ReadOnly")
 }
 
 func TestClonePathConfNil(t *testing.T) {
 	clone := ClonePathConf(nil)
 	assert.NotNil(t, clone, "ClonePathConf(nil) should return a non-nil empty PathConf")
-	assert.Equal(t, "", clone.LocationPrefix, "ClonePathConf(nil) should return empty PathConf")
+	assert.Empty(t, clone.GetLocationPrefix(), "ClonePathConf(nil) should return empty PathConf")
 }

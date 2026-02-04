@@ -3,18 +3,21 @@ package protocol
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/compression"
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/integration"
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/schema"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"google.golang.org/protobuf/proto"
 )
 
 // partitionFetchResult holds the result of fetching from a single partition
@@ -43,6 +46,7 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 				return false
 			}
 		}
+
 		return true
 	}
 	hasDataAvailable := func() bool {
@@ -59,9 +63,10 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 				}
 				// Normalize fetch offset
 				effectiveOffset := partition.FetchOffset
-				if effectiveOffset == -2 { // earliest
+				switch effectiveOffset {
+				case -2: // earliest
 					effectiveOffset = 0
-				} else if effectiveOffset == -1 { // latest
+				case -1: // latest
 					effectiveOffset = hwm
 				}
 				// If fetch offset < hwm, data is available
@@ -70,6 +75,7 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 				}
 			}
 		}
+
 		return false
 	}
 	// Long-poll when client requests it via MaxWaitTime and there's no data
@@ -93,6 +99,7 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 			select {
 			case <-ctx.Done():
 				throttleTimeMs = int32(time.Since(start) / time.Millisecond)
+
 				break pollLoop
 			case <-time.After(10 * time.Millisecond):
 				// Continue with polling
@@ -101,6 +108,7 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 				// Data became available during polling - return immediately with NO throttle
 				// Throttle time should only be used for quota enforcement, not for long-poll timing
 				throttleTimeMs = 0
+
 				break pollLoop
 			}
 		}
@@ -158,7 +166,8 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 	if connContext == nil {
 		glog.Errorf("FETCH CORR=%d: Connection context not available - cannot use persistent readers",
 			correlationID)
-		return nil, fmt.Errorf("connection context not available")
+
+		return nil, errors.New("connection context not available")
 	}
 
 	glog.V(4).Infof("[%s] FETCH CORR=%d: Processing %d topics with %d total partitions",
@@ -168,6 +177,7 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 			for _, t := range fetchRequest.Topics {
 				count += len(t.Partitions)
 			}
+
 			return count
 		}())
 
@@ -208,6 +218,7 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 					partitionID: partition.PartitionID,
 					resultChan:  nilChan,
 				})
+
 				continue
 			}
 
@@ -273,12 +284,14 @@ func (h *Handler) handleFetch(ctx context.Context, correlationID uint32, apiVers
 			}
 			glog.V(3).Infof("[%s] Fetch deadline expired, returning empty for %d remaining partitions",
 				connContext.ConnectionID, len(pending)-i)
+
 			goto done
 		case <-ctx.Done():
 			// Context cancelled, return empty for remaining
 			for j := i; j < len(pending); j++ {
 				results[j] = &partitionFetchResult{}
 			}
+
 			goto done
 		}
 	}
@@ -467,21 +480,21 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 
 	// Replica ID (4 bytes) - always fixed
 	if offset+4 > len(requestBody) {
-		return nil, fmt.Errorf("insufficient data for replica_id")
+		return nil, errors.New("insufficient data for replica_id")
 	}
 	request.ReplicaID = int32(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 	offset += 4
 
 	// Max wait time (4 bytes) - always fixed
 	if offset+4 > len(requestBody) {
-		return nil, fmt.Errorf("insufficient data for max_wait_time")
+		return nil, errors.New("insufficient data for max_wait_time")
 	}
 	request.MaxWaitTime = int32(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 	offset += 4
 
 	// Min bytes (4 bytes) - always fixed
 	if offset+4 > len(requestBody) {
-		return nil, fmt.Errorf("insufficient data for min_bytes")
+		return nil, errors.New("insufficient data for min_bytes")
 	}
 	request.MinBytes = int32(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 	offset += 4
@@ -489,7 +502,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 	// Max bytes (4 bytes) - only in v3+, always fixed
 	if apiVersion >= 3 {
 		if offset+4 > len(requestBody) {
-			return nil, fmt.Errorf("insufficient data for max_bytes")
+			return nil, errors.New("insufficient data for max_bytes")
 		}
 		request.MaxBytes = int32(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 		offset += 4
@@ -498,7 +511,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 	// Isolation level (1 byte) - only in v4+, always fixed
 	if apiVersion >= 4 {
 		if offset+1 > len(requestBody) {
-			return nil, fmt.Errorf("insufficient data for isolation_level")
+			return nil, errors.New("insufficient data for isolation_level")
 		}
 		request.IsolationLevel = int8(requestBody[offset])
 		offset += 1
@@ -507,7 +520,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 	// Session ID (4 bytes) and Session Epoch (4 bytes) - only in v7+, always fixed
 	if apiVersion >= 7 {
 		if offset+8 > len(requestBody) {
-			return nil, fmt.Errorf("insufficient data for session_id and epoch")
+			return nil, errors.New("insufficient data for session_id and epoch")
 		}
 		offset += 8 // Skip session_id and session_epoch
 	}
@@ -525,7 +538,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 	} else {
 		// Regular array: INT32 length
 		if offset+4 > len(requestBody) {
-			return nil, fmt.Errorf("insufficient data for topics count")
+			return nil, errors.New("insufficient data for topics count")
 		}
 		topicsCount = int(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 		offset += 4
@@ -533,7 +546,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 
 	// Parse topics
 	request.Topics = make([]FetchTopic, topicsCount)
-	for i := 0; i < topicsCount; i++ {
+	for i := range topicsCount {
 		// Topic name - flexible uses compact string, non-flexible uses STRING (INT16 length)
 		var topicName string
 		if isFlexible {
@@ -547,13 +560,13 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 		} else {
 			// Regular string: INT16 length + bytes
 			if offset+2 > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for topic name length")
+				return nil, errors.New("insufficient data for topic name length")
 			}
 			topicNameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
 			offset += 2
 
 			if offset+topicNameLength > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for topic name")
+				return nil, errors.New("insufficient data for topic name")
 			}
 			topicName = string(requestBody[offset : offset+topicNameLength])
 			offset += topicNameLength
@@ -573,7 +586,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 		} else {
 			// Regular array: INT32 length
 			if offset+4 > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for partitions count")
+				return nil, errors.New("insufficient data for partitions count")
 			}
 			partitionsCount = int(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 			offset += 4
@@ -581,10 +594,10 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 
 		// Parse partitions
 		request.Topics[i].Partitions = make([]FetchPartition, partitionsCount)
-		for j := 0; j < partitionsCount; j++ {
+		for j := range partitionsCount {
 			// Partition ID (4 bytes) - always fixed
 			if offset+4 > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for partition ID")
+				return nil, errors.New("insufficient data for partition ID")
 			}
 			request.Topics[i].Partitions[j].PartitionID = int32(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 			offset += 4
@@ -592,14 +605,14 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 			// Current leader epoch (4 bytes) - only in v9+, always fixed
 			if apiVersion >= 9 {
 				if offset+4 > len(requestBody) {
-					return nil, fmt.Errorf("insufficient data for current leader epoch")
+					return nil, errors.New("insufficient data for current leader epoch")
 				}
 				offset += 4 // Skip current leader epoch
 			}
 
 			// Fetch offset (8 bytes) - always fixed
 			if offset+8 > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for fetch offset")
+				return nil, errors.New("insufficient data for fetch offset")
 			}
 			request.Topics[i].Partitions[j].FetchOffset = int64(binary.BigEndian.Uint64(requestBody[offset : offset+8]))
 			offset += 8
@@ -607,7 +620,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 			// Log start offset (8 bytes) - only in v5+, always fixed
 			if apiVersion >= 5 {
 				if offset+8 > len(requestBody) {
-					return nil, fmt.Errorf("insufficient data for log start offset")
+					return nil, errors.New("insufficient data for log start offset")
 				}
 				request.Topics[i].Partitions[j].LogStartOffset = int64(binary.BigEndian.Uint64(requestBody[offset : offset+8]))
 				offset += 8
@@ -615,7 +628,7 @@ func (h *Handler) parseFetchRequest(apiVersion uint16, requestBody []byte) (*Fet
 
 			// Partition max bytes (4 bytes) - always fixed
 			if offset+4 > len(requestBody) {
-				return nil, fmt.Errorf("insufficient data for partition max bytes")
+				return nil, errors.New("insufficient data for partition max bytes")
 			}
 			request.Topics[i].Partitions[j].MaxBytes = int32(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
 			offset += 4
@@ -871,6 +884,7 @@ func encodeVarint(value int64) []byte {
 		zigzag >>= 7
 	}
 	buf = append(buf, byte(zigzag))
+
 	return buf
 }
 
@@ -889,6 +903,7 @@ func (h *Handler) createEmptyRecordBatch(baseOffset int64) []byte {
 		// Fallback to manual creation if there's an error
 		return h.createEmptyRecordBatchManual(baseOffset)
 	}
+
 	return batch
 }
 
@@ -989,6 +1004,7 @@ func (h *Handler) matchesSchemaRegistryConvention(topicName string) bool {
 		if err == nil {
 			// Since we retrieved schema from registry, ensure topic config is updated
 			h.ensureTopicSchemaFromLatestSchema(topicName, latestSchemaValue)
+
 			return true
 		}
 
@@ -997,6 +1013,7 @@ func (h *Handler) matchesSchemaRegistryConvention(topicName string) bool {
 		if err == nil {
 			// Since we retrieved key schema from registry, ensure topic config is updated
 			h.ensureTopicKeySchemaFromLatestSchema(topicName, latestSchemaKey)
+
 			return true
 		}
 	}
@@ -1007,7 +1024,7 @@ func (h *Handler) matchesSchemaRegistryConvention(topicName string) bool {
 // getSchemaMetadataForTopic retrieves schema metadata for a topic
 func (h *Handler) getSchemaMetadataForTopic(topicName string) (map[string]string, error) {
 	if !h.IsSchemaEnabled() {
-		return nil, fmt.Errorf("schema management not enabled")
+		return nil, errors.New("schema management not enabled")
 	}
 
 	// Try multiple approaches to get schema metadata from Schema Registry
@@ -1036,7 +1053,7 @@ func (h *Handler) getSchemaMetadataForTopic(topicName string) (map[string]string
 // getSchemaMetadataFromRegistry retrieves schema metadata from Schema Registry
 func (h *Handler) getSchemaMetadataFromRegistry(subject string) (map[string]string, error) {
 	if h.schemaManager == nil {
-		return nil, fmt.Errorf("schema manager not available")
+		return nil, errors.New("schema manager not available")
 	}
 
 	// Get latest schema for the subject
@@ -1058,10 +1075,10 @@ func (h *Handler) getSchemaMetadataFromRegistry(subject string) (map[string]stri
 	format := schema.FormatAvro
 
 	metadata := map[string]string{
-		"schema_id":      fmt.Sprintf("%d", cachedSchema.LatestID),
+		"schema_id":      strconv.FormatUint(uint64(cachedSchema.LatestID), 10),
 		"schema_format":  format.String(),
 		"schema_subject": subject,
-		"schema_version": fmt.Sprintf("%d", cachedSchema.Version),
+		"schema_version": strconv.Itoa(cachedSchema.Version),
 		"schema_content": cachedSchema.Schema,
 	}
 
@@ -1092,11 +1109,11 @@ func (h *Handler) ensureTopicSchemaFromLatestSchema(topicName string, latestSche
 // extractTopicFromSubject extracts the topic name from a schema registry subject
 func (h *Handler) extractTopicFromSubject(subject string) string {
 	// Remove common suffixes used in schema registry
-	if strings.HasSuffix(subject, "-value") {
-		return strings.TrimSuffix(subject, "-value")
+	if before, ok := strings.CutSuffix(subject, "-value"); ok {
+		return before
 	}
-	if strings.HasSuffix(subject, "-key") {
-		return strings.TrimSuffix(subject, "-key")
+	if before, ok := strings.CutSuffix(subject, "-key"); ok {
+		return before
 	}
 	// If no suffix, assume subject name is the topic name
 	return subject
@@ -1175,14 +1192,14 @@ func (h *Handler) decodeRecordValueToKafkaMessage(topicName string, recordValueB
 // This performs a roundtrip test: marshal the RecordValue and check if it produces similar output
 func (h *Handler) isValidRecordValue(recordValue *schema_pb.RecordValue, originalBytes []byte) bool {
 	// Empty or nil Fields means not a valid RecordValue
-	if recordValue == nil || recordValue.Fields == nil || len(recordValue.Fields) == 0 {
+	if recordValue == nil || recordValue.Fields == nil || len(recordValue.GetFields()) == 0 {
 		return false
 	}
 
 	// Check if field names are valid UTF-8 strings (not binary garbage)
 	// Real RecordValue messages have proper field names like "name", "age", etc.
 	// Random bytes parsed as protobuf often create non-UTF8 or very short field names
-	for fieldName, fieldValue := range recordValue.Fields {
+	for fieldName, fieldValue := range recordValue.GetFields() {
 		// Field name should be valid UTF-8
 		if !utf8.ValidString(fieldName) {
 			return false
@@ -1228,7 +1245,7 @@ func (h *Handler) isValidRecordValue(recordValue *schema_pb.RecordValue, origina
 // encodeRecordValueToConfluentFormat re-encodes a RecordValue back to Confluent format
 func (h *Handler) encodeRecordValueToConfluentFormat(topicName string, recordValue *schema_pb.RecordValue) ([]byte, error) {
 	if recordValue == nil {
-		return nil, fmt.Errorf("RecordValue is nil")
+		return nil, errors.New("RecordValue is nil")
 	}
 
 	// Get schema configuration from topic config
@@ -1270,32 +1287,35 @@ func (h *Handler) recordValueToJSON(recordValue *schema_pb.RecordValue) []byte {
 	}
 
 	// Simple JSON conversion - in a real implementation, this would be more sophisticated
-	jsonStr := "{"
+	var jsonStr strings.Builder
+	jsonStr.WriteString("{")
 	first := true
-	for fieldName, fieldValue := range recordValue.Fields {
+	var jsonStrSb1275 strings.Builder
+	for fieldName, fieldValue := range recordValue.GetFields() {
 		if !first {
-			jsonStr += ","
+			jsonStrSb1275.WriteString(",")
 		}
 		first = false
 
-		jsonStr += fmt.Sprintf(`"%s":`, fieldName)
+		jsonStrSb1275.WriteString(fmt.Sprintf(`"%s":`, fieldName))
 
-		switch v := fieldValue.Kind.(type) {
+		switch v := fieldValue.GetKind().(type) {
 		case *schema_pb.Value_StringValue:
-			jsonStr += fmt.Sprintf(`"%s"`, v.StringValue)
+			jsonStr.WriteString(fmt.Sprintf(`"%s"`, v.StringValue))
 		case *schema_pb.Value_BytesValue:
-			jsonStr += fmt.Sprintf(`"%s"`, string(v.BytesValue))
+			jsonStr.WriteString(fmt.Sprintf(`"%s"`, string(v.BytesValue)))
 		case *schema_pb.Value_Int32Value:
-			jsonStr += fmt.Sprintf(`%d`, v.Int32Value)
+			jsonStr.WriteString(strconv.Itoa(int(v.Int32Value)))
 		case *schema_pb.Value_Int64Value:
-			jsonStr += fmt.Sprintf(`%d`, v.Int64Value)
+			jsonStr.WriteString(strconv.FormatInt(v.Int64Value, 10))
 		case *schema_pb.Value_BoolValue:
-			jsonStr += fmt.Sprintf(`%t`, v.BoolValue)
+			jsonStr.WriteString(strconv.FormatBool(v.BoolValue))
 		default:
-			jsonStr += `null`
+			jsonStr.WriteString(`null`)
 		}
 	}
-	jsonStr += "}"
+	jsonStr.WriteString(jsonStrSb1275.String())
+	jsonStr.WriteString("}")
 
-	return []byte(jsonStr)
+	return []byte(jsonStr.String())
 }

@@ -25,7 +25,6 @@ var (
 )
 
 func newMemoryChunkPages(fh *FileHandle, chunkSize int64) *ChunkedDirtyPages {
-
 	dirtyPages := &ChunkedDirtyPages{
 		fh: fh,
 	}
@@ -53,8 +52,9 @@ func (pages *ChunkedDirtyPages) FlushData() error {
 	}
 	pages.uploadPipeline.FlushAll()
 	if pages.lastErr != nil {
-		return fmt.Errorf("flush data: %v", pages.lastErr)
+		return fmt.Errorf("flush data: %w", pages.lastErr)
 	}
+
 	return nil
 }
 
@@ -62,11 +62,11 @@ func (pages *ChunkedDirtyPages) ReadDirtyDataAt(data []byte, startOffset int64, 
 	if !pages.hasWrites {
 		return
 	}
+
 	return pages.uploadPipeline.MaybeReadDataAt(data, startOffset, tsNs)
 }
 
 func (pages *ChunkedDirtyPages) saveChunkedFileIntervalToStorage(reader io.Reader, offset int64, size int64, modifiedTsNs int64, cleanupFn func()) {
-
 	defer cleanupFn()
 
 	fileFullPath := pages.fh.FullPath()
@@ -75,12 +75,12 @@ func (pages *ChunkedDirtyPages) saveChunkedFileIntervalToStorage(reader io.Reade
 	if err != nil {
 		glog.V(0).Infof("%v saveToStorage [%d,%d): %v", fileFullPath, offset, offset+size, err)
 		pages.lastErr = err
+
 		return
 	}
 	pages.fh.AddChunks([]*filer_pb.FileChunk{chunk})
 	pages.fh.entryChunkGroup.AddChunk(chunk)
-	glog.V(3).Infof("%v saveToStorage %s [%d,%d)", fileFullPath, chunk.FileId, offset, offset+size)
-
+	glog.V(3).Infof("%v saveToStorage %s [%d,%d)", fileFullPath, chunk.GetFileId(), offset, offset+size)
 }
 
 func (pages *ChunkedDirtyPages) Destroy() {

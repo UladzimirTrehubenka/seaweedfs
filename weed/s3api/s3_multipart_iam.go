@@ -1,8 +1,10 @@
 package s3api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +86,7 @@ func (iam *IdentityAccessManagement) ValidateMultipartOperationWithIAM(r *http.R
 	principalArn := r.Header.Get("X-SeaweedFS-Principal")
 	if principalArn == "" {
 		glog.V(2).Info("IAM authorization for multipart operation failed: missing principal ARN in request header")
+
 		return s3err.ErrAccessDenied
 	}
 
@@ -101,18 +104,20 @@ func (iam *IdentityAccessManagement) ValidateMultipartOperationWithIAM(r *http.R
 	if errCode != s3err.ErrNone {
 		glog.V(3).Infof("IAM authorization failed for multipart operation: principal=%s operation=%s action=%s bucket=%s object=%s",
 			iamIdentity.Principal, operation, action, bucket, object)
+
 		return errCode
 	}
 
 	glog.V(3).Infof("IAM authorization succeeded for multipart operation: principal=%s operation=%s action=%s bucket=%s object=%s",
 		iamIdentity.Principal, operation, action, bucket, object)
+
 	return s3err.ErrNone
 }
 
 // ValidateMultipartRequestWithPolicy validates multipart request against security policy
 func (policy *MultipartUploadPolicy) ValidateMultipartRequestWithPolicy(req *MultipartUploadRequest) error {
 	if req == nil {
-		return fmt.Errorf("multipart request cannot be nil")
+		return errors.New("multipart request cannot be nil")
 	}
 
 	// Validate part size for upload part operations
@@ -152,13 +157,7 @@ func (policy *MultipartUploadPolicy) ValidateMultipartRequestWithPolicy(req *Mul
 			contentType = req.Headers["content-type"]
 		}
 
-		allowed := false
-		for _, allowedType := range policy.AllowedContentTypes {
-			if contentType == allowedType {
-				allowed = true
-				break
-			}
-		}
+		allowed := slices.Contains(policy.AllowedContentTypes, contentType)
 
 		if !allowed {
 			return fmt.Errorf("content type %s is not allowed", contentType)
@@ -176,11 +175,13 @@ func (s3a *S3ApiServer) NewMultipartUploadWithIAM(w http.ResponseWriter, r *http
 	if s3a.iam.iamIntegration != nil {
 		if identity, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_WRITE); errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
+
 			return
 		} else {
 			// Additional multipart-specific IAM validation
 			if errCode := s3a.iam.ValidateMultipartOperationWithIAM(r, identity, MultipartOpInitiate); errCode != s3err.ErrNone {
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 		}
@@ -196,11 +197,13 @@ func (s3a *S3ApiServer) CompleteMultipartUploadWithIAM(w http.ResponseWriter, r 
 	if s3a.iam.iamIntegration != nil {
 		if identity, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_WRITE); errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
+
 			return
 		} else {
 			// Additional multipart-specific IAM validation
 			if errCode := s3a.iam.ValidateMultipartOperationWithIAM(r, identity, MultipartOpComplete); errCode != s3err.ErrNone {
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 		}
@@ -216,11 +219,13 @@ func (s3a *S3ApiServer) AbortMultipartUploadWithIAM(w http.ResponseWriter, r *ht
 	if s3a.iam.iamIntegration != nil {
 		if identity, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_WRITE); errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
+
 			return
 		} else {
 			// Additional multipart-specific IAM validation
 			if errCode := s3a.iam.ValidateMultipartOperationWithIAM(r, identity, MultipartOpAbort); errCode != s3err.ErrNone {
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 		}
@@ -236,11 +241,13 @@ func (s3a *S3ApiServer) ListMultipartUploadsWithIAM(w http.ResponseWriter, r *ht
 	if s3a.iam.iamIntegration != nil {
 		if identity, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_LIST); errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
+
 			return
 		} else {
 			// Additional multipart-specific IAM validation
 			if errCode := s3a.iam.ValidateMultipartOperationWithIAM(r, identity, MultipartOpList); errCode != s3err.ErrNone {
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 		}
@@ -256,11 +263,13 @@ func (s3a *S3ApiServer) UploadPartWithIAM(w http.ResponseWriter, r *http.Request
 	if s3a.iam.iamIntegration != nil {
 		if identity, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_WRITE); errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
+
 			return
 		} else {
 			// Additional multipart-specific IAM validation
 			if errCode := s3a.iam.ValidateMultipartOperationWithIAM(r, identity, MultipartOpUploadPart); errCode != s3err.ErrNone {
 				s3err.WriteErrorResponse(w, r, errCode)
+
 				return
 			}
 
@@ -268,6 +277,7 @@ func (s3a *S3ApiServer) UploadPartWithIAM(w http.ResponseWriter, r *http.Request
 			if err := s3a.validateUploadPartRequest(r); err != nil {
 				glog.Errorf("Upload part validation failed: %v", err)
 				s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
+
 				return
 			}
 		}
@@ -298,6 +308,7 @@ func determineMultipartS3Action(operation MultipartOperation) Action {
 	default:
 		// Fail closed for unmapped operations to prevent unintended access
 		glog.Errorf("unmapped multipart operation: %s", operation)
+
 		return "s3:InternalErrorUnknownMultipartAction" // Non-existent action ensures denial
 	}
 }
@@ -306,8 +317,8 @@ func determineMultipartS3Action(operation MultipartOperation) Action {
 func extractSessionTokenFromRequest(r *http.Request) string {
 	// Check Authorization header for Bearer token
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			return strings.TrimPrefix(authHeader, "Bearer ")
+		if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
+			return after
 		}
 	}
 
@@ -332,19 +343,16 @@ func (s3a *S3ApiServer) validateUploadPartRequest(r *http.Request) error {
 	// Extract part number from query
 	partNumberStr := r.URL.Query().Get("partNumber")
 	if partNumberStr == "" {
-		return fmt.Errorf("missing partNumber parameter")
+		return errors.New("missing partNumber parameter")
 	}
 
 	partNumber, err := strconv.Atoi(partNumberStr)
 	if err != nil {
-		return fmt.Errorf("invalid partNumber: %v", err)
+		return fmt.Errorf("invalid partNumber: %w", err)
 	}
 
 	// Get content length
-	contentLength := r.ContentLength
-	if contentLength < 0 {
-		contentLength = 0
-	}
+	contentLength := max(r.ContentLength, 0)
 
 	// Create multipart request for validation
 	bucket, object := s3_constants.GetBucketAndObject(r)
@@ -416,5 +424,6 @@ func (s3a *S3ApiServer) CleanupExpiredMultipartUploads(maxAge time.Duration) err
 	// This would typically scan for and remove expired multipart uploads
 	// Implementation would depend on how multipart sessions are stored in the filer
 	glog.V(2).Infof("Cleanup expired multipart uploads older than %v", maxAge)
+
 	return nil
 }

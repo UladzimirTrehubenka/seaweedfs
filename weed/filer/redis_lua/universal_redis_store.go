@@ -2,6 +2,7 @@ package redis_lua
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,6 +27,7 @@ type UniversalRedisLuaStore struct {
 
 func (store *UniversalRedisLuaStore) isSuperLargeDirectory(dir string) (isSuperLargeDirectory bool) {
 	_, isSuperLargeDirectory = store.superLargeDirectoryHash[dir]
+
 	return
 }
 
@@ -41,6 +43,7 @@ func (store *UniversalRedisLuaStore) getKey(key string) string {
 	if store.keyPrefix == "" {
 		return key
 	}
+
 	return store.keyPrefix + key
 }
 
@@ -55,17 +58,16 @@ func (store *UniversalRedisLuaStore) RollbackTransaction(ctx context.Context) er
 }
 
 func (store *UniversalRedisLuaStore) InsertEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	value, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encoding %s %+v: %v", entry.FullPath, entry.Attr, err)
+		return fmt.Errorf("encoding %s %+v: %w", entry.FullPath, entry.Attr, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
 		value = util.MaybeGzipData(value)
 	}
 
-	dir, name := entry.FullPath.DirAndName()
+	dir, name := entry.DirAndName()
 
 	err = stored_procedure.InsertEntryScript.Run(ctx, store.Client,
 		[]string{store.getKey(string(entry.FullPath)), store.getKey(genDirectoryListKey(dir))},
@@ -73,26 +75,24 @@ func (store *UniversalRedisLuaStore) InsertEntry(ctx context.Context, entry *fil
 		store.isSuperLargeDirectory(dir), 0, name).Err()
 
 	if err != nil {
-		return fmt.Errorf("persisting %s : %v", entry.FullPath, err)
+		return fmt.Errorf("persisting %s : %w", entry.FullPath, err)
 	}
 
 	return nil
 }
 
 func (store *UniversalRedisLuaStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	return store.InsertEntry(ctx, entry)
 }
 
 func (store *UniversalRedisLuaStore) FindEntry(ctx context.Context, fullpath util.FullPath) (entry *filer.Entry, err error) {
-
 	data, err := store.Client.Get(ctx, store.getKey(string(fullpath))).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, filer_pb.ErrNotFound
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("get %s : %v", fullpath, err)
+		return nil, fmt.Errorf("get %s : %w", fullpath, err)
 	}
 
 	entry = &filer.Entry{
@@ -100,14 +100,13 @@ func (store *UniversalRedisLuaStore) FindEntry(ctx context.Context, fullpath uti
 	}
 	err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData([]byte(data)))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
 }
 
 func (store *UniversalRedisLuaStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (err error) {
-
 	dir, name := fullpath.DirAndName()
 
 	err = stored_procedure.DeleteEntryScript.Run(ctx, store.Client,
@@ -115,14 +114,13 @@ func (store *UniversalRedisLuaStore) DeleteEntry(ctx context.Context, fullpath u
 		store.isSuperLargeDirectory(dir), name).Err()
 
 	if err != nil {
-		return fmt.Errorf("DeleteEntry %s : %v", fullpath, err)
+		return fmt.Errorf("DeleteEntry %s : %w", fullpath, err)
 	}
 
 	return nil
 }
 
 func (store *UniversalRedisLuaStore) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) (err error) {
-
 	if store.isSuperLargeDirectory(string(fullpath)) {
 		return nil
 	}
@@ -131,7 +129,7 @@ func (store *UniversalRedisLuaStore) DeleteFolderChildren(ctx context.Context, f
 		[]string{store.getKey(string(fullpath))}).Err()
 
 	if err != nil {
-		return fmt.Errorf("DeleteFolderChildren %s : %v", fullpath, err)
+		return fmt.Errorf("DeleteFolderChildren %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -142,7 +140,6 @@ func (store *UniversalRedisLuaStore) ListDirectoryPrefixedEntries(ctx context.Co
 }
 
 func (store *UniversalRedisLuaStore) ListDirectoryEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
-
 	dirListKey := store.getKey(genDirectoryListKey(string(dirPath)))
 
 	min := "-"
@@ -161,7 +158,7 @@ func (store *UniversalRedisLuaStore) ListDirectoryEntries(ctx context.Context, d
 		Count:  limit,
 	}).Result()
 	if err != nil {
-		return lastFileName, fmt.Errorf("list %s : %v", dirPath, err)
+		return lastFileName, fmt.Errorf("list %s : %w", dirPath, err)
 	}
 
 	// fetch entry meta
@@ -171,13 +168,14 @@ func (store *UniversalRedisLuaStore) ListDirectoryEntries(ctx context.Context, d
 		lastFileName = fileName
 		if err != nil {
 			glog.V(0).InfofCtx(ctx, "list %s : %v", path, err)
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				continue
 			}
 		} else {
 			if entry.TtlSec > 0 {
 				if entry.Attr.Crtime.Add(time.Duration(entry.TtlSec) * time.Second).Before(time.Now()) {
 					store.DeleteEntry(ctx, path)
+
 					continue
 				}
 			}
@@ -185,6 +183,7 @@ func (store *UniversalRedisLuaStore) ListDirectoryEntries(ctx context.Context, d
 			resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 			if resEachEntryFuncErr != nil {
 				err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 				break
 			}
 

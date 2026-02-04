@@ -186,6 +186,7 @@ func (m *Metrics) ensureCounters(apiKey uint16) {
 	m.mu.RLock()
 	if _, exists := m.requestCounts[apiKey]; exists {
 		m.mu.RUnlock()
+
 		return
 	}
 	m.mu.RUnlock()

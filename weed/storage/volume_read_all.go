@@ -13,14 +13,12 @@ type VolumeFileScanner4ReadAll struct {
 
 func (scanner *VolumeFileScanner4ReadAll) VisitSuperBlock(superBlock super_block.SuperBlock) error {
 	return nil
-
 }
 func (scanner *VolumeFileScanner4ReadAll) ReadNeedleBody() bool {
 	return true
 }
 
 func (scanner *VolumeFileScanner4ReadAll) VisitNeedle(n *needle.Needle, offset int64, needleHeader, needleBody []byte) error {
-
 	nv, ok := scanner.V.nm.Get(n.Id)
 	if !ok {
 		return nil
@@ -43,5 +41,6 @@ func (scanner *VolumeFileScanner4ReadAll) VisitNeedle(n *needle.Needle, offset i
 	if sendErr != nil {
 		return sendErr
 	}
+
 	return nil
 }

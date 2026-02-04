@@ -24,53 +24,55 @@ func (ms *MasterServer) StreamAssign(server master_pb.Seaweed_StreamAssignServer
 		req, err := server.Recv()
 		if err != nil {
 			glog.Errorf("StreamAssign failed to receive: %v", err)
+
 			return err
 		}
 		resp, err := ms.Assign(context.Background(), req)
 		if err != nil {
 			glog.Errorf("StreamAssign failed to assign: %v", err)
+
 			return err
 		}
 		if err = server.Send(resp); err != nil {
 			glog.Errorf("StreamAssign failed to send: %v", err)
+
 			return err
 		}
 	}
 }
 func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest) (*master_pb.AssignResponse, error) {
-
 	if !ms.Topo.IsLeader() {
 		return nil, raft.NotLeaderError
 	}
 
-	if req.Count == 0 {
+	if req.GetCount() == 0 {
 		req.Count = 1
 	}
 
-	if req.Replication == "" {
+	if req.GetReplication() == "" {
 		req.Replication = ms.option.DefaultReplicaPlacement
 	}
-	replicaPlacement, err := super_block.NewReplicaPlacementFromString(req.Replication)
+	replicaPlacement, err := super_block.NewReplicaPlacementFromString(req.GetReplication())
 	if err != nil {
 		return nil, err
 	}
-	ttl, err := needle.ReadTTL(req.Ttl)
+	ttl, err := needle.ReadTTL(req.GetTtl())
 	if err != nil {
 		return nil, err
 	}
-	diskType := types.ToDiskType(req.DiskType)
+	diskType := types.ToDiskType(req.GetDiskType())
 
 	ver := needle.GetCurrentVersion()
 	option := &topology.VolumeGrowOption{
-		Collection:         req.Collection,
+		Collection:         req.GetCollection(),
 		ReplicaPlacement:   replicaPlacement,
 		Ttl:                ttl,
 		DiskType:           diskType,
 		Preallocate:        ms.preallocateSize,
-		DataCenter:         req.DataCenter,
-		Rack:               req.Rack,
-		DataNode:           req.DataNode,
-		MemoryMapMaxSizeMb: req.MemoryMapMaxSizeMb,
+		DataCenter:         req.GetDataCenter(),
+		Rack:               req.GetRack(),
+		DataNode:           req.GetDataNode(),
+		MemoryMapMaxSizeMb: req.GetMemoryMapMaxSizeMb(),
 		Version:            uint32(ver),
 	}
 
@@ -79,7 +81,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 	}
 
 	vl := ms.Topo.GetVolumeLayout(option.Collection, option.ReplicaPlacement, option.Ttl, option.DiskType)
-	vl.SetLastGrowCount(req.WritableVolumeCount)
+	vl.SetLastGrowCount(req.GetWritableVolumeCount())
 
 	var (
 		lastErr    error
@@ -87,8 +89,8 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 		startTime  = time.Now()
 	)
 
-	for time.Now().Sub(startTime) < maxTimeout {
-		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(req.Count, option, vl)
+	for time.Since(startTime) < maxTimeout {
+		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(req.GetCount(), option, vl)
 		if shouldGrow && !vl.HasGrowRequest() && !ms.option.VolumeGrowthDisabled {
 			if err != nil && ms.Topo.AvailableSpaceFor(option) <= 0 {
 				err = fmt.Errorf("%s and no free volumes left for %s", err.Error(), option.String())
@@ -96,7 +98,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 			vl.AddGrowRequest()
 			ms.volumeGrowthRequestChan <- &topology.VolumeGrowRequest{
 				Option: option,
-				Count:  req.WritableVolumeCount,
+				Count:  req.GetWritableVolumeCount(),
 				Reason: "grpc assign",
 			}
 		}
@@ -104,10 +106,11 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 			glog.V(1).Infof("assign %v %v: %v", req, option.String(), err)
 			stats.MasterPickForWriteErrorCounter.Inc()
 			lastErr = err
-			if (req.DataCenter != "" || req.Rack != "") && strings.Contains(err.Error(), topology.NoWritableVolumes) {
+			if (req.GetDataCenter() != "" || req.GetRack() != "") && strings.Contains(err.Error(), string(topology.NoWritableVolumes)) {
 				break
 			}
 			time.Sleep(200 * time.Millisecond)
+
 			continue
 		}
 		dn := dnList.Head()
@@ -123,6 +126,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 				DataCenter: r.GetDataCenterId(),
 			})
 		}
+
 		return &master_pb.AssignResponse{
 			Fid: fid,
 			Location: &master_pb.Location{
@@ -139,5 +143,6 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 	if lastErr != nil {
 		glog.V(0).Infof("assign %v %v: %v", req, option.String(), lastErr)
 	}
+
 	return nil, lastErr
 }

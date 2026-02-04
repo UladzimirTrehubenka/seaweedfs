@@ -1,14 +1,16 @@
 package log_buffer
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
-	"google.golang.org/protobuf/proto"
 )
 
 // TestFlushOffsetGap_ReproduceDataLoss reproduces the critical bug where messages
@@ -68,10 +70,10 @@ func TestFlushOffsetGap_ReproduceDataLoss(t *testing.T) {
 	messageCount := 100
 	t.Logf("Sending %d messages...", messageCount)
 
-	for i := 0; i < messageCount; i++ {
+	for i := range messageCount {
 		if err := logBuffer.AddToBuffer(&mq_pb.DataMessage{
-			Key:   []byte(fmt.Sprintf("key-%d", i)),
-			Value: []byte(fmt.Sprintf("message-%d", i)),
+			Key:   fmt.Appendf(nil, "key-%d", i),
+			Value: fmt.Appendf(nil, "message-%d", i),
 			TsNs:  time.Now().UnixNano(),
 		}); err != nil {
 			t.Fatalf("Failed to add buffer: %v", err)
@@ -85,8 +87,8 @@ func TestFlushOffsetGap_ReproduceDataLoss(t *testing.T) {
 	// Add more messages after flush
 	for i := messageCount; i < messageCount+50; i++ {
 		if err := logBuffer.AddToBuffer(&mq_pb.DataMessage{
-			Key:   []byte(fmt.Sprintf("key-%d", i)),
-			Value: []byte(fmt.Sprintf("message-%d", i)),
+			Key:   fmt.Appendf(nil, "key-%d", i),
+			Value: fmt.Appendf(nil, "message-%d", i),
 			TsNs:  time.Now().UnixNano(),
 		}); err != nil {
 			t.Fatalf("Failed to add buffer: %v", err)
@@ -109,8 +111,8 @@ func TestFlushOffsetGap_ReproduceDataLoss(t *testing.T) {
 	var maxFlushedOffset int64 = -1
 	var minFlushedOffset int64 = -1
 	if flushedCount > 0 {
-		minFlushedOffset = flushedMessages[0].Offset
-		maxFlushedOffset = flushedMessages[flushedCount-1].Offset
+		minFlushedOffset = flushedMessages[0].GetOffset()
+		maxFlushedOffset = flushedMessages[flushedCount-1].GetOffset()
 	}
 	flushMu.Unlock()
 
@@ -150,7 +152,7 @@ func TestFlushOffsetGap_ReproduceDataLoss(t *testing.T) {
 			requestPosition := NewMessagePositionFromOffset(testOffset)
 			buf, _, err := logBuffer.ReadFromBuffer(requestPosition)
 
-			isReadable := (buf != nil && len(buf.Bytes()) > 0) || err == ResumeFromDiskError
+			isReadable := (buf != nil && len(buf.Bytes()) > 0) || errors.Is(err, ResumeFromDiskError)
 			status := "OK"
 			if !isReadable && err == nil {
 				status = "NOT READABLE"
@@ -207,15 +209,15 @@ func TestFlushOffsetGap_CheckPrevBuffers(t *testing.T) {
 	defer logBuffer.ShutdownLogBuffer()
 
 	// Send messages in batches with flushes in between
-	for batch := 0; batch < 5; batch++ {
+	for batch := range 5 {
 		t.Logf("\nBatch %d:", batch)
 
 		// Send 20 messages
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			offset := int64(batch*20 + i)
 			if err := logBuffer.AddToBuffer(&mq_pb.DataMessage{
-				Key:   []byte(fmt.Sprintf("key-%d", offset)),
-				Value: []byte(fmt.Sprintf("message-%d", offset)),
+				Key:   fmt.Appendf(nil, "key-%d", offset),
+				Value: fmt.Appendf(nil, "message-%d", offset),
 				TsNs:  time.Now().UnixNano(),
 			}); err != nil {
 				t.Fatalf("Failed to add buffer: %v", err)
@@ -290,13 +292,14 @@ func TestFlushOffsetGap_ConcurrentWriteAndFlush(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 200; i++ {
+		for i := range 200 {
 			if err := logBuffer.AddToBuffer(&mq_pb.DataMessage{
-				Key:   []byte(fmt.Sprintf("key-%d", i)),
-				Value: []byte(fmt.Sprintf("message-%d", i)),
+				Key:   fmt.Appendf(nil, "key-%d", i),
+				Value: fmt.Appendf(nil, "message-%d", i),
 				TsNs:  time.Now().UnixNano(),
 			}); err != nil {
 				t.Errorf("Failed to add buffer: %v", err)
+
 				return
 			}
 			if i%50 == 0 {
@@ -309,7 +312,7 @@ func TestFlushOffsetGap_ConcurrentWriteAndFlush(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			time.Sleep(30 * time.Millisecond)
 			logBuffer.ForceFlush()
 		}
@@ -391,10 +394,10 @@ func TestFlushOffsetGap_ProductionScenario(t *testing.T) {
 
 	// Round 1: Add 50 messages with Kafka offsets 0-49
 	t.Logf("\n=== ROUND 1: Adding messages 0-49 ===")
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		logEntry := &filer_pb.LogEntry{
-			Key:    []byte(fmt.Sprintf("key-%d", i)),
-			Data:   []byte(fmt.Sprintf("message-%d", i)),
+			Key:    fmt.Appendf(nil, "key-%d", i),
+			Data:   fmt.Appendf(nil, "message-%d", i),
 			TsNs:   time.Now().UnixNano(),
 			Offset: nextKafkaOffset, // Explicit Kafka offset
 		}
@@ -426,10 +429,10 @@ func TestFlushOffsetGap_ProductionScenario(t *testing.T) {
 
 	// Round 2: Add another 50 messages with Kafka offsets 50-99
 	t.Logf("\n=== ROUND 2: Adding messages 50-99 ===")
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		logEntry := &filer_pb.LogEntry{
-			Key:    []byte(fmt.Sprintf("key-%d", 50+i)),
-			Data:   []byte(fmt.Sprintf("message-%d", 50+i)),
+			Key:    fmt.Appendf(nil, "key-%d", 50+i),
+			Data:   fmt.Appendf(nil, "message-%d", 50+i),
 			TsNs:   time.Now().UnixNano(),
 			Offset: nextKafkaOffset,
 		}
@@ -453,17 +456,17 @@ func TestFlushOffsetGap_ProductionScenario(t *testing.T) {
 			flushIdx, flush.minOffset, flush.maxOffset, len(flush.messages))
 
 		for _, msg := range flush.messages {
-			if allOffsets[msg.Offset] {
-				t.Errorf("  DUPLICATE: Offset %d appears multiple times!", msg.Offset)
+			if allOffsets[msg.GetOffset()] {
+				t.Errorf("  DUPLICATE: Offset %d appears multiple times!", msg.GetOffset())
 			}
-			allOffsets[msg.Offset] = true
+			allOffsets[msg.GetOffset()] = true
 		}
 	}
 	flushMu.Unlock()
 
 	// Check for missing offsets
 	missingOffsets := []int64{}
-	for expectedOffset := int64(0); expectedOffset < nextKafkaOffset; expectedOffset++ {
+	for expectedOffset := range nextKafkaOffset {
 		if !allOffsets[expectedOffset] {
 			missingOffsets = append(missingOffsets, expectedOffset)
 		}
@@ -511,8 +514,8 @@ func TestFlushOffsetGap_ConcurrentReadDuringFlush(t *testing.T) {
 		for _, offset := range flushedOffsets {
 			if offset >= startPosition.Offset {
 				logEntry := &filer_pb.LogEntry{
-					Key:    []byte(fmt.Sprintf("key-%d", offset)),
-					Data:   []byte(fmt.Sprintf("message-%d", offset)),
+					Key:    fmt.Appendf(nil, "key-%d", offset),
+					Data:   fmt.Appendf(nil, "message-%d", offset),
 					TsNs:   time.Now().UnixNano(),
 					Offset: offset,
 				}
@@ -522,6 +525,7 @@ func TestFlushOffsetGap_ConcurrentReadDuringFlush(t *testing.T) {
 				}
 			}
 		}
+
 		return startPosition, false, nil
 	}
 
@@ -538,7 +542,7 @@ func TestFlushOffsetGap_ConcurrentReadDuringFlush(t *testing.T) {
 			entryData := buf[pos+4 : pos+4+int(size)]
 			logEntry := &filer_pb.LogEntry{}
 			if err := proto.Unmarshal(entryData, logEntry); err == nil {
-				flushedOffsets = append(flushedOffsets, logEntry.Offset)
+				flushedOffsets = append(flushedOffsets, logEntry.GetOffset())
 			}
 			pos += 4 + int(size)
 		}
@@ -552,10 +556,10 @@ func TestFlushOffsetGap_ConcurrentReadDuringFlush(t *testing.T) {
 
 	// Add 100 messages
 	t.Logf("Adding 100 messages...")
-	for i := int64(0); i < 100; i++ {
+	for i := range int64(100) {
 		logEntry := &filer_pb.LogEntry{
-			Key:    []byte(fmt.Sprintf("key-%d", i)),
-			Data:   []byte(fmt.Sprintf("message-%d", i)),
+			Key:    fmt.Appendf(nil, "key-%d", i),
+			Data:   fmt.Appendf(nil, "message-%d", i),
 			TsNs:   time.Now().UnixNano(),
 			Offset: i,
 		}
@@ -579,11 +583,11 @@ func TestFlushOffsetGap_ConcurrentReadDuringFlush(t *testing.T) {
 	// Verify all offsets can be read
 	readOffsets := make(map[int64]bool)
 	for _, msg := range messages {
-		readOffsets[msg.Offset] = true
+		readOffsets[msg.GetOffset()] = true
 	}
 
 	missingOffsets := []int64{}
-	for expectedOffset := int64(0); expectedOffset < 100; expectedOffset++ {
+	for expectedOffset := range int64(100) {
 		if !readOffsets[expectedOffset] {
 			missingOffsets = append(missingOffsets, expectedOffset)
 		}
@@ -618,7 +622,7 @@ func TestFlushOffsetGap_ForceFlushAdvancesBuffer(t *testing.T) {
 	defer logBuffer.ShutdownLogBuffer()
 
 	// Send messages, flush, check state - repeat
-	for round := 0; round < 3; round++ {
+	for round := range 3 {
 		t.Logf("\n=== ROUND %d ===", round)
 
 		// Check state before adding messages
@@ -630,10 +634,10 @@ func TestFlushOffsetGap_ForceFlushAdvancesBuffer(t *testing.T) {
 		t.Logf("Before adding: offset=%d, bufferStartOffset=%d", beforeOffset, beforeStart)
 
 		// Add 10 messages
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			if err := logBuffer.AddToBuffer(&mq_pb.DataMessage{
-				Key:   []byte(fmt.Sprintf("round-%d-msg-%d", round, i)),
-				Value: []byte(fmt.Sprintf("data-%d-%d", round, i)),
+				Key:   fmt.Appendf(nil, "round-%d-msg-%d", round, i),
+				Value: fmt.Appendf(nil, "data-%d-%d", round, i),
 				TsNs:  time.Now().UnixNano(),
 			}); err != nil {
 				t.Fatalf("Failed to add buffer: %v", err)

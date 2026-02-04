@@ -16,7 +16,6 @@ import (
 
 /** Create a symbolic link */
 func (wfs *WFS) Symlink(cancel <-chan struct{}, header *fuse.InHeader, target string, name string, out *fuse.EntryOut) (code fuse.Status) {
-
 	if wfs.IsOverQuotaWithUncommitted() {
 		return fuse.Status(syscall.ENOSPC)
 	}
@@ -26,7 +25,7 @@ func (wfs *WFS) Symlink(cancel <-chan struct{}, header *fuse.InHeader, target st
 
 	dirPath, code := wfs.inodeToPath.GetPath(header.NodeId)
 	if code != fuse.OK {
-		return
+		return code
 	}
 	entryFullPath := dirPath.Child(name)
 
@@ -49,17 +48,16 @@ func (wfs *WFS) Symlink(cancel <-chan struct{}, header *fuse.InHeader, target st
 	}
 
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
-		wfs.mapPbIdFromLocalToFiler(request.Entry)
-		defer wfs.mapPbIdFromFilerToLocal(request.Entry)
+		wfs.mapPbIdFromLocalToFiler(request.GetEntry())
+		defer wfs.mapPbIdFromFilerToLocal(request.GetEntry())
 
 		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
-			return fmt.Errorf("symlink %s: %v", entryFullPath, err)
+			return fmt.Errorf("symlink %s: %w", entryFullPath, err)
 		}
 
 		// Only cache the entry if the parent directory is already cached.
 		if wfs.metaCache.IsDirectoryCached(dirPath) {
-			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, request.Entry)); err != nil {
+			if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.GetDirectory(), request.GetEntry())); err != nil {
 				return fmt.Errorf("insert meta cache for symlink %s: %w", entryFullPath, err)
 			}
 		}
@@ -68,12 +66,13 @@ func (wfs *WFS) Symlink(cancel <-chan struct{}, header *fuse.InHeader, target st
 	})
 	if err != nil {
 		glog.V(0).Infof("Symlink %s => %s: %v", entryFullPath, target, err)
+
 		return fuse.EIO
 	}
 
-	inode := wfs.inodeToPath.Lookup(entryFullPath, request.Entry.Attributes.Crtime, false, false, 0, true)
+	inode := wfs.inodeToPath.Lookup(entryFullPath, request.GetEntry().GetAttributes().GetCrtime(), false, false, 0, true)
 
-	wfs.outputPbEntry(out, inode, request.Entry)
+	wfs.outputPbEntry(out, inode, request.GetEntry())
 
 	return fuse.OK
 }
@@ -88,9 +87,9 @@ func (wfs *WFS) Readlink(cancel <-chan struct{}, header *fuse.InHeader) (out []b
 	if status != fuse.OK {
 		return nil, status
 	}
-	if os.FileMode(entry.Attributes.FileMode)&os.ModeSymlink == 0 {
+	if os.FileMode(entry.GetAttributes().GetFileMode())&os.ModeSymlink == 0 {
 		return nil, fuse.EINVAL
 	}
 
-	return []byte(entry.Attributes.SymlinkTarget), fuse.OK
+	return []byte(entry.GetAttributes().GetSymlinkTarget()), fuse.OK
 }

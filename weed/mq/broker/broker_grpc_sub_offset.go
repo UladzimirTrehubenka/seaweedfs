@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,30 +25,29 @@ func (b *MessageQueueBroker) SubscribeWithOffset(
 	offsetType schema_pb.OffsetType,
 	startOffset int64,
 ) error {
-
 	initMessage := req.GetInit()
 	if initMessage == nil {
-		return fmt.Errorf("missing init message")
+		return errors.New("missing init message")
 	}
 
 	// Extract partition information from the request
-	t := topic.FromPbTopic(initMessage.Topic)
+	t := topic.FromPbTopic(initMessage.GetTopic())
 
 	// Get partition from the request's partition_offset field
-	if initMessage.PartitionOffset == nil || initMessage.PartitionOffset.Partition == nil {
-		return fmt.Errorf("missing partition information in request")
+	if initMessage.GetPartitionOffset() == nil || initMessage.GetPartitionOffset().GetPartition() == nil {
+		return errors.New("missing partition information in request")
 	}
 
 	// Use the partition information from the request
 	p := topic.Partition{
-		RingSize:   initMessage.PartitionOffset.Partition.RingSize,
-		RangeStart: initMessage.PartitionOffset.Partition.RangeStart,
-		RangeStop:  initMessage.PartitionOffset.Partition.RangeStop,
-		UnixTimeNs: initMessage.PartitionOffset.Partition.UnixTimeNs,
+		RingSize:   initMessage.GetPartitionOffset().GetPartition().GetRingSize(),
+		RangeStart: initMessage.GetPartitionOffset().GetPartition().GetRangeStart(),
+		RangeStop:  initMessage.GetPartitionOffset().GetPartition().GetRangeStop(),
+		UnixTimeNs: initMessage.GetPartitionOffset().GetPartition().GetUnixTimeNs(),
 	}
 
 	// Create offset-based subscription
-	subscriptionID := fmt.Sprintf("%s-%s-%d", initMessage.ConsumerGroup, initMessage.ConsumerId, startOffset)
+	subscriptionID := fmt.Sprintf("%s-%s-%d", initMessage.GetConsumerGroup(), initMessage.GetConsumerId(), startOffset)
 	subscription, err := b.offsetManager.CreateSubscription(subscriptionID, t, p, offsetType, startOffset)
 	if err != nil {
 		return fmt.Errorf("failed to create offset subscription: %w", err)
@@ -62,7 +62,7 @@ func (b *MessageQueueBroker) SubscribeWithOffset(
 	// Get local partition for reading
 	localTopicPartition, err := b.GetOrGenerateLocalPartition(t, p)
 	if err != nil {
-		return fmt.Errorf("topic %v partition %v not found: %v", t, p, err)
+		return fmt.Errorf("topic %v partition %v not found: %w", t, p, err)
 	}
 
 	// Subscribe to messages using offset-based positioning
@@ -77,8 +77,7 @@ func (b *MessageQueueBroker) subscribeWithOffsetSubscription(
 	stream mq_pb.SeaweedMessaging_SubscribeMessageServer,
 	initMessage *mq_pb.SubscribeMessageRequest_InitMessage,
 ) error {
-
-	clientName := fmt.Sprintf("%s-%s", initMessage.ConsumerGroup, initMessage.ConsumerId)
+	clientName := fmt.Sprintf("%s-%s", initMessage.GetConsumerGroup(), initMessage.GetConsumerId())
 
 	// TODO: Implement offset-based message reading
 	// ASSUMPTION: For now, we'll use the existing subscription mechanism and track offsets separately
@@ -91,7 +90,7 @@ func (b *MessageQueueBroker) subscribeWithOffsetSubscription(
 	}
 
 	glog.V(0).Infof("[%s] Starting Subscribe for topic %s partition %d-%d at offset %d",
-		clientName, subscription.TopicName, subscription.Partition.RangeStart, subscription.Partition.RangeStop, subscription.CurrentOffset)
+		clientName, subscription.TopicName, subscription.Partition.GetRangeStart(), subscription.Partition.GetRangeStop(), subscription.CurrentOffset)
 
 	return localPartition.Subscribe(clientName,
 		startPosition,
@@ -100,6 +99,7 @@ func (b *MessageQueueBroker) subscribeWithOffsetSubscription(
 			select {
 			case <-ctx.Done():
 				glog.V(0).Infof("[%s] Context cancelled, stopping", clientName)
+
 				return false
 			default:
 			}
@@ -107,29 +107,33 @@ func (b *MessageQueueBroker) subscribeWithOffsetSubscription(
 			// Check if subscription is still active and not at end
 			if !subscription.IsActive {
 				glog.V(0).Infof("[%s] Subscription not active, stopping", clientName)
+
 				return false
 			}
 
 			atEnd, err := subscription.IsAtEnd()
 			if err != nil {
 				glog.V(0).Infof("[%s] Error checking if subscription at end: %v", clientName, err)
+
 				return false
 			}
 
 			if atEnd {
 				glog.V(4).Infof("[%s] At end of subscription, stopping", clientName)
+
 				return false
 			}
 
 			// Add a small sleep to avoid CPU busy-wait when checking for new data
 			time.Sleep(10 * time.Millisecond)
+
 			return true
 		},
 		func(logEntry *filer_pb.LogEntry) (bool, error) {
 			// Check if this message matches our offset requirements
 			currentOffset := subscription.GetNextOffset()
 
-			if logEntry.Offset < currentOffset {
+			if logEntry.GetOffset() < currentOffset {
 				// Skip messages before our current offset
 				return false, nil
 			}
@@ -138,13 +142,14 @@ func (b *MessageQueueBroker) subscribeWithOffsetSubscription(
 			if err := stream.Send(&mq_pb.SubscribeMessageResponse{
 				Message: &mq_pb.SubscribeMessageResponse_Data{
 					Data: &mq_pb.DataMessage{
-						Key:   logEntry.Key,
-						Value: logEntry.Data,
-						TsNs:  logEntry.TsNs,
+						Key:   logEntry.GetKey(),
+						Value: logEntry.GetData(),
+						TsNs:  logEntry.GetTsNs(),
 					},
 				},
 			}); err != nil {
 				glog.Errorf("Error sending data to %s: %v", clientName, err)
+
 				return false, err
 			}
 
@@ -162,7 +167,7 @@ func (b *MessageQueueBroker) subscribeWithOffsetSubscription(
 }
 
 // GetSubscriptionInfo returns information about an active subscription
-func (b *MessageQueueBroker) GetSubscriptionInfo(subscriptionID string) (map[string]interface{}, error) {
+func (b *MessageQueueBroker) GetSubscriptionInfo(subscriptionID string) (map[string]any, error) {
 	subscription, err := b.offsetManager.GetSubscription(subscriptionID)
 	if err != nil {
 		return nil, err
@@ -178,7 +183,7 @@ func (b *MessageQueueBroker) GetSubscriptionInfo(subscriptionID string) (map[str
 		return nil, err
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"subscription_id": subscription.ID,
 		"start_offset":    subscription.StartOffset,
 		"current_offset":  subscription.CurrentOffset,
@@ -190,18 +195,18 @@ func (b *MessageQueueBroker) GetSubscriptionInfo(subscriptionID string) (map[str
 }
 
 // ListActiveSubscriptions returns information about all active subscriptions
-func (b *MessageQueueBroker) ListActiveSubscriptions() ([]map[string]interface{}, error) {
+func (b *MessageQueueBroker) ListActiveSubscriptions() ([]map[string]any, error) {
 	subscriptions, err := b.offsetManager.ListActiveSubscriptions()
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]map[string]interface{}, len(subscriptions))
+	result := make([]map[string]any, len(subscriptions))
 	for i, subscription := range subscriptions {
 		lag, _ := subscription.GetLag()
 		atEnd, _ := subscription.IsAtEnd()
 
-		result[i] = map[string]interface{}{
+		result[i] = map[string]any{
 			"subscription_id": subscription.ID,
 			"start_offset":    subscription.StartOffset,
 			"current_offset":  subscription.CurrentOffset,

@@ -94,6 +94,7 @@ func createMockTopology(volumes ...*types.VolumeHealthMetrics) *topology.ActiveT
 	}
 
 	at.UpdateTopology(topoInfo)
+
 	return at
 }
 
@@ -105,7 +106,7 @@ func TestDetection_MixedDiskTypes(t *testing.T) {
 	metrics := []*types.VolumeHealthMetrics{}
 
 	// SSD Servers
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		metrics = append(metrics, &types.VolumeHealthMetrics{
 			VolumeID:      uint32(i + 1),
 			Server:        "ssd-server-1",
@@ -117,7 +118,7 @@ func TestDetection_MixedDiskTypes(t *testing.T) {
 			Rack:          "rack1",
 		})
 	}
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		metrics = append(metrics, &types.VolumeHealthMetrics{
 			VolumeID:      uint32(20 + i + 1),
 			Server:        "ssd-server-2",
@@ -131,7 +132,7 @@ func TestDetection_MixedDiskTypes(t *testing.T) {
 	}
 
 	// HDD Servers
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		metrics = append(metrics, &types.VolumeHealthMetrics{
 			VolumeID:      uint32(100 + i + 1),
 			Server:        "hdd-server-1",
@@ -143,7 +144,7 @@ func TestDetection_MixedDiskTypes(t *testing.T) {
 			Rack:          "rack1",
 		})
 	}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		metrics = append(metrics, &types.VolumeHealthMetrics{
 			VolumeID:      uint32(200 + i + 1),
 			Server:        "hdd-server-2",
@@ -190,7 +191,7 @@ func TestDetection_ImbalancedDiskType(t *testing.T) {
 	metrics := []*types.VolumeHealthMetrics{}
 
 	// Server 1 (Overloaded SSD)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		metrics = append(metrics, &types.VolumeHealthMetrics{
 			VolumeID:      uint32(i + 1),
 			Server:        "ssd-server-1",
@@ -203,7 +204,7 @@ func TestDetection_ImbalancedDiskType(t *testing.T) {
 		})
 	}
 	// Server 2 (Underloaded SSD)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		metrics = append(metrics, &types.VolumeHealthMetrics{
 			VolumeID:      uint32(100 + i + 1),
 			Server:        "ssd-server-2",
@@ -245,11 +246,11 @@ func TestDetection_ImbalancedDiskType(t *testing.T) {
 			t.Error("Task has invalid VolumeID")
 		}
 		// Expect volume to be moving from ssd-server-1 to ssd-server-2
-		if task.TypedParams.Sources[0].Node != "ssd-server-1:8080" {
-			t.Errorf("Expected source ssd-server-1:8080, got %s", task.TypedParams.Sources[0].Node)
+		if task.TypedParams.GetSources()[0].GetNode() != "ssd-server-1:8080" {
+			t.Errorf("Expected source ssd-server-1:8080, got %s", task.TypedParams.GetSources()[0].GetNode())
 		}
-		if task.TypedParams.Targets[0].Node != "ssd-server-2:8080" {
-			t.Errorf("Expected target ssd-server-2:8080, got %s", task.TypedParams.Targets[0].Node)
+		if task.TypedParams.GetTargets()[0].GetNode() != "ssd-server-2:8080" {
+			t.Errorf("Expected target ssd-server-2:8080, got %s", task.TypedParams.GetTargets()[0].GetNode())
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer/abstract_sql"
 )
 

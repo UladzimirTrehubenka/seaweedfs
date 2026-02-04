@@ -1,7 +1,7 @@
 package balance
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/seaweedfs/seaweedfs/weed/admin/config"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -12,6 +12,7 @@ import (
 // Config extends BaseConfig with balance-specific settings
 type Config struct {
 	base.BaseConfig
+
 	ImbalanceThreshold float64 `json:"imbalance_threshold"`
 	MinServerCount     int     `json:"min_server_count"`
 }
@@ -132,25 +133,25 @@ func (c *Config) ToTaskPolicy() *worker_pb.TaskPolicy {
 // FromTaskPolicy loads configuration from a TaskPolicy protobuf message
 func (c *Config) FromTaskPolicy(policy *worker_pb.TaskPolicy) error {
 	if policy == nil {
-		return fmt.Errorf("policy is nil")
+		return errors.New("policy is nil")
 	}
 
 	// Set general TaskPolicy fields
-	c.Enabled = policy.Enabled
-	c.MaxConcurrent = int(policy.MaxConcurrent)
-	c.ScanIntervalSeconds = int(policy.RepeatIntervalSeconds) // Direct seconds-to-seconds mapping
+	c.Enabled = policy.GetEnabled()
+	c.MaxConcurrent = int(policy.GetMaxConcurrent())
+	c.ScanIntervalSeconds = int(policy.GetRepeatIntervalSeconds()) // Direct seconds-to-seconds mapping
 
 	// Set balance-specific fields from the task config
 	if balanceConfig := policy.GetBalanceConfig(); balanceConfig != nil {
-		c.ImbalanceThreshold = float64(balanceConfig.ImbalanceThreshold)
-		c.MinServerCount = int(balanceConfig.MinServerCount)
+		c.ImbalanceThreshold = float64(balanceConfig.GetImbalanceThreshold())
+		c.MinServerCount = int(balanceConfig.GetMinServerCount())
 	}
 
 	return nil
 }
 
 // LoadConfigFromPersistence loads configuration from the persistence layer if available
-func LoadConfigFromPersistence(configPersistence interface{}) *Config {
+func LoadConfigFromPersistence(configPersistence any) *Config {
 	config := NewDefaultConfig()
 
 	// Try to load from persistence if available
@@ -160,11 +161,13 @@ func LoadConfigFromPersistence(configPersistence interface{}) *Config {
 		if policy, err := persistence.LoadBalanceTaskPolicy(); err == nil && policy != nil {
 			if err := config.FromTaskPolicy(policy); err == nil {
 				glog.V(1).Infof("Loaded balance configuration from persistence")
+
 				return config
 			}
 		}
 	}
 
 	glog.V(1).Infof("Using default balance configuration")
+
 	return config
 }

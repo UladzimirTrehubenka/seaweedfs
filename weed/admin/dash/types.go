@@ -55,6 +55,7 @@ func (vs *VolumeServer) GetDisplayAddress() string {
 	if vs.PublicURL != "" {
 		return vs.PublicURL
 	}
+
 	return vs.Address
 }
 
@@ -104,6 +105,7 @@ type BucketDetails struct {
 // Volume management structures
 type VolumeWithTopology struct {
 	*master_pb.VolumeInformationMessage
+
 	Server     string `json:"server"`
 	DataCenter string `json:"datacenter"`
 	Rack       string `json:"rack"`

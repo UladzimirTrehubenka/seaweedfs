@@ -183,7 +183,7 @@ func TestPolicyEvaluation(t *testing.T) {
 				Principal: "user:alice",
 				Action:    "s3:GetObject",
 				Resource:  "arn:aws:s3:::public-bucket/file.txt",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:SourceIp": "192.168.1.100",
 				},
 			},
@@ -250,7 +250,7 @@ func TestConditionEvaluation(t *testing.T) {
 				Effect:   "Allow",
 				Action:   []string{"s3:*"},
 				Resource: []string{"arn:aws:s3:::*"},
-				Condition: map[string]map[string]interface{}{
+				Condition: map[string]map[string]any{
 					"IpAddress": {
 						"aws:SourceIp": []string{"192.168.1.0/24", "10.0.0.0/8"},
 					},
@@ -273,7 +273,7 @@ func TestConditionEvaluation(t *testing.T) {
 				Principal: "user:alice",
 				Action:    "s3:GetObject",
 				Resource:  "arn:aws:s3:::mybucket/file.txt",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:SourceIp": "192.168.1.100",
 				},
 			},
@@ -285,7 +285,7 @@ func TestConditionEvaluation(t *testing.T) {
 				Principal: "user:alice",
 				Action:    "s3:GetObject",
 				Resource:  "arn:aws:s3:::mybucket/file.txt",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:SourceIp": "8.8.8.8",
 				},
 			},
@@ -297,7 +297,7 @@ func TestConditionEvaluation(t *testing.T) {
 				Principal: "user:alice",
 				Action:    "s3:PutObject",
 				Resource:  "arn:aws:s3:::mybucket/newfile.txt",
-				RequestContext: map[string]interface{}{
+				RequestContext: map[string]any{
 					"aws:SourceIp": "10.1.2.3",
 				},
 			},

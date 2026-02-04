@@ -7,12 +7,13 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 func createTestDB(t *testing.T) *sql.DB {
 	// Create temporary database file
-	tmpFile, err := os.CreateTemp("", "offset_test_*.db")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "offset_test_*.db")
 	if err != nil {
 		t.Fatalf("Failed to create temp database file: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestSQLOffsetStorage_GetOffsetMappingsByRange(t *testing.T) {
 	partitionKey := partitionKey(partition)
 
 	// Add offset mappings
-	for i := int64(0); i < 10; i++ {
+	for i := range int64(10) {
 		err := storage.SaveOffsetMapping(partitionKey, i, i*1000, 100)
 		if err != nil {
 			t.Fatalf("Failed to save offset mapping: %v", err)
@@ -483,15 +484,16 @@ func TestSQLOffsetStorage_ConcurrentAccess(t *testing.T) {
 
 	done := make(chan bool, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(goroutineID int) {
 			defer func() { done <- true }()
 
-			for j := 0; j < offsetsPerGoroutine; j++ {
+			for j := range offsetsPerGoroutine {
 				offset := int64(goroutineID*offsetsPerGoroutine + j)
 				err := storage.SaveOffsetMapping(partitionKey, offset, offset*1000, 100)
 				if err != nil {
 					t.Errorf("Failed to save offset mapping %d: %v", offset, err)
+
 					return
 				}
 			}
@@ -499,7 +501,7 @@ func TestSQLOffsetStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 

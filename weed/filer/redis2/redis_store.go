@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/redis/go-redis/v9"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -77,5 +78,6 @@ func (store *Redis2Store) initialize(hostPort string, username string, password 
 	store.Client = redis.NewClient(opt)
 	store.keyPrefix = keyPrefix
 	store.loadSuperLargeDirectories(superLargeDirectories)
-	return
+
+	return err
 }

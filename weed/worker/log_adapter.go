@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"maps"
 
 	wtasks "github.com/seaweedfs/seaweedfs/weed/worker/tasks"
 	wtypes "github.com/seaweedfs/seaweedfs/weed/worker/types"
@@ -11,7 +12,7 @@ import (
 // so that structured WithFields logs from task implementations are captured into file logs.
 type taskLoggerAdapter struct {
 	base   wtasks.TaskLogger
-	fields map[string]interface{}
+	fields map[string]any
 }
 
 func newTaskLoggerAdapter(base wtasks.TaskLogger) *taskLoggerAdapter {
@@ -19,55 +20,58 @@ func newTaskLoggerAdapter(base wtasks.TaskLogger) *taskLoggerAdapter {
 }
 
 // WithFields returns a new adapter instance that includes the provided fields.
-func (a *taskLoggerAdapter) WithFields(fields map[string]interface{}) wtypes.Logger {
+func (a *taskLoggerAdapter) WithFields(fields map[string]any) wtypes.Logger {
 	// copy fields to avoid mutation by caller
-	copied := make(map[string]interface{}, len(fields))
-	for k, v := range fields {
-		copied[k] = v
-	}
+	copied := make(map[string]any, len(fields))
+	maps.Copy(copied, fields)
+
 	return &taskLoggerAdapter{base: a.base, fields: copied}
 }
 
 // Info logs an info message, including any structured fields if present.
-func (a *taskLoggerAdapter) Info(msg string, args ...interface{}) {
+func (a *taskLoggerAdapter) Info(msg string, args ...any) {
 	if a.base == nil {
 		return
 	}
 	if len(a.fields) > 0 {
 		a.base.LogWithFields("INFO", fmt.Sprintf(msg, args...), toStringMap(a.fields))
+
 		return
 	}
 	a.base.Info(msg, args...)
 }
 
-func (a *taskLoggerAdapter) Warning(msg string, args ...interface{}) {
+func (a *taskLoggerAdapter) Warning(msg string, args ...any) {
 	if a.base == nil {
 		return
 	}
 	if len(a.fields) > 0 {
 		a.base.LogWithFields("WARNING", fmt.Sprintf(msg, args...), toStringMap(a.fields))
+
 		return
 	}
 	a.base.Warning(msg, args...)
 }
 
-func (a *taskLoggerAdapter) Error(msg string, args ...interface{}) {
+func (a *taskLoggerAdapter) Error(msg string, args ...any) {
 	if a.base == nil {
 		return
 	}
 	if len(a.fields) > 0 {
 		a.base.LogWithFields("ERROR", fmt.Sprintf(msg, args...), toStringMap(a.fields))
+
 		return
 	}
 	a.base.Error(msg, args...)
 }
 
-func (a *taskLoggerAdapter) Debug(msg string, args ...interface{}) {
+func (a *taskLoggerAdapter) Debug(msg string, args ...any) {
 	if a.base == nil {
 		return
 	}
 	if len(a.fields) > 0 {
 		a.base.LogWithFields("DEBUG", fmt.Sprintf(msg, args...), toStringMap(a.fields))
+
 		return
 	}
 	a.base.Debug(msg, args...)
@@ -76,10 +80,9 @@ func (a *taskLoggerAdapter) Debug(msg string, args ...interface{}) {
 // toStringMap converts map[string]interface{} to map[string]interface{} where values are printable.
 // The underlying tasks.TaskLogger handles arbitrary JSON values, but our gRPC conversion later
 // expects strings; we rely on existing conversion there. Here we keep interface{} to preserve detail.
-func toStringMap(in map[string]interface{}) map[string]interface{} {
-	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+func toStringMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	maps.Copy(out, in)
+
 	return out
 }

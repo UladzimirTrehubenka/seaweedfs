@@ -56,7 +56,8 @@ func (c *commandS3CleanUploads) Do(args []string, commandEnv *CommandEnv, writer
 
 	var buckets []string
 	err = filer_pb.List(context.Background(), commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
-		buckets = append(buckets, entry.Name)
+		buckets = append(buckets, entry.GetName())
+
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
@@ -77,10 +78,11 @@ func (c *commandS3CleanUploads) cleanupUploads(commandEnv *CommandEnv, writer io
 	var staleUploads []string
 	now := time.Now()
 	err := filer_pb.List(context.Background(), commandEnv, uploadsDir, "", func(entry *filer_pb.Entry, isLast bool) error {
-		ctime := time.Unix(entry.Attributes.Crtime, 0)
+		ctime := time.Unix(entry.GetAttributes().GetCrtime(), 0)
 		if ctime.Add(timeAgo).Before(now) {
-			staleUploads = append(staleUploads, entry.Name)
+			staleUploads = append(staleUploads, entry.GetName())
 		}
+
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
@@ -98,7 +100,7 @@ func (c *commandS3CleanUploads) cleanupUploads(commandEnv *CommandEnv, writer io
 
 		err = util_http.Delete(deleteUrl, string(encodedJwt))
 		if err != nil && err.Error() != "" {
-			return fmt.Errorf("purge %s/%s: %v", uploadsDir, staleUpload, err)
+			return fmt.Errorf("purge %s/%s: %w", uploadsDir, staleUpload, err)
 		}
 	}
 

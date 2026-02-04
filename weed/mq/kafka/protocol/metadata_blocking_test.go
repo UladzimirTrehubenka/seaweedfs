@@ -2,7 +2,8 @@ package protocol
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -139,24 +140,19 @@ func (h *FastMockHandler) ListTopics() []string {
 }
 
 func (h *FastMockHandler) TopicExists(name string) bool {
-	for _, topic := range h.topics {
-		if topic == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(h.topics, name)
 }
 
 func (h *FastMockHandler) CreateTopic(name string, partitions int32) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *FastMockHandler) CreateTopicWithSchemas(name string, partitions int32, keyRecordType *schema_pb.RecordType, valueRecordType *schema_pb.RecordType) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *FastMockHandler) DeleteTopic(name string) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *FastMockHandler) GetTopicInfo(name string) (*integration.KafkaTopicInfo, bool) {
@@ -164,27 +160,27 @@ func (h *FastMockHandler) GetTopicInfo(name string) (*integration.KafkaTopicInfo
 }
 
 func (h *FastMockHandler) ProduceRecord(ctx context.Context, topicName string, partitionID int32, key, value []byte) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *FastMockHandler) ProduceRecordValue(ctx context.Context, topicName string, partitionID int32, key []byte, recordValueBytes []byte) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *FastMockHandler) GetStoredRecords(ctx context.Context, topic string, partition int32, fromOffset int64, maxRecords int) ([]integration.SMQRecord, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 func (h *FastMockHandler) GetEarliestOffset(topic string, partition int32) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *FastMockHandler) GetLatestOffset(topic string, partition int32) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *FastMockHandler) WithFilerClient(streamingMode bool, fn func(client filer_pb.SeaweedFilerClient) error) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *FastMockHandler) GetBrokerAddresses() []string {
@@ -192,7 +188,7 @@ func (h *FastMockHandler) GetBrokerAddresses() []string {
 }
 
 func (h *FastMockHandler) CreatePerConnectionBrokerClient() (*integration.BrokerClient, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 func (h *FastMockHandler) SetProtocolHandler(handler integration.ProtocolHandler) {
@@ -215,6 +211,7 @@ type BlockingMockHandler struct {
 func (h *BlockingMockHandler) ListTopics() []string {
 	// Simulate backend blocking (e.g., waiting for unresponsive broker/filer)
 	time.Sleep(h.blockDuration)
+
 	return []string{}
 }
 
@@ -223,15 +220,15 @@ func (h *BlockingMockHandler) TopicExists(name string) bool {
 }
 
 func (h *BlockingMockHandler) CreateTopic(name string, partitions int32) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) CreateTopicWithSchemas(name string, partitions int32, keyRecordType *schema_pb.RecordType, valueRecordType *schema_pb.RecordType) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) DeleteTopic(name string) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) GetTopicInfo(name string) (*integration.KafkaTopicInfo, bool) {
@@ -239,27 +236,27 @@ func (h *BlockingMockHandler) GetTopicInfo(name string) (*integration.KafkaTopic
 }
 
 func (h *BlockingMockHandler) ProduceRecord(ctx context.Context, topicName string, partitionID int32, key, value []byte) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) ProduceRecordValue(ctx context.Context, topicName string, partitionID int32, key []byte, recordValueBytes []byte) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) GetStoredRecords(ctx context.Context, topic string, partition int32, fromOffset int64, maxRecords int) ([]integration.SMQRecord, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) GetEarliestOffset(topic string, partition int32) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) GetLatestOffset(topic string, partition int32) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) WithFilerClient(streamingMode bool, fn func(client filer_pb.SeaweedFilerClient) error) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) GetBrokerAddresses() []string {
@@ -267,7 +264,7 @@ func (h *BlockingMockHandler) GetBrokerAddresses() []string {
 }
 
 func (h *BlockingMockHandler) CreatePerConnectionBrokerClient() (*integration.BrokerClient, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 func (h *BlockingMockHandler) SetProtocolHandler(handler integration.ProtocolHandler) {
@@ -313,15 +310,15 @@ func (h *TimeoutAwareMockHandler) TopicExists(name string) bool {
 }
 
 func (h *TimeoutAwareMockHandler) CreateTopic(name string, partitions int32) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) CreateTopicWithSchemas(name string, partitions int32, keyRecordType *schema_pb.RecordType, valueRecordType *schema_pb.RecordType) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) DeleteTopic(name string) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) GetTopicInfo(name string) (*integration.KafkaTopicInfo, bool) {
@@ -329,27 +326,27 @@ func (h *TimeoutAwareMockHandler) GetTopicInfo(name string) (*integration.KafkaT
 }
 
 func (h *TimeoutAwareMockHandler) ProduceRecord(ctx context.Context, topicName string, partitionID int32, key, value []byte) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) ProduceRecordValue(ctx context.Context, topicName string, partitionID int32, key []byte, recordValueBytes []byte) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) GetStoredRecords(ctx context.Context, topic string, partition int32, fromOffset int64, maxRecords int) ([]integration.SMQRecord, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) GetEarliestOffset(topic string, partition int32) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) GetLatestOffset(topic string, partition int32) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+	return 0, errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) WithFilerClient(streamingMode bool, fn func(client filer_pb.SeaweedFilerClient) error) error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) GetBrokerAddresses() []string {
@@ -357,7 +354,7 @@ func (h *TimeoutAwareMockHandler) GetBrokerAddresses() []string {
 }
 
 func (h *TimeoutAwareMockHandler) CreatePerConnectionBrokerClient() (*integration.BrokerClient, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 func (h *TimeoutAwareMockHandler) SetProtocolHandler(handler integration.ProtocolHandler) {

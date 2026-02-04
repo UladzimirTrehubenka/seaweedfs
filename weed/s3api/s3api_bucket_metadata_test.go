@@ -92,7 +92,7 @@ func TestBucketMetadataUpdatePattern(t *testing.T) {
 	if metadata.Tags["Project"] != "seaweedfs" {
 		t.Error("Project tag not set correctly")
 	}
-	if metadata.Encryption == nil || metadata.Encryption.SseAlgorithm != "AES256" {
+	if metadata.Encryption == nil || metadata.Encryption.GetSseAlgorithm() != "AES256" {
 		t.Error("Encryption not set correctly")
 	}
 }

@@ -1,7 +1,7 @@
 package needle
 
 import (
-	"fmt"
+	"encoding/hex"
 	"io"
 
 	"hash/crc32"
@@ -29,16 +29,15 @@ func (c CRC) Value() uint32 {
 func (n *Needle) Etag() string {
 	bits := make([]byte, 4)
 	util.Uint32toBytes(bits, uint32(n.Checksum))
-	return fmt.Sprintf("%x", bits)
+
+	return hex.EncodeToString(bits)
 }
 
 func NewCRCwriter(w io.Writer) *CRCwriter {
-
 	return &CRCwriter{
 		crc: CRC(0),
 		w:   w,
 	}
-
 }
 
 type CRCwriter struct {
@@ -49,6 +48,7 @@ type CRCwriter struct {
 func (c *CRCwriter) Write(p []byte) (n int, err error) {
 	n, err = c.w.Write(p) // with each write ...
 	c.crc = c.crc.Update(p)
+
 	return
 }
 

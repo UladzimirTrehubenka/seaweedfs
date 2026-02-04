@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -34,7 +35,6 @@ func (c *commandS3BucketDelete) HasTag(CommandTag) bool {
 }
 
 func (c *commandS3BucketDelete) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	bucketName := bucketCommand.String("name", "", "bucket name")
 	if err = bucketCommand.Parse(args); err != nil {
@@ -42,7 +42,7 @@ func (c *commandS3BucketDelete) Do(args []string, commandEnv *CommandEnv, writer
 	}
 
 	if *bucketName == "" {
-		return fmt.Errorf("empty bucket name")
+		return errors.New("empty bucket name")
 	}
 
 	_, parseErr := commandEnv.parseUrl(findInputDirectory(bucketCommand.Args()))
@@ -70,12 +70,12 @@ func (c *commandS3BucketDelete) Do(args []string, commandEnv *CommandEnv, writer
 		_, err = client.CollectionDelete(ctx, &master_pb.CollectionDeleteRequest{
 			Name: getCollectionName(commandEnv, *bucketName),
 		})
+
 		return err
 	})
 	if err != nil {
-		return
+		return err
 	}
 
 	return filer_pb.Remove(ctx, commandEnv, filerBucketsPath, *bucketName, false, true, true, false, nil)
-
 }

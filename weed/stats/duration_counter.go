@@ -40,18 +40,21 @@ func (rrc *RoundRobinCounter) Max() (max int64) {
 			max = val
 		}
 	}
+
 	return
 }
 func (rrc *RoundRobinCounter) Count() (cnt int64) {
 	for _, c := range rrc.Counts {
 		cnt += c
 	}
+
 	return
 }
 func (rrc *RoundRobinCounter) Sum() (sum int64) {
 	for _, val := range rrc.Values {
 		sum += val
 	}
+
 	return
 }
 
@@ -66,6 +69,7 @@ func (rrc *RoundRobinCounter) ToList() (ret []int64) {
 		}
 		ret = append(ret, rrc.Values[index])
 	}
+
 	return
 }
 

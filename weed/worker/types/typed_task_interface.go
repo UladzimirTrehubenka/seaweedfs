@@ -14,11 +14,11 @@ var (
 
 // TaskLogger interface for task logging (minimal definition to avoid import cycles)
 type TaskLogger interface {
-	Info(message string, args ...interface{})
-	Warning(message string, args ...interface{})
-	Error(message string, args ...interface{})
-	Debug(message string, args ...interface{})
-	LogWithFields(level string, message string, fields map[string]interface{})
+	Info(message string, args ...any)
+	Warning(message string, args ...any)
+	Error(message string, args ...any)
+	Debug(message string, args ...any)
+	LogWithFields(level string, message string, fields map[string]any)
 	Close() error
 }
 
@@ -62,11 +62,11 @@ type TypedTaskInterface interface {
 	GetTaskLogger() TaskLogger
 
 	// Logging methods (all typed tasks support this)
-	LogInfo(message string, args ...interface{})
-	LogWarning(message string, args ...interface{})
-	LogError(message string, args ...interface{})
-	LogDebug(message string, args ...interface{})
-	LogWithFields(level string, message string, fields map[string]interface{})
+	LogInfo(message string, args ...any)
+	LogWarning(message string, args ...any)
+	LogError(message string, args ...any)
+	LogDebug(message string, args ...any)
+	LogWithFields(level string, message string, fields map[string]any)
 }
 
 // TypedTaskCreator is a function that creates a new typed task instance
@@ -95,6 +95,7 @@ func (r *TypedTaskRegistry) CreateTypedTask(taskType TaskType) (TypedTaskInterfa
 	if !exists {
 		return nil, ErrTaskTypeNotFound
 	}
+
 	return creator(), nil
 }
 
@@ -104,6 +105,7 @@ func (r *TypedTaskRegistry) GetSupportedTypes() []TaskType {
 	for taskType := range r.creators {
 		types = append(types, taskType)
 	}
+
 	return types
 }
 

@@ -35,7 +35,6 @@ type FetchResult struct {
 // FetchMultipleBatches fetches multiple record batches up to maxBytes limit
 // ctx controls the fetch timeout (should match Kafka fetch request's MaxWaitTime)
 func (f *MultiBatchFetcher) FetchMultipleBatches(ctx context.Context, topicName string, partitionID int32, startOffset, highWaterMark int64, maxBytes int32) (*FetchResult, error) {
-
 	if startOffset >= highWaterMark {
 		return &FetchResult{
 			RecordBatches: []byte{},
@@ -60,24 +59,29 @@ func (f *MultiBatchFetcher) FetchMultipleBatches(ctx context.Context, topicName 
 	// Assume average message size + batch overhead
 	// Client requested maxBytes, we should use most of it
 	// Start with larger batches to maximize throughput
-	estimatedMsgSize := int32(1024)                        // Typical message size with overhead
-	recordsPerBatch := (maxBytes - 200) / estimatedMsgSize // Use available space efficiently
-	if recordsPerBatch < 100 {
-		recordsPerBatch = 100 // Minimum 100 records per batch
-	}
-	if recordsPerBatch > 10000 {
-		recordsPerBatch = 10000 // Cap at 10k records per batch to avoid huge memory allocations
-	}
-	maxBatchesPerFetch := int((maxBytes - 200) / (estimatedMsgSize * 10)) // Reasonable limit
-	if maxBatchesPerFetch < 5 {
-		maxBatchesPerFetch = 5 // At least 5 batches
-	}
-	if maxBatchesPerFetch > 100 {
-		maxBatchesPerFetch = 100 // At most 100 batches
-	}
+	estimatedMsgSize := int32(1024) // Typical message size with overhead
+	recordsPerBatch := min(
+		// Use available space efficiently
+		// Minimum 100 records per batch
+		max(
+
+			(maxBytes-200)/estimatedMsgSize,
+
+			100),
+		// Cap at 10k records per batch to avoid huge memory allocations
+		10000)
+	maxBatchesPerFetch := min(
+		// Reasonable limit
+		// At least 5 batches
+		max(
+
+			int((maxBytes-200)/(estimatedMsgSize*10)),
+
+			5),
+		// At most 100 batches
+		100)
 
 	for batchCount < maxBatchesPerFetch && currentOffset < highWaterMark {
-
 		// Calculate remaining space
 		remainingBytes := maxBytes - totalSize
 		if remainingBytes < 100 { // Need at least 100 bytes for a minimal batch
@@ -88,10 +92,7 @@ func (f *MultiBatchFetcher) FetchMultipleBatches(ctx context.Context, topicName 
 		// If we have less space remaining, fetch fewer records to avoid going over
 		currentBatchSize := recordsPerBatch
 		if remainingBytes < recordsPerBatch*estimatedMsgSize {
-			currentBatchSize = remainingBytes / estimatedMsgSize
-			if currentBatchSize < 1 {
-				currentBatchSize = 1
-			}
+			currentBatchSize = max(remainingBytes/estimatedMsgSize, 1)
 		}
 
 		// Calculate how many records to fetch for this batch
@@ -325,15 +326,9 @@ func (f *MultiBatchFetcher) constructSingleRecordBatch(topicName string, baseOff
 		}
 
 		fmt.Printf("    CRC data (first 100 bytes of %d):\n", len(crcData))
-		dumpSize := 100
-		if len(crcData) < dumpSize {
-			dumpSize = len(crcData)
-		}
+		dumpSize := min(len(crcData), 100)
 		for i := 0; i < dumpSize; i += 20 {
-			end := i + 20
-			if end > dumpSize {
-				end = dumpSize
-			}
+			end := min(i+20, dumpSize)
 			fmt.Printf("      [%3d-%3d]: %x\n", i, end-1, crcData[i:end])
 		}
 
@@ -349,10 +344,7 @@ func (f *MultiBatchFetcher) constructSingleRecordBatch(topicName string, baseOff
 		if actualTotalSize <= 200 {
 			fmt.Printf("    Complete batch hex dump (%d bytes):\n", actualTotalSize)
 			for i := 0; i < actualTotalSize; i += 16 {
-				end := i + 16
-				if end > actualTotalSize {
-					end = actualTotalSize
-				}
+				end := min(i+16, actualTotalSize)
 				fmt.Printf("      %04d: %x\n", i, batch[i:end])
 			}
 		}
@@ -481,6 +473,7 @@ func (f *MultiBatchFetcher) CreateCompressedBatch(baseOffset int64, smqRecords [
 	if codec == compression.None {
 		// No compression requested
 		batch := f.constructSingleRecordBatch("", baseOffset, smqRecords)
+
 		return &CompressedBatchResult{
 			CompressedData: batch,
 			OriginalSize:   int32(len(batch)),
@@ -521,6 +514,7 @@ func (f *MultiBatchFetcher) constructCompressedRecordBatch(baseOffset int64, com
 	const maxBatchSize = 1 << 30 // 1 GB limit
 	if len(compressedRecords) > maxBatchSize-100 {
 		glog.Errorf("Compressed records too large: %d bytes", len(compressedRecords))
+
 		return nil
 	}
 	batch := make([]byte, 0, len(compressedRecords)+100)
@@ -608,6 +602,7 @@ func (f *MultiBatchFetcher) compressData(data []byte, codec compression.Compress
 
 		if _, err := gzipWriter.Write(data); err != nil {
 			gzipWriter.Close()
+
 			return nil, fmt.Errorf("gzip compression write failed: %w", err)
 		}
 

@@ -56,9 +56,10 @@ func (c *commandMqTopicDescribe) Do(args []string, commandEnv *CommandEnv, write
 		if err != nil {
 			return err
 		}
-		for _, assignment := range resp.BrokerPartitionAssignments {
+		for _, assignment := range resp.GetBrokerPartitionAssignments() {
 			fmt.Fprintf(writer, "  %+v\n", assignment)
 		}
+
 		return nil
 	})
 }

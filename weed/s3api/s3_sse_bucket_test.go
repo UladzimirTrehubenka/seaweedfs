@@ -22,12 +22,12 @@ func TestBucketDefaultSSEKMSEnforcement(t *testing.T) {
 
 	t.Run("Bucket with SSE-KMS default encryption", func(t *testing.T) {
 		// Test that default encryption config is properly stored and retrieved
-		if config.SseAlgorithm != "aws:kms" {
-			t.Errorf("Expected SSE algorithm aws:kms, got %s", config.SseAlgorithm)
+		if config.GetSseAlgorithm() != "aws:kms" {
+			t.Errorf("Expected SSE algorithm aws:kms, got %s", config.GetSseAlgorithm())
 		}
 
-		if config.KmsKeyId != kmsKey.KeyID {
-			t.Errorf("Expected KMS key ID %s, got %s", kmsKey.KeyID, config.KmsKeyId)
+		if config.GetKmsKeyId() != kmsKey.KeyID {
+			t.Errorf("Expected KMS key ID %s, got %s", kmsKey.KeyID, config.GetKmsKeyId())
 		}
 	})
 
@@ -163,7 +163,7 @@ func TestBucketEncryptionConfigValidation(t *testing.T) {
 			if !tc.expectError && config != nil {
 				// Validate the parsed configuration
 				t.Logf("Successfully parsed config: Algorithm=%s, KeyID=%s",
-					config.SseAlgorithm, config.KmsKeyId)
+					config.GetSseAlgorithm(), config.GetKmsKeyId())
 			}
 		})
 	}
@@ -191,12 +191,12 @@ func TestBucketEncryptionAPIOperations(t *testing.T) {
 		}
 
 		// Verify the parsed configuration
-		if config.SseAlgorithm != "aws:kms" {
-			t.Errorf("Expected algorithm aws:kms, got %s", config.SseAlgorithm)
+		if config.GetSseAlgorithm() != "aws:kms" {
+			t.Errorf("Expected algorithm aws:kms, got %s", config.GetSseAlgorithm())
 		}
 
-		if config.KmsKeyId != "test-key-id" {
-			t.Errorf("Expected key ID test-key-id, got %s", config.KmsKeyId)
+		if config.GetKmsKeyId() != "test-key-id" {
+			t.Errorf("Expected key ID test-key-id, got %s", config.GetKmsKeyId())
 		}
 
 		// Convert back to XML
@@ -216,11 +216,11 @@ func TestBucketEncryptionAPIOperations(t *testing.T) {
 			t.Fatalf("Failed to parse round-trip XML: %v", err)
 		}
 
-		if roundTripConfig.SseAlgorithm != config.SseAlgorithm {
+		if roundTripConfig.GetSseAlgorithm() != config.GetSseAlgorithm() {
 			t.Error("Round-trip algorithm doesn't match")
 		}
 
-		if roundTripConfig.KmsKeyId != config.KmsKeyId {
+		if roundTripConfig.GetKmsKeyId() != config.GetKmsKeyId() {
 			t.Error("Round-trip key ID doesn't match")
 		}
 	})
@@ -281,7 +281,7 @@ func TestBucketEncryptionEdgeCases(t *testing.T) {
 			t.Fatalf("Failed to parse large XML: %v", err)
 		}
 
-		if config.SseAlgorithm != "aws:kms" {
+		if config.GetSseAlgorithm() != "aws:kms" {
 			t.Error("Should parse large XML correctly")
 		}
 	})
@@ -301,7 +301,7 @@ func TestBucketEncryptionEdgeCases(t *testing.T) {
 			t.Fatalf("Failed to parse namespaced XML: %v", err)
 		}
 
-		if config.SseAlgorithm != "AES256" {
+		if config.GetSseAlgorithm() != "AES256" {
 			t.Error("Should parse namespaced XML correctly")
 		}
 	})

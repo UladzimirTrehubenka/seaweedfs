@@ -2,12 +2,14 @@ package s3api
 
 import (
 	"bytes"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
 // TestContentEncodingPreservation tests that Content-Encoding and Content-Language headers
@@ -77,7 +79,7 @@ func TestContentEncodingPreservation(t *testing.T) {
 			key := "test-object.txt"
 
 			// Create PUT request with Content-Encoding and/or Content-Language headers
-			putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+key, bytes.NewBufferString(tc.body))
+			putReq := httptest.NewRequest(http.MethodPut, "/"+bucket+"/"+key, bytes.NewBufferString(tc.body))
 			putReq.Header.Set("Content-Type", "text/plain")
 			if tc.contentEncoding != "" {
 				putReq.Header.Set("Content-Encoding", tc.contentEncoding)
@@ -110,7 +112,7 @@ func TestContentEncodingPreservation(t *testing.T) {
 
 			// Simulate GET response - verify headers are set correctly
 			getResp := httptest.NewRecorder()
-			getReq := httptest.NewRequest("GET", "/"+bucket+"/"+key, nil)
+			getReq := httptest.NewRequest(http.MethodGet, "/"+bucket+"/"+key, nil)
 
 			// Create a mock entry with the metadata
 			entry := &filer_pb.Entry{
@@ -163,7 +165,7 @@ func TestContentEncodingWithOtherHeaders(t *testing.T) {
 	body := "Test content"
 
 	// Create PUT request with multiple headers
-	putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+key, bytes.NewBufferString(body))
+	putReq := httptest.NewRequest(http.MethodPut, "/"+bucket+"/"+key, bytes.NewBufferString(body))
 	putReq.Header.Set("Content-Type", "text/plain")
 	putReq.Header.Set("Content-Encoding", "gzip")
 	putReq.Header.Set("Content-Language", "en-US")
@@ -182,7 +184,7 @@ func TestContentEncodingWithOtherHeaders(t *testing.T) {
 
 	// Simulate GET response
 	getResp := httptest.NewRecorder()
-	getReq := httptest.NewRequest("GET", "/"+bucket+"/"+key, nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/"+bucket+"/"+key, nil)
 
 	entry := &filer_pb.Entry{
 		Name: key,

@@ -10,7 +10,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
 	"github.com/seaweedfs/seaweedfs/weed/worker/tasks"
-	"github.com/seaweedfs/seaweedfs/weed/worker/types"
 )
 
 // AdminClient interface defines what the maintenance system needs from the admin server
@@ -154,11 +153,11 @@ type TaskDetailData struct {
 
 // TaskCreationMetrics holds metrics that led to the task being created
 type TaskCreationMetrics struct {
-	TriggerMetric  string                 `json:"trigger_metric"` // What metric triggered this task
-	MetricValue    float64                `json:"metric_value"`   // Value of the trigger metric
-	Threshold      float64                `json:"threshold"`      // Threshold that was exceeded
-	VolumeMetrics  *VolumeHealthMetrics   `json:"volume_metrics,omitempty"`
-	AdditionalData map[string]interface{} `json:"additional_data,omitempty"`
+	TriggerMetric  string               `json:"trigger_metric"` // What metric triggered this task
+	MetricValue    float64              `json:"metric_value"`   // Value of the trigger metric
+	Threshold      float64              `json:"threshold"`      // Threshold that was exceeded
+	VolumeMetrics  *VolumeHealthMetrics `json:"volume_metrics,omitempty"`
+	AdditionalData map[string]any       `json:"additional_data,omitempty"`
 }
 
 // MaintenanceConfig holds configuration for the maintenance system
@@ -197,6 +196,7 @@ func GetTaskPolicy(mp *MaintenancePolicy, taskType MaintenanceTaskType) *TaskPol
 	if mp.TaskPolicies == nil {
 		return nil
 	}
+
 	return mp.TaskPolicies[string(taskType)]
 }
 
@@ -214,6 +214,7 @@ func IsTaskEnabled(mp *MaintenancePolicy, taskType MaintenanceTaskType) bool {
 	if policy == nil {
 		return false
 	}
+
 	return policy.Enabled
 }
 
@@ -223,6 +224,7 @@ func GetMaxConcurrent(mp *MaintenancePolicy, taskType MaintenanceTaskType) int {
 	if policy == nil {
 		return 1
 	}
+
 	return int(policy.MaxConcurrent)
 }
 
@@ -232,6 +234,7 @@ func GetRepeatInterval(mp *MaintenancePolicy, taskType MaintenanceTaskType) int 
 	if policy == nil {
 		return int(mp.DefaultRepeatIntervalSeconds)
 	}
+
 	return int(policy.RepeatIntervalSeconds)
 }
 
@@ -241,6 +244,7 @@ func GetVacuumTaskConfig(mp *MaintenancePolicy, taskType MaintenanceTaskType) *w
 	if policy == nil {
 		return nil
 	}
+
 	return policy.GetVacuumConfig()
 }
 
@@ -250,6 +254,7 @@ func GetErasureCodingTaskConfig(mp *MaintenancePolicy, taskType MaintenanceTaskT
 	if policy == nil {
 		return nil
 	}
+
 	return policy.GetErasureCodingConfig()
 }
 
@@ -259,6 +264,7 @@ func GetBalanceTaskConfig(mp *MaintenancePolicy, taskType MaintenanceTaskType) *
 	if policy == nil {
 		return nil
 	}
+
 	return policy.GetBalanceConfig()
 }
 
@@ -268,6 +274,7 @@ func GetReplicationTaskConfig(mp *MaintenancePolicy, taskType MaintenanceTaskTyp
 	if policy == nil {
 		return nil
 	}
+
 	return policy.GetReplicationConfig()
 }
 
@@ -507,18 +514,18 @@ func BuildMaintenancePolicyFromTasks() *MaintenancePolicy {
 		if taskConfig, ok := defaultConfig.(interface{ ToTaskPolicy() *worker_pb.TaskPolicy }); ok {
 			// Use protobuf directly for clean, type-safe config extraction
 			pbTaskPolicy := taskConfig.ToTaskPolicy()
-			taskPolicy.Enabled = pbTaskPolicy.Enabled
-			taskPolicy.MaxConcurrent = pbTaskPolicy.MaxConcurrent
-			if pbTaskPolicy.RepeatIntervalSeconds > 0 {
-				taskPolicy.RepeatIntervalSeconds = pbTaskPolicy.RepeatIntervalSeconds
+			taskPolicy.Enabled = pbTaskPolicy.GetEnabled()
+			taskPolicy.MaxConcurrent = pbTaskPolicy.GetMaxConcurrent()
+			if pbTaskPolicy.GetRepeatIntervalSeconds() > 0 {
+				taskPolicy.RepeatIntervalSeconds = pbTaskPolicy.GetRepeatIntervalSeconds()
 			}
-			if pbTaskPolicy.CheckIntervalSeconds > 0 {
-				taskPolicy.CheckIntervalSeconds = pbTaskPolicy.CheckIntervalSeconds
+			if pbTaskPolicy.GetCheckIntervalSeconds() > 0 {
+				taskPolicy.CheckIntervalSeconds = pbTaskPolicy.GetCheckIntervalSeconds()
 			}
 		}
 
 		// Also get defaults from scheduler if available (using types.TaskScheduler explicitly)
-		var scheduler types.TaskScheduler = typesRegistry.GetScheduler(taskType)
+		var scheduler = typesRegistry.GetScheduler(taskType)
 		if scheduler != nil {
 			if taskPolicy.MaxConcurrent <= 0 {
 				taskPolicy.MaxConcurrent = int32(scheduler.GetMaxConcurrent())
@@ -530,7 +537,7 @@ func BuildMaintenancePolicyFromTasks() *MaintenancePolicy {
 		}
 
 		// Also get defaults from detector if available (using types.TaskDetector explicitly)
-		var detector types.TaskDetector = typesRegistry.GetDetector(taskType)
+		var detector = typesRegistry.GetDetector(taskType)
 		if detector != nil {
 			// Convert scan interval to check interval (seconds)
 			if scanInterval := detector.ScanInterval(); scanInterval > 0 {
@@ -544,6 +551,7 @@ func BuildMaintenancePolicyFromTasks() *MaintenancePolicy {
 	}
 
 	glog.V(2).Infof("Built maintenance policy with %d task configurations", len(policy.TaskPolicies))
+
 	return policy
 }
 
@@ -575,6 +583,7 @@ func GetTaskIcon(taskType MaintenanceTaskType) string {
 			if provider != nil {
 				return provider.GetIcon()
 			}
+
 			break
 		}
 	}
@@ -596,6 +605,7 @@ func GetTaskDisplayName(taskType MaintenanceTaskType) string {
 			if provider != nil {
 				return provider.GetDisplayName()
 			}
+
 			break
 		}
 	}
@@ -617,6 +627,7 @@ func GetTaskDescription(taskType MaintenanceTaskType) string {
 			if provider != nil {
 				return provider.GetDescription()
 			}
+
 			break
 		}
 	}

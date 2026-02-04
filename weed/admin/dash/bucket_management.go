@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -29,7 +30,7 @@ type S3BucketsData struct {
 }
 
 type CreateBucketRequest struct {
-	Name                string `json:"name" binding:"required"`
+	Name                string `binding:"required"           json:"name"`
 	Region              string `json:"region"`
 	QuotaSize           int64  `json:"quota_size"`            // Quota size in bytes
 	QuotaUnit           string `json:"quota_unit"`            // Unit: MB, GB, TB
@@ -51,6 +52,7 @@ func (s *AdminServer) ShowS3Buckets(c *gin.Context) {
 	data, err := s.GetS3BucketsData()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get Object Store buckets: " + err.Error()})
+
 		return
 	}
 
@@ -63,12 +65,14 @@ func (s *AdminServer) ShowBucketDetails(c *gin.Context) {
 	bucketName := c.Param("bucket")
 	if bucketName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bucket name is required"})
+
 		return
 	}
 
 	details, err := s.GetBucketDetails(bucketName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get bucket details: " + err.Error()})
+
 		return
 	}
 
@@ -80,12 +84,14 @@ func (s *AdminServer) CreateBucket(c *gin.Context) {
 	var req CreateBucketRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
 	// Validate bucket name (basic validation)
 	if len(req.Name) < 3 || len(req.Name) > 63 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bucket name must be between 3 and 63 characters"})
+
 		return
 	}
 
@@ -97,6 +103,7 @@ func (s *AdminServer) CreateBucket(c *gin.Context) {
 		// Validate object lock mode
 		if req.ObjectLockMode != "GOVERNANCE" && req.ObjectLockMode != "COMPLIANCE" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Object lock mode must be either GOVERNANCE or COMPLIANCE"})
+
 			return
 		}
 
@@ -104,6 +111,7 @@ func (s *AdminServer) CreateBucket(c *gin.Context) {
 		if req.SetDefaultRetention {
 			if req.ObjectLockDuration <= 0 {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Object lock duration must be greater than 0 days when default retention is enabled"})
+
 				return
 			}
 		}
@@ -115,6 +123,7 @@ func (s *AdminServer) CreateBucket(c *gin.Context) {
 	// Validate quota: if enabled, size must be greater than 0
 	if req.QuotaEnabled && quotaBytes <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Quota size must be greater than 0 when quota is enabled"})
+
 		return
 	}
 
@@ -122,12 +131,14 @@ func (s *AdminServer) CreateBucket(c *gin.Context) {
 	owner := strings.TrimSpace(req.Owner)
 	if len(owner) > MaxOwnerNameLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Owner name must be %d characters or less", MaxOwnerNameLength)})
+
 		return
 	}
 
 	err := s.CreateS3BucketWithObjectLock(req.Name, quotaBytes, req.QuotaEnabled, req.VersioningEnabled, req.ObjectLockEnabled, req.ObjectLockMode, req.SetDefaultRetention, req.ObjectLockDuration, owner)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create bucket: " + err.Error()})
+
 		return
 	}
 
@@ -150,6 +161,7 @@ func (s *AdminServer) UpdateBucketQuota(c *gin.Context) {
 	bucketName := c.Param("bucket")
 	if bucketName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bucket name is required"})
+
 		return
 	}
 
@@ -160,6 +172,7 @@ func (s *AdminServer) UpdateBucketQuota(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
@@ -169,6 +182,7 @@ func (s *AdminServer) UpdateBucketQuota(c *gin.Context) {
 	err := s.SetBucketQuota(bucketName, quotaBytes, req.QuotaEnabled)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update bucket quota: " + err.Error()})
+
 		return
 	}
 
@@ -186,12 +200,14 @@ func (s *AdminServer) DeleteBucket(c *gin.Context) {
 	bucketName := c.Param("bucket")
 	if bucketName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bucket name is required"})
+
 		return
 	}
 
 	err := s.DeleteS3Bucket(bucketName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete bucket: " + err.Error()})
+
 		return
 	}
 
@@ -206,6 +222,7 @@ func (s *AdminServer) UpdateBucketOwner(c *gin.Context) {
 	bucketName := c.Param("bucket")
 	if bucketName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bucket name is required"})
+
 		return
 	}
 
@@ -215,12 +232,14 @@ func (s *AdminServer) UpdateBucketOwner(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+
 		return
 	}
 
 	// Require owner field to be explicitly provided
 	if req.Owner == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Owner field is required (use empty string to clear owner)"})
+
 		return
 	}
 
@@ -228,12 +247,14 @@ func (s *AdminServer) UpdateBucketOwner(c *gin.Context) {
 	owner := strings.TrimSpace(*req.Owner)
 	if len(owner) > MaxOwnerNameLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Owner name must be %d characters or less", MaxOwnerNameLength)})
+
 		return
 	}
 
 	err := s.SetBucketOwner(bucketName, owner)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update bucket owner: " + err.Error()})
+
 		return
 	}
 
@@ -256,7 +277,7 @@ func (s *AdminServer) SetBucketOwner(bucketName string, owner string) error {
 			return fmt.Errorf("lookup bucket %s: %w", bucketName, err)
 		}
 
-		bucketEntry := lookupResp.Entry
+		bucketEntry := lookupResp.GetEntry()
 
 		// Initialize Extended map if nil
 		if bucketEntry.Extended == nil {
@@ -265,7 +286,7 @@ func (s *AdminServer) SetBucketOwner(bucketName string, owner string) error {
 
 		// Set or remove the owner
 		if owner == "" {
-			delete(bucketEntry.Extended, s3_constants.AmzIdentityId)
+			delete(bucketEntry.GetExtended(), s3_constants.AmzIdentityId)
 		} else {
 			bucketEntry.Extended[s3_constants.AmzIdentityId] = []byte(owner)
 		}
@@ -288,6 +309,7 @@ func (s *AdminServer) ListBucketsAPI(c *gin.Context) {
 	buckets, err := s.GetS3Buckets()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get buckets: " + err.Error()})
+
 		return
 	}
 
@@ -348,7 +370,7 @@ func (s *AdminServer) SetBucketQuota(bucketName string, quotaBytes int64, quotaE
 			return fmt.Errorf("bucket not found: %w", err)
 		}
 
-		bucketEntry := lookupResp.Entry
+		bucketEntry := lookupResp.GetEntry()
 
 		// Determine quota value (negative if disabled)
 		var quota int64
@@ -459,7 +481,7 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 		// Handle Object Lock configuration using shared utilities
 		if objectLockEnabled {
 			var duration int32 = 0
-			var mode string = ""
+			var mode = ""
 
 			if setDefaultRetention {
 				// Validate Object Lock parameters only when setting default retention

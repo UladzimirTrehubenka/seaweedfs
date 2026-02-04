@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -46,7 +47,7 @@ type OpenBaoKMSConfig struct {
 // NewOpenBaoKMSProvider creates a new OpenBao/Vault KMS provider
 func NewOpenBaoKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, error) {
 	if config == nil {
-		return nil, fmt.Errorf("OpenBao/Vault KMS configuration is required")
+		return nil, errors.New("OpenBao/Vault KMS configuration is required")
 	}
 
 	// Extract configuration
@@ -112,7 +113,7 @@ func NewOpenBaoKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, e
 		}
 		glog.V(1).Infof("OpenBao KMS: Using AppRole authentication")
 	} else {
-		return nil, fmt.Errorf("either token or role_id+secret_id must be provided")
+		return nil, errors.New("either token or role_id+secret_id must be provided")
 	}
 
 	provider := &OpenBaoKMSProvider{
@@ -122,12 +123,13 @@ func NewOpenBaoKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, e
 	}
 
 	glog.V(1).Infof("OpenBao/Vault KMS provider initialized at %s", address)
+
 	return provider, nil
 }
 
 // authenticateAppRole authenticates using AppRole method
 func authenticateAppRole(client *vault.Client, roleID, secretID string) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"role_id":   roleID,
 		"secret_id": secretID,
 	}
@@ -138,21 +140,22 @@ func authenticateAppRole(client *vault.Client, roleID, secretID string) error {
 	}
 
 	if secret == nil || secret.Auth == nil {
-		return fmt.Errorf("AppRole authentication returned empty token")
+		return errors.New("AppRole authentication returned empty token")
 	}
 
 	client.SetToken(secret.Auth.ClientToken)
+
 	return nil
 }
 
 // GenerateDataKey generates a new data encryption key using OpenBao/Vault Transit
 func (p *OpenBaoKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkms.GenerateDataKeyRequest) (*seaweedkms.GenerateDataKeyResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("GenerateDataKeyRequest cannot be nil")
+		return nil, errors.New("GenerateDataKeyRequest cannot be nil")
 	}
 
 	if req.KeyID == "" {
-		return nil, fmt.Errorf("KeyID is required")
+		return nil, errors.New("KeyID is required")
 	}
 
 	// Validate key spec
@@ -174,7 +177,7 @@ func (p *OpenBaoKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkm
 	glog.V(4).Infof("OpenBao KMS: Encrypting data key using key %s", req.KeyID)
 
 	// Prepare encryption data
-	encryptData := map[string]interface{}{
+	encryptData := map[string]any{
 		"plaintext": base64.StdEncoding.EncodeToString(dataKey),
 	}
 
@@ -195,12 +198,12 @@ func (p *OpenBaoKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkm
 	}
 
 	if secret == nil || secret.Data == nil {
-		return nil, fmt.Errorf("no data returned from OpenBao/Vault encrypt operation")
+		return nil, errors.New("no data returned from OpenBao/Vault encrypt operation")
 	}
 
 	ciphertext, ok := secret.Data["ciphertext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid ciphertext format from OpenBao/Vault")
+		return nil, errors.New("invalid ciphertext format from OpenBao/Vault")
 	}
 
 	// Create standardized envelope format for consistent API behavior
@@ -216,17 +219,18 @@ func (p *OpenBaoKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkm
 	}
 
 	glog.V(4).Infof("OpenBao KMS: Generated and encrypted data key using key %s", req.KeyID)
+
 	return response, nil
 }
 
 // Decrypt decrypts an encrypted data key using OpenBao/Vault Transit
 func (p *OpenBaoKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.DecryptRequest) (*seaweedkms.DecryptResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("DecryptRequest cannot be nil")
+		return nil, errors.New("DecryptRequest cannot be nil")
 	}
 
 	if len(req.CiphertextBlob) == 0 {
-		return nil, fmt.Errorf("CiphertextBlob cannot be empty")
+		return nil, errors.New("CiphertextBlob cannot be empty")
 	}
 
 	// Parse the ciphertext envelope to extract key information
@@ -237,14 +241,14 @@ func (p *OpenBaoKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.Decryp
 
 	keyID := envelope.KeyID
 	if keyID == "" {
-		return nil, fmt.Errorf("envelope missing key ID")
+		return nil, errors.New("envelope missing key ID")
 	}
 
 	// Use the ciphertext from envelope
 	ciphertext := envelope.Ciphertext
 
 	// Prepare decryption data
-	decryptData := map[string]interface{}{
+	decryptData := map[string]any{
 		"ciphertext": ciphertext,
 	}
 
@@ -266,12 +270,12 @@ func (p *OpenBaoKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.Decryp
 	}
 
 	if secret == nil || secret.Data == nil {
-		return nil, fmt.Errorf("no data returned from OpenBao/Vault decrypt operation")
+		return nil, errors.New("no data returned from OpenBao/Vault decrypt operation")
 	}
 
 	plaintextB64, ok := secret.Data["plaintext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid plaintext format from OpenBao/Vault")
+		return nil, errors.New("invalid plaintext format from OpenBao/Vault")
 	}
 
 	plaintext, err := base64.StdEncoding.DecodeString(plaintextB64)
@@ -285,17 +289,18 @@ func (p *OpenBaoKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.Decryp
 	}
 
 	glog.V(4).Infof("OpenBao KMS: Decrypted data key using key %s", keyID)
+
 	return response, nil
 }
 
 // DescribeKey validates that a key exists and returns its metadata
 func (p *OpenBaoKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.DescribeKeyRequest) (*seaweedkms.DescribeKeyResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("DescribeKeyRequest cannot be nil")
+		return nil, errors.New("DescribeKeyRequest cannot be nil")
 	}
 
 	if req.KeyID == "" {
-		return nil, fmt.Errorf("KeyID is required")
+		return nil, errors.New("KeyID is required")
 	}
 
 	// Get key information from OpenBao/Vault
@@ -309,7 +314,7 @@ func (p *OpenBaoKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.De
 	if secret == nil || secret.Data == nil {
 		return nil, &seaweedkms.KMSError{
 			Code:    seaweedkms.ErrCodeNotFoundException,
-			Message: fmt.Sprintf("Key not found: %s", req.KeyID),
+			Message: "Key not found: " + req.KeyID,
 			KeyID:   req.KeyID,
 		}
 	}
@@ -340,13 +345,14 @@ func (p *OpenBaoKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.De
 	response.Origin = seaweedkms.KeyOriginOpenBao
 
 	glog.V(4).Infof("OpenBao KMS: Described key %s (state: %s)", req.KeyID, response.KeyState)
+
 	return response, nil
 }
 
 // GetKeyID resolves a key name (already the full key ID in OpenBao/Vault)
 func (p *OpenBaoKMSProvider) GetKeyID(ctx context.Context, keyIdentifier string) (string, error) {
 	if keyIdentifier == "" {
-		return "", fmt.Errorf("key identifier cannot be empty")
+		return "", errors.New("key identifier cannot be empty")
 	}
 
 	// Use DescribeKey to validate the key exists
@@ -363,6 +369,7 @@ func (p *OpenBaoKMSProvider) GetKeyID(ctx context.Context, keyIdentifier string)
 func (p *OpenBaoKMSProvider) Close() error {
 	// OpenBao/Vault client doesn't require explicit cleanup
 	glog.V(2).Infof("OpenBao/Vault KMS provider closed")
+
 	return nil
 }
 

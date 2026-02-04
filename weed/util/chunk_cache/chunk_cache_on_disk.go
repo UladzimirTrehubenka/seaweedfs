@@ -28,7 +28,6 @@ type ChunkCacheVolume struct {
 }
 
 func LoadOrCreateChunkCacheVolume(fileName string, preallocate int64) (*ChunkCacheVolume, error) {
-
 	v := &ChunkCacheVolume{
 		smallBuffer: make([]byte, types.NeedlePaddingSize),
 		fileName:    fileName,
@@ -45,7 +44,7 @@ func LoadOrCreateChunkCacheVolume(fileName string, preallocate int64) (*ChunkCac
 			return nil, fmt.Errorf("cannot write cache file %s.dat", v.fileName)
 		}
 		if dataFile, err := os.OpenFile(v.fileName+".dat", os.O_RDWR|os.O_CREATE, 0644); err != nil {
-			return nil, fmt.Errorf("cannot create cache file %s.dat: %v", v.fileName, err)
+			return nil, fmt.Errorf("cannot create cache file %s.dat: %w", v.fileName, err)
 		} else {
 			v.DataBackend = backend.NewDiskFile(dataFile)
 			v.lastModTime = modTime
@@ -53,14 +52,14 @@ func LoadOrCreateChunkCacheVolume(fileName string, preallocate int64) (*ChunkCac
 		}
 	} else {
 		if v.DataBackend, err = backend.CreateVolumeFile(v.fileName+".dat", preallocate, 0); err != nil {
-			return nil, fmt.Errorf("cannot create cache file %s.dat: %v", v.fileName, err)
+			return nil, fmt.Errorf("cannot create cache file %s.dat: %w", v.fileName, err)
 		}
 		v.lastModTime = time.Now()
 	}
 
 	var indexFile *os.File
 	if indexFile, err = os.OpenFile(v.fileName+".idx", os.O_RDWR|os.O_CREATE, 0644); err != nil {
-		return nil, fmt.Errorf("cannot write cache index %s.idx: %v", v.fileName, err)
+		return nil, fmt.Errorf("cannot write cache index %s.idx: %w", v.fileName, err)
 	}
 
 	glog.V(1).Infoln("loading leveldb", v.fileName+".ldb")
@@ -70,11 +69,10 @@ func LoadOrCreateChunkCacheVolume(fileName string, preallocate int64) (*ChunkCac
 		CompactionTableSizeMultiplier: 10,              // default value is 1
 	}
 	if v.nm, err = storage.NewLevelDbNeedleMap(v.fileName+".ldb", indexFile, opts, 0); err != nil {
-		return nil, fmt.Errorf("loading leveldb %s error: %v", v.fileName+".ldb", err)
+		return nil, fmt.Errorf("loading leveldb %s error: %w", v.fileName+".ldb", err)
 	}
 
 	return v, nil
-
 }
 
 func (v *ChunkCacheVolume) Shutdown() {
@@ -99,11 +97,11 @@ func (v *ChunkCacheVolume) doReset() {
 
 func (v *ChunkCacheVolume) Reset() (*ChunkCacheVolume, error) {
 	v.doReset()
+
 	return LoadOrCreateChunkCacheVolume(v.fileName, v.sizeLimit)
 }
 
 func (v *ChunkCacheVolume) GetNeedle(key types.NeedleId) ([]byte, error) {
-
 	nv, ok := v.nm.Get(key)
 	if !ok {
 		return nil, storage.ErrorNotFound
@@ -111,7 +109,7 @@ func (v *ChunkCacheVolume) GetNeedle(key types.NeedleId) ([]byte, error) {
 	data := make([]byte, nv.Size)
 	if readSize, readErr := v.DataBackend.ReadAt(data, nv.Offset.ToActualOffset()); readErr != nil {
 		if readSize != int(nv.Size) {
-			return nil, fmt.Errorf("read %s.dat [%d,%d): %v",
+			return nil, fmt.Errorf("read %s.dat [%d,%d): %w",
 				v.fileName, nv.Offset.ToActualOffset(), nv.Offset.ToActualOffset()+int64(nv.Size), readErr)
 		}
 	} else {
@@ -136,7 +134,7 @@ func (v *ChunkCacheVolume) getNeedleSlice(key types.NeedleId, offset, length uin
 	data := make([]byte, wanted)
 	if readSize, readErr := v.DataBackend.ReadAt(data, nv.Offset.ToActualOffset()+int64(offset)); readErr != nil {
 		if readSize != wanted {
-			return nil, fmt.Errorf("read %s.dat [%d,%d): %v",
+			return nil, fmt.Errorf("read %s.dat [%d,%d): %w",
 				v.fileName, nv.Offset.ToActualOffset()+int64(offset), int(nv.Offset.ToActualOffset())+int(offset)+wanted, readErr)
 		}
 	} else {
@@ -160,7 +158,7 @@ func (v *ChunkCacheVolume) readNeedleSliceAt(data []byte, key types.NeedleId, of
 	}
 	if n, err = v.DataBackend.ReadAt(data, nv.Offset.ToActualOffset()+int64(offset)); err != nil {
 		if n != wanted {
-			return n, fmt.Errorf("read %s.dat [%d,%d): %v",
+			return n, fmt.Errorf("read %s.dat [%d,%d): %w",
 				v.fileName, nv.Offset.ToActualOffset()+int64(offset), int(nv.Offset.ToActualOffset())+int(offset)+wanted, err)
 		}
 	} else {
@@ -173,7 +171,6 @@ func (v *ChunkCacheVolume) readNeedleSliceAt(data []byte, key types.NeedleId, of
 }
 
 func (v *ChunkCacheVolume) WriteNeedle(key types.NeedleId, data []byte) error {
-
 	offset := v.fileSize
 
 	written, err := v.DataBackend.WriteAt(data, offset)

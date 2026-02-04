@@ -45,9 +45,9 @@ func (c *commandFsMetaLoad) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if len(args) == 0 {
 		fmt.Fprintf(writer, "missing a metadata file\n")
+
 		return nil
 	}
 
@@ -65,7 +65,7 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open file %s: %v", fileName, err)
+		return fmt.Errorf("failed to open file %s: %w", fileName, err)
 	}
 	defer f.Close()
 
@@ -91,7 +91,6 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 	lastLogTime := time.Now()
 
 	err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
 		sizeBuf := make([]byte, 4)
 		waitChan := make(chan struct{}, *concurrency)
 		defer close(waitChan)
@@ -102,6 +101,7 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 				if err == io.EOF {
 					return nil
 				}
+
 				return err
 			}
 
@@ -119,12 +119,13 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 			}
 
 			// check collection name pattern
-			entryFullName := string(util.FullPath(fullEntry.Dir).Child(fullEntry.Entry.Name))
+			entryFullName := string(util.FullPath(fullEntry.GetDir()).Child(fullEntry.GetEntry().GetName()))
 			if *c.dirPrefix != "" {
-				if !strings.HasPrefix(fullEntry.Dir, *c.dirPrefix) {
+				if !strings.HasPrefix(fullEntry.GetDir(), *c.dirPrefix) {
 					if *verbose {
 						fmt.Fprintf(writer, "not match dir prefix %s\n", entryFullName)
 					}
+
 					continue
 				}
 			}
@@ -136,12 +137,12 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 				fmt.Fprintf(writer, "load %s\n", entryFullName)
 			}
 
-			fullEntry.Entry.Name = strings.ReplaceAll(fullEntry.Entry.Name, "/", "x")
-			if fullEntry.Entry.IsDirectory {
+			fullEntry.Entry.Name = strings.ReplaceAll(fullEntry.GetEntry().GetName(), "/", "x")
+			if fullEntry.GetEntry().GetIsDirectory() {
 				wg.Wait()
 				if errEntry := filer_pb.CreateEntry(context.Background(), client, &filer_pb.CreateEntryRequest{
-					Directory: fullEntry.Dir,
-					Entry:     fullEntry.Entry,
+					Directory: fullEntry.GetDir(),
+					Entry:     fullEntry.GetEntry(),
 				}); errEntry != nil {
 					return errEntry
 				}
@@ -151,8 +152,8 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 				waitChan <- struct{}{}
 				go func(entry *filer_pb.FullEntry) {
 					if errEntry := filer_pb.CreateEntry(context.Background(), client, &filer_pb.CreateEntryRequest{
-						Directory: entry.Dir,
-						Entry:     entry.Entry,
+						Directory: entry.GetDir(),
+						Entry:     entry.GetEntry(),
 					}); errEntry != nil {
 						err = errEntry
 					}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -13,8 +14,9 @@ import (
 
 	"hash/crc32"
 
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 )
 
 // getDefaultTimestamp returns a current timestamp for tests
@@ -57,6 +59,7 @@ func generateStreamingUnsignedPayloadTrailerPayload(includeFinalCRLF bool) strin
 	trailer := "x-amz-checksum-crc32:" + base64EncodedChecksum + "\n\r\n\r\n\r\n"
 
 	payload := chunk1 + chunk2 + chunk3 + chunk4 + trailer
+
 	return payload
 }
 
@@ -65,7 +68,7 @@ func NewRequestStreamingUnsignedPayloadTrailer(includeFinalCRLF bool) (*http.Req
 	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html
 
 	payload := generateStreamingUnsignedPayloadTrailerPayload(includeFinalCRLF)
-	req, err := http.NewRequest("PUT", "http://amzn-s3-demo-bucket/Key+", bytes.NewReader([]byte(payload)))
+	req, err := http.NewRequest(http.MethodPut, "http://amzn-s3-demo-bucket/Key+", bytes.NewReader([]byte(payload)))
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +149,7 @@ func setupIam() IdentityAccessManagement {
 	})
 
 	iam.accessKeyIdent[defaultAccessKeyId] = iam.identities[0]
+
 	return iam
 }
 
@@ -209,7 +213,7 @@ func TestSignedStreamingUpload(t *testing.T) {
 		fmt.Sprintf("0;chunk-signature=%s\r\n\r\n", finalSignature)
 
 	// Create the request
-	req, err := http.NewRequest("PUT", "http://s3.amazonaws.com/test-bucket/test-object",
+	req, err := http.NewRequest(http.MethodPut, "http://s3.amazonaws.com/test-bucket/test-object",
 		bytes.NewReader([]byte(payload)))
 	assert.NoError(t, err)
 
@@ -316,7 +320,7 @@ func createTrailerStreamingRequest(t *testing.T, useValidTrailerSignature bool) 
 		"\r\n"
 
 	// Create the request
-	req, err := http.NewRequest("PUT", "http://s3.amazonaws.com/test-bucket/test-object",
+	req, err := http.NewRequest(http.MethodPut, "http://s3.amazonaws.com/test-bucket/test-object",
 		bytes.NewReader([]byte(payload)))
 	assert.NoError(t, err)
 
@@ -324,7 +328,7 @@ func createTrailerStreamingRequest(t *testing.T, useValidTrailerSignature bool) 
 	req.Header.Set("x-amz-date", amzDate)
 	req.Header.Set("x-amz-content-sha256", hashedPayload)
 	req.Header.Set("Content-Encoding", "aws-chunked")
-	req.Header.Set("x-amz-decoded-content-length", fmt.Sprintf("%d", chunk1DataLen))
+	req.Header.Set("x-amz-decoded-content-length", strconv.Itoa(chunk1DataLen))
 	req.Header.Set("x-amz-trailer", "x-amz-checksum-crc32")
 
 	authHeader := fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
@@ -443,7 +447,7 @@ func TestSignedStreamingUploadInvalidSignature(t *testing.T) {
 		fmt.Sprintf("0;chunk-signature=%s\r\n\r\n", finalSignature)
 
 	// Create the request
-	req, err := http.NewRequest("PUT", "http://s3.amazonaws.com/test-bucket/test-object",
+	req, err := http.NewRequest(http.MethodPut, "http://s3.amazonaws.com/test-bucket/test-object",
 		bytes.NewReader([]byte(payload)))
 	assert.NoError(t, err)
 

@@ -35,7 +35,7 @@ func TestRaceConditionStress(t *testing.T) {
 
 	// Create 3 volume servers with realistic capacity
 	servers := make([]*DataNode, numServers)
-	for i := 0; i < numServers; i++ {
+	for i := range numServers {
 		dn := NewDataNode(fmt.Sprintf("server%d", i+1))
 		rack.LinkChildNode(dn)
 
@@ -65,7 +65,7 @@ func TestRaceConditionStress(t *testing.T) {
 
 	// Launch concurrent volume creation requests
 	startTime := time.Now()
-	for i := 0; i < concurrentRequests; i++ {
+	for i := range concurrentRequests {
 		wg.Add(1)
 		go func(requestId int) {
 			defer wg.Done()
@@ -76,6 +76,7 @@ func TestRaceConditionStress(t *testing.T) {
 			if err != nil {
 				atomic.AddInt64(&failedAllocations, 1)
 				t.Logf("Request %d failed: %v", requestId, err)
+
 				return
 			}
 
@@ -95,7 +96,6 @@ func TestRaceConditionStress(t *testing.T) {
 			// Release reservations (simulates successful registration)
 			reservation.releaseAllReservations()
 			atomic.AddInt64(&successfulAllocations, 1)
-
 		}(i)
 	}
 
@@ -180,7 +180,7 @@ func TestCapacityJudgmentAccuracy(t *testing.T) {
 	}
 
 	// Test accurate capacity reporting at each step
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		// Check available space before reservation
 		availableBefore := dn.AvailableSpaceFor(option)
 		availableForReservation := dn.AvailableSpaceForReservation(option)
@@ -280,7 +280,7 @@ func TestReservationSystemPerformance(t *testing.T) {
 	const iterations = 1000
 
 	startTime := time.Now()
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		_, reservation, err := vg.findEmptySlotsForOneVolume(topo, option, true)
 		if err != nil {
 			t.Fatalf("Iteration %d failed: %v", i, err)

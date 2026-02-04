@@ -32,6 +32,7 @@ func TestReplicaPlacementHasReplication(t *testing.T) {
 			rp, err := NewReplicaPlacementFromString(tc.replicaPlacement)
 			if err != nil {
 				t.Errorf("failed to initialize ReplicaPlacement: %v", err)
+
 				return
 			}
 

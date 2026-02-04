@@ -53,7 +53,7 @@ func TestMatchesActionPattern(t *testing.T) {
 func TestMatchesPrincipal(t *testing.T) {
 	tests := []struct {
 		name          string
-		principalSpec interface{}
+		principalSpec any
 		principal     string
 		expected      bool
 	}{
@@ -68,15 +68,15 @@ func TestMatchesPrincipal(t *testing.T) {
 		{"middle wildcard", "arn:aws:iam::*:user/admin", "arn:aws:iam::123456789012:user/admin", true},
 
 		// Array of principals
-		{"array match first", []interface{}{"user1", "user2"}, "user1", true},
-		{"array match second", []interface{}{"user1", "user2"}, "user2", true},
-		{"array no match", []interface{}{"user1", "user2"}, "user3", false},
-		{"array wildcard", []interface{}{"user1", "arn:aws:iam::*:user/admin"}, "arn:aws:iam::123:user/admin", true},
+		{"array match first", []any{"user1", "user2"}, "user1", true},
+		{"array match second", []any{"user1", "user2"}, "user2", true},
+		{"array no match", []any{"user1", "user2"}, "user3", false},
+		{"array wildcard", []any{"user1", "arn:aws:iam::*:user/admin"}, "arn:aws:iam::123:user/admin", true},
 
 		// Map-style AWS principals
-		{"AWS map exact", map[string]interface{}{"AWS": "user123"}, "user123", true},
-		{"AWS map wildcard", map[string]interface{}{"AWS": "arn:aws:iam::*:user/admin"}, "arn:aws:iam::123:user/admin", true},
-		{"AWS map array", map[string]interface{}{"AWS": []interface{}{"user1", "user2"}}, "user1", true},
+		{"AWS map exact", map[string]any{"AWS": "user123"}, "user123", true},
+		{"AWS map wildcard", map[string]any{"AWS": "arn:aws:iam::*:user/admin"}, "arn:aws:iam::123:user/admin", true},
+		{"AWS map array", map[string]any{"AWS": []any{"user1", "user2"}}, "user1", true},
 
 		// Nil/empty cases
 		{"nil principal", nil, "user123", false},
@@ -99,7 +99,7 @@ func TestEvaluatePolicyWithConditions(t *testing.T) {
 				Effect:    "Allow",
 				Principal: "*",
 				Action:    "s3tables:GetTable",
-				Condition: map[string]map[string]interface{}{
+				Condition: map[string]map[string]any{
 					"StringEquals": {
 						"s3tables:namespace": "default",
 					},

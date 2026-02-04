@@ -3,6 +3,7 @@ package distribution
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // ShardLocation represents where a shard is located in the topology
@@ -123,22 +124,29 @@ func (a *TopologyAnalysis) String() string {
 
 // DetailedString returns a detailed multi-line summary
 func (a *TopologyAnalysis) DetailedString() string {
-	s := fmt.Sprintf("Topology Analysis:\n")
+	s := "Topology Analysis:\n"
 	s += fmt.Sprintf("  Total Shards: %d\n", a.TotalShards)
 	s += fmt.Sprintf("  Data Centers: %d\n", a.TotalDCs)
+	var sSb129 strings.Builder
 	for dc, count := range a.ShardsByDC {
-		s += fmt.Sprintf("    %s: %d shards\n", dc, count)
+		sSb129.WriteString(fmt.Sprintf("    %s: %d shards\n", dc, count))
 	}
+	s += sSb129.String()
 	s += fmt.Sprintf("  Racks: %d\n", a.TotalRacks)
+	var sSb133 strings.Builder
 	for rack, count := range a.ShardsByRack {
-		s += fmt.Sprintf("    %s: %d shards\n", rack, count)
+		sSb133.WriteString(fmt.Sprintf("    %s: %d shards\n", rack, count))
 	}
+	s += sSb133.String()
 	s += fmt.Sprintf("  Nodes: %d\n", a.TotalNodes)
+	var sSb137 strings.Builder
 	for nodeID, count := range a.ShardsByNode {
 		if count > 0 {
-			s += fmt.Sprintf("    %s: %d shards\n", nodeID, count)
+			sSb137.WriteString(fmt.Sprintf("    %s: %d shards\n", nodeID, count))
 		}
 	}
+	s += sSb137.String()
+
 	return s
 }
 

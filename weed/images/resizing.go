@@ -39,6 +39,7 @@ func Resized(ext string, read io.ReadSeeker, width, height int, mode string) (re
 			}
 		} else {
 			read.Seek(0, 0)
+
 			return read, bounds.Dx(), bounds.Dy()
 		}
 		var buf bytes.Buffer
@@ -53,9 +54,11 @@ func Resized(ext string, read io.ReadSeeker, width, height int, mode string) (re
 			// Webp does not have golang encoder.
 			png.Encode(&buf, dstImage)
 		}
+
 		return bytes.NewReader(buf.Bytes()), dstImage.Bounds().Dx(), dstImage.Bounds().Dy()
 	} else {
 		glog.Error(err)
 	}
+
 	return read, 0, 0
 }

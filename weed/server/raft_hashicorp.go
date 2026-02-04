@@ -20,11 +20,12 @@ import (
 	"github.com/hashicorp/raft"
 	hashicorpRaft "github.com/hashicorp/raft"
 	boltdb "github.com/hashicorp/raft-boltdb/v2"
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/topology"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -46,6 +47,7 @@ func getPeerIdx(self pb.ServerAddress, mapPeers map[string]pb.ServerAddress) int
 			return i
 		}
 	}
+
 	return -1
 }
 
@@ -57,6 +59,7 @@ func (s *RaftServer) AddPeersConfiguration() (cfg raft.Configuration) {
 			Address:  raft.ServerAddress(peer.ToGrpcAddress()),
 		})
 	}
+
 	return cfg
 }
 
@@ -67,7 +70,6 @@ func (s *RaftServer) monitorLeaderLoop(updatePeers bool) {
 		case isLeader := <-s.RaftHashicorp.LeaderCh():
 			leader, _ := s.RaftHashicorp.LeaderWithID()
 			if isLeader {
-
 				if updatePeers {
 					s.updatePeers()
 					updatePeers = false
@@ -83,6 +85,7 @@ func (s *RaftServer) monitorLeaderLoop(updatePeers bool) {
 					if err != nil {
 						return err
 					}
+
 					return s.RaftHashicorp.Apply(b, 5*time.Second).Error()
 				})
 
@@ -168,17 +171,17 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 
 	ldb, err := boltdb.NewBoltStore(filepath.Join(baseDir, ldbFile))
 	if err != nil {
-		return nil, fmt.Errorf("boltdb.NewBoltStore(%q): %v", filepath.Join(baseDir, "logs.dat"), err)
+		return nil, fmt.Errorf("boltdb.NewBoltStore(%q): %w", filepath.Join(baseDir, "logs.dat"), err)
 	}
 
 	sdb, err := boltdb.NewBoltStore(filepath.Join(baseDir, sdbFile))
 	if err != nil {
-		return nil, fmt.Errorf("boltdb.NewBoltStore(%q): %v", filepath.Join(baseDir, "stable.dat"), err)
+		return nil, fmt.Errorf("boltdb.NewBoltStore(%q): %w", filepath.Join(baseDir, "stable.dat"), err)
 	}
 
 	fss, err := raft.NewFileSnapshotStore(baseDir, 3, os.Stderr)
 	if err != nil {
-		return nil, fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", baseDir, err)
+		return nil, fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %w", baseDir, err)
 	}
 
 	s.TransportManager = transport.New(raft.ServerAddress(s.serverAddr), []grpc.DialOption{option.GrpcDialOption})

@@ -18,6 +18,7 @@ type DirectoryValueType string
 
 func (s *DirectoryValueType) Set(value string) error {
 	*s = DirectoryValueType(value)
+
 	return nil
 }
 func (s *DirectoryValueType) String() string {
@@ -29,7 +30,7 @@ type Configuration interface {
 	GetBool(key string) bool
 	GetInt(key string) int
 	GetStringSlice(key string) []string
-	SetDefault(key string, value interface{})
+	SetDefault(key string, value any)
 }
 
 func LoadSecurityConfiguration() {
@@ -39,7 +40,6 @@ func LoadSecurityConfiguration() {
 }
 
 func LoadConfiguration(configFileName string, required bool) (loaded bool) {
-
 	// find a filer store
 	viper.SetConfigName(configFileName)                                   // name of config file (without extension)
 	viper.AddConfigPath(ResolvePath(ConfigurationFileDirectory.String())) // path to look for the config file in
@@ -65,6 +65,7 @@ func LoadConfiguration(configFileName string, required bool) (loaded bool) {
 				"    weed scaffold -config=%s -output=.\n\n\n",
 				configFileName, configFileName, configFileName)
 		}
+
 		return false
 	}
 	glog.V(1).Infof("Reading %s.toml from %s", configFileName, viper.ConfigFileUsed())
@@ -81,7 +82,7 @@ var (
 	vp = &ViperProxy{}
 )
 
-func (vp *ViperProxy) SetDefault(key string, value interface{}) {
+func (vp *ViperProxy) SetDefault(key string, value any) {
 	vp.Lock()
 	defer vp.Unlock()
 	vp.Viper.SetDefault(key, value)
@@ -90,24 +91,28 @@ func (vp *ViperProxy) SetDefault(key string, value interface{}) {
 func (vp *ViperProxy) GetString(key string) string {
 	vp.Lock()
 	defer vp.Unlock()
+
 	return vp.Viper.GetString(key)
 }
 
 func (vp *ViperProxy) GetBool(key string) bool {
 	vp.Lock()
 	defer vp.Unlock()
+
 	return vp.Viper.GetBool(key)
 }
 
 func (vp *ViperProxy) GetInt(key string) int {
 	vp.Lock()
 	defer vp.Unlock()
+
 	return vp.Viper.GetInt(key)
 }
 
 func (vp *ViperProxy) GetStringSlice(key string) []string {
 	vp.Lock()
 	defer vp.Unlock()
+
 	return vp.Viper.GetStringSlice(key)
 }
 

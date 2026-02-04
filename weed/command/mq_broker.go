@@ -67,11 +67,9 @@ func runMqBroker(cmd *Command, args []string) bool {
 	mqBrokerStandaloneOptions.masters = pb.ServerAddresses(*mqBrokerStandaloneOptions.mastersString).ToAddressMap()
 
 	return mqBrokerStandaloneOptions.startQueueServer()
-
 }
 
 func (mqBrokerOpt *MessageQueueBrokerOptions) startQueueServer() bool {
-
 	grace.SetupProfiling(*mqBrokerStandaloneOptions.cpuprofile, *mqBrokerStandaloneOptions.memprofile)
 
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.msg_broker")
@@ -119,5 +117,4 @@ func (mqBrokerOpt *MessageQueueBrokerOptions) startQueueServer() bool {
 	grpcS.Serve(grpcL)
 
 	return true
-
 }

@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
 	"github.com/seaweedfs/seaweedfs/weed/remote_storage"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -50,7 +51,6 @@ func (c *commandRemoteMount) HasTag(CommandTag) bool {
 }
 
 func (c *commandRemoteMount) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	remoteMountCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 
 	dir := remoteMountCommand.String("dir", "", "a directory in filer")
@@ -63,16 +63,17 @@ func (c *commandRemoteMount) Do(args []string, commandEnv *CommandEnv, writer io
 
 	if *dir == "" {
 		_, err = listExistingRemoteStorageMounts(commandEnv, writer)
+
 		return err
 	}
 
 	// find configuration for remote storage
 	remoteConf, err := filer.ReadRemoteStorageConf(commandEnv.option.GrpcDialOption, commandEnv.option.FilerAddress, remote_storage.ParseLocationName(*remote))
 	if err != nil {
-		return fmt.Errorf("find configuration for %s: %v", *remote, err)
+		return fmt.Errorf("find configuration for %s: %w", *remote, err)
 	}
 
-	remoteStorageLocation, err := remote_storage.ParseRemoteLocation(remoteConf.Type, *remote)
+	remoteStorageLocation, err := remote_storage.ParseRemoteLocation(remoteConf.GetType(), *remote)
 	if err != nil {
 		return err
 	}
@@ -91,7 +92,6 @@ func (c *commandRemoteMount) Do(args []string, commandEnv *CommandEnv, writer io
 }
 
 func listExistingRemoteStorageMounts(commandEnv *CommandEnv, writer io.Writer) (mappings *remote_pb.RemoteStorageMapping, err error) {
-
 	// read current mapping
 	mappings, err = filer.ReadMountMappings(commandEnv.option.GrpcDialOption, commandEnv.option.FilerAddress)
 	if err != nil {
@@ -101,7 +101,6 @@ func listExistingRemoteStorageMounts(commandEnv *CommandEnv, writer io.Writer) (
 	jsonPrintln(writer, mappings)
 
 	return
-
 }
 
 func jsonPrintln(writer io.Writer, message proto.Message) error {
@@ -109,7 +108,6 @@ func jsonPrintln(writer io.Writer, message proto.Message) error {
 }
 
 func syncMetadata(commandEnv *CommandEnv, writer io.Writer, dir string, nonEmpty bool, remoteConf *remote_pb.RemoteConf, remote *remote_pb.RemoteStorageLocation) error {
-
 	// find existing directory, and ensure the directory is empty
 	err := commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		parent, name := util.FullPath(dir).DirAndName()
@@ -130,10 +128,11 @@ func syncMetadata(commandEnv *CommandEnv, writer io.Writer, dir string, nonEmpty
 							FileMode: uint32(0644 | os.ModeDir),
 						},
 						RemoteEntry: &filer_pb.RemoteEntry{
-							StorageName: remoteConf.Name,
+							StorageName: remoteConf.GetName(),
 						},
 					},
 				})
+
 				return createErr
 			}
 		}
@@ -141,11 +140,12 @@ func syncMetadata(commandEnv *CommandEnv, writer io.Writer, dir string, nonEmpty
 		mountToDirIsEmpty := true
 		listErr := filer_pb.SeaweedList(context.Background(), client, dir, "", func(entry *filer_pb.Entry, isLast bool) error {
 			mountToDirIsEmpty = false
+
 			return nil
 		}, "", false, 1)
 
 		if listErr != nil {
-			return fmt.Errorf("list %s: %v", dir, listErr)
+			return fmt.Errorf("list %s: %w", dir, listErr)
 		}
 
 		if !mountToDirIsEmpty {
@@ -185,8 +185,8 @@ func syncMetadata(commandEnv *CommandEnv, writer io.Writer, dir string, nonEmpty
 //	entry.Attributes.Mtime * 1,000,000,000    > entry.RemoteEntry.LastLocalSyncTsNs
 func doSaveRemoteEntry(client filer_pb.SeaweedFilerClient, localDir string, existingEntry *filer_pb.Entry, remoteEntry *filer_pb.RemoteEntry) error {
 	existingEntry.RemoteEntry = remoteEntry
-	existingEntry.Attributes.FileSize = uint64(remoteEntry.RemoteSize)
-	existingEntry.Attributes.Mtime = remoteEntry.RemoteMtime
+	existingEntry.Attributes.FileSize = uint64(remoteEntry.GetRemoteSize())
+	existingEntry.Attributes.Mtime = remoteEntry.GetRemoteMtime()
 	existingEntry.Attributes.Md5 = nil
 	existingEntry.Attributes.TtlSec = 0 // Remote entries should not have TTL
 	existingEntry.Chunks = nil
@@ -198,5 +198,6 @@ func doSaveRemoteEntry(client filer_pb.SeaweedFilerClient, localDir string, exis
 	if updateErr != nil {
 		return updateErr
 	}
+
 	return nil
 }

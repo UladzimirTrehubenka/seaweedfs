@@ -11,13 +11,12 @@ import (
 )
 
 func (ms *MasterServer) CollectionList(ctx context.Context, req *master_pb.CollectionListRequest) (*master_pb.CollectionListResponse, error) {
-
 	if !ms.Topo.IsLeader() {
 		return nil, raft.NotLeaderError
 	}
 
 	resp := &master_pb.CollectionListResponse{}
-	collections := ms.Topo.ListCollections(req.IncludeNormalVolumes, req.IncludeEcVolumes)
+	collections := ms.Topo.ListCollections(req.GetIncludeNormalVolumes(), req.GetIncludeEcVolumes())
 	for _, c := range collections {
 		resp.Collections = append(resp.Collections, &master_pb.Collection{
 			Name: c,
@@ -28,20 +27,19 @@ func (ms *MasterServer) CollectionList(ctx context.Context, req *master_pb.Colle
 }
 
 func (ms *MasterServer) CollectionDelete(ctx context.Context, req *master_pb.CollectionDeleteRequest) (*master_pb.CollectionDeleteResponse, error) {
-
 	if !ms.Topo.IsLeader() {
 		return nil, raft.NotLeaderError
 	}
 
 	resp := &master_pb.CollectionDeleteResponse{}
 
-	err := ms.doDeleteNormalCollection(req.Name)
+	err := ms.doDeleteNormalCollection(req.GetName())
 
 	if err != nil {
 		return nil, err
 	}
 
-	err = ms.doDeleteEcCollection(req.Name)
+	err = ms.doDeleteEcCollection(req.GetName())
 
 	if err != nil {
 		return nil, err
@@ -51,7 +49,6 @@ func (ms *MasterServer) CollectionDelete(ctx context.Context, req *master_pb.Col
 }
 
 func (ms *MasterServer) doDeleteNormalCollection(collectionName string) error {
-
 	collection, ok := ms.Topo.FindCollection(collectionName)
 	if !ok {
 		return nil
@@ -62,6 +59,7 @@ func (ms *MasterServer) doDeleteNormalCollection(collectionName string) error {
 			_, deleteErr := client.DeleteCollection(context.Background(), &volume_server_pb.DeleteCollectionRequest{
 				Collection: collectionName,
 			})
+
 			return deleteErr
 		})
 		if err != nil {
@@ -74,7 +72,6 @@ func (ms *MasterServer) doDeleteNormalCollection(collectionName string) error {
 }
 
 func (ms *MasterServer) doDeleteEcCollection(collectionName string) error {
-
 	listOfEcServers := ms.Topo.ListEcServersByCollection(collectionName)
 
 	for _, server := range listOfEcServers {
@@ -82,6 +79,7 @@ func (ms *MasterServer) doDeleteEcCollection(collectionName string) error {
 			_, deleteErr := client.DeleteCollection(context.Background(), &volume_server_pb.DeleteCollectionRequest{
 				Collection: collectionName,
 			})
+
 			return deleteErr
 		})
 		if err != nil {

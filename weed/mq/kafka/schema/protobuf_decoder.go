@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jhump/protoreflect/desc/protoparse"
@@ -34,7 +35,7 @@ func NewProtobufDecoder(schemaBytes []byte) (*ProtobufDecoder, error) {
 
 	// Create the decoder using the parsed descriptor
 	if schema.MessageDescriptor == nil {
-		return nil, fmt.Errorf("no message descriptor found in schema")
+		return nil, errors.New("no message descriptor found in schema")
 	}
 
 	return NewProtobufDecoderFromDescriptor(schema.MessageDescriptor), nil
@@ -68,7 +69,7 @@ func NewProtobufDecoderFromString(schemaStr string) (*ProtobufDecoder, error) {
 	}
 
 	if len(fileDescs) == 0 {
-		return nil, fmt.Errorf("no file descriptors found in schema")
+		return nil, errors.New("no file descriptors found in schema")
 	}
 
 	fileDesc := fileDescs[0]
@@ -85,7 +86,7 @@ func NewProtobufDecoderFromString(schemaStr string) (*ProtobufDecoder, error) {
 	// Find the first message in the file
 	messages := protoFileDesc.Messages()
 	if messages.Len() == 0 {
-		return nil, fmt.Errorf("no message types found in schema")
+		return nil, errors.New("no message types found in schema")
 	}
 
 	// Get the first message descriptor
@@ -96,14 +97,14 @@ func NewProtobufDecoderFromString(schemaStr string) (*ProtobufDecoder, error) {
 
 // Decode decodes Protobuf binary data to a Go map representation
 // Also supports JSON fallback for compatibility with producers that don't yet support Protobuf binary
-func (pd *ProtobufDecoder) Decode(data []byte) (map[string]interface{}, error) {
+func (pd *ProtobufDecoder) Decode(data []byte) (map[string]any, error) {
 	// Create a new message instance
 	msg := pd.msgType.New()
 
 	// Try to unmarshal as Protobuf binary first
 	if err := proto.Unmarshal(data, msg.Interface()); err != nil {
 		// Fallback: Try JSON decoding (for compatibility with producers that send JSON)
-		var jsonMap map[string]interface{}
+		var jsonMap map[string]any
 		if jsonErr := json.Unmarshal(data, &jsonMap); jsonErr == nil {
 			// Successfully decoded as JSON - return it
 			// Note: This is a compatibility fallback, proper Protobuf binary is preferred
@@ -133,12 +134,13 @@ func (pd *ProtobufDecoder) InferRecordType() (*schema_pb.RecordType, error) {
 }
 
 // messageToMap converts a Protobuf message to a Go map
-func (pd *ProtobufDecoder) messageToMap(msg protoreflect.Message) map[string]interface{} {
-	result := make(map[string]interface{})
+func (pd *ProtobufDecoder) messageToMap(msg protoreflect.Message) map[string]any {
+	result := make(map[string]any)
 
 	msg.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
 		fieldName := string(fd.Name())
 		result[fieldName] = pd.valueToInterface(fd, v)
+
 		return true
 	})
 
@@ -146,26 +148,29 @@ func (pd *ProtobufDecoder) messageToMap(msg protoreflect.Message) map[string]int
 }
 
 // valueToInterface converts a Protobuf value to a Go interface{}
-func (pd *ProtobufDecoder) valueToInterface(fd protoreflect.FieldDescriptor, v protoreflect.Value) interface{} {
+func (pd *ProtobufDecoder) valueToInterface(fd protoreflect.FieldDescriptor, v protoreflect.Value) any {
 	if fd.IsList() {
 		// Handle repeated fields
 		list := v.List()
-		result := make([]interface{}, list.Len())
+		result := make([]any, list.Len())
 		for i := 0; i < list.Len(); i++ {
 			result[i] = pd.scalarValueToInterface(fd, list.Get(i))
 		}
+
 		return result
 	}
 
 	if fd.IsMap() {
 		// Handle map fields
 		mapVal := v.Map()
-		result := make(map[string]interface{})
+		result := make(map[string]any)
 		mapVal.Range(func(k protoreflect.MapKey, v protoreflect.Value) bool {
 			keyStr := fmt.Sprintf("%v", k.Interface())
 			result[keyStr] = pd.scalarValueToInterface(fd.MapValue(), v)
+
 			return true
 		})
+
 		return result
 	}
 
@@ -173,7 +178,7 @@ func (pd *ProtobufDecoder) valueToInterface(fd protoreflect.FieldDescriptor, v p
 }
 
 // scalarValueToInterface converts a scalar Protobuf value to Go interface{}
-func (pd *ProtobufDecoder) scalarValueToInterface(fd protoreflect.FieldDescriptor, v protoreflect.Value) interface{} {
+func (pd *ProtobufDecoder) scalarValueToInterface(fd protoreflect.FieldDescriptor, v protoreflect.Value) any {
 	switch fd.Kind() {
 	case protoreflect.BoolKind:
 		return v.Bool()
@@ -198,6 +203,7 @@ func (pd *ProtobufDecoder) scalarValueToInterface(fd protoreflect.FieldDescripto
 	case protoreflect.MessageKind:
 		// Handle nested messages
 		nestedMsg := v.Message()
+
 		return pd.messageToMap(nestedMsg)
 	default:
 		// Fallback to string representation
@@ -233,6 +239,7 @@ func (pd *ProtobufDecoder) fieldDescriptorToType(fd protoreflect.FieldDescriptor
 	if fd.IsList() {
 		// Handle repeated fields
 		elementType := pd.scalarKindToType(fd.Kind(), fd.Message())
+
 		return &schema_pb.Type{
 			Kind: &schema_pb.Type_ListType{
 				ListType: &schema_pb.ListType{
@@ -341,12 +348,14 @@ func (pd *ProtobufDecoder) scalarKindToType(kind protoreflect.Kind, msgDesc prot
 		if msgDesc != nil {
 			// Handle nested messages
 			nestedRecordType := pd.descriptorToRecordType(msgDesc)
+
 			return &schema_pb.Type{
 				Kind: &schema_pb.Type_RecordType{
 					RecordType: nestedRecordType,
 				},
 			}
 		}
+
 		fallthrough
 	default:
 		// Default to string for unknown types

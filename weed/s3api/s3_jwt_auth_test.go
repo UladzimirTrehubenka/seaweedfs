@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
 	"github.com/seaweedfs/seaweedfs/weed/iam/ldap"
 	"github.com/seaweedfs/seaweedfs/weed/iam/oidc"
@@ -15,8 +18,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // createTestJWTAuth creates a test JWT token with the specified issuer, subject and signing key
@@ -33,6 +34,7 @@ func createTestJWTAuth(t *testing.T, issuer, subject, signingKey string) string 
 
 	tokenString, err := token.SignedString([]byte(signingKey))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -168,11 +170,12 @@ func TestRequestContextExtraction(t *testing.T) {
 		{
 			name: "Standard request with IP",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-bucket/test-file.txt", http.NoBody)
+				req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-file.txt", http.NoBody)
 				req.Header.Set("X-Forwarded-For", "192.168.1.100")
 				req.Header.Set("User-Agent", "aws-sdk-go/1.0")
 				// Set RemoteAddr to private IP to simulate trusted proxy
 				req.RemoteAddr = "127.0.0.1:12345"
+
 				return req
 			},
 			expectedIP: "192.168.1.100",
@@ -181,11 +184,12 @@ func TestRequestContextExtraction(t *testing.T) {
 		{
 			name: "Request with X-Real-IP",
 			setupRequest: func() *http.Request {
-				req := httptest.NewRequest("GET", "/test-bucket/test-file.txt", http.NoBody)
+				req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-file.txt", http.NoBody)
 				req.Header.Set("X-Real-IP", "10.0.0.1")
 				req.Header.Set("User-Agent", "boto3/1.0")
 				// Set RemoteAddr to private IP to simulate trusted proxy
 				req.RemoteAddr = "127.0.0.1:12345"
+
 				return req
 			},
 			expectedIP: "10.0.0.1",
@@ -256,7 +260,7 @@ func TestIPBasedPolicyEnforcement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create request with specific IP
-			req := httptest.NewRequest("GET", "/restricted-bucket/file.txt", http.NoBody)
+			req := httptest.NewRequest(http.MethodGet, "/restricted-bucket/file.txt", http.NoBody)
 			req.Header.Set("Authorization", "Bearer "+response.Credentials.SessionToken)
 			req.Header.Set("X-Forwarded-For", tt.sourceIP)
 			// Set RemoteAddr to private IP to simulate trusted proxy
@@ -392,7 +396,7 @@ func setupTestReadOnlyRole(ctx context.Context, manager *integration.IAMManager)
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -410,7 +414,7 @@ func setupTestReadOnlyRole(ctx context.Context, manager *integration.IAMManager)
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -454,7 +458,7 @@ func setupTestAdminRole(ctx context.Context, manager *integration.IAMManager) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -472,7 +476,7 @@ func setupTestAdminRole(ctx context.Context, manager *integration.IAMManager) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -496,7 +500,7 @@ func setupTestIPRestrictedRole(ctx context.Context, manager *integration.IAMMana
 					"arn:aws:s3:::*",
 					"arn:aws:s3:::*/*",
 				},
-				Condition: map[string]map[string]interface{}{
+				Condition: map[string]map[string]any{
 					"IpAddress": {
 						"aws:SourceIp": []string{"192.168.1.0/24", "10.0.0.0/8"},
 					},
@@ -515,7 +519,7 @@ func setupTestIPRestrictedRole(ctx context.Context, manager *integration.IAMMana
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -528,7 +532,7 @@ func setupTestIPRestrictedRole(ctx context.Context, manager *integration.IAMMana
 
 func testJWTAuthentication(t *testing.T, iam *IdentityAccessManagement, token string) (*Identity, s3err.ErrorCode) {
 	// Create test request with JWT
-	req := httptest.NewRequest("GET", "/test-bucket/test-object", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/test-bucket/test-object", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Test authentication
@@ -545,7 +549,7 @@ func testJWTAuthorization(t *testing.T, iam *IdentityAccessManagement, identity 
 
 func testJWTAuthorizationWithRole(t *testing.T, iam *IdentityAccessManagement, identity *Identity, action Action, bucket, object, token, roleName string) bool {
 	// Create test request
-	req := httptest.NewRequest("GET", "/"+bucket+"/"+object, http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/"+bucket+"/"+object, http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("X-SeaweedFS-Session-Token", token)
 
@@ -559,5 +563,6 @@ func testJWTAuthorizationWithRole(t *testing.T, iam *IdentityAccessManagement, i
 	}
 
 	errCode := iam.authorizeWithIAM(req, identity, action, bucket, object)
+
 	return errCode == s3err.ErrNone
 }

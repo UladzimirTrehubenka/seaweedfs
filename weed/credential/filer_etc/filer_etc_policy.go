@@ -3,6 +3,8 @@ package filer_etc
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"maps"
 	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
@@ -36,6 +38,7 @@ func (store *FilerEtcStore) GetPolicies(ctx context.Context) (map[string]policy_
 
 	if !configured {
 		glog.V(1).Infof("Filer client not configured for policy retrieval, returning empty policies")
+
 		return policies, nil
 	}
 
@@ -56,9 +59,7 @@ func (store *FilerEtcStore) GetPolicies(ctx context.Context) (map[string]policy_
 			glog.Errorf("Failed to parse legacy IAM policies from %s/%s: %v",
 				filer.IamConfigDirectory, filer.IamPoliciesFile, err)
 		} else {
-			for name, policy := range policiesCollection.Policies {
-				policies[name] = policy
-			}
+			maps.Copy(policies, policiesCollection.Policies)
 		}
 	}
 
@@ -71,6 +72,7 @@ func (store *FilerEtcStore) GetPolicies(ctx context.Context) (map[string]policy_
 	if foundLegacy {
 		if err := store.migratePoliciesToMultiFile(ctx, policies); err != nil {
 			glog.Errorf("Failed to migrate IAM policies to multi-file layout: %v", err)
+
 			return policies, err
 		}
 	}
@@ -83,24 +85,26 @@ func (store *FilerEtcStore) loadPoliciesFromMultiFile(ctx context.Context, polic
 		dir := filer.IamConfigDirectory + "/" + IamPoliciesDirectory
 		entries, err := listEntries(ctx, client, dir)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 
 		for _, entry := range entries {
-			if entry.IsDirectory {
+			if entry.GetIsDirectory() {
 				continue
 			}
 
 			var content []byte
-			if len(entry.Content) > 0 {
-				content = entry.Content
+			if len(entry.GetContent()) > 0 {
+				content = entry.GetContent()
 			} else {
-				c, err := filer.ReadInsideFiler(client, dir, entry.Name)
+				c, err := filer.ReadInsideFiler(client, dir, entry.GetName())
 				if err != nil {
-					glog.Warningf("Failed to read policy file %s: %v", entry.Name, err)
+					glog.Warningf("Failed to read policy file %s: %v", entry.GetName(), err)
+
 					continue
 				}
 				content = c
@@ -109,18 +113,20 @@ func (store *FilerEtcStore) loadPoliciesFromMultiFile(ctx context.Context, polic
 			if len(content) > 0 {
 				var policy policy_engine.PolicyDocument
 				if err := json.Unmarshal(content, &policy); err != nil {
-					glog.Warningf("Failed to unmarshal policy %s: %v", entry.Name, err)
+					glog.Warningf("Failed to unmarshal policy %s: %v", entry.GetName(), err)
+
 					continue
 				}
 
 				// The file name is "policyName.json"
-				policyName := entry.Name
+				policyName := entry.GetName()
 				if len(policyName) > 5 && policyName[len(policyName)-5:] == ".json" {
 					policyName = policyName[:len(policyName)-5]
 					policies[policyName] = policy
 				}
 			}
 		}
+
 		return nil
 	})
 }
@@ -147,6 +153,7 @@ func (store *FilerEtcStore) migratePoliciesToMultiFile(ctx context.Context, poli
 			glog.Errorf("Failed to rename legacy IAM policies file %s/%s to %s: %v",
 				filer.IamConfigDirectory, filer.IamPoliciesFile, IamLegacyPoliciesOldFile, err)
 		}
+
 		return err
 	})
 }
@@ -155,11 +162,13 @@ func (store *FilerEtcStore) savePolicy(ctx context.Context, name string, documen
 	if err := validatePolicyName(name); err != nil {
 		return err
 	}
+
 	return store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		data, err := json.Marshal(document)
 		if err != nil {
 			return err
 		}
+
 		return filer.SaveInsideFiler(client, filer.IamConfigDirectory+"/"+IamPoliciesDirectory, name+".json", data)
 	})
 }
@@ -184,6 +193,7 @@ func (store *FilerEtcStore) DeletePolicy(ctx context.Context, name string) error
 	if err := validatePolicyName(name); err != nil {
 		return err
 	}
+
 	return store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		_, err := client.DeleteEntry(ctx, &filer_pb.DeleteEntryRequest{
 			Directory: filer.IamConfigDirectory + "/" + IamPoliciesDirectory,
@@ -192,6 +202,7 @@ func (store *FilerEtcStore) DeletePolicy(ctx context.Context, name string) error
 		if err != nil && !strings.Contains(err.Error(), filer_pb.ErrNotFound.Error()) {
 			return err
 		}
+
 		return nil
 	})
 }
@@ -206,15 +217,17 @@ func (store *FilerEtcStore) GetPolicy(ctx context.Context, name string) (*policy
 	err := store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		data, err := filer.ReadInsideFiler(client, filer.IamConfigDirectory+"/"+IamPoliciesDirectory, name+".json")
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 		if len(data) == 0 {
 			return nil
 		}
 		policy = &policy_engine.PolicyDocument{}
+
 		return json.Unmarshal(data, policy)
 	})
 

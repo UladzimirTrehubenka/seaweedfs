@@ -2,6 +2,7 @@ package weed_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -30,17 +31,16 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 		return err
 	}
 
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v != nil {
+		glog.V(0).Infof("volume %d already exists. deleted before copying...", req.GetVolumeId())
 
-		glog.V(0).Infof("volume %d already exists. deleted before copying...", req.VolumeId)
-
-		err := vs.store.DeleteVolume(needle.VolumeId(req.VolumeId), false)
+		err := vs.store.DeleteVolume(needle.VolumeId(req.GetVolumeId()), false)
 		if err != nil {
-			return fmt.Errorf("failed to delete existing volume %d: %v", req.VolumeId, err)
+			return fmt.Errorf("failed to delete existing volume %d: %w", req.GetVolumeId(), err)
 		}
 
-		glog.V(0).Infof("deleted existing volume %d before copying.", req.VolumeId)
+		glog.V(0).Infof("deleted existing volume %d before copying.", req.GetVolumeId())
 	}
 
 	// the master will not start compaction for read-only volumes, so it is safe to just copy files directly
@@ -52,19 +52,19 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 	var volFileInfoResp *volume_server_pb.ReadVolumeFileStatusResponse
 	var dataBaseFileName, indexBaseFileName, idxFileName, datFileName string
 	var hasRemoteDatFile bool
-	err := operation.WithVolumeServerClient(true, pb.ServerAddress(req.SourceDataNode), vs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
+	err := operation.WithVolumeServerClient(true, pb.ServerAddress(req.GetSourceDataNode()), vs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
 		var err error
 		volFileInfoResp, err = client.ReadVolumeFileStatus(context.Background(),
 			&volume_server_pb.ReadVolumeFileStatusRequest{
-				VolumeId: req.VolumeId,
+				VolumeId: req.GetVolumeId(),
 			})
 		if nil != err {
 			return fmt.Errorf("read volume file status failed, %w", err)
 		}
 
-		diskType := volFileInfoResp.DiskType
-		if req.DiskType != "" {
-			diskType = req.DiskType
+		diskType := volFileInfoResp.GetDiskType()
+		if req.GetDiskType() != "" {
+			diskType = req.GetDiskType()
 		}
 		location := vs.store.FindFreeLocation(func(location *storage.DiskLocation) bool {
 			return location.DiskType == types.ToDiskType(diskType)
@@ -73,11 +73,11 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 			return fmt.Errorf("no space left for disk type %s", types.ToDiskType(diskType).ReadableString())
 		}
 
-		dataBaseFileName = storage.VolumeFileName(location.Directory, volFileInfoResp.Collection, int(req.VolumeId))
-		indexBaseFileName = storage.VolumeFileName(location.IdxDirectory, volFileInfoResp.Collection, int(req.VolumeId))
-		hasRemoteDatFile = volFileInfoResp.VolumeInfo != nil && len(volFileInfoResp.VolumeInfo.Files) > 0
+		dataBaseFileName = storage.VolumeFileName(location.Directory, volFileInfoResp.GetCollection(), int(req.GetVolumeId()))
+		indexBaseFileName = storage.VolumeFileName(location.IdxDirectory, volFileInfoResp.GetCollection(), int(req.GetVolumeId()))
+		hasRemoteDatFile = volFileInfoResp.GetVolumeInfo() != nil && len(volFileInfoResp.GetVolumeInfo().GetFiles()) > 0
 
-		util.WriteFile(dataBaseFileName+".note", []byte(fmt.Sprintf("copying from %s", req.SourceDataNode)), 0755)
+		util.WriteFile(dataBaseFileName+".note", []byte("copying from "+req.GetSourceDataNode()), 0755)
 
 		defer func() {
 			if err != nil {
@@ -92,11 +92,12 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 		if grpcErr := pb.WithMasterClient(false, vs.GetMaster(context.Background()), vs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 			resp, err := client.GetMasterConfiguration(context.Background(), &master_pb.GetMasterConfigurationRequest{})
 			if err != nil {
-				return fmt.Errorf("get master %s configuration: %v", vs.GetMaster(context.Background()), err)
+				return fmt.Errorf("get master %s configuration: %w", vs.GetMaster(context.Background()), err)
 			}
-			if resp.VolumePreallocate {
-				preallocateSize = int64(resp.VolumeSizeLimitMB) * (1 << 20)
+			if resp.GetVolumePreallocate() {
+				preallocateSize = int64(resp.GetVolumeSizeLimitMB()) * (1 << 20)
 			}
+
 			return nil
 		}); grpcErr != nil {
 			glog.V(0).Infof("connect to %s: %v", vs.GetMaster(context.Background()), grpcErr)
@@ -106,7 +107,7 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 			volumeFile := dataBaseFileName + ".dat"
 			_, err := backend.CreateVolumeFile(volumeFile, preallocateSize, 0)
 			if err != nil {
-				return fmt.Errorf("create volume file %s: %v", volumeFile, err)
+				return fmt.Errorf("create volume file %s: %w", volumeFile, err)
 			}
 		}
 
@@ -117,15 +118,15 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 		var modifiedTsNs int64
 		var sendErr error
 		var ioBytePerSecond int64
-		if req.IoBytePerSecond <= 0 {
+		if req.GetIoBytePerSecond() <= 0 {
 			ioBytePerSecond = vs.maintenanceBytePerSecond
 		} else {
-			ioBytePerSecond = req.IoBytePerSecond
+			ioBytePerSecond = req.GetIoBytePerSecond()
 		}
 		throttler := util.NewWriteThrottler(ioBytePerSecond)
 
 		if !hasRemoteDatFile {
-			if modifiedTsNs, err = vs.doCopyFileWithThrottler(client, false, req.Collection, req.VolumeId, volFileInfoResp.CompactionRevision, volFileInfoResp.DatFileSize, dataBaseFileName, ".dat", false, true, func(processed int64) bool {
+			if modifiedTsNs, err = vs.doCopyFileWithThrottler(client, false, req.GetCollection(), req.GetVolumeId(), volFileInfoResp.GetCompactionRevision(), volFileInfoResp.GetDatFileSize(), dataBaseFileName, ".dat", false, true, func(processed int64) bool {
 				if processed > nextReportTarget {
 					copyResponse.ProcessedBytes = processed
 					if sendErr = stream.Send(copyResponse); sendErr != nil {
@@ -133,6 +134,7 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 					}
 					nextReportTarget = processed + reportInterval
 				}
+
 				return true
 			}, throttler); err != nil {
 				return err
@@ -145,14 +147,14 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 			}
 		}
 
-		if modifiedTsNs, err = vs.doCopyFileWithThrottler(client, false, req.Collection, req.VolumeId, volFileInfoResp.CompactionRevision, volFileInfoResp.IdxFileSize, indexBaseFileName, ".idx", false, false, nil, throttler); err != nil {
+		if modifiedTsNs, err = vs.doCopyFileWithThrottler(client, false, req.GetCollection(), req.GetVolumeId(), volFileInfoResp.GetCompactionRevision(), volFileInfoResp.GetIdxFileSize(), indexBaseFileName, ".idx", false, false, nil, throttler); err != nil {
 			return err
 		}
 		if modifiedTsNs > 0 {
 			os.Chtimes(indexBaseFileName+".idx", time.Unix(0, modifiedTsNs), time.Unix(0, modifiedTsNs))
 		}
 
-		if modifiedTsNs, err = vs.doCopyFileWithThrottler(client, false, req.Collection, req.VolumeId, volFileInfoResp.CompactionRevision, 1024*1024, dataBaseFileName, ".vif", false, true, nil, throttler); err != nil {
+		if modifiedTsNs, err = vs.doCopyFileWithThrottler(client, false, req.GetCollection(), req.GetVolumeId(), volFileInfoResp.GetCompactionRevision(), 1024*1024, dataBaseFileName, ".vif", false, true, nil, throttler); err != nil {
 			return err
 		}
 		if modifiedTsNs > 0 {
@@ -168,7 +170,7 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 		return err
 	}
 	if dataBaseFileName == "" {
-		return fmt.Errorf("not found volume %d file", req.VolumeId)
+		return fmt.Errorf("not found volume %d file", req.GetVolumeId())
 	}
 
 	idxFileName = indexBaseFileName + ".idx"
@@ -187,13 +189,13 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 	}
 
 	// mount the volume
-	err = vs.store.MountVolume(needle.VolumeId(req.VolumeId))
+	err = vs.store.MountVolume(needle.VolumeId(req.GetVolumeId()))
 	if err != nil {
-		return fmt.Errorf("failed to mount volume %d: %v", req.VolumeId, err)
+		return fmt.Errorf("failed to mount volume %d: %w", req.GetVolumeId(), err)
 	}
 
 	if err = stream.Send(&volume_server_pb.VolumeCopyResponse{
-		LastAppendAtNs: volFileInfoResp.DatFileTimestampSeconds * uint64(time.Second),
+		LastAppendAtNs: volFileInfoResp.GetDatFileTimestampSeconds() * uint64(time.Second),
 	}); err != nil {
 		glog.Errorf("send response: %v", err)
 	}
@@ -206,7 +208,6 @@ func (vs *VolumeServer) doCopyFile(client volume_server_pb.VolumeServerClient, i
 }
 
 func (vs *VolumeServer) doCopyFileWithThrottler(client volume_server_pb.VolumeServerClient, isEcVolume bool, collection string, vid, compactRevision uint32, stopOffset uint64, baseFileName, ext string, isAppend, ignoreSourceFileNotFound bool, progressFn storage.ProgressFunc, throttler *util.WriteThrottler) (modifiedTsNs int64, err error) {
-
 	copyFileClient, err := client.CopyFile(context.Background(), &volume_server_pb.CopyFileRequest{
 		VolumeId:                 vid,
 		Ext:                      ext,
@@ -217,16 +218,15 @@ func (vs *VolumeServer) doCopyFileWithThrottler(client volume_server_pb.VolumeSe
 		IgnoreSourceFileNotFound: ignoreSourceFileNotFound,
 	})
 	if err != nil {
-		return modifiedTsNs, fmt.Errorf("failed to start copying volume %d %s file: %v", vid, ext, err)
+		return modifiedTsNs, fmt.Errorf("failed to start copying volume %d %s file: %w", vid, ext, err)
 	}
 
 	modifiedTsNs, err = writeToFile(copyFileClient, baseFileName+ext, throttler, isAppend, progressFn)
 	if err != nil {
-		return modifiedTsNs, fmt.Errorf("failed to copy %s file: %v", baseFileName+ext, err)
+		return modifiedTsNs, fmt.Errorf("failed to copy %s file: %w", baseFileName+ext, err)
 	}
 
 	return modifiedTsNs, nil
-
 }
 
 /*
@@ -238,14 +238,14 @@ func checkCopyFiles(originFileInf *volume_server_pb.ReadVolumeFileStatusResponse
 	stat, err := os.Stat(idxFileName)
 	if err != nil {
 		// If the idx file doesn't exist but the expected size is 0, that's OK (empty volume)
-		if os.IsNotExist(err) && originFileInf.IdxFileSize == 0 {
+		if os.IsNotExist(err) && originFileInf.GetIdxFileSize() == 0 {
 			// empty volume, idx file not needed
 		} else {
-			return fmt.Errorf("stat idx file %s failed: %v", idxFileName, err)
+			return fmt.Errorf("stat idx file %s failed: %w", idxFileName, err)
 		}
-	} else if originFileInf.IdxFileSize != uint64(stat.Size()) {
+	} else if originFileInf.GetIdxFileSize() != uint64(stat.Size()) {
 		return fmt.Errorf("idx file %s size [%v] is not same as origin file size [%v]",
-			idxFileName, stat.Size(), originFileInf.IdxFileSize)
+			idxFileName, stat.Size(), originFileInf.GetIdxFileSize())
 	}
 
 	if hasRemoteDatFile {
@@ -256,10 +256,11 @@ func checkCopyFiles(originFileInf *volume_server_pb.ReadVolumeFileStatusResponse
 	if err != nil {
 		return fmt.Errorf("get dat file info failed, %w", err)
 	}
-	if originFileInf.DatFileSize != uint64(stat.Size()) {
+	if originFileInf.GetDatFileSize() != uint64(stat.Size()) {
 		return fmt.Errorf("the dat file size [%v] is not same as origin file size [%v]",
-			stat.Size(), originFileInf.DatFileSize)
+			stat.Size(), originFileInf.GetDatFileSize())
 	}
+
 	return nil
 }
 
@@ -278,25 +279,25 @@ func writeToFile(client volume_server_pb.VolumeServer_CopyFileClient, fileName s
 	var progressedBytes int64
 	for {
 		resp, receiveErr := client.Recv()
-		if receiveErr == io.EOF {
+		if errors.Is(receiveErr, io.EOF) {
 			break
 		}
-		if resp != nil && resp.ModifiedTsNs != 0 {
-			modifiedTsNs = resp.ModifiedTsNs
+		if resp != nil && resp.GetModifiedTsNs() != 0 {
+			modifiedTsNs = resp.GetModifiedTsNs()
 		}
 		if receiveErr != nil {
 			return modifiedTsNs, fmt.Errorf("receiving %s: %w", fileName, receiveErr)
 		}
-		if _, writeErr := dst.Write(resp.FileContent); writeErr != nil {
+		if _, writeErr := dst.Write(resp.GetFileContent()); writeErr != nil {
 			return modifiedTsNs, fmt.Errorf("write file %s: %w", fileName, writeErr)
 		}
-		progressedBytes += int64(len(resp.FileContent))
+		progressedBytes += int64(len(resp.GetFileContent()))
 		if progressFn != nil {
 			if !progressFn(progressedBytes) {
-				return modifiedTsNs, fmt.Errorf("interrupted copy operation")
+				return modifiedTsNs, errors.New("interrupted copy operation")
 			}
 		}
-		wt.MaybeSlowdown(int64(len(resp.FileContent)))
+		wt.MaybeSlowdown(int64(len(resp.GetFileContent())))
 	}
 	// If we never received a modifiedTsNs, it means the source file did not exist.
 	// Remove the empty file we created to avoid leaving corrupted empty files.
@@ -309,17 +310,18 @@ func writeToFile(client volume_server_pb.VolumeServer_CopyFileClient, fileName s
 			glog.V(1).Infof("removed empty file %s (source file not found)", fileName)
 		}
 	}
+
 	return modifiedTsNs, nil
 }
 
 func (vs *VolumeServer) ReadVolumeFileStatus(ctx context.Context, req *volume_server_pb.ReadVolumeFileStatusRequest) (*volume_server_pb.ReadVolumeFileStatusResponse, error) {
 	resp := &volume_server_pb.ReadVolumeFileStatusResponse{}
-	v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 	if v == nil {
-		return nil, fmt.Errorf("not found volume id %d", req.VolumeId)
+		return nil, fmt.Errorf("not found volume id %d", req.GetVolumeId())
 	}
 
-	resp.VolumeId = req.VolumeId
+	resp.VolumeId = req.GetVolumeId()
 	datSize, idxSize, modTime := v.FileStat()
 	resp.DatFileSize = datSize
 	resp.IdxFileSize = idxSize
@@ -331,6 +333,7 @@ func (vs *VolumeServer) ReadVolumeFileStatus(ctx context.Context, req *volume_se
 	resp.DiskType = string(v.DiskType())
 	resp.VolumeInfo = v.GetVolumeInfo()
 	resp.Version = uint32(v.Version())
+
 	return resp, nil
 }
 
@@ -338,28 +341,27 @@ func (vs *VolumeServer) ReadVolumeFileStatus(ctx context.Context, req *volume_se
 // if req.CompactionRevision != math.MaxUint32, it ensures the compact revision is as expected
 // The copying still stop at req.StopOffset, but you can set it to math.MaxUint64 in order to read all data.
 func (vs *VolumeServer) CopyFile(req *volume_server_pb.CopyFileRequest, stream volume_server_pb.VolumeServer_CopyFileServer) error {
-
 	var fileName string
-	if !req.IsEcVolume {
-		v := vs.store.GetVolume(needle.VolumeId(req.VolumeId))
+	if !req.GetIsEcVolume() {
+		v := vs.store.GetVolume(needle.VolumeId(req.GetVolumeId()))
 		if v == nil {
-			return fmt.Errorf("not found volume id %d", req.VolumeId)
+			return fmt.Errorf("not found volume id %d", req.GetVolumeId())
 		}
 
-		if uint32(v.CompactionRevision) != req.CompactionRevision && req.CompactionRevision != math.MaxUint32 {
-			return fmt.Errorf("volume %d is compacted", req.VolumeId)
+		if uint32(v.CompactionRevision) != req.GetCompactionRevision() && req.GetCompactionRevision() != math.MaxUint32 {
+			return fmt.Errorf("volume %d is compacted", req.GetVolumeId())
 		}
 		v.SyncToDisk()
-		fileName = v.FileName(req.Ext)
+		fileName = v.FileName(req.GetExt())
 	} else {
 		// Sync EC volume files to disk before copying to ensure deletions are visible
 		// This fixes issue #7751 where deleted files in encoded volumes were not
 		// properly marked as deleted when decoded.
-		if ecVolume, found := vs.store.FindEcVolume(needle.VolumeId(req.VolumeId)); found {
+		if ecVolume, found := vs.store.FindEcVolume(needle.VolumeId(req.GetVolumeId())); found {
 			ecVolume.Sync()
 		}
 
-		baseFileName := erasure_coding.EcShardBaseFileName(req.Collection, int(req.VolumeId)) + req.Ext
+		baseFileName := erasure_coding.EcShardBaseFileName(req.GetCollection(), int(req.GetVolumeId())) + req.GetExt()
 		for _, location := range vs.store.Locations {
 			tName := util.Join(location.Directory, baseFileName)
 			if util.FileExists(tName) {
@@ -371,24 +373,26 @@ func (vs *VolumeServer) CopyFile(req *volume_server_pb.CopyFileRequest, stream v
 			}
 		}
 		if fileName == "" {
-			if req.IgnoreSourceFileNotFound {
+			if req.GetIgnoreSourceFileNotFound() {
 				return nil
 			}
-			return fmt.Errorf("CopyFile not found ec volume id %d", req.VolumeId)
+
+			return fmt.Errorf("CopyFile not found ec volume id %d", req.GetVolumeId())
 		}
 	}
 
-	bytesToRead := int64(req.StopOffset)
+	bytesToRead := int64(req.GetStopOffset())
 
 	file, err := os.Open(fileName)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// If file doesn't exist and we're asked to copy 0 bytes (empty file),
 			// or if IgnoreSourceFileNotFound is set, treat as success
-			if req.IgnoreSourceFileNotFound || req.StopOffset == 0 {
+			if req.GetIgnoreSourceFileNotFound() || req.GetStopOffset() == 0 {
 				return nil
 			}
 		}
+
 		return err
 	}
 	defer file.Close()
@@ -407,7 +411,7 @@ func (vs *VolumeServer) CopyFile(req *volume_server_pb.CopyFileRequest, stream v
 		// println(fileName, "read", bytesread, "bytes, with target", bytesToRead)
 
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				return err
 			}
 			// println(fileName, "read", bytesread, "bytes, with target", bytesToRead, "err", err.Error())
@@ -428,7 +432,6 @@ func (vs *VolumeServer) CopyFile(req *volume_server_pb.CopyFileRequest, stream v
 		fileModTsNs = 0 // only send once
 
 		bytesToRead -= int64(bytesread)
-
 	}
 
 	// If no data has been sent in the loop (e.g. for an empty file, or when stopOffset is 0),
@@ -466,12 +469,13 @@ func (vs *VolumeServer) ReceiveFile(stream volume_server_pb.VolumeServer_Receive
 
 	for {
 		req, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// Stream completed successfully
 			if targetFile != nil {
 				targetFile.Sync()
 				glog.V(1).Infof("Successfully received file %s (%d bytes)", filePath, bytesWritten)
 			}
+
 			return stream.SendAndClose(&volume_server_pb.ReceiveFileResponse{
 				BytesWritten: bytesWritten,
 			})
@@ -483,23 +487,25 @@ func (vs *VolumeServer) ReceiveFile(stream volume_server_pb.VolumeServer_Receive
 				os.Remove(filePath)
 			}
 			glog.Errorf("Failed to receive stream: %v", err)
-			return fmt.Errorf("failed to receive stream: %v", err)
+
+			return fmt.Errorf("failed to receive stream: %w", err)
 		}
 
-		switch data := req.Data.(type) {
+		switch data := req.GetData().(type) {
 		case *volume_server_pb.ReceiveFileRequest_Info:
 			// First message contains file info
 			fileInfo = data.Info
 			glog.V(1).Infof("ReceiveFile: volume %d, ext %s, collection %s, shard %d, size %d",
-				fileInfo.VolumeId, fileInfo.Ext, fileInfo.Collection, fileInfo.ShardId, fileInfo.FileSize)
+				fileInfo.GetVolumeId(), fileInfo.GetExt(), fileInfo.GetCollection(), fileInfo.GetShardId(), fileInfo.GetFileSize())
 
 			// Create file path based on file info
-			if fileInfo.IsEcVolume {
+			if fileInfo.GetIsEcVolume() {
 				// Find storage location for EC shard
 				var targetLocation *storage.DiskLocation
 				for _, location := range vs.store.Locations {
 					if location.DiskType == types.HardDriveType {
 						targetLocation = location
+
 						break
 					}
 				}
@@ -508,30 +514,33 @@ func (vs *VolumeServer) ReceiveFile(stream volume_server_pb.VolumeServer_Receive
 				}
 				if targetLocation == nil {
 					glog.Errorf("ReceiveFile: no storage location available")
+
 					return stream.SendAndClose(&volume_server_pb.ReceiveFileResponse{
 						Error: "no storage location available",
 					})
 				}
 
 				// Create EC shard file path
-				baseFileName := erasure_coding.EcShardBaseFileName(fileInfo.Collection, int(fileInfo.VolumeId))
-				filePath = util.Join(targetLocation.Directory, baseFileName+fileInfo.Ext)
+				baseFileName := erasure_coding.EcShardBaseFileName(fileInfo.GetCollection(), int(fileInfo.GetVolumeId()))
+				filePath = util.Join(targetLocation.Directory, baseFileName+fileInfo.GetExt())
 			} else {
 				// Regular volume file
-				v := vs.store.GetVolume(needle.VolumeId(fileInfo.VolumeId))
+				v := vs.store.GetVolume(needle.VolumeId(fileInfo.GetVolumeId()))
 				if v == nil {
-					glog.Errorf("ReceiveFile: volume %d not found", fileInfo.VolumeId)
+					glog.Errorf("ReceiveFile: volume %d not found", fileInfo.GetVolumeId())
+
 					return stream.SendAndClose(&volume_server_pb.ReceiveFileResponse{
-						Error: fmt.Sprintf("volume %d not found", fileInfo.VolumeId),
+						Error: fmt.Sprintf("volume %d not found", fileInfo.GetVolumeId()),
 					})
 				}
-				filePath = v.FileName(fileInfo.Ext)
+				filePath = v.FileName(fileInfo.GetExt())
 			}
 
 			// Create target file
 			targetFile, err = os.Create(filePath)
 			if err != nil {
 				glog.Errorf("ReceiveFile: failed to create file %s: %v", filePath, err)
+
 				return stream.SendAndClose(&volume_server_pb.ReceiveFileResponse{
 					Error: fmt.Sprintf("failed to create file: %v", err),
 				})
@@ -542,6 +551,7 @@ func (vs *VolumeServer) ReceiveFile(stream volume_server_pb.VolumeServer_Receive
 			// Subsequent messages contain file content
 			if targetFile == nil {
 				glog.Errorf("ReceiveFile: file info must be sent first")
+
 				return stream.SendAndClose(&volume_server_pb.ReceiveFileResponse{
 					Error: "file info must be sent first",
 				})
@@ -552,6 +562,7 @@ func (vs *VolumeServer) ReceiveFile(stream volume_server_pb.VolumeServer_Receive
 				targetFile.Close()
 				os.Remove(filePath)
 				glog.Errorf("ReceiveFile: failed to write to file %s: %v", filePath, err)
+
 				return stream.SendAndClose(&volume_server_pb.ReceiveFileResponse{
 					Error: fmt.Sprintf("failed to write file: %v", err),
 				})
@@ -561,6 +572,7 @@ func (vs *VolumeServer) ReceiveFile(stream volume_server_pb.VolumeServer_Receive
 
 		default:
 			glog.Errorf("ReceiveFile: unknown message type")
+
 			return stream.SendAndClose(&volume_server_pb.ReceiveFileResponse{
 				Error: "unknown message type",
 			})

@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -29,8 +30,8 @@ type StreamingCopySpec struct {
 type EncryptionSpec struct {
 	NeedsDecryption bool
 	NeedsEncryption bool
-	SourceKey       interface{} // SSECustomerKey or SSEKMSKey
-	DestinationKey  interface{} // SSECustomerKey or SSEKMSKey
+	SourceKey       any // SSECustomerKey or SSEKMSKey
+	DestinationKey  any // SSECustomerKey or SSEKMSKey
 	SourceType      EncryptionType
 	DestinationType EncryptionType
 	SourceMetadata  map[string][]byte // Source metadata for IV extraction
@@ -121,7 +122,7 @@ func (scm *StreamingCopyManager) createEncryptionSpec(entry *filer_pb.Entry, r *
 	spec := &EncryptionSpec{
 		NeedsDecryption: state.IsSourceEncrypted(),
 		NeedsEncryption: state.IsTargetEncrypted(),
-		SourceMetadata:  entry.Extended, // Pass source metadata for IV extraction
+		SourceMetadata:  entry.GetExtended(), // Pass source metadata for IV extraction
 	}
 
 	// Set source encryption details
@@ -135,7 +136,7 @@ func (scm *StreamingCopyManager) createEncryptionSpec(entry *filer_pb.Entry, r *
 	} else if state.SrcSSEKMS {
 		spec.SourceType = EncryptionTypeSSEKMS
 		// Extract SSE-KMS key from metadata
-		if keyData, exists := entry.Extended[s3_constants.SeaweedFSSSEKMSKey]; exists {
+		if keyData, exists := entry.GetExtended()[s3_constants.SeaweedFSSSEKMSKey]; exists {
 			sseKey, err := DeserializeSSEKMSMetadata(keyData)
 			if err != nil {
 				return nil, fmt.Errorf("deserialize SSE-KMS metadata: %w", err)
@@ -145,7 +146,7 @@ func (scm *StreamingCopyManager) createEncryptionSpec(entry *filer_pb.Entry, r *
 	} else if state.SrcSSES3 {
 		spec.SourceType = EncryptionTypeSSES3
 		// Extract SSE-S3 key from metadata
-		if keyData, exists := entry.Extended[s3_constants.SeaweedFSSSES3Key]; exists {
+		if keyData, exists := entry.GetExtended()[s3_constants.SeaweedFSSSES3Key]; exists {
 			keyManager := GetSSES3KeyManager()
 			sseKey, err := DeserializeSSES3Metadata(keyData, keyManager)
 			if err != nil {
@@ -266,26 +267,31 @@ func (scm *StreamingCopyManager) createDecryptionReader(reader io.Reader, encSpe
 			if err != nil {
 				return nil, fmt.Errorf("get IV from metadata: %w", err)
 			}
+
 			return CreateSSECDecryptedReader(reader, sourceKey, iv)
 		}
-		return nil, fmt.Errorf("invalid SSE-C source key type")
+
+		return nil, errors.New("invalid SSE-C source key type")
 
 	case EncryptionTypeSSEKMS:
 		if sseKey, ok := encSpec.SourceKey.(*SSEKMSKey); ok {
 			return CreateSSEKMSDecryptedReader(reader, sseKey)
 		}
-		return nil, fmt.Errorf("invalid SSE-KMS source key type")
+
+		return nil, errors.New("invalid SSE-KMS source key type")
 
 	case EncryptionTypeSSES3:
 		if sseKey, ok := encSpec.SourceKey.(*SSES3Key); ok {
 			// For SSE-S3, the IV is stored within the SSES3Key metadata, not as separate metadata
 			iv := sseKey.IV
 			if len(iv) == 0 {
-				return nil, fmt.Errorf("SSE-S3 key is missing IV for streaming copy")
+				return nil, errors.New("SSE-S3 key is missing IV for streaming copy")
 			}
+
 			return CreateSSES3DecryptedReader(reader, sseKey, iv)
 		}
-		return nil, fmt.Errorf("invalid SSE-S3 source key type")
+
+		return nil, errors.New("invalid SSE-S3 source key type")
 
 	default:
 		return reader, nil
@@ -303,9 +309,11 @@ func (scm *StreamingCopyManager) createEncryptionReader(reader io.Reader, encSpe
 			}
 			// Store IV in destination metadata (this would need to be handled by caller)
 			encSpec.DestinationIV = iv
+
 			return encryptedReader, nil
 		}
-		return nil, fmt.Errorf("invalid SSE-C destination key type")
+
+		return nil, errors.New("invalid SSE-C destination key type")
 
 	case EncryptionTypeSSEKMS:
 		if sseKey, ok := encSpec.DestinationKey.(*SSEKMSKey); ok {
@@ -315,9 +323,11 @@ func (scm *StreamingCopyManager) createEncryptionReader(reader io.Reader, encSpe
 			}
 			// Store IV from the updated key
 			encSpec.DestinationIV = updatedKey.IV
+
 			return encryptedReader, nil
 		}
-		return nil, fmt.Errorf("invalid SSE-KMS destination key type")
+
+		return nil, errors.New("invalid SSE-KMS destination key type")
 
 	case EncryptionTypeSSES3:
 		if sseKey, ok := encSpec.DestinationKey.(*SSES3Key); ok {
@@ -327,9 +337,11 @@ func (scm *StreamingCopyManager) createEncryptionReader(reader io.Reader, encSpe
 			}
 			// Store IV for metadata
 			encSpec.DestinationIV = iv
+
 			return encryptedReader, nil
 		}
-		return nil, fmt.Errorf("invalid SSE-S3 destination key type")
+
+		return nil, errors.New("invalid SSE-S3 destination key type")
 
 	default:
 		return reader, nil
@@ -350,9 +362,10 @@ func (scm *StreamingCopyManager) createDecompressionReader(reader io.Reader, com
 			defer pw.Close()
 			_, err := util.GunzipStream(pw, reader)
 			if err != nil {
-				pw.CloseWithError(fmt.Errorf("gzip decompression failed: %v", err))
+				pw.CloseWithError(fmt.Errorf("gzip decompression failed: %w", err))
 			}
 		}()
+
 		return pr, nil
 	default:
 		// Unknown compression type, return as-is
@@ -374,9 +387,10 @@ func (scm *StreamingCopyManager) createCompressionReader(reader io.Reader, compS
 			defer pw.Close()
 			_, err := util.GzipStream(pw, reader)
 			if err != nil {
-				pw.CloseWithError(fmt.Errorf("gzip compression failed: %v", err))
+				pw.CloseWithError(fmt.Errorf("gzip compression failed: %w", err))
 			}
 		}()
+
 		return pr, nil
 	default:
 		// Unknown compression type, return as-is
@@ -408,6 +422,7 @@ func (hr *HashReader) Read(p []byte) (n int, err error) {
 		hr.md5Hash.Write(p[:n])
 		hr.sha256Hash.Write(p[:n])
 	}
+
 	return n, err
 }
 
@@ -556,6 +571,7 @@ func (s3a *S3ApiServer) createMultiChunkReader(entry *filer_pb.Entry) (io.ReadCl
 	}
 
 	multiReader := io.MultiReader(readers...)
+
 	return &multiReadCloser{reader: multiReader}, nil
 }
 
@@ -568,7 +584,7 @@ func (s3a *S3ApiServer) createChunkReader(chunk *filer_pb.FileChunk) (io.Reader,
 	}
 
 	// Create HTTP request for chunk data
-	req, err := http.NewRequest("GET", srcUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, srcUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP request: %w", err)
 	}
@@ -581,6 +597,7 @@ func (s3a *S3ApiServer) createChunkReader(chunk *filer_pb.FileChunk) (io.Reader,
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
+
 		return nil, fmt.Errorf("HTTP request failed: %d", resp.StatusCode)
 	}
 

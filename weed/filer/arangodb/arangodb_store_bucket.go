@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/arangodb/go-driver"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
@@ -26,11 +27,13 @@ func (store *ArangodbStore) OnBucketDeletion(bucket string) {
 	collection, err := store.ensureBucket(timeout, bucket)
 	if err != nil {
 		glog.Errorf("bucket delete %s: %v", bucket, err)
+
 		return
 	}
 	err = collection.Remove(timeout)
 	if err != nil && !driver.IsNotFound(err) {
 		glog.Errorf("bucket delete %s: %v", bucket, err)
+
 		return
 	}
 	store.mu.Lock()

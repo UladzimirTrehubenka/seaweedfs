@@ -25,5 +25,6 @@ func FirstInvalidIndex(bytes []byte, lessThanOrEqualToFn func(key types.NeedleId
 			right = mid - 1
 		}
 	}
+
 	return index, nil
 }

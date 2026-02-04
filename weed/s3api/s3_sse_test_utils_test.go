@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/kms"
 	"github.com/seaweedfs/seaweedfs/weed/kms/local"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -116,6 +117,7 @@ func CreateTestMetadataWithSSEC(keyPair *TestKeyPair) map[string][]byte {
 		iv[i] = byte(i)
 	}
 	StoreSSECIVInMetadata(metadata, iv)
+
 	return metadata
 }
 
@@ -128,6 +130,7 @@ func CreateTestMetadataWithSSEKMS(sseKey *SSEKMSKey) map[string][]byte {
 		metadata[s3_constants.AmzEncryptedDataKey] = sseKey.EncryptedDataKey
 		metadata[s3_constants.AmzEncryptionContextMeta] = serialized
 	}
+
 	return metadata
 }
 
@@ -139,6 +142,7 @@ func CreateTestHTTPRequest(method, path string, body []byte) *http.Request {
 	}
 
 	req := httptest.NewRequest(method, path, bodyReader)
+
 	return req
 }
 
@@ -185,6 +189,7 @@ func CreateCorruptedSSECMetadata() map[string][]byte {
 	metadata := CreateTestMetadata()
 	// Missing algorithm
 	metadata[s3_constants.AmzServerSideEncryptionCustomerKeyMD5] = []byte("invalid-md5")
+
 	return metadata
 }
 
@@ -194,6 +199,7 @@ func CreateCorruptedSSEKMSMetadata() map[string][]byte {
 	metadata[s3_constants.AmzServerSideEncryption] = []byte("aws:kms")
 	// Invalid encrypted data key
 	metadata[s3_constants.AmzEncryptedDataKey] = []byte("invalid-base64!")
+
 	return metadata
 }
 
@@ -215,5 +221,6 @@ func GenerateTestData(size int) []byte {
 	for i := range data {
 		data[i] = byte(i % 256)
 	}
+
 	return data
 }

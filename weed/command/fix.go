@@ -47,6 +47,7 @@ type VolumeFileScanner4Fix struct {
 
 func (scanner *VolumeFileScanner4Fix) VisitSuperBlock(superBlock super_block.SuperBlock) error {
 	scanner.version = superBlock.Version
+
 	return nil
 }
 
@@ -58,18 +59,20 @@ func (scanner *VolumeFileScanner4Fix) VisitNeedle(n *needle.Needle, offset int64
 	glog.V(2).Infof("key %v offset %d size %d disk_size %d compressed %v", n.Id, offset, n.Size, n.DiskSize(scanner.version), n.IsCompressed())
 	if n.Size.IsValid() {
 		if pe := scanner.nm.Set(n.Id, types.ToOffset(offset), n.Size); pe != nil {
-			return fmt.Errorf("saved %d with error %v", n.Size, pe)
+			return fmt.Errorf("saved %d with error %w", n.Size, pe)
 		}
 	} else {
 		if scanner.includeDeleted {
 			if pe := scanner.nmDeleted.Set(n.Id, types.ToOffset(offset), types.TombstoneFileSize); pe != nil {
-				return fmt.Errorf("saved deleted %d with error %v", n.Size, pe)
+				return fmt.Errorf("saved deleted %d with error %w", n.Size, pe)
 			}
 		} else {
 			glog.V(2).Infof("skipping deleted file ...")
+
 			return scanner.nm.Delete(n.Id)
 		}
 	}
+
 	return nil
 }
 
@@ -86,6 +89,7 @@ func runFix(cmd *Command, args []string) bool {
 			fileInfo, err := os.ReadDir(basePath)
 			if err != nil {
 				fmt.Println(err)
+
 				return false
 			}
 			files = fileInfo
@@ -93,6 +97,7 @@ func runFix(cmd *Command, args []string) bool {
 			fileInfo, err := os.Stat(arg)
 			if err != nil {
 				fmt.Println(err)
+
 				return false
 			}
 			files = []fs.DirEntry{fs.FileInfoToDirEntry(fileInfo)}
@@ -123,6 +128,7 @@ func runFix(cmd *Command, args []string) bool {
 			volumeId, parseErr := strconv.ParseInt(volumeIdStr, 10, 64)
 			if parseErr != nil {
 				fmt.Printf("Failed to parse volume id from %s: %v\n", baseFileName, parseErr)
+
 				return false
 			}
 			if *fixVolumeId != 0 && *fixVolumeId != volumeId {
@@ -131,6 +137,7 @@ func runFix(cmd *Command, args []string) bool {
 			doFixOneVolume(basePath, baseFileName, collection, volumeId, *fixIncludeDeleted)
 		}
 	}
+
 	return true
 }
 
@@ -150,6 +157,7 @@ func SaveToIdx(scaner *VolumeFileScanner4Fix, idxName string) (ret error) {
 				_, err = idxFile.Write(deleted.ToBytes())
 			}
 		}
+
 		return err
 	})
 }
@@ -167,6 +175,7 @@ func doFixOneVolume(basepath string, baseFileName string, collection string, vol
 		err := fmt.Errorf("volume ID out of range: %d", volumeId)
 		if *fixIgnoreError {
 			glog.Error(err)
+
 			return
 		} else {
 			glog.Fatal(err)

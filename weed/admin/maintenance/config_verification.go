@@ -1,7 +1,9 @@
 package maintenance
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
 )
@@ -13,67 +15,67 @@ func VerifyProtobufConfig() error {
 	config := configManager.GetConfig()
 
 	// Verify basic configuration
-	if !config.Enabled {
-		return fmt.Errorf("expected config to be enabled by default")
+	if !config.GetEnabled() {
+		return errors.New("expected config to be enabled by default")
 	}
 
-	if config.ScanIntervalSeconds != 30*60 {
-		return fmt.Errorf("expected scan interval to be 1800 seconds, got %d", config.ScanIntervalSeconds)
+	if config.GetScanIntervalSeconds() != 30*60 {
+		return fmt.Errorf("expected scan interval to be 1800 seconds, got %d", config.GetScanIntervalSeconds())
 	}
 
 	// Verify policy configuration
-	if config.Policy == nil {
-		return fmt.Errorf("expected policy to be configured")
+	if config.GetPolicy() == nil {
+		return errors.New("expected policy to be configured")
 	}
 
-	if config.Policy.GlobalMaxConcurrent != 4 {
-		return fmt.Errorf("expected global max concurrent to be 4, got %d", config.Policy.GlobalMaxConcurrent)
+	if config.GetPolicy().GetGlobalMaxConcurrent() != 4 {
+		return fmt.Errorf("expected global max concurrent to be 4, got %d", config.GetPolicy().GetGlobalMaxConcurrent())
 	}
 
 	// Verify task policies
-	vacuumPolicy := config.Policy.TaskPolicies["vacuum"]
+	vacuumPolicy := config.GetPolicy().GetTaskPolicies()["vacuum"]
 	if vacuumPolicy == nil {
-		return fmt.Errorf("expected vacuum policy to be configured")
+		return errors.New("expected vacuum policy to be configured")
 	}
 
-	if !vacuumPolicy.Enabled {
-		return fmt.Errorf("expected vacuum policy to be enabled")
+	if !vacuumPolicy.GetEnabled() {
+		return errors.New("expected vacuum policy to be enabled")
 	}
 
 	// Verify typed configuration access
 	vacuumConfig := vacuumPolicy.GetVacuumConfig()
 	if vacuumConfig == nil {
-		return fmt.Errorf("expected vacuum config to be accessible")
+		return errors.New("expected vacuum config to be accessible")
 	}
 
-	if vacuumConfig.GarbageThreshold != 0.3 {
-		return fmt.Errorf("expected garbage threshold to be 0.3, got %f", vacuumConfig.GarbageThreshold)
+	if vacuumConfig.GetGarbageThreshold() != 0.3 {
+		return fmt.Errorf("expected garbage threshold to be 0.3, got %f", vacuumConfig.GetGarbageThreshold())
 	}
 
 	// Verify helper functions work
-	if !IsTaskEnabled(config.Policy, "vacuum") {
-		return fmt.Errorf("expected vacuum task to be enabled via helper function")
+	if !IsTaskEnabled(config.GetPolicy(), "vacuum") {
+		return errors.New("expected vacuum task to be enabled via helper function")
 	}
 
-	maxConcurrent := GetMaxConcurrent(config.Policy, "vacuum")
+	maxConcurrent := GetMaxConcurrent(config.GetPolicy(), "vacuum")
 	if maxConcurrent != 2 {
 		return fmt.Errorf("expected vacuum max concurrent to be 2, got %d", maxConcurrent)
 	}
 
 	// Verify erasure coding configuration
-	ecPolicy := config.Policy.TaskPolicies["erasure_coding"]
+	ecPolicy := config.GetPolicy().GetTaskPolicies()["erasure_coding"]
 	if ecPolicy == nil {
-		return fmt.Errorf("expected EC policy to be configured")
+		return errors.New("expected EC policy to be configured")
 	}
 
 	ecConfig := ecPolicy.GetErasureCodingConfig()
 	if ecConfig == nil {
-		return fmt.Errorf("expected EC config to be accessible")
+		return errors.New("expected EC config to be accessible")
 	}
 
 	// Verify configurable EC fields only
-	if ecConfig.FullnessRatio <= 0 || ecConfig.FullnessRatio > 1 {
-		return fmt.Errorf("expected EC config to have valid fullness ratio (0-1), got %f", ecConfig.FullnessRatio)
+	if ecConfig.GetFullnessRatio() <= 0 || ecConfig.GetFullnessRatio() > 1 {
+		return fmt.Errorf("expected EC config to have valid fullness ratio (0-1), got %f", ecConfig.GetFullnessRatio())
 	}
 
 	return nil
@@ -84,17 +86,19 @@ func GetProtobufConfigSummary() string {
 	configManager := NewMaintenanceConfigManager()
 	config := configManager.GetConfig()
 
-	summary := fmt.Sprintf("SeaweedFS Protobuf Maintenance Configuration:\n")
-	summary += fmt.Sprintf("  Enabled: %v\n", config.Enabled)
-	summary += fmt.Sprintf("  Scan Interval: %d seconds\n", config.ScanIntervalSeconds)
-	summary += fmt.Sprintf("  Max Retries: %d\n", config.MaxRetries)
-	summary += fmt.Sprintf("  Global Max Concurrent: %d\n", config.Policy.GlobalMaxConcurrent)
-	summary += fmt.Sprintf("  Task Policies: %d configured\n", len(config.Policy.TaskPolicies))
+	summary := "SeaweedFS Protobuf Maintenance Configuration:\n"
+	summary += fmt.Sprintf("  Enabled: %v\n", config.GetEnabled())
+	summary += fmt.Sprintf("  Scan Interval: %d seconds\n", config.GetScanIntervalSeconds())
+	summary += fmt.Sprintf("  Max Retries: %d\n", config.GetMaxRetries())
+	summary += fmt.Sprintf("  Global Max Concurrent: %d\n", config.GetPolicy().GetGlobalMaxConcurrent())
+	summary += fmt.Sprintf("  Task Policies: %d configured\n", len(config.GetPolicy().GetTaskPolicies()))
 
-	for taskType, policy := range config.Policy.TaskPolicies {
-		summary += fmt.Sprintf("    %s: enabled=%v, max_concurrent=%d\n",
-			taskType, policy.Enabled, policy.MaxConcurrent)
+	var summarySb94 strings.Builder
+	for taskType, policy := range config.GetPolicy().GetTaskPolicies() {
+		summarySb94.WriteString(fmt.Sprintf("    %s: enabled=%v, max_concurrent=%d\n",
+			taskType, policy.GetEnabled(), policy.GetMaxConcurrent()))
 	}
+	summary += summarySb94.String()
 
 	return summary
 }

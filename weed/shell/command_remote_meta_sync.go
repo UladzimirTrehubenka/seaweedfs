@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -50,7 +51,6 @@ func (c *commandRemoteMetaSync) HasTag(CommandTag) bool {
 }
 
 func (c *commandRemoteMetaSync) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	remoteMetaSyncCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 
 	dir := remoteMetaSyncCommand.String("dir", "", "a directory in filer")
@@ -62,6 +62,7 @@ func (c *commandRemoteMetaSync) Do(args []string, commandEnv *CommandEnv, writer
 	mappings, localMountedDir, remoteStorageMountedLocation, remoteStorageConf, detectErr := detectMountInfo(commandEnv, writer, *dir)
 	if detectErr != nil {
 		jsonPrintln(writer, mappings)
+
 		return detectErr
 	}
 
@@ -122,7 +123,6 @@ If entry.RemoteEntry == nil, this is a new local change and should not be overwr
 	}
 */
 func pullMetadata(commandEnv *CommandEnv, writer io.Writer, localMountedDir util.FullPath, remoteMountedLocation *remote_pb.RemoteStorageLocation, dirToCache util.FullPath, remoteConf *remote_pb.RemoteConf) error {
-
 	// visit remote storage
 	remoteStorage, err := remote_storage.GetRemoteStorage(remoteConf)
 	if err != nil {
@@ -143,11 +143,11 @@ func pullMetadata(commandEnv *CommandEnv, writer io.Writer, localMountedDir util
 			})
 			var existingEntry *filer_pb.Entry
 			if lookupErr != nil {
-				if lookupErr != filer_pb.ErrNotFound {
+				if !errors.Is(lookupErr, filer_pb.ErrNotFound) {
 					return lookupErr
 				}
 			} else {
-				existingEntry = lookupResponse.Entry
+				existingEntry = lookupResponse.GetEntry()
 			}
 
 			if existingEntry == nil {
@@ -157,8 +157,8 @@ func pullMetadata(commandEnv *CommandEnv, writer io.Writer, localMountedDir util
 						Name:        name,
 						IsDirectory: isDirectory,
 						Attributes: &filer_pb.FuseAttributes{
-							FileSize: uint64(remoteEntry.RemoteSize),
-							Mtime:    remoteEntry.RemoteMtime,
+							FileSize: uint64(remoteEntry.GetRemoteSize()),
+							Mtime:    remoteEntry.GetRemoteMtime(),
 							FileMode: uint32(0644),
 							TtlSec:   0, // Remote entries should not have TTL
 						},
@@ -166,22 +166,27 @@ func pullMetadata(commandEnv *CommandEnv, writer io.Writer, localMountedDir util
 					},
 				})
 				fmt.Fprintln(writer, " (create)")
+
 				return createErr
 			} else {
-				if existingEntry.RemoteEntry == nil {
+				if existingEntry.GetRemoteEntry() == nil {
 					// this is a new local change and should not be overwritten
 					fmt.Fprintln(writer, " (skip)")
+
 					return nil
 				}
-				if existingEntry.RemoteEntry.RemoteETag != remoteEntry.RemoteETag || existingEntry.RemoteEntry.RemoteMtime < remoteEntry.RemoteMtime {
+				if existingEntry.GetRemoteEntry().GetRemoteETag() != remoteEntry.GetRemoteETag() || existingEntry.GetRemoteEntry().GetRemoteMtime() < remoteEntry.GetRemoteMtime() {
 					// the remote version is updated, need to pull meta
 					fmt.Fprintln(writer, " (update)")
+
 					return doSaveRemoteEntry(client, string(localDir), existingEntry, remoteEntry)
 				}
 			}
 			fmt.Fprintln(writer, " (skip)")
+
 			return nil
 		})
+
 		return err
 	})
 

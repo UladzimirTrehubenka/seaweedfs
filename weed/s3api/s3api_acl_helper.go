@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil"
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -41,15 +42,17 @@ func ExtractAcl(r *http.Request, accountManager AccountManager, ownership, bucke
 			return nil, s3err.ErrInvalidRequest
 		}
 
-		//owner should present && owner is immutable
+		// owner should present && owner is immutable
 		if *acp.Owner.ID != ownerId {
 			glog.V(3).Infof("set acl denied! owner account is not consistent, request account id: %s, expect account id: %s", accountId, ownerId)
+
 			return nil, s3err.ErrAccessDenied
 		}
 
 		return ValidateAndTransferGrants(accountManager, acp.Grants)
 	} else {
 		_, grants, errCode = ParseAndValidateAclHeadersOrElseDefault(r, accountManager, ownership, bucketOwnerId, accountId, true)
+
 		return grants, errCode
 	}
 }
@@ -61,7 +64,7 @@ func ParseAndValidateAclHeadersOrElseDefault(r *http.Request, accountManager Acc
 		return
 	}
 	if len(grants) == 0 {
-		//if no acl(both customAcl and cannedAcl) specified, grant accountId(object writer) with full control permission
+		// if no acl(both customAcl and cannedAcl) specified, grant accountId(object writer) with full control permission
 		grants = append(grants, &s3.Grant{
 			Grantee: &s3.Grantee{
 				Type: &s3_constants.GrantTypeCanonicalUser,
@@ -70,6 +73,7 @@ func ParseAndValidateAclHeadersOrElseDefault(r *http.Request, accountManager Acc
 			Permission: &s3_constants.PermissionFullControl,
 		})
 	}
+
 	return
 }
 
@@ -82,6 +86,7 @@ func ParseAndValidateAclHeaders(r *http.Request, accountManager AccountManager, 
 	if len(grants) > 0 {
 		grants, errCode = ValidateAndTransferGrants(accountManager, grants)
 	}
+
 	return
 }
 
@@ -107,11 +112,12 @@ func ParseAclHeaders(r *http.Request, ownership, bucketOwnerId, accountId string
 		return accountId, grants, s3err.ErrNone
 	}
 
-	//if canned acl specified, parse cannedAcl (lower priority to custom acl)
+	// if canned acl specified, parse cannedAcl (lower priority to custom acl)
 	ownerId, grants, errCode = ParseCannedAclHeader(ownership, bucketOwnerId, accountId, cannedAcl, putAcl)
 	if errCode != s3err.ErrNone {
 		return "", nil, errCode
 	}
+
 	return ownerId, grants, errCode
 }
 
@@ -136,13 +142,14 @@ func ParseCustomAclHeaders(r *http.Request, grants *[]*s3.Grant) s3err.ErrorCode
 			return errCode
 		}
 	}
+
 	return s3err.ErrNone
 }
 
 func ParseCustomAclHeader(headerValue, permission string, grants *[]*s3.Grant) s3err.ErrorCode {
 	if len(headerValue) > 0 {
-		split := strings.Split(headerValue, ", ")
-		for _, grantStr := range split {
+		split := strings.SplitSeq(headerValue, ", ")
+		for grantStr := range split {
 			kv := strings.Split(grantStr, "=")
 			if len(kv) != 2 {
 				return s3err.ErrInvalidRequest
@@ -182,15 +189,15 @@ func ParseCustomAclHeader(headerValue, permission string, grants *[]*s3.Grant) s
 			}
 		}
 	}
-	return s3err.ErrNone
 
+	return s3err.ErrNone
 }
 
 func ParseCannedAclHeader(bucketOwnership, bucketOwnerId, accountId, cannedAcl string, putAcl bool) (ownerId string, grants []*s3.Grant, err s3err.ErrorCode) {
 	err = s3err.ErrNone
 	ownerId = accountId
 
-	//objectWrite automatically has full control on current object
+	// objectWrite automatically has full control on current object
 	objectWriterFullControl := &s3.Grant{
 		Grantee: &s3.Grantee{
 			ID:   &accountId,
@@ -258,7 +265,8 @@ func ParseCannedAclHeader(bucketOwnership, bucketOwnerId, accountId, cannedAcl s
 	default:
 		err = s3err.ErrInvalidRequest
 	}
-	return
+
+	return ownerId, grants, err
 }
 
 // ValidateAndTransferGrants validate grant & transfer Email-Grant to Id-Grant
@@ -268,6 +276,7 @@ func ValidateAndTransferGrants(accountManager AccountManager, grants []*s3.Grant
 		grantee := grant.Grantee
 		if grantee == nil || grantee.Type == nil {
 			glog.Warning("invalid grantee! grantee or granteeType is nil")
+
 			return nil, s3err.ErrInvalidRequest
 		}
 
@@ -275,33 +284,39 @@ func ValidateAndTransferGrants(accountManager AccountManager, grants []*s3.Grant
 		case s3_constants.GrantTypeGroup:
 			if grantee.URI == nil {
 				glog.Warning("invalid group grantee! group URI is nil")
+
 				return nil, s3err.ErrInvalidRequest
 			}
 			ok := s3_constants.ValidateGroup(*grantee.URI)
 			if !ok {
 				glog.Warningf("invalid group grantee! group name[%s] is not valid", *grantee.URI)
+
 				return nil, s3err.ErrInvalidRequest
 			}
 			result = append(result, grant)
 		case s3_constants.GrantTypeCanonicalUser:
 			if grantee.ID == nil {
 				glog.Warning("invalid canonical grantee! account id is nil")
+
 				return nil, s3err.ErrInvalidRequest
 			}
 			name := accountManager.GetAccountNameById(*grantee.ID)
 			if len(name) == 0 {
 				glog.Warningf("invalid canonical grantee! account id[%s] is not exists", *grantee.ID)
+
 				return nil, s3err.ErrInvalidRequest
 			}
 			result = append(result, grant)
 		case s3_constants.GrantTypeAmazonCustomerByEmail:
 			if grantee.EmailAddress == nil {
 				glog.Warning("invalid email grantee! email address is nil")
+
 				return nil, s3err.ErrInvalidRequest
 			}
 			accountId := accountManager.GetAccountIdByEmail(*grantee.EmailAddress)
 			if len(accountId) == 0 {
 				glog.Warningf("invalid email grantee! email address[%s] is not exists", *grantee.EmailAddress)
+
 				return nil, s3err.ErrInvalidRequest
 			}
 			result = append(result, &s3.Grant{
@@ -315,6 +330,7 @@ func ValidateAndTransferGrants(accountManager AccountManager, grants []*s3.Grant
 			return nil, s3err.ErrInvalidRequest
 		}
 	}
+
 	return result, s3err.ErrNone
 }
 
@@ -369,7 +385,8 @@ func DetermineReqGrants(accountId, aclAction string) (grants []*s3.Grant) {
 			Permission: &s3_constants.PermissionFullControl,
 		})
 	}
-	return
+
+	return grants
 }
 
 func SetAcpOwnerHeader(r *http.Request, acpOwnerId string) {
@@ -381,6 +398,7 @@ func GetAcpOwner(entryExtended map[string][]byte, defaultOwner string) string {
 	if ok && len(ownerIdBytes) > 0 {
 		return string(ownerIdBytes)
 	}
+
 	return defaultOwner
 }
 
@@ -405,6 +423,7 @@ func GetAcpGrants(entryExtended map[string][]byte) []*s3.Grant {
 			return grants
 		}
 	}
+
 	return nil
 }
 
@@ -417,18 +436,19 @@ func AssembleEntryWithAcp(objectEntry *filer_pb.Entry, objectOwner string, grant
 	if len(objectOwner) > 0 {
 		objectEntry.Extended[s3_constants.ExtAmzOwnerKey] = []byte(objectOwner)
 	} else {
-		delete(objectEntry.Extended, s3_constants.ExtAmzOwnerKey)
+		delete(objectEntry.GetExtended(), s3_constants.ExtAmzOwnerKey)
 	}
 
 	if len(grants) > 0 {
 		grantsBytes, err := json.Marshal(grants)
 		if err != nil {
 			glog.Warning("assemble acp to entry:", err)
+
 			return s3err.ErrInvalidRequest
 		}
 		objectEntry.Extended[s3_constants.ExtAmzAclKey] = grantsBytes
 	} else {
-		delete(objectEntry.Extended, s3_constants.ExtAmzAclKey)
+		delete(objectEntry.GetExtended(), s3_constants.ExtAmzAclKey)
 	}
 
 	return s3err.ErrNone
@@ -510,5 +530,6 @@ func GrantEquals(a, b *s3.Grant) bool {
 			}
 		}
 	}
+
 	return true
 }

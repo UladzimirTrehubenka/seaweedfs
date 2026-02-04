@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/app"
 	"github.com/seaweedfs/seaweedfs/weed/admin/view/layout"
@@ -29,6 +30,7 @@ func (h *ClusterHandlers) ShowClusterVolumeServers(c *gin.Context) {
 	volumeServersData, err := h.adminServer.GetClusterVolumeServers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster volume servers: " + err.Error()})
+
 		return
 	}
 
@@ -46,6 +48,7 @@ func (h *ClusterHandlers) ShowClusterVolumeServers(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -75,6 +78,7 @@ func (h *ClusterHandlers) ShowClusterVolumes(c *gin.Context) {
 	volumesData, err := h.adminServer.GetClusterVolumes(page, pageSize, sortBy, sortOrder, collection)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster volumes: " + err.Error()})
+
 		return
 	}
 
@@ -92,6 +96,7 @@ func (h *ClusterHandlers) ShowClusterVolumes(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -103,17 +108,20 @@ func (h *ClusterHandlers) ShowVolumeDetails(c *gin.Context) {
 
 	if volumeIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Volume ID is required"})
+
 		return
 	}
 
 	if server == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Server is required"})
+
 		return
 	}
 
 	volumeID, err := strconv.Atoi(volumeIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid volume ID"})
+
 		return
 	}
 
@@ -121,6 +129,7 @@ func (h *ClusterHandlers) ShowVolumeDetails(c *gin.Context) {
 	volumeDetails, err := h.adminServer.GetVolumeDetails(volumeID, server)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get volume details: " + err.Error()})
+
 		return
 	}
 
@@ -131,6 +140,7 @@ func (h *ClusterHandlers) ShowVolumeDetails(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -141,6 +151,7 @@ func (h *ClusterHandlers) ShowClusterCollections(c *gin.Context) {
 	collectionsData, err := h.adminServer.GetClusterCollections()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster collections: " + err.Error()})
+
 		return
 	}
 
@@ -158,6 +169,7 @@ func (h *ClusterHandlers) ShowClusterCollections(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -167,6 +179,7 @@ func (h *ClusterHandlers) ShowCollectionDetails(c *gin.Context) {
 	collectionName := c.Param("name")
 	if collectionName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Collection name is required"})
+
 		return
 	}
 
@@ -180,6 +193,7 @@ func (h *ClusterHandlers) ShowCollectionDetails(c *gin.Context) {
 	collectionDetailsData, err := h.adminServer.GetCollectionDetails(collectionName, page, pageSize, sortBy, sortOrder)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get collection details: " + err.Error()})
+
 		return
 	}
 
@@ -197,6 +211,7 @@ func (h *ClusterHandlers) ShowCollectionDetails(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -214,6 +229,7 @@ func (h *ClusterHandlers) ShowClusterEcShards(c *gin.Context) {
 	data, err := h.adminServer.GetClusterEcVolumes(page, pageSize, sortBy, sortOrder, collection)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 
@@ -231,6 +247,7 @@ func (h *ClusterHandlers) ShowClusterEcShards(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 }
@@ -241,18 +258,21 @@ func (h *ClusterHandlers) ShowEcVolumeDetails(c *gin.Context) {
 
 	if volumeIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Volume ID is required"})
+
 		return
 	}
 
 	volumeID, err := strconv.Atoi(volumeIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid volume ID"})
+
 		return
 	}
 
 	// Check that volumeID is within uint32 range
 	if volumeID < 0 || uint64(volumeID) > math.MaxUint32 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Volume ID out of range"})
+
 		return
 	}
 
@@ -264,6 +284,7 @@ func (h *ClusterHandlers) ShowEcVolumeDetails(c *gin.Context) {
 	ecVolumeDetails, err := h.adminServer.GetEcVolumeDetails(uint32(volumeID), sortBy, sortOrder)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get EC volume details: " + err.Error()})
+
 		return
 	}
 
@@ -281,6 +302,7 @@ func (h *ClusterHandlers) ShowEcVolumeDetails(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -291,6 +313,7 @@ func (h *ClusterHandlers) ShowClusterMasters(c *gin.Context) {
 	mastersData, err := h.adminServer.GetClusterMasters()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster masters: " + err.Error()})
+
 		return
 	}
 
@@ -308,6 +331,7 @@ func (h *ClusterHandlers) ShowClusterMasters(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -318,6 +342,7 @@ func (h *ClusterHandlers) ShowClusterFilers(c *gin.Context) {
 	filersData, err := h.adminServer.GetClusterFilers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster filers: " + err.Error()})
+
 		return
 	}
 
@@ -335,6 +360,7 @@ func (h *ClusterHandlers) ShowClusterFilers(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -345,6 +371,7 @@ func (h *ClusterHandlers) ShowClusterBrokers(c *gin.Context) {
 	brokersData, err := h.adminServer.GetClusterBrokers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster brokers: " + err.Error()})
+
 		return
 	}
 
@@ -362,6 +389,7 @@ func (h *ClusterHandlers) ShowClusterBrokers(c *gin.Context) {
 	err = layoutComponent.Render(c.Request.Context(), c.Writer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template: " + err.Error()})
+
 		return
 	}
 }
@@ -371,6 +399,7 @@ func (h *ClusterHandlers) GetClusterTopology(c *gin.Context) {
 	topology, err := h.adminServer.GetClusterTopology()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 	c.JSON(http.StatusOK, topology)
@@ -387,6 +416,7 @@ func (h *ClusterHandlers) GetVolumeServers(c *gin.Context) {
 	topology, err := h.adminServer.GetClusterTopology()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"volume_servers": topology.VolumeServers})
@@ -399,12 +429,14 @@ func (h *ClusterHandlers) VacuumVolume(c *gin.Context) {
 
 	if volumeIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Volume ID is required"})
+
 		return
 	}
 
 	volumeID, err := strconv.Atoi(volumeIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid volume ID"})
+
 		return
 	}
 
@@ -414,6 +446,7 @@ func (h *ClusterHandlers) VacuumVolume(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to vacuum volume: " + err.Error(),
 		})
+
 		return
 	}
 

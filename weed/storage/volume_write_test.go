@@ -56,7 +56,6 @@ func TestSearchVolumesWithDeletedNeedles(t *testing.T) {
 		t.Fatalf("lookup by ts: %v", err)
 	}
 	fmt.Printf("offset: %v, isLast: %v\n", offset.ToActualOffset(), isLast)
-
 }
 
 func isFileExist(path string) (bool, error) {

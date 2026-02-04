@@ -43,7 +43,7 @@ func TestParseKeyHash(t *testing.T) {
 func BenchmarkParseKeyHash(b *testing.B) {
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ParseNeedleIdCookie("4ed44ed44ed44ed4c8116e41")
 	}
 }

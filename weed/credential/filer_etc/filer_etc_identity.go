@@ -3,6 +3,7 @@ package filer_etc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -31,6 +32,7 @@ func (store *FilerEtcStore) LoadConfiguration(ctx context.Context) (*iam_pb.S3Ap
 	if foundLegacy && len(content) > 0 {
 		if err := filer.ParseS3ConfigurationFromBytes(content, s3cfg); err != nil {
 			glog.Errorf("Failed to parse legacy IAM configuration: %v", err)
+
 			return s3cfg, err
 		}
 	}
@@ -51,6 +53,7 @@ func (store *FilerEtcStore) LoadConfiguration(ctx context.Context) (*iam_pb.S3Ap
 	if foundLegacy {
 		if err := store.migrateToMultiFile(ctx, s3cfg); err != nil {
 			glog.Errorf("Failed to migrate IAM configuration to multi-file layout: %v", err)
+
 			return s3cfg, nil
 		}
 	}
@@ -63,11 +66,12 @@ func (store *FilerEtcStore) loadFromMultiFile(ctx context.Context, s3cfg *iam_pb
 
 	// Helper to find existing identity index
 	findIdentity := func(name string) int {
-		for i, identity := range s3cfg.Identities {
-			if identity.Name == name {
+		for i, identity := range s3cfg.GetIdentities() {
+			if identity.GetName() == name {
 				return i
 			}
 		}
+
 		return -1
 	}
 
@@ -76,26 +80,28 @@ func (store *FilerEtcStore) loadFromMultiFile(ctx context.Context, s3cfg *iam_pb
 		dir := filer.IamConfigDirectory + "/" + IamIdentitiesDirectory
 		entries, err := listEntries(ctx, client, dir)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				// If directory doesn't exist, it's not multi-file yet
 				return nil
 			}
+
 			return err
 		}
 
 		for _, entry := range entries {
-			if entry.IsDirectory {
+			if entry.GetIsDirectory() {
 				continue
 			}
 			hasIdentities = true
 
 			var content []byte
-			if len(entry.Content) > 0 {
-				content = entry.Content
+			if len(entry.GetContent()) > 0 {
+				content = entry.GetContent()
 			} else {
-				c, err := filer.ReadInsideFiler(client, dir, entry.Name)
+				c, err := filer.ReadInsideFiler(client, dir, entry.GetName())
 				if err != nil {
-					glog.Warningf("Failed to read identity file %s: %v", entry.Name, err)
+					glog.Warningf("Failed to read identity file %s: %v", entry.GetName(), err)
+
 					continue
 				}
 				content = c
@@ -104,12 +110,13 @@ func (store *FilerEtcStore) loadFromMultiFile(ctx context.Context, s3cfg *iam_pb
 			if len(content) > 0 {
 				identity := &iam_pb.Identity{}
 				if err := json.Unmarshal(content, identity); err != nil {
-					glog.Warningf("Failed to unmarshal identity %s: %v", entry.Name, err)
+					glog.Warningf("Failed to unmarshal identity %s: %v", entry.GetName(), err)
+
 					continue
 				}
 
 				// Merge logic: Overwrite existing or Append
-				idx := findIdentity(identity.Name)
+				idx := findIdentity(identity.GetName())
 				if idx != -1 {
 					s3cfg.Identities[idx] = identity
 				} else {
@@ -117,6 +124,7 @@ func (store *FilerEtcStore) loadFromMultiFile(ctx context.Context, s3cfg *iam_pb
 				}
 			}
 		}
+
 		return nil
 	})
 
@@ -131,14 +139,14 @@ func (store *FilerEtcStore) migrateToMultiFile(ctx context.Context, s3cfg *iam_p
 	glog.Infof("Migrating IAM configuration to multi-file layout...")
 
 	// 1. Save all identities
-	for _, identity := range s3cfg.Identities {
+	for _, identity := range s3cfg.GetIdentities() {
 		if err := store.saveIdentity(ctx, identity); err != nil {
 			return err
 		}
 	}
 
 	// 2. Save all service accounts
-	for _, sa := range s3cfg.ServiceAccounts {
+	for _, sa := range s3cfg.GetServiceAccounts() {
 		if err := store.saveServiceAccount(ctx, sa); err != nil {
 			return err
 		}
@@ -152,20 +160,21 @@ func (store *FilerEtcStore) migrateToMultiFile(ctx context.Context, s3cfg *iam_p
 			NewDirectory: filer.IamConfigDirectory,
 			NewName:      IamLegacyIdentityOldFile,
 		})
+
 		return err
 	})
 }
 
 func (store *FilerEtcStore) SaveConfiguration(ctx context.Context, config *iam_pb.S3ApiConfiguration) error {
 	// 1. Save all identities
-	for _, identity := range config.Identities {
+	for _, identity := range config.GetIdentities() {
 		if err := store.saveIdentity(ctx, identity); err != nil {
 			return err
 		}
 	}
 
 	// 2. Save all service accounts
-	for _, sa := range config.ServiceAccounts {
+	for _, sa := range config.GetServiceAccounts() {
 		if err := store.saveServiceAccount(ctx, sa); err != nil {
 			return err
 		}
@@ -176,28 +185,30 @@ func (store *FilerEtcStore) SaveConfiguration(ctx context.Context, config *iam_p
 		dir := filer.IamConfigDirectory + "/" + IamIdentitiesDirectory
 		entries, err := listEntries(ctx, client, dir)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 
 		validNames := make(map[string]bool)
-		for _, id := range config.Identities {
-			validNames[id.Name+".json"] = true
+		for _, id := range config.GetIdentities() {
+			validNames[id.GetName()+".json"] = true
 		}
 
 		for _, entry := range entries {
-			if !entry.IsDirectory && !validNames[entry.Name] {
+			if !entry.GetIsDirectory() && !validNames[entry.GetName()] {
 				// Delete obsolete identity file
 				if _, err := client.DeleteEntry(ctx, &filer_pb.DeleteEntryRequest{
 					Directory: dir,
-					Name:      entry.Name,
+					Name:      entry.GetName(),
 				}); err != nil {
-					glog.Warningf("Failed to delete obsolete identity file %s: %v", entry.Name, err)
+					glog.Warningf("Failed to delete obsolete identity file %s: %v", entry.GetName(), err)
 				}
 			}
 		}
+
 		return nil
 	}); err != nil {
 		return err
@@ -208,27 +219,29 @@ func (store *FilerEtcStore) SaveConfiguration(ctx context.Context, config *iam_p
 		dir := filer.IamConfigDirectory + "/" + IamServiceAccountsDirectory
 		entries, err := listEntries(ctx, client, dir)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 
 		validNames := make(map[string]bool)
-		for _, sa := range config.ServiceAccounts {
-			validNames[sa.Id+".json"] = true
+		for _, sa := range config.GetServiceAccounts() {
+			validNames[sa.GetId()+".json"] = true
 		}
 
 		for _, entry := range entries {
-			if !entry.IsDirectory && !validNames[entry.Name] {
+			if !entry.GetIsDirectory() && !validNames[entry.GetName()] {
 				if _, err := client.DeleteEntry(ctx, &filer_pb.DeleteEntryRequest{
 					Directory: dir,
-					Name:      entry.Name,
+					Name:      entry.GetName(),
 				}); err != nil {
-					glog.Warningf("Failed to delete obsolete service account file %s: %v", entry.Name, err)
+					glog.Warningf("Failed to delete obsolete service account file %s: %v", entry.GetName(), err)
 				}
 			}
 		}
+
 		return nil
 	}); err != nil {
 		return err
@@ -239,10 +252,11 @@ func (store *FilerEtcStore) SaveConfiguration(ctx context.Context, config *iam_p
 
 func (store *FilerEtcStore) CreateUser(ctx context.Context, identity *iam_pb.Identity) error {
 	// Check if user exists (read specific file)
-	existing, err := store.GetUser(ctx, identity.Name)
+	existing, err := store.GetUser(ctx, identity.GetName())
 	if err == nil && existing != nil {
 		return credential.ErrUserAlreadyExists
 	}
+
 	return store.saveIdentity(ctx, identity)
 }
 
@@ -251,17 +265,20 @@ func (store *FilerEtcStore) GetUser(ctx context.Context, username string) (*iam_
 	err := store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		data, err := filer.ReadInsideFiler(client, filer.IamConfigDirectory+"/"+IamIdentitiesDirectory, username+".json")
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return credential.ErrUserNotFound
 			}
+
 			return err
 		}
 		if len(data) == 0 {
 			return credential.ErrUserNotFound
 		}
 		identity = &iam_pb.Identity{}
+
 		return json.Unmarshal(data, identity)
 	})
+
 	return identity, err
 }
 
@@ -272,12 +289,13 @@ func (store *FilerEtcStore) UpdateUser(ctx context.Context, username string, ide
 	}
 	// If username changes, we need to delete old and create new. But usually UpdateUser keeps username unless renames are allowed.
 	// identity.Name vs username.
-	if username != identity.Name {
+	if username != identity.GetName() {
 		// Rename case
 		if err := store.DeleteUser(ctx, username); err != nil {
 			return err
 		}
 	}
+
 	return store.saveIdentity(ctx, identity)
 }
 
@@ -296,8 +314,10 @@ func (store *FilerEtcStore) DeleteUser(ctx context.Context, username string) err
 			if strings.Contains(err.Error(), filer_pb.ErrNotFound.Error()) {
 				return credential.ErrUserNotFound
 			}
+
 			return err
 		}
+
 		return nil
 	})
 }
@@ -307,18 +327,21 @@ func (store *FilerEtcStore) ListUsers(ctx context.Context) ([]string, error) {
 	err := store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		entries, err := listEntries(ctx, client, filer.IamConfigDirectory+"/"+IamIdentitiesDirectory)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 		for _, entry := range entries {
-			if !entry.IsDirectory && len(entry.Name) > 5 && entry.Name[len(entry.Name)-5:] == ".json" {
-				usernames = append(usernames, entry.Name[:len(entry.Name)-5])
+			if !entry.GetIsDirectory() && len(entry.GetName()) > 5 && entry.GetName()[len(entry.GetName())-5:] == ".json" {
+				usernames = append(usernames, entry.GetName()[:len(entry.GetName())-5])
 			}
 		}
+
 		return nil
 	})
+
 	return usernames, err
 }
 
@@ -334,23 +357,24 @@ func (store *FilerEtcStore) GetUserByAccessKey(ctx context.Context, accessKey st
 		if err != nil {
 			// If not found, check legacy file? No, optimization requested to avoid side effects.
 			// If migration hasn't run, this will return empty/not found.
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 
 		for _, entry := range entries {
-			if entry.IsDirectory || !strings.HasSuffix(entry.Name, ".json") {
+			if entry.GetIsDirectory() || !strings.HasSuffix(entry.GetName(), ".json") {
 				continue
 			}
 
 			// Read file content
 			var content []byte
-			if len(entry.Content) > 0 {
-				content = entry.Content
+			if len(entry.GetContent()) > 0 {
+				content = entry.GetContent()
 			} else {
-				c, err := filer.ReadInsideFiler(client, dir, entry.Name)
+				c, err := filer.ReadInsideFiler(client, dir, entry.GetName())
 				if err != nil {
 					continue
 				}
@@ -363,14 +387,16 @@ func (store *FilerEtcStore) GetUserByAccessKey(ctx context.Context, accessKey st
 					continue
 				}
 
-				for _, cred := range identity.Credentials {
-					if cred.AccessKey == accessKey {
+				for _, cred := range identity.GetCredentials() {
+					if cred.GetAccessKey() == accessKey {
 						foundIdentity = identity
+
 						return nil // Found match, stop iteration
 					}
 				}
 			}
 		}
+
 		return nil
 	})
 
@@ -391,13 +417,14 @@ func (store *FilerEtcStore) CreateAccessKey(ctx context.Context, username string
 		return err
 	}
 
-	for _, existing := range identity.Credentials {
-		if existing.AccessKey == cred.AccessKey {
-			return fmt.Errorf("access key %s already exists", cred.AccessKey)
+	for _, existing := range identity.GetCredentials() {
+		if existing.GetAccessKey() == cred.GetAccessKey() {
+			return fmt.Errorf("access key %s already exists", cred.GetAccessKey())
 		}
 	}
 
 	identity.Credentials = append(identity.Credentials, cred)
+
 	return store.saveIdentity(ctx, identity)
 }
 
@@ -408,10 +435,11 @@ func (store *FilerEtcStore) DeleteAccessKey(ctx context.Context, username string
 	}
 
 	found := false
-	for i, cred := range identity.Credentials {
-		if cred.AccessKey == accessKey {
-			identity.Credentials = append(identity.Credentials[:i], identity.Credentials[i+1:]...)
+	for i, cred := range identity.GetCredentials() {
+		if cred.GetAccessKey() == accessKey {
+			identity.Credentials = append(identity.Credentials[:i], identity.GetCredentials()[i+1:]...)
 			found = true
+
 			break
 		}
 	}
@@ -431,7 +459,8 @@ func (store *FilerEtcStore) saveIdentity(ctx context.Context, identity *iam_pb.I
 		if err != nil {
 			return err
 		}
-		return filer.SaveInsideFiler(client, filer.IamConfigDirectory+"/"+IamIdentitiesDirectory, identity.Name+".json", data)
+
+		return filer.SaveInsideFiler(client, filer.IamConfigDirectory+"/"+IamIdentitiesDirectory, identity.GetName()+".json", data)
 	})
 }
 
@@ -441,15 +470,18 @@ func (store *FilerEtcStore) readInsideFiler(dir string, name string) ([]byte, bo
 	err := store.withFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		c, err := filer.ReadInsideFiler(client, dir, name)
 		if err != nil {
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 		content = c
 		found = true
+
 		return nil
 	})
+
 	return content, found, err
 }
 
@@ -457,10 +489,12 @@ func listEntries(ctx context.Context, client filer_pb.SeaweedFilerClient, dir st
 	var entries []*filer_pb.Entry
 	err := filer_pb.SeaweedList(ctx, client, dir, "", func(entry *filer_pb.Entry, isLast bool) error {
 		entries = append(entries, entry)
+
 		return nil
 	}, "", false, 100000)
 	if err != nil {
 		return nil, err
 	}
+
 	return entries, nil
 }

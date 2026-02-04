@@ -51,7 +51,7 @@ func TestGetRequestDataReader_ChunkedEncodingWithoutIAM(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body := strings.NewReader("test data")
-			req, _ := http.NewRequest("PUT", "/bucket/key", body)
+			req, _ := http.NewRequest(http.MethodPut, "/bucket/key", body)
 
 			if tt.contentSha256 != "" {
 				req.Header.Set("x-amz-content-sha256", tt.contentSha256)
@@ -96,7 +96,7 @@ func TestGetRequestDataReader_AuthTypeDetection(t *testing.T) {
 	t.Run("ChunkedDataWithChecksum", func(t *testing.T) {
 		// Simulate a request with chunked data and checksum trailer
 		body := strings.NewReader("test content")
-		req, _ := http.NewRequest("PUT", "/bucket/key", body)
+		req, _ := http.NewRequest(http.MethodPut, "/bucket/key", body)
 		req.Header.Set("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
 		req.Header.Set("x-amz-trailer", "x-amz-checksum-crc32")
 
@@ -128,7 +128,7 @@ func TestGetRequestDataReader_IAMEnabled(t *testing.T) {
 
 	t.Run("StreamingUnsignedWithIAMEnabled", func(t *testing.T) {
 		body := strings.NewReader("test data")
-		req, _ := http.NewRequest("PUT", "/bucket/key", body)
+		req, _ := http.NewRequest(http.MethodPut, "/bucket/key", body)
 		req.Header.Set("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
 
 		dataReader, errCode := getRequestDataReader(s3a, req)
@@ -171,7 +171,7 @@ func TestAuthTypeDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequest("PUT", "/bucket/key", strings.NewReader("test"))
+			req, _ := http.NewRequest(http.MethodPut, "/bucket/key", strings.NewReader("test"))
 			for key, value := range tt.headers {
 				req.Header.Set(key, value)
 			}

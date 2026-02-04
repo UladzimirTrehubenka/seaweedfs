@@ -19,6 +19,7 @@ func Retry(name string, job func() error) (err error) {
 				glog.V(0).Infof("retry %s successfully", name)
 			}
 			waitTime = time.Second
+
 			break
 		}
 		if strings.Contains(err.Error(), "transport") {
@@ -30,6 +31,7 @@ func Retry(name string, job func() error) (err error) {
 		time.Sleep(waitTime)
 		waitTime += waitTime / 2
 	}
+
 	return err
 }
 
@@ -43,6 +45,7 @@ func MultiRetry(name string, errList []string, job func() error) (err error) {
 				glog.V(0).Infof("retry %s successfully", name)
 			}
 			waitTime = time.Second
+
 			break
 		}
 		if containErr(err.Error(), errList) {
@@ -54,6 +57,7 @@ func MultiRetry(name string, errList []string, job func() error) (err error) {
 		time.Sleep(waitTime)
 		waitTime += waitTime / 2
 	}
+
 	return err
 }
 
@@ -64,6 +68,7 @@ func RetryUntil(name string, job func() error, onErrFn func(err error) (shouldCo
 		err := job()
 		if err == nil {
 			waitTime = time.Second
+
 			return nil
 		}
 		if onErrFn(err) {
@@ -74,6 +79,7 @@ func RetryUntil(name string, job func() error, onErrFn func(err error) (shouldCo
 			if waitTime < RetryWaitTime {
 				waitTime += waitTime / 2
 			}
+
 			continue
 		} else {
 			return err
@@ -88,6 +94,7 @@ func Nvl(values ...string) string {
 			return s
 		}
 	}
+
 	return ""
 }
 
@@ -97,5 +104,6 @@ func containErr(err string, errList []string) bool {
 			return true
 		}
 	}
+
 	return false
 }

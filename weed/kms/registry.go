@@ -65,11 +65,12 @@ func (r *ProviderRegistry) GetProvider(name string, config util.Configuration) (
 	// Create new instance
 	instance, err := factory(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create KMS provider '%s': %v", name, err)
+		return nil, fmt.Errorf("failed to create KMS provider '%s': %w", name, err)
 	}
 
 	// Cache the instance
 	r.instances[name] = instance
+
 	return instance, nil
 }
 
@@ -87,6 +88,7 @@ func (r *ProviderRegistry) ListProviders() []string {
 	for name := range r.providers {
 		names = append(names, name)
 	}
+
 	return names
 }
 
@@ -119,13 +121,14 @@ func WithKMSProvider(name string, config util.Configuration, fn func(KMSProvider
 	if err != nil {
 		return err
 	}
+
 	return fn(provider)
 }
 
 // TestKMSConnection tests the connection to a KMS provider
 func TestKMSConnection(ctx context.Context, provider KMSProvider, testKeyID string) error {
 	if provider == nil {
-		return fmt.Errorf("KMS provider is nil")
+		return errors.New("KMS provider is nil")
 	}
 
 	// Try to describe a test key to verify connectivity
@@ -135,10 +138,12 @@ func TestKMSConnection(ctx context.Context, provider KMSProvider, testKeyID stri
 
 	if err != nil {
 		// If the key doesn't exist, that's still a successful connection test
-		if kmsErr, ok := err.(*KMSError); ok && kmsErr.Code == ErrCodeNotFoundException {
+		kmsErr := &KMSError{}
+		if errors.As(err, &kmsErr) {
 			return nil
 		}
-		return fmt.Errorf("KMS connection test failed: %v", err)
+
+		return fmt.Errorf("KMS connection test failed: %w", err)
 	}
 
 	return nil

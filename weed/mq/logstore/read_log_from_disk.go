@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
@@ -15,7 +17,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
-	"google.golang.org/protobuf/proto"
 )
 
 func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p topic.Partition) log_buffer.LogReadFromDiskFuncType {
@@ -31,11 +32,11 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 		entriesSkipped := 0
 		entriesProcessed := 0
 		for pos := 0; pos+4 < len(buf); {
-
 			size := util.BytesToUint32(buf[pos : pos+4])
 			if pos+4+int(size) > len(buf) {
 				err = fmt.Errorf("GenLogOnDiskReadFunc: read [%d,%d) from [0,%d)", pos, pos+int(size)+4, len(buf))
-				return
+
+				return processedTsNs, err
 			}
 			entryData := buf[pos+4 : pos+4+int(size)]
 
@@ -43,73 +44,80 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 			if err = proto.Unmarshal(entryData, logEntry); err != nil {
 				pos += 4 + int(size)
 				err = fmt.Errorf("unexpected unmarshal mq_pb.Message: %w", err)
-				return
+
+				return processedTsNs, err
 			}
 
 			// Filter by offset if this is an offset-based subscription
 			if isOffsetBased {
-				if logEntry.Offset < startOffset {
+				if logEntry.GetOffset() < startOffset {
 					entriesSkipped++
 					pos += 4 + int(size)
+
 					continue
 				}
 			} else {
 				// Filter by timestamp for timestamp-based subscriptions
-				if logEntry.TsNs <= starTsNs {
+				if logEntry.GetTsNs() <= starTsNs {
 					pos += 4 + int(size)
+
 					continue
 				}
-				if stopTsNs != 0 && logEntry.TsNs > stopTsNs {
-					println("stopTsNs", stopTsNs, "logEntry.TsNs", logEntry.TsNs)
-					return
+				if stopTsNs != 0 && logEntry.GetTsNs() > stopTsNs {
+					println("stopTsNs", stopTsNs, "logEntry.TsNs", logEntry.GetTsNs())
+
+					return processedTsNs, err
 				}
 			}
 
 			// fmt.Printf(" read logEntry: %v, ts %v\n", string(logEntry.Key), time.Unix(0, logEntry.TsNs).UTC())
 			if _, err = eachLogEntryFn(logEntry); err != nil {
 				err = fmt.Errorf("process log entry %v: %w", logEntry, err)
-				return
+
+				return processedTsNs, err
 			}
 
-			processedTsNs = logEntry.TsNs
+			processedTsNs = logEntry.GetTsNs()
 			entriesProcessed++
 
 			pos += 4 + int(size)
-
 		}
 
-		return
+		return processedTsNs, err
 	}
 
 	eachFileFn := func(entry *filer_pb.Entry, eachLogEntryFn log_buffer.EachLogEntryFuncType, starTsNs, stopTsNs int64, startOffset int64, isOffsetBased bool) (processedTsNs int64, err error) {
-		if len(entry.Content) > 0 {
+		if len(entry.GetContent()) > 0 {
 			// skip .offset files
-			return
+			return processedTsNs, err
 		}
 		var urlStrings []string
-		for _, chunk := range entry.Chunks {
-			if chunk.Size == 0 {
+		for _, chunk := range entry.GetChunks() {
+			if chunk.GetSize() == 0 {
 				continue
 			}
-			if chunk.IsChunkManifest {
-				glog.Warningf("this should not happen. unexpected chunk manifest in %s/%s", partitionDir, entry.Name)
-				return
+			if chunk.GetIsChunkManifest() {
+				glog.Warningf("this should not happen. unexpected chunk manifest in %s/%s", partitionDir, entry.GetName())
+
+				return processedTsNs, err
 			}
-			urlStrings, err = lookupFileIdFn(context.Background(), chunk.FileId)
+			urlStrings, err = lookupFileIdFn(context.Background(), chunk.GetFileId())
 			if err != nil {
-				glog.V(1).Infof("lookup %s failed: %v", chunk.FileId, err)
-				err = fmt.Errorf("lookup %s: %v", chunk.FileId, err)
-				return
+				glog.V(1).Infof("lookup %s failed: %v", chunk.GetFileId(), err)
+				err = fmt.Errorf("lookup %s: %w", chunk.GetFileId(), err)
+
+				return processedTsNs, err
 			}
 			if len(urlStrings) == 0 {
-				glog.V(1).Infof("no url found for %s", chunk.FileId)
-				err = fmt.Errorf("no url found for %s", chunk.FileId)
-				return
+				glog.V(1).Infof("no url found for %s", chunk.GetFileId())
+				err = fmt.Errorf("no url found for %s", chunk.GetFileId())
+
+				return processedTsNs, err
 			}
-			glog.V(2).Infof("lookup %s returned %d URLs", chunk.FileId, len(urlStrings))
+			glog.V(2).Infof("lookup %s returned %d URLs", chunk.GetFileId(), len(urlStrings))
 
 			// Try to get data from cache first
-			cacheKey := fmt.Sprintf("%s/%s/%d/%s", t.Name, p.String(), p.RangeStart, chunk.FileId)
+			cacheKey := fmt.Sprintf("%s/%s/%d/%s", t.Name, p.String(), p.RangeStart, chunk.GetFileId())
 			if cachedData, _, found := fileCache.Get(cacheKey); found {
 				if cachedData == nil {
 					// Negative cache hit - data doesn't exist
@@ -118,8 +126,10 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 				// Positive cache hit - data exists
 				if processedTsNs, err = eachChunkFn(cachedData, eachLogEntryFn, starTsNs, stopTsNs, startOffset, isOffsetBased); err != nil {
 					glog.V(1).Infof("eachChunkFn failed on cached data: %v", err)
-					return
+
+					return processedTsNs, err
 				}
+
 				continue
 			}
 
@@ -138,8 +148,10 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 
 					if processedTsNs, err = eachChunkFn(data, eachLogEntryFn, starTsNs, stopTsNs, startOffset, isOffsetBased); err != nil {
 						glog.V(1).Infof("eachChunkFn failed: %v", err)
-						return
+
+						return processedTsNs, err
 					}
+
 					break
 				} else {
 					glog.V(2).Infof("failed to fetch from %s: %v", urlString, err)
@@ -148,13 +160,14 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 			if !processed {
 				// Store negative cache entry - data doesn't exist or all URLs failed
 				fileCache.Put(cacheKey, nil, startOffset)
-				glog.V(1).Infof("no data processed for %s %s - all URLs failed", entry.Name, chunk.FileId)
-				err = fmt.Errorf("no data processed for %s %s", entry.Name, chunk.FileId)
-				return
-			}
+				glog.V(1).Infof("no data processed for %s %s - all URLs failed", entry.GetName(), chunk.GetFileId())
+				err = fmt.Errorf("no data processed for %s %s", entry.GetName(), chunk.GetFileId())
 
+				return processedTsNs, err
+			}
 		}
-		return
+
+		return processedTsNs, err
 	}
 
 	return func(startPosition log_buffer.MessagePosition, stopTsNs int64, eachLogEntryFn log_buffer.EachLogEntryFuncType) (lastReadPosition log_buffer.MessagePosition, isDone bool, err error) {
@@ -183,27 +196,27 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 		err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 			// First pass: collect all relevant files with their metadata
 			glog.V(2).Infof("listing directory %s for offset %d startFileName=%q", partitionDir, startOffset, startFileName)
-			return filer_pb.SeaweedList(context.Background(), client, partitionDir, "", func(entry *filer_pb.Entry, isLast bool) error {
 
-				if entry.IsDirectory {
+			return filer_pb.SeaweedList(context.Background(), client, partitionDir, "", func(entry *filer_pb.Entry, isLast bool) error {
+				if entry.GetIsDirectory() {
 					return nil
 				}
-				if strings.HasSuffix(entry.Name, ".parquet") {
+				if strings.HasSuffix(entry.GetName(), ".parquet") {
 					return nil
 				}
-				if strings.HasSuffix(entry.Name, ".offset") {
+				if strings.HasSuffix(entry.GetName(), ".offset") {
 					return nil
 				}
-				if stopTsNs != 0 && entry.Name > stopTime.UTC().Format(topic.TIME_FORMAT) {
+				if stopTsNs != 0 && entry.GetName() > stopTime.UTC().Format(topic.TIME_FORMAT) {
 					return nil
 				}
 
 				// OPTIMIZATION: For offset-based reads, check if this file contains the requested offset
 				if isOffsetBased {
-					glog.V(3).Infof("found file %s", entry.Name)
+					glog.V(3).Infof("found file %s", entry.GetName())
 					// Check if file has offset range metadata
-					if minOffsetBytes, hasMin := entry.Extended["offset_min"]; hasMin && len(minOffsetBytes) == 8 {
-						if maxOffsetBytes, hasMax := entry.Extended["offset_max"]; hasMax && len(maxOffsetBytes) == 8 {
+					if minOffsetBytes, hasMin := entry.GetExtended()["offset_min"]; hasMin && len(minOffsetBytes) == 8 {
+						if maxOffsetBytes, hasMax := entry.GetExtended()["offset_max"]; hasMax && len(maxOffsetBytes) == 8 {
 							fileMinOffset := int64(binary.BigEndian.Uint64(minOffsetBytes))
 							fileMaxOffset := int64(binary.BigEndian.Uint64(maxOffsetBytes))
 
@@ -226,22 +239,23 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 						topicName = topicName[dotIndex+1:]
 					}
 					isSystemTopic := strings.HasPrefix(topicName, "_")
-					if !isSystemTopic && startPosition.Time.Unix() > 86400 && entry.Name < startPosition.Time.UTC().Format(topic.TIME_FORMAT) {
+					if !isSystemTopic && startPosition.Time.Unix() > 86400 && entry.GetName() < startPosition.Time.UTC().Format(topic.TIME_FORMAT) {
 						return nil
 					}
 				}
 
 				// Add file to candidates for processing
 				candidateFiles = append(candidateFiles, entry)
-				glog.V(3).Infof("added candidate file %s (total=%d)", entry.Name, len(candidateFiles))
-				return nil
+				glog.V(3).Infof("added candidate file %s (total=%d)", entry.GetName(), len(candidateFiles))
 
+				return nil
 			}, startFileName, true, math.MaxInt32)
 		})
 
 		if err != nil {
 			glog.Errorf("failed to list directory %s: %v", partitionDir, err)
-			return
+
+			return lastReadPosition, isDone, err
 		}
 
 		glog.V(2).Infof("found %d candidate files for topic=%s partition=%s offset=%d",
@@ -249,6 +263,7 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 
 		if len(candidateFiles) == 0 {
 			glog.V(2).Infof("no files found in %s", partitionDir)
+
 			return startPosition, isDone, nil
 		}
 
@@ -262,8 +277,8 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 				mid := (left + right) / 2
 				entry := candidateFiles[mid]
 
-				if minOffsetBytes, hasMin := entry.Extended["offset_min"]; hasMin && len(minOffsetBytes) == 8 {
-					if maxOffsetBytes, hasMax := entry.Extended["offset_max"]; hasMax && len(maxOffsetBytes) == 8 {
+				if minOffsetBytes, hasMin := entry.GetExtended()["offset_min"]; hasMin && len(minOffsetBytes) == 8 {
+					if maxOffsetBytes, hasMax := entry.GetExtended()["offset_max"]; hasMax && len(maxOffsetBytes) == 8 {
 						fileMinOffset := int64(binary.BigEndian.Uint64(minOffsetBytes))
 						fileMaxOffset := int64(binary.BigEndian.Uint64(maxOffsetBytes))
 
@@ -277,6 +292,7 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 						} else {
 							// Found the file containing our offset
 							startIdx = mid
+
 							break
 						}
 					} else {
@@ -310,7 +326,7 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 			// We need to continue reading ALL files to avoid multiple disk read calls
 			if isOffsetBased {
 				// Extract the last offset from the file's extended attributes
-				if maxOffsetBytes, hasMax := entry.Extended["offset_max"]; hasMax && len(maxOffsetBytes) == 8 {
+				if maxOffsetBytes, hasMax := entry.GetExtended()["offset_max"]; hasMax && len(maxOffsetBytes) == 8 {
 					fileMaxOffset := int64(binary.BigEndian.Uint64(maxOffsetBytes))
 					if fileMaxOffset > lastProcessedOffset {
 						lastProcessedOffset = fileMaxOffset
@@ -335,6 +351,7 @@ func GenLogOnDiskReadFunc(filerClient filer_pb.FilerClient, t topic.Topic, p top
 				lastReadPosition = log_buffer.NewMessagePosition(processedTsNs, -2)
 			}
 		}
-		return
+
+		return lastReadPosition, isDone, err
 	}
 }

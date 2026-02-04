@@ -16,13 +16,14 @@ import (
 
 	"slices"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 	"github.com/seaweedfs/seaweedfs/weed/server/constants"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle_map"
-	"google.golang.org/grpc"
 )
 
 func init() {
@@ -87,7 +88,6 @@ func (c *commandVolumeCheckDisk) HasTag(tag CommandTag) bool {
 }
 
 func (c *commandVolumeCheckDisk) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	fsckCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	slowMode := fsckCommand.Bool("slow", false, "slow mode checks all replicas even file counts are the same")
 	verbose := fsckCommand.Bool("v", false, "verbose mode")
@@ -107,7 +107,7 @@ func (c *commandVolumeCheckDisk) Do(args []string, commandEnv *CommandEnv, write
 	infoAboutSimulationMode(writer, *applyChanges, "-apply")
 
 	if err = commandEnv.confirmIsLocked(args); err != nil {
-		return
+		return err
 	}
 
 	vcd := &volumeCheckDisk{
@@ -158,39 +158,40 @@ func (vcd *volumeCheckDisk) checkWritableVolumes(volumeReplicas map[uint32][]*Vo
 		// filter readonly replica
 		var writableReplicas []*VolumeReplica
 		for _, replica := range replicas {
-			if replica.info.ReadOnly {
-				vcd.write("skipping readonly volume %d on %s", replica.info.Id, replica.location.dataNode.Id)
+			if replica.info.GetReadOnly() {
+				vcd.write("skipping readonly volume %d on %s", replica.info.GetId(), replica.location.dataNode.GetId())
 			} else {
 				writableReplicas = append(writableReplicas, replica)
 			}
 		}
 
 		slices.SortFunc(writableReplicas, func(a, b *VolumeReplica) int {
-			return int(b.info.FileCount - a.info.FileCount)
+			return int(b.info.GetFileCount() - a.info.GetFileCount())
 		})
 		for len(writableReplicas) >= 2 {
 			a, b := writableReplicas[0], writableReplicas[1]
 			shouldSkip, err := vcd.shouldSkipVolume(a, b)
 			if err != nil {
-				vcd.write("error checking if volume %d should be skipped: %v", a.info.Id, err)
+				vcd.write("error checking if volume %d should be skipped: %v", a.info.GetId(), err)
 				// Continue with sync despite error to be safe
 			} else if shouldSkip {
 				// always choose the larger volume to be the source
 				writableReplicas = append(writableReplicas[:1], writableReplicas[2:]...)
+
 				continue
 			}
 
 			modified, err := vcd.syncTwoReplicas(a, b, true)
 			if err != nil {
-				vcd.write("failed to sync volumes %d on %s and %s: %v", a.info.Id, a.location.dataNode.Id, b.location.dataNode.Id, err)
+				vcd.write("failed to sync volumes %d on %s and %s: %v", a.info.GetId(), a.location.dataNode.GetId(), b.location.dataNode.GetId(), err)
 			} else {
 				if modified {
-					vcd.write("synced %s and %s for volume %d", a.location.dataNode.Id, b.location.dataNode.Id, a.info.Id)
+					vcd.write("synced %s and %s for volume %d", a.location.dataNode.GetId(), b.location.dataNode.GetId(), a.info.GetId())
 				}
 			}
 
 			// always choose the larger volume to be the source
-			if a.info.FileCount > b.info.FileCount {
+			if a.info.GetFileCount() > b.info.GetFileCount() {
 				writableReplicas = append(writableReplicas[:1], writableReplicas[2:]...)
 			} else {
 				writableReplicas = writableReplicas[1:]
@@ -211,13 +212,15 @@ func (vcd *volumeCheckDisk) makeVolumeWritable(vid uint32, vr *VolumeReplica) er
 		_, vsErr := volumeServerClient.VolumeMarkWritable(context.Background(), &volume_server_pb.VolumeMarkWritableRequest{
 			VolumeId: vid,
 		})
+
 		return vsErr
 	})
 	if err != nil {
 		return err
 	}
 
-	vcd.write("volume %d on %s is now writable", vid, vr.location.dataNode.Id)
+	vcd.write("volume %d on %s is now writable", vid, vr.location.dataNode.GetId())
+
 	return nil
 }
 
@@ -231,13 +234,15 @@ func (vcd *volumeCheckDisk) makeVolumeReadonly(vid uint32, vr *VolumeReplica) er
 		_, vsErr := volumeServerClient.VolumeMarkReadonly(context.Background(), &volume_server_pb.VolumeMarkReadonlyRequest{
 			VolumeId: vid,
 		})
+
 		return vsErr
 	})
 	if err != nil {
 		return err
 	}
 
-	vcd.write("volume %d on %s is now read-only", vid, vr.location.dataNode.Id)
+	vcd.write("volume %d on %s is now read-only", vid, vr.location.dataNode.GetId())
+
 	return nil
 }
 
@@ -252,7 +257,7 @@ func (vcd *volumeCheckDisk) checkReadOnlyVolumes(volumeReplicas map[uint32][]*Vo
 		rwReplicas := []*VolumeReplica{}
 
 		for _, r := range replicas {
-			if r.info.ReadOnly {
+			if r.info.GetReadOnly() {
 				roReplicas = append(roReplicas, r)
 			} else {
 				rwReplicas = append(rwReplicas, r)
@@ -260,10 +265,12 @@ func (vcd *volumeCheckDisk) checkReadOnlyVolumes(volumeReplicas map[uint32][]*Vo
 		}
 		if len(roReplicas) == 0 {
 			vcd.write("no read-only replicas for volume %d", vid)
+
 			continue
 		}
 		if len(rwReplicas) == 0 {
 			vcd.write("got %d read-only replicas for volume %d and no writable replicas to fix from", len(roReplicas), vid)
+
 			continue
 		}
 
@@ -274,7 +281,8 @@ func (vcd *volumeCheckDisk) checkReadOnlyVolumes(volumeReplicas map[uint32][]*Vo
 
 			skip, err := vcd.shouldSkipVolume(r, source)
 			if err != nil {
-				vcd.ewg.AddErrorf("failed to check if volume %d should be skipped: %v\n", r.info.Id, err)
+				vcd.ewg.AddErrorf("failed to check if volume %d should be skipped: %v\n", r.info.GetId(), err)
+
 				continue
 			}
 			if skip {
@@ -291,19 +299,20 @@ func (vcd *volumeCheckDisk) checkReadOnlyVolumes(volumeReplicas map[uint32][]*Vo
 				// TODO: test whether syncTwoReplicas() is enough to prune garbage entries on broken volumes...
 				modified, err := vcd.syncTwoReplicas(source, r, false)
 				if err != nil {
-					vcd.write("sync read-only volume %d on %s from %s: %v", vid, r.location.dataNode.Id, source.location.dataNode.Id, err)
+					vcd.write("sync read-only volume %d on %s from %s: %v", vid, r.location.dataNode.GetId(), source.location.dataNode.GetId(), err)
 
 					if roErr := vcd.makeVolumeReadonly(vid, r); roErr != nil {
-						return fmt.Errorf("failed to revert volume %d on %s to readonly after: %v: %v", vid, r.location.dataNode.Id, err, roErr)
+						return fmt.Errorf("failed to revert volume %d on %s to readonly after: %w: %w", vid, r.location.dataNode.GetId(), err, roErr)
 					}
+
 					return err
 				} else {
 					if modified {
-						vcd.write("volume %d on %s is now synced to %d and writable", vid, r.location.dataNode.Id, source.location.dataNode.Id)
+						vcd.write("volume %d on %s is now synced to %d and writable", vid, r.location.dataNode.GetId(), source.location.dataNode.GetId())
 					} else {
 						// ...or restore back to read-only, if no changes were made.
 						if err := vcd.makeVolumeReadonly(vid, r); err != nil {
-							return fmt.Errorf("failed to revert volume %d on %s to readonly: %v", vid, r.location.dataNode.Id, err)
+							return fmt.Errorf("failed to revert volume %d on %s to readonly: %w", vid, r.location.dataNode.GetId(), err)
 						}
 					}
 				}
@@ -334,16 +343,18 @@ func (vcd *volumeCheckDisk) writeVerbose(format string, a ...any) {
 // getVolumeStatusFileCount retrieves the current file count and deleted file count
 // from a volume server via gRPC.
 func (vcd *volumeCheckDisk) getVolumeStatusFileCount(vid uint32, dn *master_pb.DataNodeInfo) (totalFileCount, deletedFileCount uint64, err error) {
-	err = operation.WithVolumeServerClient(false, pb.NewServerAddressWithGrpcPort(dn.Id, int(dn.GrpcPort)), vcd.grpcDialOption(), func(volumeServerClient volume_server_pb.VolumeServerClient) error {
+	err = operation.WithVolumeServerClient(false, pb.NewServerAddressWithGrpcPort(dn.GetId(), int(dn.GetGrpcPort())), vcd.grpcDialOption(), func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		resp, reqErr := volumeServerClient.VolumeStatus(context.Background(), &volume_server_pb.VolumeStatusRequest{
 			VolumeId: uint32(vid),
 		})
 		if resp != nil {
-			totalFileCount = resp.FileCount
-			deletedFileCount = resp.FileDeletedCount
+			totalFileCount = resp.GetFileCount()
+			deletedFileCount = resp.GetFileDeletedCount()
 		}
+
 		return reqErr
 	})
+
 	return totalFileCount, deletedFileCount, err
 }
 
@@ -359,14 +370,14 @@ func (vcd *volumeCheckDisk) getVolumeStatusFileCount(vid uint32, dn *master_pb.D
 // (volume ID and server) and propagated up. Uses fmt.Errorf with %w to maintain
 // error chain for errors.Is() and errors.As().
 func (vcd *volumeCheckDisk) eqVolumeFileCount(a, b *VolumeReplica) (bool, bool, error) {
-	fileCountA, fileDeletedCountA, errA := vcd.getVolumeStatusFileCount(a.info.Id, a.location.dataNode)
+	fileCountA, fileDeletedCountA, errA := vcd.getVolumeStatusFileCount(a.info.GetId(), a.location.dataNode)
 	if errA != nil {
-		return false, false, fmt.Errorf("getting volume %d status from %s: %w", a.info.Id, a.location.dataNode.Id, errA)
+		return false, false, fmt.Errorf("getting volume %d status from %s: %w", a.info.GetId(), a.location.dataNode.GetId(), errA)
 	}
 
-	fileCountB, fileDeletedCountB, errB := vcd.getVolumeStatusFileCount(b.info.Id, b.location.dataNode)
+	fileCountB, fileDeletedCountB, errB := vcd.getVolumeStatusFileCount(b.info.GetId(), b.location.dataNode)
 	if errB != nil {
-		return false, false, fmt.Errorf("getting volume %d status from %s: %w", b.info.Id, b.location.dataNode.Id, errB)
+		return false, false, fmt.Errorf("getting volume %d status from %s: %w", b.info.GetId(), b.location.dataNode.GetId(), errB)
 	}
 
 	return fileCountA == fileCountB, fileDeletedCountA == fileDeletedCountB, nil
@@ -395,30 +406,29 @@ func (vcd *volumeCheckDisk) shouldSkipVolume(a, b *VolumeReplica) (bool, error) 
 	}
 
 	pulseTimeAtSecond := vcd.now.Add(-constants.VolumePulsePeriod * 2).Unix()
-	doSyncDeletedCount := false
-	if vcd.syncDeletions && a.info.DeleteCount != b.info.DeleteCount {
-		doSyncDeletedCount = true
-	}
-	if (a.info.FileCount != b.info.FileCount) || doSyncDeletedCount {
+	doSyncDeletedCount := vcd.syncDeletions && a.info.GetDeleteCount() != b.info.GetDeleteCount()
+
+	if (a.info.GetFileCount() != b.info.GetFileCount()) || doSyncDeletedCount {
 		// Do synchronization of volumes, if the modification time was before the last pulsation time
-		if a.info.ModifiedAtSecond < pulseTimeAtSecond || b.info.ModifiedAtSecond < pulseTimeAtSecond {
+		if a.info.GetModifiedAtSecond() < pulseTimeAtSecond || b.info.GetModifiedAtSecond() < pulseTimeAtSecond {
 			return false, nil
 		}
 		eqFileCount, eqDeletedFileCount, err := vcd.eqVolumeFileCount(a, b)
 		if err != nil {
 			return false, fmt.Errorf("comparing volume %d file counts on %s and %s: %w",
-				a.info.Id, a.location.dataNode.Id, b.location.dataNode.Id, err)
+				a.info.GetId(), a.location.dataNode.GetId(), b.location.dataNode.GetId(), err)
 		}
 		if eqFileCount {
 			if doSyncDeletedCount && !eqDeletedFileCount {
 				return false, nil
 			}
 			vcd.writeVerbose("skipping active volumes %d with the same file counts on %s and %s",
-				a.info.Id, a.location.dataNode.Id, b.location.dataNode.Id)
+				a.info.GetId(), a.location.dataNode.GetId(), b.location.dataNode.GetId())
 		} else {
 			return false, nil
 		}
 	}
+
 	return true, nil
 }
 
@@ -434,7 +444,7 @@ func (vcd *volumeCheckDisk) syncTwoReplicas(source, target *VolumeReplica, bidi 
 
 	for (sourceHasChanges || targetHasChanges) && iteration < maxIterations {
 		iteration++
-		vcd.writeVerbose("sync iteration %d/%d for volume %d", iteration, maxIterations, source.info.Id)
+		vcd.writeVerbose("sync iteration %d/%d for volume %d", iteration, maxIterations, source.info.GetId())
 
 		prevSourceHasChanges, prevTargetHasChanges := sourceHasChanges, targetHasChanges
 		if sourceHasChanges, targetHasChanges, err = vcd.checkBoth(source, target, bidi); err != nil {
@@ -445,14 +455,16 @@ func (vcd *volumeCheckDisk) syncTwoReplicas(source, target *VolumeReplica, bidi 
 		// Detect if we're stuck in a loop with no progress
 		if iteration > 1 && prevSourceHasChanges == sourceHasChanges && prevTargetHasChanges == targetHasChanges && (sourceHasChanges || targetHasChanges) {
 			vcd.write("volume %d sync is not making progress between %s and %s after iteration %d, stopping to prevent infinite loop",
-				source.info.Id, source.location.dataNode.Id, target.location.dataNode.Id, iteration)
+				source.info.GetId(), source.location.dataNode.GetId(), target.location.dataNode.GetId(), iteration)
+
 			return modified, fmt.Errorf("sync not making progress after %d iterations", iteration)
 		}
 	}
 
 	if iteration >= maxIterations && (sourceHasChanges || targetHasChanges) {
 		vcd.write("volume %d sync reached maximum iterations (%d) between %s and %s, may need manual intervention",
-			source.info.Id, maxIterations, source.location.dataNode.Id, target.location.dataNode.Id)
+			source.info.GetId(), maxIterations, source.location.dataNode.GetId(), target.location.dataNode.GetId())
+
 		return modified, fmt.Errorf("reached maximum sync iterations (%d)", maxIterations)
 	}
 
@@ -464,7 +476,7 @@ func (vcd *volumeCheckDisk) syncTwoReplicas(source, target *VolumeReplica, bidi 
 func (vcd *volumeCheckDisk) checkBoth(source, target *VolumeReplica, bidi bool) (sourceHasChanges bool, targetHasChanges bool, err error) {
 	sourceDB, targetDB := needle_map.NewMemDb(), needle_map.NewMemDb()
 	if sourceDB == nil || targetDB == nil {
-		return false, false, fmt.Errorf("failed to allocate in-memory needle DBs")
+		return false, false, errors.New("failed to allocate in-memory needle DBs")
 	}
 	defer func() {
 		sourceDB.Close()
@@ -472,11 +484,11 @@ func (vcd *volumeCheckDisk) checkBoth(source, target *VolumeReplica, bidi bool) 
 	}()
 
 	// read index db
-	if err = vcd.readIndexDatabase(sourceDB, source.info.Collection, source.info.Id, pb.NewServerAddressFromDataNode(source.location.dataNode)); err != nil {
-		return true, true, fmt.Errorf("readIndexDatabase %s volume %d: %w", source.location.dataNode.Id, source.info.Id, err)
+	if err = vcd.readIndexDatabase(sourceDB, source.info.GetCollection(), source.info.GetId(), pb.NewServerAddressFromDataNode(source.location.dataNode)); err != nil {
+		return true, true, fmt.Errorf("readIndexDatabase %s volume %d: %w", source.location.dataNode.GetId(), source.info.GetId(), err)
 	}
-	if err := vcd.readIndexDatabase(targetDB, target.info.Collection, target.info.Id, pb.NewServerAddressFromDataNode(target.location.dataNode)); err != nil {
-		return true, true, fmt.Errorf("readIndexDatabase %s volume %d: %w", target.location.dataNode.Id, target.info.Id, err)
+	if err := vcd.readIndexDatabase(targetDB, target.info.GetCollection(), target.info.GetId(), pb.NewServerAddressFromDataNode(target.location.dataNode)); err != nil {
+		return true, true, fmt.Errorf("readIndexDatabase %s volume %d: %w", target.location.dataNode.GetId(), target.info.GetId(), err)
 	}
 
 	// find and make up the differences
@@ -485,7 +497,7 @@ func (vcd *volumeCheckDisk) checkBoth(source, target *VolumeReplica, bidi bool) 
 	if errTarget != nil {
 		errs = append(errs,
 			fmt.Errorf("doVolumeCheckDisk source:%s target:%s volume %d: %w",
-				source.location.dataNode.Id, target.location.dataNode.Id, source.info.Id, errTarget))
+				source.location.dataNode.GetId(), target.location.dataNode.GetId(), source.info.GetId(), errTarget))
 	}
 	sourceHasChanges = false
 	if bidi {
@@ -494,7 +506,7 @@ func (vcd *volumeCheckDisk) checkBoth(source, target *VolumeReplica, bidi bool) 
 		if errSource != nil {
 			errs = append(errs,
 				fmt.Errorf("doVolumeCheckDisk source:%s target:%s volume %d: %w",
-					target.location.dataNode.Id, source.location.dataNode.Id, target.info.Id, errSource))
+					target.location.dataNode.GetId(), source.location.dataNode.GetId(), target.info.GetId(), errSource))
 		}
 	}
 	if len(errs) > 0 {
@@ -505,7 +517,6 @@ func (vcd *volumeCheckDisk) checkBoth(source, target *VolumeReplica, bidi bool) 
 }
 
 func (vcd *volumeCheckDisk) doVolumeCheckDisk(minuend, subtrahend *needle_map.MemDb, source, target *VolumeReplica) (hasChanges bool, err error) {
-
 	// find missing keys
 	// hash join, can be more efficient
 	var missingNeedles []needle_map.NeedleValue
@@ -521,9 +532,9 @@ func (vcd *volumeCheckDisk) doVolumeCheckDisk(minuend, subtrahend *needle_map.Me
 				return nil
 			}
 			if doCutoffOfLastNeedle {
-				if needleMeta, err := readNeedleMeta(vcd.grpcDialOption(), pb.NewServerAddressFromDataNode(source.location.dataNode), source.info.Id, minuendValue); err == nil {
+				if needleMeta, err := readNeedleMeta(vcd.grpcDialOption(), pb.NewServerAddressFromDataNode(source.location.dataNode), source.info.GetId(), minuendValue); err == nil {
 					// needles older than the cutoff time are not missing yet
-					if needleMeta.AppendAtNs > cutoffFromAtNs {
+					if needleMeta.GetAppendAtNs() > cutoffFromAtNs {
 						return nil
 					}
 					doCutoffOfLastNeedle = false
@@ -538,11 +549,12 @@ func (vcd *volumeCheckDisk) doVolumeCheckDisk(minuend, subtrahend *needle_map.Me
 				doCutoffOfLastNeedle = false
 			}
 		}
+
 		return nil
 	})
 
 	vcd.write("volume %d %s has %d entries, %s missed %d and partially deleted %d entries",
-		source.info.Id, source.location.dataNode.Id, counter, target.location.dataNode.Id, len(missingNeedles), len(partiallyDeletedNeedles))
+		source.info.GetId(), source.location.dataNode.GetId(), counter, target.location.dataNode.GetId(), len(missingNeedles), len(partiallyDeletedNeedles))
 
 	if counter == 0 || (len(missingNeedles) == 0 && len(partiallyDeletedNeedles) == 0) {
 		return false, nil
@@ -552,11 +564,11 @@ func (vcd *volumeCheckDisk) doVolumeCheckDisk(minuend, subtrahend *needle_map.Me
 	if missingNeedlesFraction > vcd.nonRepairThreshold {
 		return false, fmt.Errorf(
 			"failed to start repair volume %d, percentage of missing keys is greater than the threshold: %.2f > %.2f",
-			source.info.Id, missingNeedlesFraction, vcd.nonRepairThreshold)
+			source.info.GetId(), missingNeedlesFraction, vcd.nonRepairThreshold)
 	}
 
 	for _, needleValue := range missingNeedles {
-		needleBlob, err := vcd.readSourceNeedleBlob(pb.NewServerAddressFromDataNode(source.location.dataNode), source.info.Id, needleValue)
+		needleBlob, err := vcd.readSourceNeedleBlob(pb.NewServerAddressFromDataNode(source.location.dataNode), source.info.GetId(), needleValue)
 		if err != nil {
 			return hasChanges, err
 		}
@@ -565,20 +577,19 @@ func (vcd *volumeCheckDisk) doVolumeCheckDisk(minuend, subtrahend *needle_map.Me
 			continue
 		}
 
-		vcd.writeVerbose("read %s %s => %s", needleValue.Key.FileId(source.info.Id), source.location.dataNode.Id, target.location.dataNode.Id)
+		vcd.writeVerbose("read %s %s => %s", needleValue.Key.FileId(source.info.GetId()), source.location.dataNode.GetId(), target.location.dataNode.GetId())
 		hasChanges = true
 
-		if err = vcd.writeNeedleBlobToTarget(pb.NewServerAddressFromDataNode(target.location.dataNode), source.info.Id, needleValue, needleBlob); err != nil {
+		if err = vcd.writeNeedleBlobToTarget(pb.NewServerAddressFromDataNode(target.location.dataNode), source.info.GetId(), needleValue, needleBlob); err != nil {
 			return hasChanges, err
 		}
-
 	}
 
 	if vcd.syncDeletions && vcd.applyChanges && len(partiallyDeletedNeedles) > 0 {
 		var fidList []string
 		for _, needleValue := range partiallyDeletedNeedles {
-			fidList = append(fidList, needleValue.Key.FileId(source.info.Id))
-			vcd.writeVerbose("delete %s %s => %s", needleValue.Key.FileId(source.info.Id), source.location.dataNode.Id, target.location.dataNode.Id)
+			fidList = append(fidList, needleValue.Key.FileId(source.info.GetId()))
+			vcd.writeVerbose("delete %s %s => %s", needleValue.Key.FileId(source.info.GetId()), source.location.dataNode.GetId(), target.location.dataNode.GetId())
 		}
 		deleteResults := operation.DeleteFileIdsAtOneVolumeServer(
 			pb.NewServerAddressFromDataNode(target.location.dataNode),
@@ -586,19 +597,19 @@ func (vcd *volumeCheckDisk) doVolumeCheckDisk(minuend, subtrahend *needle_map.Me
 
 		// Check for errors in results
 		for _, deleteResult := range deleteResults {
-			if deleteResult.Error != "" && deleteResult.Error != "not found" {
-				return hasChanges, fmt.Errorf("delete file %s: %v", deleteResult.FileId, deleteResult.Error)
+			if deleteResult.GetError() != "" && deleteResult.GetError() != "not found" {
+				return hasChanges, fmt.Errorf("delete file %s: %v", deleteResult.GetFileId(), deleteResult.GetError())
 			}
-			if deleteResult.Status == http.StatusAccepted && deleteResult.Size > 0 {
+			if deleteResult.GetStatus() == http.StatusAccepted && deleteResult.GetSize() > 0 {
 				hasChanges = true
 			}
 		}
 	}
+
 	return hasChanges, nil
 }
 
 func (vcd *volumeCheckDisk) readSourceNeedleBlob(sourceVolumeServer pb.ServerAddress, volumeId uint32, needleValue needle_map.NeedleValue) (needleBlob []byte, err error) {
-
 	err = operation.WithVolumeServerClient(false, sourceVolumeServer, vcd.grpcDialOption(), func(client volume_server_pb.VolumeServerClient) error {
 		resp, err := client.ReadNeedleBlob(context.Background(), &volume_server_pb.ReadNeedleBlobRequest{
 			VolumeId: volumeId,
@@ -608,14 +619,15 @@ func (vcd *volumeCheckDisk) readSourceNeedleBlob(sourceVolumeServer pb.ServerAdd
 		if err != nil {
 			return err
 		}
-		needleBlob = resp.NeedleBlob
+		needleBlob = resp.GetNeedleBlob()
+
 		return nil
 	})
+
 	return
 }
 
 func (vcd *volumeCheckDisk) writeNeedleBlobToTarget(targetVolumeServer pb.ServerAddress, volumeId uint32, needleValue needle_map.NeedleValue, needleBlob []byte) error {
-
 	return operation.WithVolumeServerClient(false, targetVolumeServer, vcd.grpcDialOption(), func(client volume_server_pb.VolumeServerClient) error {
 		_, err := client.WriteNeedleBlob(context.Background(), &volume_server_pb.WriteNeedleBlobRequest{
 			VolumeId:   volumeId,
@@ -623,6 +635,7 @@ func (vcd *volumeCheckDisk) writeNeedleBlobToTarget(targetVolumeServer pb.Server
 			Size:       int32(needleValue.Size),
 			NeedleBlob: needleBlob,
 		})
+
 		return err
 	})
 }
@@ -634,13 +647,12 @@ func (vcd *volumeCheckDisk) readIndexDatabase(db *needle_map.MemDb, collection s
 	}
 
 	vcd.writeVerbose("load collection %s volume %d index size %d from %s ...", collection, volumeId, buf.Len(), volumeServer)
+
 	return db.LoadFilterFromReaderAt(bytes.NewReader(buf.Bytes()), true, false)
 }
 
 func (vcd *volumeCheckDisk) copyVolumeIndexFile(collection string, volumeId uint32, volumeServer pb.ServerAddress, buf *bytes.Buffer) error {
-
 	return operation.WithVolumeServerClient(true, volumeServer, vcd.grpcDialOption(), func(volumeServerClient volume_server_pb.VolumeServerClient) error {
-
 		ext := ".idx"
 
 		copyFileClient, err := volumeServerClient.CopyFile(context.Background(), &volume_server_pb.CopyFileRequest{
@@ -653,29 +665,29 @@ func (vcd *volumeCheckDisk) copyVolumeIndexFile(collection string, volumeId uint
 			IgnoreSourceFileNotFound: false,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to start copying volume %d%s: %v", volumeId, ext, err)
+			return fmt.Errorf("failed to start copying volume %d%s: %w", volumeId, ext, err)
 		}
 
 		err = vcd.writeToBuffer(copyFileClient, buf)
 		if err != nil {
-			return fmt.Errorf("failed to copy %d%s from %s: %v", volumeId, ext, volumeServer, err)
+			return fmt.Errorf("failed to copy %d%s from %s: %w", volumeId, ext, volumeServer, err)
 		}
 
 		return nil
-
 	})
 }
 
 func (vcd *volumeCheckDisk) writeToBuffer(client volume_server_pb.VolumeServer_CopyFileClient, buf *bytes.Buffer) error {
 	for {
 		resp, receiveErr := client.Recv()
-		if receiveErr == io.EOF {
+		if errors.Is(receiveErr, io.EOF) {
 			break
 		}
 		if receiveErr != nil {
 			return fmt.Errorf("receiving: %w", receiveErr)
 		}
-		buf.Write(resp.FileContent)
+		buf.Write(resp.GetFileContent())
 	}
+
 	return nil
 }

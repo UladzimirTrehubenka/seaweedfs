@@ -27,6 +27,6 @@ func (c cacheConfig) GetStringSlice(key string) []string {
 	panic("implement me")
 }
 
-func (c cacheConfig) SetDefault(key string, value interface{}) {
+func (c cacheConfig) SetDefault(key string, value any) {
 	panic("implement me")
 }

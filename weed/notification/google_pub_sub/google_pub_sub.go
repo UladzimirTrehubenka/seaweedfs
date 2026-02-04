@@ -6,11 +6,12 @@ import (
 	"os"
 
 	"cloud.google.com/go/pubsub"
+	"google.golang.org/api/option"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/notification"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/api/option"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -28,6 +29,7 @@ func (k *GooglePubSub) GetName() string {
 func (k *GooglePubSub) Initialize(configuration util.Configuration, prefix string) (err error) {
 	glog.V(0).Infof("notification.google_pub_sub.project_id: %v", configuration.GetString(prefix+"project_id"))
 	glog.V(0).Infof("notification.google_pub_sub.topic: %v", configuration.GetString(prefix+"topic"))
+
 	return k.initialize(
 		configuration.GetString(prefix+"google_application_credentials"),
 		configuration.GetString(prefix+"project_id"),
@@ -36,7 +38,6 @@ func (k *GooglePubSub) Initialize(configuration util.Configuration, prefix strin
 }
 
 func (k *GooglePubSub) initialize(google_application_credentials, projectId, topicName string) (err error) {
-
 	ctx := context.Background()
 	// Creates a client.
 	if google_application_credentials == "" {
@@ -68,7 +69,6 @@ func (k *GooglePubSub) initialize(google_application_credentials, projectId, top
 }
 
 func (k *GooglePubSub) SendMessage(key string, message proto.Message) (err error) {
-
 	bytes, err := proto.Marshal(message)
 	if err != nil {
 		return
@@ -82,7 +82,7 @@ func (k *GooglePubSub) SendMessage(key string, message proto.Message) (err error
 
 	_, err = result.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("send message to google pub sub %s: %v", k.topic.String(), err)
+		return fmt.Errorf("send message to google pub sub %s: %w", k.topic.String(), err)
 	}
 
 	return nil

@@ -2,7 +2,7 @@ package sts
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/iam/providers"
@@ -15,7 +15,7 @@ type MockTrustPolicyValidator struct{}
 func (m *MockTrustPolicyValidator) ValidateTrustPolicyForWebIdentity(ctx context.Context, roleArn string, webIdentityToken string, durationSeconds *int64) error {
 	// Reject non-existent roles for testing
 	if strings.Contains(roleArn, "NonExistentRole") {
-		return fmt.Errorf("trust policy validation failed: role does not exist")
+		return errors.New("trust policy validation failed: role does not exist")
 	}
 
 	// For STS unit tests, allow JWT tokens that look valid (contain dots for JWT structure)
@@ -32,7 +32,7 @@ func (m *MockTrustPolicyValidator) ValidateTrustPolicyForWebIdentity(ctx context
 
 	// Reject invalid tokens
 	if webIdentityToken == "invalid_token" || webIdentityToken == "expired_token" || webIdentityToken == "invalid-token" {
-		return fmt.Errorf("trust policy denies token")
+		return errors.New("trust policy denies token")
 	}
 
 	return nil
@@ -42,12 +42,13 @@ func (m *MockTrustPolicyValidator) ValidateTrustPolicyForWebIdentity(ctx context
 func (m *MockTrustPolicyValidator) ValidateTrustPolicyForCredentials(ctx context.Context, roleArn string, identity *providers.ExternalIdentity) error {
 	// Reject non-existent roles for testing
 	if strings.Contains(roleArn, "NonExistentRole") {
-		return fmt.Errorf("trust policy validation failed: role does not exist")
+		return errors.New("trust policy validation failed: role does not exist")
 	}
 
 	// For STS unit tests, allow test identities
 	if identity != nil && identity.UserID != "" {
 		return nil
 	}
-	return fmt.Errorf("invalid identity for role assumption")
+
+	return errors.New("invalid identity for role assumption")
 }

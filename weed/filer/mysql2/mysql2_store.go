@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/filer/abstract_sql"
 	"github.com/seaweedfs/seaweedfs/weed/filer/mysql"
@@ -51,7 +52,6 @@ func (store *MysqlStore2) Initialize(configuration util.Configuration, prefix st
 
 func (store *MysqlStore2) initialize(createTable, upsertQuery string, enableUpsert bool, user, password, hostname string, port int, database string, maxIdle, maxOpen,
 	maxLifetimeSeconds int, interpolateParams bool) (err error) {
-
 	store.SupportBucketTable = true
 	if !enableUpsert {
 		upsertQuery = ""
@@ -74,7 +74,8 @@ func (store *MysqlStore2) initialize(createTable, upsertQuery string, enableUpse
 	if dbErr != nil {
 		store.DB.Close()
 		store.DB = nil
-		return fmt.Errorf("can not connect to %s error:%v", adaptedSqlUrl, err)
+
+		return fmt.Errorf("can not connect to %s error:%w", adaptedSqlUrl, err)
 	}
 
 	store.DB.SetMaxIdleConns(maxIdle)
@@ -82,11 +83,11 @@ func (store *MysqlStore2) initialize(createTable, upsertQuery string, enableUpse
 	store.DB.SetConnMaxLifetime(time.Duration(maxLifetimeSeconds) * time.Second)
 
 	if err = store.DB.Ping(); err != nil {
-		return fmt.Errorf("connect to %s error:%v", adaptedSqlUrl, err)
+		return fmt.Errorf("connect to %s error:%w", adaptedSqlUrl, err)
 	}
 
 	if err = store.CreateTable(context.Background(), abstract_sql.DEFAULT_TABLE); err != nil && !strings.Contains(err.Error(), "table already exist") {
-		return fmt.Errorf("init table %s: %v", abstract_sql.DEFAULT_TABLE, err)
+		return fmt.Errorf("init table %s: %w", abstract_sql.DEFAULT_TABLE, err)
 	}
 
 	return nil

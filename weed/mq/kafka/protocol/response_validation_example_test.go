@@ -14,7 +14,7 @@ func TestJoinGroupResponseStructure(t *testing.T) {
 	t.Skip("This is a demonstration test - shows what we SHOULD check")
 
 	// Hypothetical: build a JoinGroup response
-	// response := buildJoinGroupResponseV6(correlationID, generationID, protocolType, ...)
+	// := buildJoinGroupResponseV6(correlationID, generationID, protocolType, ...)
 
 	// What we SHOULD verify:
 	t.Log("Field-level checks we should perform:")
@@ -107,6 +107,7 @@ func parseCompactArray(data []byte) int {
 	if length == 0 {
 		return -1 // null
 	}
+
 	return length - 1 // actual length
 }
 

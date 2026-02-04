@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -45,14 +46,16 @@ func (bc *BrokerClient) CreateFreshSubscriber(topic string, partition int32, sta
 	stream, err := bc.client.SubscribeMessage(subscriberCtx)
 	if err != nil {
 		subscriberCancel()
-		return nil, fmt.Errorf("failed to create subscribe stream: %v", err)
+
+		return nil, fmt.Errorf("failed to create subscribe stream: %w", err)
 	}
 
 	// Get the actual partition assignment from the broker
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
 		subscriberCancel()
-		return nil, fmt.Errorf("failed to get actual partition assignment for subscribe: %v", err)
+
+		return nil, fmt.Errorf("failed to get actual partition assignment for subscribe: %w", err)
 	}
 
 	// Use EXACT_OFFSET to read from the specific offset
@@ -66,7 +69,8 @@ func (bc *BrokerClient) CreateFreshSubscriber(topic string, partition int32, sta
 
 	if err := stream.Send(initReq); err != nil {
 		subscriberCancel()
-		return nil, fmt.Errorf("failed to send subscribe init: %v", err)
+
+		return nil, fmt.Errorf("failed to send subscribe init: %w", err)
 	}
 
 	// IMPORTANT: Don't wait for init response here!
@@ -137,6 +141,7 @@ func (bc *BrokerClient) GetOrCreateSubscriber(topic string, partition int32, sta
 			glog.V(4).Infof("[FETCH] Reusing session for %s: session at %d, requested %d (will seek backward)",
 				key, currentOffset, startOffset)
 		}
+
 		return session, nil
 	}
 
@@ -157,6 +162,7 @@ func (bc *BrokerClient) GetOrCreateSubscriber(topic string, partition int32, sta
 		session.mu.Unlock()
 
 		glog.V(3).Infof("[FETCH] Session created concurrently at offset %d (requested %d), reusing", existingOffset, startOffset)
+
 		return session, nil
 	}
 
@@ -167,14 +173,16 @@ func (bc *BrokerClient) GetOrCreateSubscriber(topic string, partition int32, sta
 	stream, err := bc.client.SubscribeMessage(subscriberCtx)
 	if err != nil {
 		subscriberCancel()
-		return nil, fmt.Errorf("failed to create subscribe stream: %v", err)
+
+		return nil, fmt.Errorf("failed to create subscribe stream: %w", err)
 	}
 
 	// Get the actual partition assignment from the broker
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
 		subscriberCancel()
-		return nil, fmt.Errorf("failed to get actual partition assignment for subscribe: %v", err)
+
+		return nil, fmt.Errorf("failed to get actual partition assignment for subscribe: %w", err)
 	}
 
 	// Convert Kafka offset to appropriate SeaweedMQ OffsetType
@@ -204,7 +212,8 @@ func (bc *BrokerClient) GetOrCreateSubscriber(topic string, partition int32, sta
 	initReq := createSubscribeInitMessage(topic, actualPartition, offsetValue, offsetType, consumerGroup, consumerID)
 	if err := stream.Send(initReq); err != nil {
 		subscriberCancel()
-		return nil, fmt.Errorf("failed to send subscribe init: %v", err)
+
+		return nil, fmt.Errorf("failed to send subscribe init: %w", err)
 	}
 
 	session := &BrokerSubscriberSession{
@@ -220,6 +229,7 @@ func (bc *BrokerClient) GetOrCreateSubscriber(topic string, partition int32, sta
 
 	bc.subscribers[key] = session
 	glog.V(2).Infof("Created subscriber session for %s with context cancellation support", key)
+
 	return session, nil
 }
 
@@ -236,14 +246,16 @@ func (bc *BrokerClient) createTemporarySubscriber(topic string, partition int32,
 	stream, err := bc.client.SubscribeMessage(ctx)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to create subscribe stream: %v", err)
+
+		return nil, fmt.Errorf("failed to create subscribe stream: %w", err)
 	}
 
 	// Get the actual partition assignment from the broker
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to get actual partition assignment: %v", err)
+
+		return nil, fmt.Errorf("failed to get actual partition assignment: %w", err)
 	}
 
 	// Convert Kafka offset to appropriate SeaweedMQ OffsetType
@@ -264,7 +276,8 @@ func (bc *BrokerClient) createTemporarySubscriber(topic string, partition int32,
 	initReq := createSubscribeInitMessage(topic, actualPartition, offsetValue, offsetType, consumerGroup, consumerID)
 	if err := stream.Send(initReq); err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to send subscribe init: %v", err)
+
+		return nil, fmt.Errorf("failed to send subscribe init: %w", err)
 	}
 
 	// Create temporary session (not stored in bc.subscribers)
@@ -280,6 +293,7 @@ func (bc *BrokerClient) createTemporarySubscriber(topic string, partition int32,
 	}
 
 	glog.V(4).Infof("[STATELESS] Created temporary subscriber for %s-%d starting at offset %d", topic, partition, startOffset)
+
 	return session, nil
 }
 
@@ -295,14 +309,16 @@ func (bc *BrokerClient) createSubscriberSession(topic string, partition int32, s
 	stream, err := bc.client.SubscribeMessage(ctx)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to create subscribe stream: %v", err)
+
+		return nil, fmt.Errorf("failed to create subscribe stream: %w", err)
 	}
 
 	// Get the actual partition assignment from the broker
 	actualPartition, err := bc.getActualPartitionAssignment(topic, partition)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to get actual partition assignment: %v", err)
+
+		return nil, fmt.Errorf("failed to get actual partition assignment: %w", err)
 	}
 
 	// Convert Kafka offset to appropriate SeaweedMQ OffsetType
@@ -323,7 +339,8 @@ func (bc *BrokerClient) createSubscriberSession(topic string, partition int32, s
 	initReq := createSubscribeInitMessage(topic, actualPartition, offsetValue, offsetType, consumerGroup, consumerID)
 	if err := stream.Send(initReq); err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to send subscribe init: %v", err)
+
+		return nil, fmt.Errorf("failed to send subscribe init: %w", err)
 	}
 
 	// Create session with proper initialization
@@ -343,6 +360,7 @@ func (bc *BrokerClient) createSubscriberSession(topic string, partition int32, s
 	}
 
 	glog.V(4).Infof("[HYBRID-SESSION] Created subscriber session for %s-%d starting at offset %d", topic, partition, startOffset)
+
 	return session, nil
 }
 
@@ -353,6 +371,7 @@ func (bc *BrokerClient) serveFromCache(session *BrokerSubscriberSession, request
 	for i, record := range session.consumedRecords {
 		if record.Offset == requestedOffset {
 			startIdx = i
+
 			break
 		}
 	}
@@ -363,15 +382,13 @@ func (bc *BrokerClient) serveFromCache(session *BrokerSubscriberSession, request
 	}
 
 	// Calculate end index
-	endIdx := startIdx + maxRecords
-	if endIdx > len(session.consumedRecords) {
-		endIdx = len(session.consumedRecords)
-	}
+	endIdx := min(startIdx+maxRecords, len(session.consumedRecords))
 
 	// Return slice from cache
 	result := session.consumedRecords[startIdx:endIdx]
 	glog.V(4).Infof("[HYBRID-CACHE] Served %d records from cache (requested %d, offset %d)",
 		len(result), maxRecords, requestedOffset)
+
 	return result
 }
 
@@ -389,6 +406,7 @@ func (bc *BrokerClient) readRecordsFromSession(ctx context.Context, session *Bro
 		case <-ctx.Done():
 			// Timeout or cancellation - return what we have
 			glog.V(4).Infof("[HYBRID-READ] Context done, returning %d records", len(records))
+
 			return records, nil
 		default:
 		}
@@ -396,19 +414,21 @@ func (bc *BrokerClient) readRecordsFromSession(ctx context.Context, session *Bro
 		// Read from stream with timeout
 		resp, err := session.Stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				glog.V(4).Infof("[HYBRID-READ] Stream closed (EOF), returning %d records", len(records))
+
 				return records, nil
 			}
-			return nil, fmt.Errorf("failed to receive from stream: %v", err)
+
+			return nil, fmt.Errorf("failed to receive from stream: %w", err)
 		}
 
 		// Handle data message
 		if dataMsg := resp.GetData(); dataMsg != nil {
 			record := &SeaweedRecord{
-				Key:       dataMsg.Key,
-				Value:     dataMsg.Value,
-				Timestamp: dataMsg.TsNs,
+				Key:       dataMsg.GetKey(),
+				Value:     dataMsg.GetValue(),
+				Timestamp: dataMsg.GetTsNs(),
 				Offset:    currentOffset,
 			}
 			records = append(records, record)
@@ -418,13 +438,13 @@ func (bc *BrokerClient) readRecordsFromSession(ctx context.Context, session *Bro
 			ackReq := &mq_pb.SubscribeMessageRequest{
 				Message: &mq_pb.SubscribeMessageRequest_Ack{
 					Ack: &mq_pb.SubscribeMessageRequest_AckMessage{
-						Key:  dataMsg.Key,
-						TsNs: dataMsg.TsNs,
+						Key:  dataMsg.GetKey(),
+						TsNs: dataMsg.GetTsNs(),
 					},
 				},
 			}
 			if err := session.Stream.Send(ackReq); err != nil {
-				if err != io.EOF {
+				if !errors.Is(err, io.EOF) {
 					glog.Warningf("[HYBRID-READ] Failed to send ack (non-critical): %v", err)
 				}
 			}
@@ -432,20 +452,23 @@ func (bc *BrokerClient) readRecordsFromSession(ctx context.Context, session *Bro
 
 		// Handle control messages
 		if ctrlMsg := resp.GetCtrl(); ctrlMsg != nil {
-			if ctrlMsg.Error != "" {
+			if ctrlMsg.GetError() != "" {
 				// Error message from broker
-				return nil, fmt.Errorf("broker error: %s", ctrlMsg.Error)
+				return nil, fmt.Errorf("broker error: %s", ctrlMsg.GetError())
 			}
-			if ctrlMsg.IsEndOfStream {
+			if ctrlMsg.GetIsEndOfStream() {
 				glog.V(4).Infof("[HYBRID-READ] End of stream, returning %d records", len(records))
+
 				return records, nil
 			}
-			if ctrlMsg.IsEndOfTopic {
+			if ctrlMsg.GetIsEndOfTopic() {
 				glog.V(4).Infof("[HYBRID-READ] End of topic, returning %d records", len(records))
+
 				return records, nil
 			}
 			// Empty control message (e.g., seek ack) - continue reading
 			glog.V(4).Infof("[HYBRID-READ] Received control message (seek ack?), continuing")
+
 			continue
 		}
 	}
@@ -483,7 +506,8 @@ func (bc *BrokerClient) FetchRecordsHybrid(ctx context.Context, topic string, pa
 		newSession, err := bc.createSubscriberSession(topic, partition, requestedOffset, consumerGroup, consumerID)
 		if err != nil {
 			bc.subscribersLock.Unlock()
-			return nil, fmt.Errorf("failed to create initial session: %v", err)
+
+			return nil, fmt.Errorf("failed to create initial session: %w", err)
 		}
 		bc.subscribers[key] = newSession
 		session = newSession
@@ -504,6 +528,7 @@ func (bc *BrokerClient) FetchRecordsHybrid(ctx context.Context, topic string, pa
 			// Serve from cache
 			glog.V(4).Infof("[FETCH-HYBRID] FAST: Serving from cache for %s offset %d (cache: %d-%d)",
 				key, requestedOffset, cacheStart, cacheEnd)
+
 			return bc.serveFromCache(session, requestedOffset, maxRecords), nil
 		}
 	}
@@ -535,7 +560,7 @@ func (bc *BrokerClient) FetchRecordsHybrid(ctx context.Context, topic string, pa
 		// Create new subscriber at requested offset
 		newSession, err := bc.createSubscriberSession(topic, partition, requestedOffset, consumerGroup, consumerID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create subscriber for backward seek: %v", err)
+			return nil, fmt.Errorf("failed to create subscriber for backward seek: %w", err)
 		}
 
 		// Replace session in map
@@ -570,11 +595,13 @@ func (bc *BrokerClient) FetchRecordsHybrid(ctx context.Context, topic string, pa
 		}
 
 		if err := session.Stream.Send(seekReq); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				glog.V(4).Infof("[FETCH-HYBRID] Stream closed during seek, ignoring")
+
 				return nil, nil
 			}
-			return nil, fmt.Errorf("failed to send seek request: %v", err)
+
+			return nil, fmt.Errorf("failed to send seek request: %w", err)
 		}
 
 		glog.V(4).Infof("[FETCH-HYBRID] Seek request sent, broker will reposition stream to offset %d", seekOffset)
@@ -635,6 +662,7 @@ func (bc *BrokerClient) FetchRecordsWithDedup(ctx context.Context, topic string,
 		case result := <-waiter:
 			glog.V(4).Infof("[FETCH-DEDUP] Received result from in-progress fetch: %s (records=%d, err=%v)",
 				key, len(result.records), result.err)
+
 			return result.records, result.err
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -693,7 +721,7 @@ func (bc *BrokerClient) fetchRecordsStatelessInternal(ctx context.Context, topic
 	// This eliminates concurrent access to shared offset state
 	tempSubscriber, err := bc.createTemporarySubscriber(topic, partition, startOffset, consumerGroup, consumerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary subscriber: %v", err)
+		return nil, fmt.Errorf("failed to create temporary subscriber: %w", err)
 	}
 
 	// Ensure cleanup even if read fails
@@ -725,7 +753,7 @@ func (bc *BrokerClient) FetchRecordsStateless(ctx context.Context, topic string,
 // DEPRECATED: Use FetchRecordsStateless instead for better API clarity
 func (bc *BrokerClient) ReadRecordsFromOffset(ctx context.Context, session *BrokerSubscriberSession, requestedOffset int64, maxRecords int) ([]*SeaweedRecord, error) {
 	if session == nil {
-		return nil, fmt.Errorf("subscriber session cannot be nil")
+		return nil, errors.New("subscriber session cannot be nil")
 	}
 
 	return bc.FetchRecordsStateless(ctx, session.Topic, session.Partition, requestedOffset, maxRecords, session.ConsumerGroup, session.ConsumerID)
@@ -736,11 +764,11 @@ func (bc *BrokerClient) ReadRecordsFromOffset(ctx context.Context, session *Brok
 // ctx controls the fetch timeout (should match Kafka fetch request's MaxWaitTime)
 func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubscriberSession, startOffset int64, maxRecords int) ([]*SeaweedRecord, error) {
 	if session == nil {
-		return nil, fmt.Errorf("subscriber session cannot be nil")
+		return nil, errors.New("subscriber session cannot be nil")
 	}
 
 	if session.Stream == nil {
-		return nil, fmt.Errorf("subscriber session stream cannot be nil")
+		return nil, errors.New("subscriber session stream cannot be nil")
 	}
 
 	glog.V(4).Infof("[FETCH] readRecordsFrom: topic=%s partition=%d startOffset=%d maxRecords=%d",
@@ -782,6 +810,7 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 	stream := session.Stream
 	if stream == nil {
 		glog.V(4).Infof("[FETCH] Stream is nil, cannot read")
+
 		return records, nil
 	}
 
@@ -814,14 +843,15 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 	case result := <-recvChan:
 		if result.err != nil {
 			glog.V(4).Infof("[FETCH] Stream.Recv() error on first record: %v", result.err)
+
 			return records, nil // Return empty - no error for empty topic
 		}
 
 		if dataMsg := result.resp.GetData(); dataMsg != nil {
 			record := &SeaweedRecord{
-				Key:       dataMsg.Key,
-				Value:     dataMsg.Value,
-				Timestamp: dataMsg.TsNs,
+				Key:       dataMsg.GetKey(),
+				Value:     dataMsg.GetValue(),
+				Timestamp: dataMsg.GetTsNs(),
 				Offset:    currentOffset,
 			}
 			records = append(records, record)
@@ -835,8 +865,8 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 			ackMsg := &mq_pb.SubscribeMessageRequest{
 				Message: &mq_pb.SubscribeMessageRequest_Ack{
 					Ack: &mq_pb.SubscribeMessageRequest_AckMessage{
-						Key:  dataMsg.Key,
-						TsNs: dataMsg.TsNs,
+						Key:  dataMsg.GetKey(),
+						TsNs: dataMsg.GetTsNs(),
 					},
 				},
 			}
@@ -849,6 +879,7 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 	case <-ctx.Done():
 		// Timeout on first record - topic is empty or no data available
 		glog.V(4).Infof("[FETCH] No data available (timeout on first record)")
+
 		return records, nil
 	}
 
@@ -910,9 +941,9 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 
 			if dataMsg := result.resp.GetData(); dataMsg != nil {
 				record := &SeaweedRecord{
-					Key:       dataMsg.Key,
-					Value:     dataMsg.Value,
-					Timestamp: dataMsg.TsNs,
+					Key:       dataMsg.GetKey(),
+					Value:     dataMsg.GetValue(),
+					Timestamp: dataMsg.GetTsNs(),
 					Offset:    currentOffset,
 				}
 				records = append(records, record)
@@ -921,11 +952,11 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 
 				// DEBUG: Log received message with value preview for GitHub Actions debugging
 				valuePreview := ""
-				if len(dataMsg.Value) > 0 {
-					if len(dataMsg.Value) <= 50 {
-						valuePreview = string(dataMsg.Value)
+				if len(dataMsg.GetValue()) > 0 {
+					if len(dataMsg.GetValue()) <= 50 {
+						valuePreview = string(dataMsg.GetValue())
 					} else {
-						valuePreview = fmt.Sprintf("%s...(total %d bytes)", string(dataMsg.Value[:50]), len(dataMsg.Value))
+						valuePreview = fmt.Sprintf("%s...(total %d bytes)", string(dataMsg.GetValue()[:50]), len(dataMsg.GetValue()))
 					}
 				} else {
 					valuePreview = "<empty>"
@@ -942,8 +973,8 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 				ackMsg := &mq_pb.SubscribeMessageRequest{
 					Message: &mq_pb.SubscribeMessageRequest_Ack{
 						Ack: &mq_pb.SubscribeMessageRequest_AckMessage{
-							Key:  dataMsg.Key,
-							TsNs: dataMsg.TsNs,
+							Key:  dataMsg.GetKey(),
+							TsNs: dataMsg.GetTsNs(),
 						},
 					},
 				}
@@ -957,11 +988,13 @@ func (bc *BrokerClient) readRecordsFrom(ctx context.Context, session *BrokerSubs
 			cancel2()
 			// Timeout - return what we have
 			glog.V(4).Infof("[FETCH] Read timeout after %d records (waited %v), returning batch", len(records), time.Since(readStart))
+
 			return records, nil
 		}
 	}
 
 	glog.V(4).Infof("[FETCH] Returning %d records (maxRecords reached)", len(records))
+
 	return records, nil
 }
 
@@ -1073,7 +1106,8 @@ func (bc *BrokerClient) RestartSubscriber(session *BrokerSubscriberSession, newO
 	stream, err := bc.client.SubscribeMessage(subscriberCtx)
 	if err != nil {
 		cancel()
-		return fmt.Errorf("failed to create subscribe stream for restart: %v", err)
+
+		return fmt.Errorf("failed to create subscribe stream for restart: %w", err)
 	}
 
 	// Get the actual partition assignment
@@ -1081,7 +1115,8 @@ func (bc *BrokerClient) RestartSubscriber(session *BrokerSubscriberSession, newO
 	if err != nil {
 		cancel()
 		_ = stream.CloseSend()
-		return fmt.Errorf("failed to get actual partition assignment for restart: %v", err)
+
+		return fmt.Errorf("failed to get actual partition assignment for restart: %w", err)
 	}
 
 	// Send init message with new offset
@@ -1090,7 +1125,8 @@ func (bc *BrokerClient) RestartSubscriber(session *BrokerSubscriberSession, newO
 	if err := stream.Send(initReq); err != nil {
 		cancel()
 		_ = stream.CloseSend()
-		return fmt.Errorf("failed to send subscribe init for restart: %v", err)
+
+		return fmt.Errorf("failed to send subscribe init for restart: %w", err)
 	}
 
 	// Update session with new stream and offset
@@ -1116,6 +1152,7 @@ func (session *BrokerSubscriberSession) SeekToOffset(offset int64) error {
 
 	if currentOffset == offset {
 		glog.V(4).Infof("[SEEK] Already at offset %d for %s[%d], skipping seek", offset, session.Topic, session.Partition)
+
 		return nil
 	}
 
@@ -1130,11 +1167,13 @@ func (session *BrokerSubscriberSession) SeekToOffset(offset int64) error {
 
 	if err := session.Stream.Send(seekMsg); err != nil {
 		// Handle graceful shutdown
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			glog.V(4).Infof("[SEEK] Stream closing during seek to offset %d for %s[%d]", offset, session.Topic, session.Partition)
+
 			return nil // Not an error during shutdown
 		}
-		return fmt.Errorf("seek to offset %d failed: %v", offset, err)
+
+		return fmt.Errorf("seek to offset %d failed: %w", offset, err)
 	}
 
 	session.mu.Lock()
@@ -1153,11 +1192,12 @@ func (session *BrokerSubscriberSession) SeekToOffset(offset int64) error {
 	session.mu.Unlock()
 
 	glog.V(4).Infof("[SEEK] Seeked to offset %d for %s[%d]", offset, session.Topic, session.Partition)
+
 	return nil
 }
 
 // SeekToTimestamp repositions the stream to read from messages at or after a specific timestamp
-// timestamp is in nanoseconds since Unix epoch
+// is in nanoseconds since Unix epoch
 // Note: We don't skip this operation even if we think we're at the right position because
 // we can't easily determine the offset corresponding to a timestamp without querying the broker
 func (session *BrokerSubscriberSession) SeekToTimestamp(timestampNs int64) error {
@@ -1172,11 +1212,13 @@ func (session *BrokerSubscriberSession) SeekToTimestamp(timestampNs int64) error
 
 	if err := session.Stream.Send(seekMsg); err != nil {
 		// Handle graceful shutdown
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			glog.V(4).Infof("[SEEK] Stream closing during seek to timestamp %d for %s[%d]", timestampNs, session.Topic, session.Partition)
+
 			return nil // Not an error during shutdown
 		}
-		return fmt.Errorf("seek to timestamp %d failed: %v", timestampNs, err)
+
+		return fmt.Errorf("seek to timestamp %d failed: %w", timestampNs, err)
 	}
 
 	session.mu.Lock()
@@ -1186,6 +1228,7 @@ func (session *BrokerSubscriberSession) SeekToTimestamp(timestampNs int64) error
 	session.mu.Unlock()
 
 	glog.V(4).Infof("[SEEK] Seeked to timestamp %d for %s[%d]", timestampNs, session.Topic, session.Partition)
+
 	return nil
 }
 
@@ -1204,11 +1247,13 @@ func (session *BrokerSubscriberSession) SeekToEarliest() error {
 
 	if err := session.Stream.Send(seekMsg); err != nil {
 		// Handle graceful shutdown
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			glog.V(4).Infof("[SEEK] Stream closing during seek to earliest for %s[%d]", session.Topic, session.Partition)
+
 			return nil // Not an error during shutdown
 		}
-		return fmt.Errorf("seek to earliest failed: %v", err)
+
+		return fmt.Errorf("seek to earliest failed: %w", err)
 	}
 
 	session.mu.Lock()
@@ -1217,6 +1262,7 @@ func (session *BrokerSubscriberSession) SeekToEarliest() error {
 	session.mu.Unlock()
 
 	glog.V(4).Infof("[SEEK] Seeked to earliest for %s[%d]", session.Topic, session.Partition)
+
 	return nil
 }
 
@@ -1235,11 +1281,13 @@ func (session *BrokerSubscriberSession) SeekToLatest() error {
 
 	if err := session.Stream.Send(seekMsg); err != nil {
 		// Handle graceful shutdown
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			glog.V(4).Infof("[SEEK] Stream closing during seek to latest for %s[%d]", session.Topic, session.Partition)
+
 			return nil // Not an error during shutdown
 		}
-		return fmt.Errorf("seek to latest failed: %v", err)
+
+		return fmt.Errorf("seek to latest failed: %w", err)
 	}
 
 	session.mu.Lock()
@@ -1248,5 +1296,6 @@ func (session *BrokerSubscriberSession) SeekToLatest() error {
 	session.mu.Unlock()
 
 	glog.V(4).Infof("[SEEK] Seeked to latest for %s[%d]", session.Topic, session.Partition)
+
 	return nil
 }

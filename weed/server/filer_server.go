@@ -10,9 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
-	"golang.org/x/sync/singleflight"
 
 	"google.golang.org/grpc"
 
@@ -120,7 +121,6 @@ type FilerServer struct {
 }
 
 func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption) (fs *FilerServer, err error) {
-
 	v := util.GetViper()
 	signingKey := v.GetString("jwt.filer_signing.key")
 	v.SetDefault("jwt.filer_signing.expires_after_seconds", 10)
@@ -267,7 +267,6 @@ func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption)
 }
 
 func (fs *FilerServer) checkWithMaster() {
-
 	isConnected := false
 	for !isConnected {
 		fs.option.Masters.RefreshBySrvIfAvailable()
@@ -275,9 +274,10 @@ func (fs *FilerServer) checkWithMaster() {
 			readErr := operation.WithMasterServerClient(false, master, fs.grpcDialOption, func(masterClient master_pb.SeaweedClient) error {
 				resp, err := masterClient.GetMasterConfiguration(context.Background(), &master_pb.GetMasterConfigurationRequest{})
 				if err != nil {
-					return fmt.Errorf("get master %s configuration: %v", master, err)
+					return fmt.Errorf("get master %s configuration: %w", master, err)
 				}
-				fs.metricsAddress, fs.metricsIntervalSec = resp.MetricsAddress, int(resp.MetricsIntervalSeconds)
+				fs.metricsAddress, fs.metricsIntervalSec = resp.GetMetricsAddress(), int(resp.GetMetricsIntervalSeconds())
+
 				return nil
 			})
 			if readErr == nil {

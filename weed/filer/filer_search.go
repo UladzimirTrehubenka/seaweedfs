@@ -18,18 +18,19 @@ func splitPattern(pattern string) (prefix string, restPattern string) {
 	if position >= 0 {
 		return pattern[:position], pattern[position:]
 	}
+
 	return "", restPattern
 }
 
 // For now, prefix and namePattern are mutually exclusive
 func (f *Filer) ListDirectoryEntries(ctx context.Context, p util.FullPath, startFileName string, inclusive bool, limit int64, prefix string, namePattern string, namePatternExclude string) (entries []*Entry, hasMore bool, err error) {
-
 	if limit > math.MaxInt32-1 {
 		limit = math.MaxInt32 - 1
 	}
 
 	_, err = f.StreamListDirectoryEntries(ctx, p, startFileName, inclusive, limit+1, prefix, namePattern, namePatternExclude, func(entry *Entry) (bool, error) {
 		entries = append(entries, entry)
+
 		return true, nil
 	})
 
@@ -51,6 +52,7 @@ func (f *Filer) CountDirectoryEntries(ctx context.Context, p util.FullPath, limi
 	if hasMore {
 		count = limit // At least this many
 	}
+
 	return count, nil
 }
 
@@ -76,9 +78,9 @@ func (f *Filer) StreamListDirectoryEntries(ctx context.Context, p util.FullPath,
 }
 
 func (f *Filer) doListPatternMatchedEntries(ctx context.Context, p util.FullPath, startFileName string, inclusive bool, limit int64, prefix, restNamePattern string, namePatternExclude string, eachEntryFunc ListEachEntryFunc) (missedCount int64, lastFileName string, err error) {
-
 	if len(restNamePattern) == 0 && len(namePatternExclude) == 0 {
 		lastFileName, err = f.doListValidEntries(ctx, p, startFileName, inclusive, limit, prefix, eachEntryFunc)
+
 		return 0, lastFileName, err
 	}
 
@@ -87,12 +89,14 @@ func (f *Filer) doListPatternMatchedEntries(ctx context.Context, p util.FullPath
 		if len(namePatternExclude) > 0 {
 			if matched, matchErr := filepath.Match(namePatternExclude, nameToTest); matchErr == nil && matched {
 				missedCount++
+
 				return true, nil
 			}
 		}
 		if len(restNamePattern) > 0 {
 			if matched, matchErr := filepath.Match(restNamePattern, nameToTest[len(prefix):]); matchErr == nil && !matched {
 				missedCount++
+
 				return true, nil
 			}
 		}
@@ -110,9 +114,10 @@ func (f *Filer) doListPatternMatchedEntries(ctx context.Context, p util.FullPath
 		return true, nil
 	})
 	if err != nil {
-		return
+		return missedCount, lastFileName, err
 	}
-	return
+
+	return missedCount, lastFileName, err
 }
 
 func (f *Filer) doListValidEntries(ctx context.Context, p util.FullPath, startFileName string, inclusive bool, limit int64, prefix string, eachEntryFunc ListEachEntryFunc) (lastFileName string, err error) {
@@ -121,5 +126,6 @@ func (f *Filer) doListValidEntries(ctx context.Context, p util.FullPath, startFi
 	for expiredCount > 0 && err == nil {
 		expiredCount, lastFileName, err = f.doListDirectoryEntries(ctx, p, lastFileName, false, expiredCount, prefix, eachEntryFunc)
 	}
+
 	return
 }

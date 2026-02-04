@@ -1,8 +1,8 @@
 package shell
 
 import (
+	"errors"
 	"flag"
-	"fmt"
 	"io"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -36,7 +36,6 @@ func (c *commandVolumeCopy) HasTag(CommandTag) bool {
 }
 
 func (c *commandVolumeCopy) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	volCopyCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	volumeIdInt := volCopyCommand.Int("volumeId", 0, "the volume id")
 	sourceNodeStr := volCopyCommand.String("source", "", "the source volume server <host>:<port>")
@@ -57,9 +56,10 @@ func (c *commandVolumeCopy) Do(args []string, commandEnv *CommandEnv, writer io.
 	volumeId := needle.VolumeId(*volumeIdInt)
 
 	if sourceVolumeServer == targetVolumeServer {
-		return fmt.Errorf("source and target volume servers are the same!")
+		return errors.New("source and target volume servers are the same!")
 	}
 
 	_, err = copyVolume(commandEnv.option.GrpcDialOption, writer, volumeId, sourceVolumeServer, targetVolumeServer, "", 0)
+
 	return
 }

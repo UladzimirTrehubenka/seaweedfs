@@ -18,17 +18,17 @@ func (f *Filer) onMetadataChangeEvent(event *filer_pb.SubscribeMetadataResponse)
 }
 
 func (f *Filer) onBucketEvents(event *filer_pb.SubscribeMetadataResponse) {
-	message := event.EventNotification
+	message := event.GetEventNotification()
 
-	if f.DirBucketsPath == event.Directory {
+	if f.DirBucketsPath == event.GetDirectory() {
 		if filer_pb.IsCreate(event) {
-			if message.NewEntry.IsDirectory {
-				f.Store.OnBucketCreation(message.NewEntry.Name)
+			if message.GetNewEntry().GetIsDirectory() {
+				f.Store.OnBucketCreation(message.GetNewEntry().GetName())
 			}
 		}
 		if filer_pb.IsDelete(event) {
-			if message.OldEntry.IsDirectory {
-				f.Store.OnBucketDeletion(message.OldEntry.Name)
+			if message.GetOldEntry().GetIsDirectory() {
+				f.Store.OnBucketDeletion(message.GetOldEntry().GetName())
 			}
 		}
 	}
@@ -40,51 +40,51 @@ func (f *Filer) onEmptyFolderCleanupEvents(event *filer_pb.SubscribeMetadataResp
 		return
 	}
 
-	message := event.EventNotification
-	directory := event.Directory
-	eventTime := time.Unix(0, event.TsNs)
+	message := event.GetEventNotification()
+	directory := event.GetDirectory()
+	eventTime := time.Unix(0, event.GetTsNs())
 
 	// Handle delete events - trigger folder cleanup check
-	if filer_pb.IsDelete(event) && message.OldEntry != nil {
-		f.EmptyFolderCleaner.OnDeleteEvent(directory, message.OldEntry.Name, message.OldEntry.IsDirectory, eventTime)
+	if filer_pb.IsDelete(event) && message.GetOldEntry() != nil {
+		f.EmptyFolderCleaner.OnDeleteEvent(directory, message.GetOldEntry().GetName(), message.GetOldEntry().GetIsDirectory(), eventTime)
 	}
 
 	// Handle create events - cancel pending cleanup for the folder
-	if filer_pb.IsCreate(event) && message.NewEntry != nil {
-		f.EmptyFolderCleaner.OnCreateEvent(directory, message.NewEntry.Name, message.NewEntry.IsDirectory)
+	if filer_pb.IsCreate(event) && message.GetNewEntry() != nil {
+		f.EmptyFolderCleaner.OnCreateEvent(directory, message.GetNewEntry().GetName(), message.GetNewEntry().GetIsDirectory())
 	}
 
 	// Handle rename/move events
 	if filer_pb.IsRename(event) {
 		// Treat the old location as a delete
-		if message.OldEntry != nil {
-			f.EmptyFolderCleaner.OnDeleteEvent(directory, message.OldEntry.Name, message.OldEntry.IsDirectory, eventTime)
+		if message.GetOldEntry() != nil {
+			f.EmptyFolderCleaner.OnDeleteEvent(directory, message.GetOldEntry().GetName(), message.GetOldEntry().GetIsDirectory(), eventTime)
 		}
 		// Treat the new location as a create
-		if message.NewEntry != nil {
-			newDir := message.NewParentPath
+		if message.GetNewEntry() != nil {
+			newDir := message.GetNewParentPath()
 			if newDir == "" {
 				newDir = directory
 			}
-			f.EmptyFolderCleaner.OnCreateEvent(newDir, message.NewEntry.Name, message.NewEntry.IsDirectory)
+			f.EmptyFolderCleaner.OnCreateEvent(newDir, message.GetNewEntry().GetName(), message.GetNewEntry().GetIsDirectory())
 		}
 	}
 }
 
 func (f *Filer) maybeReloadFilerConfiguration(event *filer_pb.SubscribeMetadataResponse) {
-	if DirectoryEtcSeaweedFS != event.Directory {
-		if DirectoryEtcSeaweedFS != event.EventNotification.NewParentPath {
+	if DirectoryEtcSeaweedFS != event.GetDirectory() {
+		if DirectoryEtcSeaweedFS != event.GetEventNotification().GetNewParentPath() {
 			return
 		}
 	}
 
-	entry := event.EventNotification.NewEntry
+	entry := event.GetEventNotification().GetNewEntry()
 	if entry == nil {
 		return
 	}
 
 	glog.V(0).Infof("procesing %v", event)
-	if entry.Name == FilerConfName {
+	if entry.GetName() == FilerConfName {
 		f.reloadFilerConfiguration(entry)
 	}
 }
@@ -95,14 +95,16 @@ func (f *Filer) readEntry(chunks []*filer_pb.FileChunk, size uint64) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
+
 	return buf.Bytes(), nil
 }
 
 func (f *Filer) reloadFilerConfiguration(entry *filer_pb.Entry) {
 	fc := NewFilerConf()
-	err := fc.loadFromChunks(f, entry.Content, entry.GetChunks(), FileSize(entry))
+	err := fc.loadFromChunks(f, entry.GetContent(), entry.GetChunks(), FileSize(entry))
 	if err != nil {
 		glog.Errorf("read filer conf chunks: %v", err)
+
 		return
 	}
 	f.FilerConf = fc
@@ -115,6 +117,7 @@ func (f *Filer) LoadFilerConf() {
 	})
 	if err != nil {
 		glog.Errorf("read filer conf: %v", err)
+
 		return
 	}
 	f.FilerConf = fc
@@ -126,6 +129,7 @@ func (f *Filer) LoadFilerConf() {
 func (f *Filer) LoadRemoteStorageConfAndMapping() {
 	if err := f.RemoteStorage.LoadRemoteStorageConfigurationsAndMapping(f); err != nil {
 		glog.Errorf("read remote conf and mapping: %v", err)
+
 		return
 	}
 }

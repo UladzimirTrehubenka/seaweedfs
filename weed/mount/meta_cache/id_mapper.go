@@ -48,6 +48,7 @@ func (m *IdMapper) LocalToFiler(id uint32) uint32 {
 	if found {
 		return value
 	}
+
 	return id
 }
 func (m *IdMapper) FilerToLocal(id uint32) uint32 {
@@ -55,11 +56,11 @@ func (m *IdMapper) FilerToLocal(id uint32) uint32 {
 	if found {
 		return value
 	}
+
 	return id
 }
 
 func newIdMapper(pairsStr string) (*IdMapper, error) {
-
 	localToFiler, filerToLocal, err := parseUint32Pairs(pairsStr)
 	if err != nil {
 		return nil, err
@@ -69,28 +70,28 @@ func newIdMapper(pairsStr string) (*IdMapper, error) {
 		localToFiler: localToFiler,
 		filerToLocal: filerToLocal,
 	}, nil
-
 }
 
 func parseUint32Pairs(pairsStr string) (localToFiler, filerToLocal map[uint32]uint32, err error) {
-
 	if pairsStr == "" {
 		return
 	}
 
 	localToFiler = make(map[uint32]uint32)
 	filerToLocal = make(map[uint32]uint32)
-	for _, pairStr := range strings.Split(pairsStr, ",") {
+	for pairStr := range strings.SplitSeq(pairsStr, ",") {
 		pair := strings.Split(pairStr, ":")
 		localUidStr, filerUidStr := pair[0], pair[1]
 		localUid, localUidErr := strconv.Atoi(localUidStr)
 		if localUidErr != nil {
-			err = fmt.Errorf("failed to parse local %s: %v", localUidStr, localUidErr)
+			err = fmt.Errorf("failed to parse local %s: %w", localUidStr, localUidErr)
+
 			return
 		}
 		filerUid, filerUidErr := strconv.Atoi(filerUidStr)
 		if filerUidErr != nil {
-			err = fmt.Errorf("failed to parse remote %s: %v", filerUidStr, filerUidErr)
+			err = fmt.Errorf("failed to parse remote %s: %w", filerUidStr, filerUidErr)
+
 			return
 		}
 		localToFiler[uint32(localUid)] = uint32(filerUid)

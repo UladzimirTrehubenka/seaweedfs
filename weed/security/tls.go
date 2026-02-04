@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/glog"
-	"github.com/seaweedfs/seaweedfs/weed/util"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/credentials/tls/certprovider/pemfile"
 	"google.golang.org/grpc/security/advancedtls"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 const CredRefreshingInterval = time.Duration(5) * time.Hour
@@ -41,6 +42,7 @@ func LoadServerTLS(config *util.ViperProxy, component string) (grpc.ServerOption
 	serverIdentityProvider, err := pemfile.NewProvider(serverOptions)
 	if err != nil {
 		glog.Warningf("pemfile.NewProvider(%v) %v failed: %v", serverOptions, component, err)
+
 		return nil, nil
 	}
 
@@ -51,6 +53,7 @@ func LoadServerTLS(config *util.ViperProxy, component string) (grpc.ServerOption
 	serverRootProvider, err := pemfile.NewProvider(serverRootOptions)
 	if err != nil {
 		glog.Warningf("pemfile.NewProvider(%v) failed: %v", serverRootOptions, err)
+
 		return nil, nil
 	}
 
@@ -68,30 +71,33 @@ func LoadServerTLS(config *util.ViperProxy, component string) (grpc.ServerOption
 	options.MinTLSVersion, err = TlsVersionByName(config.GetString("tls.min_version"))
 	if err != nil {
 		glog.Warningf("tls min version parse failed, %v", err)
+
 		return nil, nil
 	}
 	options.MaxTLSVersion, err = TlsVersionByName(config.GetString("tls.max_version"))
 	if err != nil {
 		glog.Warningf("tls max version parse failed, %v", err)
+
 		return nil, nil
 	}
 	options.CipherSuites, err = TlsCipherSuiteByNames(config.GetString("tls.cipher_suites"))
 	if err != nil {
 		glog.Warningf("tls cipher suite parse failed, %v", err)
+
 		return nil, nil
 	}
 	allowedCommonNames := config.GetString(component + ".allowed_commonNames")
 	allowedWildcardDomain := config.GetString("grpc.allowed_wildcard_domain")
 	if allowedCommonNames != "" || allowedWildcardDomain != "" {
 		allowedCommonNamesMap := make(map[string]bool)
-		for _, s := range strings.Split(allowedCommonNames, ",") {
+		for s := range strings.SplitSeq(allowedCommonNames, ",") {
 			allowedCommonNamesMap[s] = true
 		}
-		auther := Authenticator{
+		author := Authenticator{
 			AllowedCommonNames:    allowedCommonNamesMap,
 			AllowedWildcardDomain: allowedWildcardDomain,
 		}
-		options.AdditionalPeerVerification = auther.Authenticate
+		options.AdditionalPeerVerification = author.Authenticate
 	} else {
 		options.AdditionalPeerVerification = func(params *advancedtls.HandshakeVerificationInfo) (*advancedtls.PostHandshakeVerificationResults, error) {
 			return &advancedtls.PostHandshakeVerificationResults{}, nil
@@ -100,8 +106,10 @@ func LoadServerTLS(config *util.ViperProxy, component string) (grpc.ServerOption
 	ta, err := advancedtls.NewServerCreds(options)
 	if err != nil {
 		glog.Warningf("advancedtls.NewServerCreds(%v) failed: %v", options, err)
+
 		return nil, nil
 	}
+
 	return grpc.Creds(ta), nil
 }
 
@@ -123,6 +131,7 @@ func LoadClientTLS(config *util.ViperProxy, component string) grpc.DialOption {
 	clientProvider, err := pemfile.NewProvider(clientOptions)
 	if err != nil {
 		glog.Warningf("pemfile.NewProvider(%v) failed %v", clientOptions, err)
+
 		return grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
 	clientRootOptions := pemfile.Options{
@@ -132,6 +141,7 @@ func LoadClientTLS(config *util.ViperProxy, component string) grpc.DialOption {
 	clientRootProvider, err := pemfile.NewProvider(clientRootOptions)
 	if err != nil {
 		glog.Warningf("pemfile.NewProvider(%v) failed: %v", clientRootOptions, err)
+
 		return grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
 	options := &advancedtls.Options{
@@ -149,8 +159,10 @@ func LoadClientTLS(config *util.ViperProxy, component string) grpc.DialOption {
 	ta, err := advancedtls.NewClientCreds(options)
 	if err != nil {
 		glog.Warningf("advancedtls.NewClientCreds(%v) failed: %v", options, err)
+
 		return grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
+
 	return grpc.WithTransportCredentials(ta)
 }
 
@@ -180,6 +192,7 @@ func (a Authenticator) Authenticate(params *advancedtls.HandshakeVerificationInf
 	}
 	err := fmt.Errorf("Authenticate: invalid subject client common name: %s", params.Leaf.Subject.CommonName)
 	glog.Error(err)
+
 	return nil, err
 }
 
@@ -194,6 +207,7 @@ func FixTlsConfig(viper *util.ViperProxy, config *tls.Config) error {
 		return err
 	}
 	config.CipherSuites, err = TlsCipherSuiteByNames(viper.GetString("tls.cipher_suites"))
+
 	return err
 }
 
@@ -234,5 +248,6 @@ func TlsCipherSuiteByNames(cipherSuiteNames string) ([]uint16, error) {
 		}
 		cipherIds = append(cipherIds, cipherSuites[index].ID)
 	}
+
 	return cipherIds, nil
 }

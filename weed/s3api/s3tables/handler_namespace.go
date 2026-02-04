@@ -17,28 +17,33 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 	var req CreateNamespaceRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	if len(req.Namespace) == 0 {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "namespace is required")
-		return fmt.Errorf("namespace is required")
+
+		return errors.New("namespace is required")
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	namespaceName, err := validateNamespace(req.Namespace)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -61,7 +66,7 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 		if err == nil {
 			bucketPolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket policy: %v", err)
+			return fmt.Errorf("failed to fetch bucket policy: %w", err)
 		}
 		bucketTags, err = h.readTags(r.Context(), client, bucketPath)
 		if err != nil {
@@ -77,6 +82,7 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to check table bucket: %v", err))
 		}
+
 		return err
 	}
 
@@ -90,6 +96,7 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 		IdentityActions: identityActions,
 	}) {
 		h.writeError(w, http.StatusForbidden, ErrCodeAccessDenied, "not authorized to create namespace in this bucket")
+
 		return ErrAccessDenied
 	}
 
@@ -98,14 +105,17 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 	// Check if namespace already exists
 	err = filerClient.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		_, err := h.getExtendedAttribute(r.Context(), client, namespacePath, ExtendedKeyMetadata)
+
 		return err
 	})
 
 	if err == nil {
 		h.writeError(w, http.StatusConflict, ErrCodeNamespaceAlreadyExists, fmt.Sprintf("namespace %s already exists", namespaceName))
-		return fmt.Errorf("namespace already exists")
+
+		return errors.New("namespace already exists")
 	} else if !errors.Is(err, filer_pb.ErrNotFound) {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to check namespace: %v", err))
+
 		return err
 	}
 
@@ -121,6 +131,7 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to marshal namespace metadata")
+
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
@@ -140,6 +151,7 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to create namespace")
+
 		return err
 	}
 
@@ -149,6 +161,7 @@ func (h *S3TablesHandler) handleCreateNamespace(w http.ResponseWriter, r *http.R
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
@@ -157,23 +170,27 @@ func (h *S3TablesHandler) handleGetNamespace(w http.ResponseWriter, r *http.Requ
 	var req GetNamespaceRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	namespaceName, err := validateNamespace(req.Namespace)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -198,7 +215,7 @@ func (h *S3TablesHandler) handleGetNamespace(w http.ResponseWriter, r *http.Requ
 		if err == nil {
 			bucketPolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket policy: %v", err)
+			return fmt.Errorf("failed to fetch bucket policy: %w", err)
 		}
 		bucketTags, err = h.readTags(r.Context(), client, bucketPath)
 		if err != nil {
@@ -214,6 +231,7 @@ func (h *S3TablesHandler) handleGetNamespace(w http.ResponseWriter, r *http.Requ
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to get namespace: %v", err))
 		}
+
 		return err
 	}
 
@@ -227,6 +245,7 @@ func (h *S3TablesHandler) handleGetNamespace(w http.ResponseWriter, r *http.Requ
 		IdentityActions: identityActions,
 	}) {
 		h.writeError(w, http.StatusNotFound, ErrCodeNoSuchNamespace, "namespace not found")
+
 		return ErrAccessDenied
 	}
 
@@ -237,6 +256,7 @@ func (h *S3TablesHandler) handleGetNamespace(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
@@ -245,17 +265,20 @@ func (h *S3TablesHandler) handleListNamespaces(w http.ResponseWriter, r *http.Re
 	var req ListNamespacesRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -284,7 +307,7 @@ func (h *S3TablesHandler) handleListNamespaces(w http.ResponseWriter, r *http.Re
 		if err == nil {
 			bucketPolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket policy: %v", err)
+			return fmt.Errorf("failed to fetch bucket policy: %w", err)
 		}
 		bucketTags, err = h.readTags(r.Context(), client, bucketPath)
 		if err != nil {
@@ -300,6 +323,7 @@ func (h *S3TablesHandler) handleListNamespaces(w http.ResponseWriter, r *http.Re
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to list namespaces: %v", err))
 		}
+
 		return err
 	}
 
@@ -312,6 +336,7 @@ func (h *S3TablesHandler) handleListNamespaces(w http.ResponseWriter, r *http.Re
 		IdentityActions: identityActions,
 	}) {
 		h.writeError(w, http.StatusNotFound, ErrCodeNoSuchBucket, fmt.Sprintf("table bucket %s not found", bucketName))
+
 		return ErrAccessDenied
 	}
 
@@ -334,39 +359,40 @@ func (h *S3TablesHandler) handleListNamespaces(w http.ResponseWriter, r *http.Re
 			for {
 				entry, respErr := resp.Recv()
 				if respErr != nil {
-					if respErr == io.EOF {
+					if errors.Is(respErr, io.EOF) {
 						break
 					}
+
 					return respErr
 				}
-				if entry.Entry == nil {
+				if entry.GetEntry() == nil {
 					continue
 				}
 
 				// Skip the start item if it was included in the previous page
-				if len(namespaces) == 0 && req.ContinuationToken != "" && entry.Entry.Name == req.ContinuationToken {
+				if len(namespaces) == 0 && req.ContinuationToken != "" && entry.GetEntry().GetName() == req.ContinuationToken {
 					continue
 				}
 
 				hasMore = true
-				lastFileName = entry.Entry.Name
+				lastFileName = entry.GetEntry().GetName()
 
-				if !entry.Entry.IsDirectory {
+				if !entry.GetEntry().GetIsDirectory() {
 					continue
 				}
 
 				// Skip hidden entries
-				if strings.HasPrefix(entry.Entry.Name, ".") {
+				if strings.HasPrefix(entry.GetEntry().GetName(), ".") {
 					continue
 				}
 
 				// Apply prefix filter
-				if req.Prefix != "" && !strings.HasPrefix(entry.Entry.Name, req.Prefix) {
+				if req.Prefix != "" && !strings.HasPrefix(entry.GetEntry().GetName(), req.Prefix) {
 					continue
 				}
 
 				// Read metadata from extended attribute
-				data, ok := entry.Entry.Extended[ExtendedKeyMetadata]
+				data, ok := entry.GetEntry().GetExtended()[ExtendedKeyMetadata]
 				if !ok {
 					continue
 				}
@@ -403,6 +429,7 @@ func (h *S3TablesHandler) handleListNamespaces(w http.ResponseWriter, r *http.Re
 			namespaces = []NamespaceSummary{}
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to list namespaces: %v", err))
+
 			return err
 		}
 	}
@@ -418,6 +445,7 @@ func (h *S3TablesHandler) handleListNamespaces(w http.ResponseWriter, r *http.Re
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+
 	return nil
 }
 
@@ -426,23 +454,27 @@ func (h *S3TablesHandler) handleDeleteNamespace(w http.ResponseWriter, r *http.R
 	var req DeleteNamespaceRequest
 	if err := h.readRequestBody(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	if req.TableBucketARN == "" {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "tableBucketARN is required")
-		return fmt.Errorf("tableBucketARN is required")
+
+		return errors.New("tableBucketARN is required")
 	}
 
 	namespaceName, err := validateNamespace(req.Namespace)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
 	bucketName, err := parseBucketNameFromARN(req.TableBucketARN)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
 		return err
 	}
 
@@ -467,7 +499,7 @@ func (h *S3TablesHandler) handleDeleteNamespace(w http.ResponseWriter, r *http.R
 		if err == nil {
 			bucketPolicy = string(policyData)
 		} else if !errors.Is(err, ErrAttributeNotFound) {
-			return fmt.Errorf("failed to fetch bucket policy: %v", err)
+			return fmt.Errorf("failed to fetch bucket policy: %w", err)
 		}
 		bucketTags, err = h.readTags(r.Context(), client, bucketPath)
 		if err != nil {
@@ -483,6 +515,7 @@ func (h *S3TablesHandler) handleDeleteNamespace(w http.ResponseWriter, r *http.R
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to get namespace metadata: %v", err))
 		}
+
 		return err
 	}
 
@@ -496,6 +529,7 @@ func (h *S3TablesHandler) handleDeleteNamespace(w http.ResponseWriter, r *http.R
 		IdentityActions: identityActions,
 	}) {
 		h.writeError(w, http.StatusNotFound, ErrCodeNoSuchNamespace, "namespace not found")
+
 		return ErrAccessDenied
 	}
 
@@ -513,13 +547,15 @@ func (h *S3TablesHandler) handleDeleteNamespace(w http.ResponseWriter, r *http.R
 		for {
 			entry, err := resp.Recv()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
+
 				return err
 			}
-			if entry.Entry != nil && !strings.HasPrefix(entry.Entry.Name, ".") {
+			if entry.GetEntry() != nil && !strings.HasPrefix(entry.GetEntry().GetName(), ".") {
 				hasChildren = true
+
 				break
 			}
 		}
@@ -533,12 +569,14 @@ func (h *S3TablesHandler) handleDeleteNamespace(w http.ResponseWriter, r *http.R
 		} else {
 			h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, fmt.Sprintf("failed to list namespace entries: %v", err))
 		}
+
 		return err
 	}
 
 	if hasChildren {
 		h.writeError(w, http.StatusConflict, ErrCodeNamespaceNotEmpty, "namespace is not empty")
-		return fmt.Errorf("namespace not empty")
+
+		return errors.New("namespace not empty")
 	}
 
 	// Delete the namespace
@@ -548,9 +586,11 @@ func (h *S3TablesHandler) handleDeleteNamespace(w http.ResponseWriter, r *http.R
 
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, ErrCodeInternalError, "failed to delete namespace")
+
 		return err
 	}
 
 	h.writeJSON(w, http.StatusOK, nil)
+
 	return nil
 }

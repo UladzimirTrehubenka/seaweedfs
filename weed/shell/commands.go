@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -48,35 +49,34 @@ func NewCommandEnv(options *ShellOptions) *CommandEnv {
 		noLock:       false,
 	}
 	ce.locker = exclusive_locks.NewExclusiveLocker(ce.MasterClient, "shell")
+
 	return ce
 }
 
 func (ce *CommandEnv) parseUrl(input string) (path string, err error) {
 	if strings.HasPrefix(input, "http") {
-		err = fmt.Errorf("http://<filer>:<port> prefix is not supported any more")
+		err = errors.New("http://<filer>:<port> prefix is not supported any more")
+
 		return
 	}
 	if !strings.HasPrefix(input, "/") {
 		input = util.Join(ce.option.Directory, input)
 	}
+
 	return input, err
 }
 
 func (ce *CommandEnv) isDirectory(path string) bool {
-
 	return ce.checkDirectory(path) == nil
-
 }
 
 func (ce *CommandEnv) confirmIsLocked(args []string) error {
-
 	if ce.locker.IsLocked() {
 		return nil
 	}
 	ce.locker.SetMessage(fmt.Sprintf("%v", args))
 
-	return fmt.Errorf("need to run \"lock\" first to continue")
-
+	return errors.New("need to run \"lock\" first to continue")
 }
 
 func (ce *CommandEnv) isLocked() bool {
@@ -86,11 +86,11 @@ func (ce *CommandEnv) isLocked() bool {
 	if ce.noLock {
 		return true
 	}
+
 	return ce.locker.IsLocked()
 }
 
 func (ce *CommandEnv) checkDirectory(path string) error {
-
 	dir, name := util.FullPath(path).DirAndName()
 
 	exists, err := filer_pb.Exists(context.Background(), ce, dir, name, true)
@@ -100,19 +100,16 @@ func (ce *CommandEnv) checkDirectory(path string) error {
 	}
 
 	return err
-
 }
 
 var _ = filer_pb.FilerClient(&CommandEnv{})
 
 func (ce *CommandEnv) WithFilerClient(streamingMode bool, fn func(filer_pb.SeaweedFilerClient) error) error {
-
 	return pb.WithGrpcFilerClient(streamingMode, 0, ce.option.FilerAddress, ce.option.GrpcDialOption, fn)
-
 }
 
 func (ce *CommandEnv) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 func (ce *CommandEnv) GetDataCenter() string {
@@ -135,6 +132,7 @@ func parseFilerUrl(entryPath string) (filerServer string, filerPort int64, path 
 	} else {
 		err = fmt.Errorf("path should have full url /path/to/dirOrFile : %s", entryPath)
 	}
+
 	return
 }
 
@@ -146,6 +144,7 @@ func findInputDirectory(args []string) (input string) {
 			input = "."
 		}
 	}
+
 	return input
 }
 
@@ -167,6 +166,7 @@ func isHelpRequest(args []string) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -175,8 +175,10 @@ func isHelpRequest(args []string) bool {
 func handleHelpRequest(c command, args []string, writer io.Writer) bool {
 	if isHelpRequest(args) {
 		fmt.Fprintln(writer, c.Help())
+
 		return true
 	}
+
 	return false
 }
 
@@ -191,9 +193,11 @@ func readNeedleMeta(grpcDialOption grpc.DialOption, volumeServer pb.ServerAddres
 			}); err != nil {
 				return err
 			}
+
 			return nil
 		},
 	)
+
 	return
 }
 
@@ -206,9 +210,11 @@ func readNeedleStatus(grpcDialOption grpc.DialOption, sourceVolumeServer pb.Serv
 			}); err != nil {
 				return err
 			}
+
 			return nil
 		},
 	)
+
 	return
 }
 
@@ -216,5 +222,6 @@ func getCollectionName(commandEnv *CommandEnv, bucket string) string {
 	if *commandEnv.option.FilerGroup != "" {
 		return fmt.Sprintf("%s_%s", *commandEnv.option.FilerGroup, bucket)
 	}
+
 	return bucket
 }

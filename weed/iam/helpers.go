@@ -3,6 +3,8 @@ package iam
 import (
 	"crypto/rand"
 	"crypto/sha1"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -14,7 +16,8 @@ import (
 func Hash(s *string) string {
 	h := sha1.New()
 	h.Write([]byte(*s))
-	return fmt.Sprintf("%x", h.Sum(nil))
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // GenerateRandomString generates a cryptographically secure random string.
@@ -24,7 +27,7 @@ func GenerateRandomString(length int, charset string) (string, error) {
 		return "", fmt.Errorf("length must be positive, got %d", length)
 	}
 	if charset == "" {
-		return "", fmt.Errorf("charset must not be empty")
+		return "", errors.New("charset must not be empty")
 	}
 	b := make([]byte, length)
 	for i := range b {
@@ -34,6 +37,7 @@ func GenerateRandomString(length int, charset string) (string, error) {
 		}
 		b[i] = charset[n.Int64()]
 	}
+
 	return string(b), nil
 }
 
@@ -65,6 +69,7 @@ func StringSlicesEqual(a, b []string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -153,6 +158,7 @@ func MapToStatementAction(action string) string {
 	if val, ok := fineGrainedActionMap[action]; ok {
 		return val
 	}
+
 	return ""
 }
 
@@ -185,5 +191,6 @@ func MaskAccessKey(accessKeyId string) string {
 	if len(accessKeyId) > 4 {
 		return accessKeyId[:4] + "***"
 	}
+
 	return accessKeyId
 }

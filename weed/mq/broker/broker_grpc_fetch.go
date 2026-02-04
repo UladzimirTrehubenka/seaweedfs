@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -28,24 +29,25 @@ func (b *MessageQueueBroker) FetchMessage(ctx context.Context, req *mq_pb.FetchM
 	glog.V(3).Infof("[FetchMessage] CALLED!") // DEBUG: ensure this shows up
 
 	// Validate request
-	if req.Topic == nil {
-		return nil, fmt.Errorf("missing topic")
+	if req.GetTopic() == nil {
+		return nil, errors.New("missing topic")
 	}
-	if req.Partition == nil {
-		return nil, fmt.Errorf("missing partition")
+	if req.GetPartition() == nil {
+		return nil, errors.New("missing partition")
 	}
 
-	t := topic.FromPbTopic(req.Topic)
-	partition := topic.FromPbPartition(req.Partition)
+	t := topic.FromPbTopic(req.GetTopic())
+	partition := topic.FromPbPartition(req.GetPartition())
 
 	glog.V(3).Infof("[FetchMessage] %s/%s partition=%v offset=%d maxMessages=%d maxBytes=%d consumer=%s/%s",
-		t.Namespace, t.Name, partition, req.StartOffset, req.MaxMessages, req.MaxBytes,
-		req.ConsumerGroup, req.ConsumerId)
+		t.Namespace, t.Name, partition, req.GetStartOffset(), req.GetMaxMessages(), req.GetMaxBytes(),
+		req.GetConsumerGroup(), req.GetConsumerId())
 
 	// Get local partition
 	localPartition, err := b.GetOrGenerateLocalPartition(t, partition)
 	if err != nil {
 		glog.Errorf("[FetchMessage] Failed to get partition: %v", err)
+
 		return &mq_pb.FetchMessageResponse{
 			Error:     fmt.Sprintf("partition not found: %v", err),
 			ErrorCode: 1,
@@ -59,7 +61,7 @@ func (b *MessageQueueBroker) FetchMessage(ctx context.Context, req *mq_pb.FetchM
 	}
 
 	// Set defaults for limits
-	maxMessages := int(req.MaxMessages)
+	maxMessages := int(req.GetMaxMessages())
 	if maxMessages <= 0 {
 		maxMessages = 100 // Reasonable default
 	}
@@ -67,7 +69,7 @@ func (b *MessageQueueBroker) FetchMessage(ctx context.Context, req *mq_pb.FetchM
 		maxMessages = 10000 // Safety limit
 	}
 
-	maxBytes := int(req.MaxBytes)
+	maxBytes := int(req.GetMaxBytes())
 	if maxBytes <= 0 {
 		maxBytes = 4 * 1024 * 1024 // 4MB default
 	}
@@ -102,7 +104,7 @@ func (b *MessageQueueBroker) FetchMessage(ctx context.Context, req *mq_pb.FetchM
 	}
 
 	// Use requested offset directly - let ReadMessagesAtOffset handle disk reads
-	requestedOffset := req.StartOffset
+	requestedOffset := req.GetStartOffset()
 
 	// Read messages from LogBuffer (stateless read)
 	logEntries, nextOffset, highWaterMark, endOfPartition, err := localPartition.LogBuffer.ReadMessagesAtOffset(
@@ -145,9 +147,9 @@ func (b *MessageQueueBroker) FetchMessage(ctx context.Context, req *mq_pb.FetchM
 	messages := make([]*mq_pb.DataMessage, 0, len(logEntries))
 	for _, entry := range logEntries {
 		messages = append(messages, &mq_pb.DataMessage{
-			Key:   entry.Key,
-			Value: entry.Data,
-			TsNs:  entry.TsNs,
+			Key:   entry.GetKey(),
+			Value: entry.GetData(),
+			TsNs:  entry.GetTsNs(),
 		})
 	}
 

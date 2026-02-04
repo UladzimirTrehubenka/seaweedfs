@@ -3,10 +3,11 @@ package dash
 import (
 	"testing"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	_ "github.com/seaweedfs/seaweedfs/weed/credential/filer_etc" // Import to register filer_etc store
 	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"google.golang.org/grpc"
 )
 
 // TestFilerAddressFunctionInterface tests that the filer_etc store

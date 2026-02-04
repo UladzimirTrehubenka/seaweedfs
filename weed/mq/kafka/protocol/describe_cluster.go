@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
 
@@ -13,13 +14,12 @@ import (
 //	[v1+: EndpointType(int8)] + ClusterId(compact string) + ControllerId(int32) +
 //	Brokers(compact array) + ClusterAuthorizedOperations(int32) + TaggedFields
 func (h *Handler) handleDescribeCluster(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// Parse request fields (all flexible format)
 	offset := 0
 
 	// IncludeClusterAuthorizedOperations (bool - 1 byte)
 	if offset >= len(requestBody) {
-		return nil, fmt.Errorf("incomplete DescribeCluster request")
+		return nil, errors.New("incomplete DescribeCluster request")
 	}
 	includeAuthorizedOps := requestBody[offset] != 0
 	offset++
@@ -28,7 +28,7 @@ func (h *Handler) handleDescribeCluster(correlationID uint32, apiVersion uint16,
 	var endpointType int8 = 1 // Default: brokers
 	if apiVersion >= 1 {
 		if offset >= len(requestBody) {
-			return nil, fmt.Errorf("incomplete DescribeCluster v1+ request")
+			return nil, errors.New("incomplete DescribeCluster v1+ request")
 		}
 		endpointType = int8(requestBody[offset])
 		offset++

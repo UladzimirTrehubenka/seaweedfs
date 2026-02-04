@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -25,18 +26,18 @@ const (
 // EvaluateArithmeticExpression evaluates basic arithmetic operations between two values
 func (e *SQLEngine) EvaluateArithmeticExpression(left, right *schema_pb.Value, operator ArithmeticOperator) (*schema_pb.Value, error) {
 	if left == nil || right == nil {
-		return nil, fmt.Errorf("arithmetic operation requires non-null operands")
+		return nil, errors.New("arithmetic operation requires non-null operands")
 	}
 
 	// Convert values to numeric types for calculation
 	leftNum, err := e.valueToFloat64(left)
 	if err != nil {
-		return nil, fmt.Errorf("left operand conversion error: %v", err)
+		return nil, fmt.Errorf("left operand conversion error: %w", err)
 	}
 
 	rightNum, err := e.valueToFloat64(right)
 	if err != nil {
-		return nil, fmt.Errorf("right operand conversion error: %v", err)
+		return nil, fmt.Errorf("right operand conversion error: %w", err)
 	}
 
 	var result float64
@@ -51,12 +52,12 @@ func (e *SQLEngine) EvaluateArithmeticExpression(left, right *schema_pb.Value, o
 		result = leftNum * rightNum
 	case OpDiv:
 		if rightNum == 0 {
-			return nil, fmt.Errorf("division by zero")
+			return nil, errors.New("division by zero")
 		}
 		result = leftNum / rightNum
 	case OpMod:
 		if rightNum == 0 {
-			return nil, fmt.Errorf("modulo by zero")
+			return nil, errors.New("modulo by zero")
 		}
 		result = math.Mod(leftNum, rightNum)
 	default:
@@ -114,12 +115,12 @@ func (e *SQLEngine) Modulo(left, right *schema_pb.Value) (*schema_pb.Value, erro
 // Round rounds a numeric value to the nearest integer or specified decimal places
 func (e *SQLEngine) Round(value *schema_pb.Value, precision ...*schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("ROUND function requires non-null value")
+		return nil, errors.New("ROUND function requires non-null value")
 	}
 
 	num, err := e.valueToFloat64(value)
 	if err != nil {
-		return nil, fmt.Errorf("ROUND function conversion error: %v", err)
+		return nil, fmt.Errorf("ROUND function conversion error: %w", err)
 	}
 
 	// Default precision is 0 (round to integer)
@@ -127,7 +128,7 @@ func (e *SQLEngine) Round(value *schema_pb.Value, precision ...*schema_pb.Value)
 	if len(precision) > 0 && precision[0] != nil {
 		precFloat, err := e.valueToFloat64(precision[0])
 		if err != nil {
-			return nil, fmt.Errorf("ROUND precision conversion error: %v", err)
+			return nil, fmt.Errorf("ROUND precision conversion error: %w", err)
 		}
 		precisionValue = int(precFloat)
 	}
@@ -151,12 +152,12 @@ func (e *SQLEngine) Round(value *schema_pb.Value, precision ...*schema_pb.Value)
 // Ceil returns the smallest integer greater than or equal to the value
 func (e *SQLEngine) Ceil(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("CEIL function requires non-null value")
+		return nil, errors.New("CEIL function requires non-null value")
 	}
 
 	num, err := e.valueToFloat64(value)
 	if err != nil {
-		return nil, fmt.Errorf("CEIL function conversion error: %v", err)
+		return nil, fmt.Errorf("CEIL function conversion error: %w", err)
 	}
 
 	result := math.Ceil(num)
@@ -169,12 +170,12 @@ func (e *SQLEngine) Ceil(value *schema_pb.Value) (*schema_pb.Value, error) {
 // Floor returns the largest integer less than or equal to the value
 func (e *SQLEngine) Floor(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("FLOOR function requires non-null value")
+		return nil, errors.New("FLOOR function requires non-null value")
 	}
 
 	num, err := e.valueToFloat64(value)
 	if err != nil {
-		return nil, fmt.Errorf("FLOOR function conversion error: %v", err)
+		return nil, fmt.Errorf("FLOOR function conversion error: %w", err)
 	}
 
 	result := math.Floor(num)
@@ -187,12 +188,12 @@ func (e *SQLEngine) Floor(value *schema_pb.Value) (*schema_pb.Value, error) {
 // Abs returns the absolute value of a number
 func (e *SQLEngine) Abs(value *schema_pb.Value) (*schema_pb.Value, error) {
 	if value == nil {
-		return nil, fmt.Errorf("ABS function requires non-null value")
+		return nil, errors.New("ABS function requires non-null value")
 	}
 
 	num, err := e.valueToFloat64(value)
 	if err != nil {
-		return nil, fmt.Errorf("ABS function conversion error: %v", err)
+		return nil, fmt.Errorf("ABS function conversion error: %w", err)
 	}
 
 	result := math.Abs(num)
@@ -205,7 +206,7 @@ func (e *SQLEngine) Abs(value *schema_pb.Value) (*schema_pb.Value, error) {
 	}
 
 	// Check if original was float32
-	if _, ok := value.Kind.(*schema_pb.Value_FloatValue); ok {
+	if _, ok := value.GetKind().(*schema_pb.Value_FloatValue); ok {
 		return &schema_pb.Value{
 			Kind: &schema_pb.Value_FloatValue{FloatValue: float32(result)},
 		}, nil

@@ -35,7 +35,6 @@ func (c *commandFsDu) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsDu) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if handleHelpRequest(c, args, writer) {
 		return nil
 	}
@@ -58,19 +57,16 @@ func (c *commandFsDu) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 	}
 
 	return
-
 }
 
 func duTraverseDirectory(writer io.Writer, filerClient filer_pb.FilerClient, dir, name string) (blockCount, byteCount uint64, err error) {
-
 	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, util.FullPath(dir), name, func(entry *filer_pb.Entry, isLast bool) error {
-
 		var fileBlockCount, fileByteCount uint64
 
-		if entry.IsDirectory {
-			subDir := fmt.Sprintf("%s/%s", dir, entry.Name)
+		if entry.GetIsDirectory() {
+			subDir := fmt.Sprintf("%s/%s", dir, entry.GetName())
 			if dir == "/" {
-				subDir = "/" + entry.Name
+				subDir = "/" + entry.GetName()
 			}
 			numBlock, numByte, err := duTraverseDirectory(writer, filerClient, subDir, "")
 			if err == nil {
@@ -84,10 +80,12 @@ func duTraverseDirectory(writer io.Writer, filerClient filer_pb.FilerClient, dir
 			byteCount += fileByteCount
 		}
 
-		if name != "" && !entry.IsDirectory {
-			fmt.Fprintf(writer, "block:%4d\tlogical size:%10d\t%s/%s\n", fileBlockCount, fileByteCount, dir, entry.Name)
+		if name != "" && !entry.GetIsDirectory() {
+			fmt.Fprintf(writer, "block:%4d\tlogical size:%10d\t%s/%s\n", fileBlockCount, fileByteCount, dir, entry.GetName())
 		}
+
 		return nil
 	})
+
 	return
 }

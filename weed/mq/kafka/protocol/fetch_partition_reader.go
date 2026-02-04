@@ -142,6 +142,7 @@ func (pr *partitionReader) serveFetchRequest(ctx context.Context, req *partition
 			pr.connCtx.ConnectionID, pr.topicName, pr.partitionID, hwmErr)
 		result.recordBatch = []byte{}
 		result.highWaterMark = 0
+
 		return
 	}
 	result.highWaterMark = hwm
@@ -155,6 +156,7 @@ func (pr *partitionReader) serveFetchRequest(ctx context.Context, req *partition
 		result.recordBatch = []byte{}
 		glog.V(3).Infof("[%s] Requested offset %d >= HWM %d, returning empty",
 			pr.connCtx.ConnectionID, req.requestedOffset, hwm)
+
 		return
 	}
 
@@ -194,10 +196,9 @@ func (pr *partitionReader) readRecords(ctx context.Context, fromOffset int64, ma
 		var cancel context.CancelFunc
 		// Use 1.5x the client timeout to account for internal processing overhead
 		// This prevents legitimate slow reads from being killed by client timeout
-		internalTimeoutMs := int32(float64(maxWaitMs) * 1.5)
-		if internalTimeoutMs > 5000 {
-			internalTimeoutMs = 5000 // Cap at 5 seconds
-		}
+		internalTimeoutMs := min(int32(float64(maxWaitMs)*1.5),
+			// Cap at 5 seconds
+			5000)
 		fetchCtx, cancel = context.WithTimeout(ctx, time.Duration(internalTimeoutMs)*time.Millisecond)
 		defer cancel()
 	}
@@ -225,6 +226,7 @@ func (pr *partitionReader) readRecords(ctx context.Context, fromOffset int64, ma
 		glog.V(4).Infof("[%s] Multi-batch fetch for %s[%d]: %d batches, %d bytes, offset %d -> %d (duration: %v)",
 			pr.connCtx.ConnectionID, pr.topicName, pr.partitionID,
 			fetchResult.BatchCount, fetchResult.TotalSize, fromOffset, fetchResult.NextOffset, fetchDuration)
+
 		return fetchResult.RecordBatches, fetchResult.NextOffset
 	}
 
@@ -247,6 +249,7 @@ func (pr *partitionReader) readRecords(ctx context.Context, fromOffset int64, ma
 	if err != nil {
 		glog.Errorf("[%s] CRITICAL: Both multi-batch AND fallback failed for %s[%d] offset=%d: %v",
 			pr.connCtx.ConnectionID, pr.topicName, pr.partitionID, fromOffset, err)
+
 		return []byte{}, fromOffset
 	}
 
@@ -255,12 +258,14 @@ func (pr *partitionReader) readRecords(ctx context.Context, fromOffset int64, ma
 		nextOffset := fromOffset + int64(len(smqRecords))
 		glog.V(3).Infof("[%s] Fallback succeeded: got %d records for %s[%d] offset %d -> %d (total: %v)",
 			pr.connCtx.ConnectionID, len(smqRecords), pr.topicName, pr.partitionID, fromOffset, nextOffset, time.Since(fetchStartTime))
+
 		return recordBatch, nextOffset
 	}
 
 	// No records available
 	glog.V(3).Infof("[%s] No records available for %s[%d] offset=%d after multi-batch and fallback (total: %v)",
 		pr.connCtx.ConnectionID, pr.topicName, pr.partitionID, fromOffset, time.Since(fetchStartTime))
+
 	return []byte{}, fromOffset
 }
 

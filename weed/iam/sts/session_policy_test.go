@@ -22,6 +22,7 @@ func createSessionPolicyTestJWT(t *testing.T, issuer, subject string) string {
 
 	tokenString, err := token.SignedString([]byte("test-signing-key"))
 	require.NoError(t, err)
+
 	return tokenString
 }
 

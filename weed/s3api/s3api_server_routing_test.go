@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"github.com/stretchr/testify/assert"
 )
 
 // setupRoutingTestServer creates a minimal S3ApiServer for routing tests
@@ -45,7 +46,7 @@ func TestRouting_STSWithQueryParams(t *testing.T) {
 	s3a.registerRouter(router)
 
 	// Create request with Action in query params (no auth header)
-	req, _ := http.NewRequest("POST", "/?Action=AssumeRoleWithWebIdentity&WebIdentityToken=test-token&RoleArn=arn:aws:iam::123:role/test&RoleSessionName=test-session", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/?Action=AssumeRoleWithWebIdentity&WebIdentityToken=test-token&RoleArn=arn:aws:iam::123:role/test&RoleSessionName=test-session", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rr := httptest.NewRecorder()
@@ -68,7 +69,7 @@ func TestRouting_STSWithBodyParams(t *testing.T) {
 	data.Set("RoleArn", "arn:aws:iam::123:role/test")
 	data.Set("RoleSessionName", "test-session")
 
-	req, _ := http.NewRequest("POST", "/", strings.NewReader(data.Encode()))
+	req, _ := http.NewRequest(http.MethodPost, "/", strings.NewReader(data.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rr := httptest.NewRecorder()
@@ -89,7 +90,7 @@ func TestRouting_AuthenticatedIAM(t *testing.T) {
 	data.Set("Action", "CreateUser")
 	data.Set("UserName", "testuser")
 
-	req, _ := http.NewRequest("POST", "/", strings.NewReader(data.Encode()))
+	req, _ := http.NewRequest(http.MethodPost, "/", strings.NewReader(data.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=AKIA.../...")
 
@@ -171,7 +172,7 @@ func TestRouting_IAMMatcherLogic(t *testing.T) {
 				data.Set("RoleSessionName", "test-session")
 			}
 
-			req, _ := http.NewRequest("POST", "/"+tt.queryParams, strings.NewReader(data.Encode()))
+			req, _ := http.NewRequest(http.MethodPost, "/"+tt.queryParams, strings.NewReader(data.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)

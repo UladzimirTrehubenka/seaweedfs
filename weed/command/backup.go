@@ -77,6 +77,7 @@ func parseTTL(userTTL string, statsTTL string) (*needle.TTL, error, bool) {
 			// User-provided TTL is invalid - this is fatal
 			return nil, fmt.Errorf("invalid user-provided ttl %s: %w", userTTL, err), true
 		}
+
 		return ttl, nil, false
 	}
 
@@ -84,6 +85,7 @@ func parseTTL(userTTL string, statsTTL string) (*needle.TTL, error, bool) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing ttl %s from stats: %w", statsTTL, err), false
 	}
+
 	return ttl, nil, false
 }
 
@@ -96,6 +98,7 @@ func parseReplication(userReplication string, statsReplication string) (*super_b
 			// User-provided replication is invalid - this is fatal
 			return nil, fmt.Errorf("invalid user-provided replication %s: %w", userReplication, err), true
 		}
+
 		return replication, nil, false
 	}
 
@@ -103,6 +106,7 @@ func parseReplication(userReplication string, statsReplication string) (*super_b
 	if err != nil {
 		return nil, fmt.Errorf("parsing replication %s from stats: %w", statsReplication, err), false
 	}
+
 	return replication, nil, false
 }
 
@@ -116,18 +120,18 @@ func backupFromLocation(volumeServer pb.ServerAddress, grpcDialOption grpc.DialO
 	}
 
 	// Parse TTL
-	ttl, err, isFatal := parseTTL(*s.ttl, stats.Ttl)
+	ttl, err, isFatal := parseTTL(*s.ttl, stats.GetTtl())
 	if err != nil {
 		return err, isFatal
 	}
 
 	// Parse replication
-	replication, err, isFatal := parseReplication(*s.replication, stats.Replication)
+	replication, err, isFatal := parseReplication(*s.replication, stats.GetReplication())
 	if err != nil {
 		return err, isFatal
 	}
 
-	ver := needle.Version(stats.Version)
+	ver := needle.Version(stats.GetVersion())
 
 	// Create or load the volume
 	v, err := storage.NewVolume(util.ResolvePath(*s.dir), util.ResolvePath(*s.dir), *s.collection, vid, storage.NeedleMapInMemory, replication, ttl, 0, ver, 0, 0)
@@ -136,18 +140,21 @@ func backupFromLocation(volumeServer pb.ServerAddress, grpcDialOption grpc.DialO
 	}
 
 	// Handle compaction if needed
-	if v.SuperBlock.CompactionRevision < uint16(stats.CompactRevision) {
+	if v.CompactionRevision < uint16(stats.GetCompactRevision()) {
 		if err = v.Compact2(0, 0, nil); err != nil {
 			v.Close()
+
 			return fmt.Errorf("compacting volume: %w", err), false
 		}
 		if err = v.CommitCompact(); err != nil {
 			v.Close()
+
 			return fmt.Errorf("committing compaction: %w", err), false
 		}
-		v.SuperBlock.CompactionRevision = uint16(stats.CompactRevision)
-		if _, err = v.DataBackend.WriteAt(v.SuperBlock.Bytes(), 0); err != nil {
+		v.CompactionRevision = uint16(stats.GetCompactRevision())
+		if _, err = v.DataBackend.WriteAt(v.Bytes(), 0); err != nil {
 			v.Close()
+
 			return fmt.Errorf("writing superblock: %w", err), false
 		}
 	}
@@ -155,9 +162,10 @@ func backupFromLocation(volumeServer pb.ServerAddress, grpcDialOption grpc.DialO
 	datSize, _, _ := v.FileStat()
 
 	// If local volume is larger than remote, recreate it
-	if datSize > stats.TailOffset {
+	if datSize > stats.GetTailOffset() {
 		if err := v.Destroy(false); err != nil {
 			v.Close()
+
 			return fmt.Errorf("destroying volume: %w", err), false
 		}
 		v.Close() // Close the destroyed volume
@@ -171,15 +179,16 @@ func backupFromLocation(volumeServer pb.ServerAddress, grpcDialOption grpc.DialO
 	// Perform the incremental backup
 	if err := v.IncrementalBackup(volumeServer, grpcDialOption); err != nil {
 		v.Close()
+
 		return fmt.Errorf("incremental backup: %w", err), false
 	}
 
 	v.Close()
+
 	return nil, false
 }
 
 func runBackup(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 
@@ -198,10 +207,12 @@ func runBackup(cmd *Command, args []string) bool {
 	lookup, err := operation.LookupVolumeId(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(masterServer) }, grpcDialOption, vid.String())
 	if err != nil {
 		fmt.Printf("Error looking up volume %d: %v\n", vid, err)
+
 		return true
 	}
 	if len(lookup.Locations) == 0 {
 		fmt.Printf("Error: volume %d has no locations available\n", vid)
+
 		return true
 	}
 
@@ -219,11 +230,13 @@ func runBackup(cmd *Command, args []string) bool {
 			if isFatal {
 				return true
 			}
+
 			continue
 		}
 
 		// Success!
 		fmt.Printf("Successfully backed up volume %d from %s\n", vid, volumeServer)
+
 		return true
 	}
 

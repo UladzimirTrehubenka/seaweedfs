@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/stretchr/testify/assert"
 	grpc "google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 )
 
 // TestListObjectsWithVersionedObjects tests that versioned objects are properly listed
@@ -43,7 +44,7 @@ func TestListObjectsWithVersionedObjects(t *testing.T) {
 						s3_constants.ExtLatestVersionIdKey:    []byte("v1-abc123"),
 						s3_constants.ExtLatestVersionSizeKey:  []byte("1234"),
 						s3_constants.ExtLatestVersionMtimeKey: []byte(strconv.FormatInt(now, 10)),
-						s3_constants.ExtLatestVersionETagKey:  []byte(fmt.Sprintf("\"%s\"", hex.EncodeToString([]byte("test-etag-1")))),
+						s3_constants.ExtLatestVersionETagKey:  fmt.Appendf(nil, "\"%s\"", hex.EncodeToString([]byte("test-etag-1"))),
 					},
 				},
 				// Another .versions directory
@@ -57,7 +58,7 @@ func TestListObjectsWithVersionedObjects(t *testing.T) {
 						s3_constants.ExtLatestVersionIdKey:    []byte("v2-def456"),
 						s3_constants.ExtLatestVersionSizeKey:  []byte("5678"),
 						s3_constants.ExtLatestVersionMtimeKey: []byte(strconv.FormatInt(now, 10)),
-						s3_constants.ExtLatestVersionETagKey:  []byte(fmt.Sprintf("\"%s\"", hex.EncodeToString([]byte("test-etag-2")))),
+						s3_constants.ExtLatestVersionETagKey:  fmt.Appendf(nil, "\"%s\"", hex.EncodeToString([]byte("test-etag-2"))),
 					},
 				},
 			},
@@ -73,7 +74,7 @@ func TestListObjectsWithVersionedObjects(t *testing.T) {
 						s3_constants.ExtLatestVersionIdKey:    []byte("v3-ghi789"),
 						s3_constants.ExtLatestVersionSizeKey:  []byte("9012"),
 						s3_constants.ExtLatestVersionMtimeKey: []byte(strconv.FormatInt(now, 10)),
-						s3_constants.ExtLatestVersionETagKey:  []byte(fmt.Sprintf("\"%s\"", hex.EncodeToString([]byte("test-etag-3")))),
+						s3_constants.ExtLatestVersionETagKey:  fmt.Appendf(nil, "\"%s\"", hex.EncodeToString([]byte("test-etag-3"))),
 					},
 				},
 			},
@@ -140,7 +141,7 @@ func TestListObjectsWithVersionedObjects(t *testing.T) {
 					return
 				}
 
-				if entry.IsDirectory {
+				if entry.GetIsDirectory() {
 					if tt.delimiter == "/" {
 						// Extract relative path from bucket prefix
 						relDir := strings.TrimPrefix(dir, bucketPrefix[:len(bucketPrefix)-1])
@@ -151,7 +152,7 @@ func TestListObjectsWithVersionedObjects(t *testing.T) {
 						if prefix != "" {
 							prefix += "/"
 						}
-						prefix += entry.Name + "/"
+						prefix += entry.GetName() + "/"
 
 						commonPrefixes = append(commonPrefixes, PrefixEntry{
 							Prefix: prefix,
@@ -164,9 +165,9 @@ func TestListObjectsWithVersionedObjects(t *testing.T) {
 					if relDir != "" && relDir[0] == '/' {
 						relDir = relDir[1:]
 					}
-					key := entry.Name
+					key := entry.GetName()
 					if relDir != "" {
-						key = relDir + "/" + entry.Name
+						key = relDir + "/" + entry.GetName()
 					}
 
 					contents = append(contents, ListEntry{
@@ -177,8 +178,8 @@ func TestListObjectsWithVersionedObjects(t *testing.T) {
 			})
 
 			assert.NoError(t, err, "doListFilerEntries should not return error")
-			assert.Equal(t, tt.expectedCount, len(contents), "Should return correct number of objects")
-			assert.Equal(t, len(tt.expectedPrefixes), len(commonPrefixes), "Should return correct number of common prefixes")
+			assert.Len(t, contents, tt.expectedCount, "Should return correct number of objects")
+			assert.Len(t, commonPrefixes, len(tt.expectedPrefixes), "Should return correct number of common prefixes")
 
 			// Verify keys
 			actualKeys := make([]string, len(contents))
@@ -240,12 +241,12 @@ func TestVersionedObjectsNoDuplication(t *testing.T) {
 		if cursor.maxKeys <= 0 {
 			return
 		}
-		contents = append(contents, ListEntry{Key: entry.Name})
+		contents = append(contents, ListEntry{Key: entry.GetName()})
 		cursor.maxKeys--
 	})
 
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(contents), "Should return exactly 1 object (no duplicates)")
+	assert.Len(t, contents, 1, "Should return exactly 1 object (no duplicates)")
 	assert.Equal(t, "test.txt", contents[0].Key, "Should return correct key")
 }
 
@@ -298,12 +299,12 @@ func TestVersionedObjectsWithDeleteMarker(t *testing.T) {
 		if cursor.maxKeys <= 0 {
 			return
 		}
-		contents = append(contents, ListEntry{Key: entry.Name})
+		contents = append(contents, ListEntry{Key: entry.GetName()})
 		cursor.maxKeys--
 	})
 
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(contents), "Should only return active object, not deleted")
+	assert.Len(t, contents, 1, "Should only return active object, not deleted")
 	assert.Equal(t, "active.txt", contents[0].Key, "Should return the active object")
 }
 
@@ -313,7 +314,7 @@ func TestVersionedObjectsMaxKeys(t *testing.T) {
 
 	// Create 5 versioned objects
 	entries := make([]*filer_pb.Entry, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		entries[i] = &filer_pb.Entry{
 			Name:        fmt.Sprintf("file%d.txt"+s3_constants.VersionsFolder, i),
 			IsDirectory: true,
@@ -321,10 +322,10 @@ func TestVersionedObjectsMaxKeys(t *testing.T) {
 				Mtime: now,
 			},
 			Extended: map[string][]byte{
-				s3_constants.ExtLatestVersionIdKey:    []byte(fmt.Sprintf("v%d", i)),
+				s3_constants.ExtLatestVersionIdKey:    fmt.Appendf(nil, "v%d", i),
 				s3_constants.ExtLatestVersionSizeKey:  []byte("100"),
 				s3_constants.ExtLatestVersionMtimeKey: []byte(strconv.FormatInt(now, 10)),
-				s3_constants.ExtLatestVersionETagKey:  []byte(fmt.Sprintf("\"etag-%d\"", i)),
+				s3_constants.ExtLatestVersionETagKey:  fmt.Appendf(nil, "\"etag-%d\"", i),
 			},
 		}
 	}
@@ -347,12 +348,12 @@ func TestVersionedObjectsMaxKeys(t *testing.T) {
 		if cursor.maxKeys <= 0 {
 			return
 		}
-		contents = append(contents, ListEntry{Key: entry.Name})
+		contents = append(contents, ListEntry{Key: entry.GetName()})
 		cursor.maxKeys--
 	})
 
 	assert.NoError(t, err)
-	assert.Equal(t, 3, len(contents), "Should respect maxKeys limit")
+	assert.Len(t, contents, 3, "Should respect maxKeys limit")
 	assert.True(t, cursor.isTruncated, "Should set IsTruncated when there are more results")
 
 	// Verify truncation is properly set when maxKeys is exceeded
@@ -409,12 +410,12 @@ func TestVersionsDirectoryNotTraversed(t *testing.T) {
 		if cursor.maxKeys <= 0 {
 			return
 		}
-		contents = append(contents, ListEntry{Key: entry.Name})
+		contents = append(contents, ListEntry{Key: entry.GetName()})
 		cursor.maxKeys--
 	})
 
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(contents))
+	assert.Len(t, contents, 1)
 
 	// Verify .versions directory was NEVER traversed
 	_, wasTraversed := traversedDirs["/buckets/test-bucket/object.txt.versions"]
@@ -424,11 +425,13 @@ func TestVersionsDirectoryNotTraversed(t *testing.T) {
 // customTestFilerClient tracks which directories are accessed
 type customTestFilerClient struct {
 	testFilerClient
+
 	traversedDirs *map[string]bool
 }
 
 func (c *customTestFilerClient) ListEntries(ctx context.Context, in *filer_pb.ListEntriesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[filer_pb.ListEntriesResponse], error) {
-	(*c.traversedDirs)[in.Directory] = true
+	(*c.traversedDirs)[in.GetDirectory()] = true
+
 	return c.testFilerClient.ListEntries(ctx, in, opts...)
 }
 

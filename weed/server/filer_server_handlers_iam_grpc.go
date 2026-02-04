@@ -3,18 +3,21 @@ package weed_server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // IamGrpcServer implements the IAM gRPC service on the filer
 type IamGrpcServer struct {
 	iam_pb.UnimplementedSeaweedIdentityAccessManagementServer
+
 	credentialManager *credential.CredentialManager
 }
 
@@ -38,6 +41,7 @@ func (s *IamGrpcServer) GetConfiguration(ctx context.Context, req *iam_pb.GetCon
 	config, err := s.credentialManager.LoadConfiguration(ctx)
 	if err != nil {
 		glog.Errorf("Failed to load configuration: %v", err)
+
 		return nil, err
 	}
 
@@ -53,13 +57,14 @@ func (s *IamGrpcServer) PutConfiguration(ctx context.Context, req *iam_pb.PutCon
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	if req.Configuration == nil {
+	if req.GetConfiguration() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "configuration is nil")
 	}
 
-	err := s.credentialManager.SaveConfiguration(ctx, req.Configuration)
+	err := s.credentialManager.SaveConfiguration(ctx, req.GetConfiguration())
 	if err != nil {
 		glog.Errorf("Failed to save configuration: %v", err)
+
 		return nil, err
 	}
 
@@ -70,21 +75,22 @@ func (s *IamGrpcServer) PutConfiguration(ctx context.Context, req *iam_pb.PutCon
 // User Management
 
 func (s *IamGrpcServer) CreateUser(ctx context.Context, req *iam_pb.CreateUserRequest) (*iam_pb.CreateUserResponse, error) {
-	if req == nil || req.Identity == nil {
+	if req == nil || req.GetIdentity() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "identity is required")
 	}
-	glog.V(4).Infof("IAM: Filer.CreateUser %s", req.Identity.Name)
+	glog.V(4).Infof("IAM: Filer.CreateUser %s", req.GetIdentity().GetName())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.CreateUser(ctx, req.Identity)
+	err := s.credentialManager.CreateUser(ctx, req.GetIdentity())
 	if err != nil {
-		if err == credential.ErrUserAlreadyExists {
-			return nil, status.Errorf(codes.AlreadyExists, "user %s already exists", req.Identity.Name)
+		if errors.Is(err, credential.ErrUserAlreadyExists) {
+			return nil, status.Errorf(codes.AlreadyExists, "user %s already exists", req.GetIdentity().GetName())
 		}
-		glog.Errorf("Failed to create user %s: %v", req.Identity.Name, err)
+		glog.Errorf("Failed to create user %s: %v", req.GetIdentity().GetName(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to create user: %v", err)
 	}
 
@@ -92,18 +98,19 @@ func (s *IamGrpcServer) CreateUser(ctx context.Context, req *iam_pb.CreateUserRe
 }
 
 func (s *IamGrpcServer) GetUser(ctx context.Context, req *iam_pb.GetUserRequest) (*iam_pb.GetUserResponse, error) {
-	glog.V(4).Infof("GetUser: %s", req.Username)
+	glog.V(4).Infof("GetUser: %s", req.GetUsername())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	identity, err := s.credentialManager.GetUser(ctx, req.Username)
+	identity, err := s.credentialManager.GetUser(ctx, req.GetUsername())
 	if err != nil {
-		if err == credential.ErrUserNotFound {
-			return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+		if errors.Is(err, credential.ErrUserNotFound) {
+			return nil, status.Errorf(codes.NotFound, "user %s not found", req.GetUsername())
 		}
-		glog.Errorf("Failed to get user %s: %v", req.Username, err)
+		glog.Errorf("Failed to get user %s: %v", req.GetUsername(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
 	}
 
@@ -113,21 +120,22 @@ func (s *IamGrpcServer) GetUser(ctx context.Context, req *iam_pb.GetUserRequest)
 }
 
 func (s *IamGrpcServer) UpdateUser(ctx context.Context, req *iam_pb.UpdateUserRequest) (*iam_pb.UpdateUserResponse, error) {
-	if req == nil || req.Identity == nil {
+	if req == nil || req.GetIdentity() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "identity is required")
 	}
-	glog.V(4).Infof("IAM: Filer.UpdateUser %s", req.Username)
+	glog.V(4).Infof("IAM: Filer.UpdateUser %s", req.GetUsername())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.UpdateUser(ctx, req.Username, req.Identity)
+	err := s.credentialManager.UpdateUser(ctx, req.GetUsername(), req.GetIdentity())
 	if err != nil {
-		if err == credential.ErrUserNotFound {
-			return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+		if errors.Is(err, credential.ErrUserNotFound) {
+			return nil, status.Errorf(codes.NotFound, "user %s not found", req.GetUsername())
 		}
-		glog.Errorf("Failed to update user %s: %v", req.Username, err)
+		glog.Errorf("Failed to update user %s: %v", req.GetUsername(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to update user: %v", err)
 	}
 
@@ -135,18 +143,19 @@ func (s *IamGrpcServer) UpdateUser(ctx context.Context, req *iam_pb.UpdateUserRe
 }
 
 func (s *IamGrpcServer) DeleteUser(ctx context.Context, req *iam_pb.DeleteUserRequest) (*iam_pb.DeleteUserResponse, error) {
-	glog.V(4).Infof("IAM: Filer.DeleteUser %s", req.Username)
+	glog.V(4).Infof("IAM: Filer.DeleteUser %s", req.GetUsername())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.DeleteUser(ctx, req.Username)
+	err := s.credentialManager.DeleteUser(ctx, req.GetUsername())
 	if err != nil {
-		if err == credential.ErrUserNotFound {
-			return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+		if errors.Is(err, credential.ErrUserNotFound) {
+			return nil, status.Errorf(codes.NotFound, "user %s not found", req.GetUsername())
 		}
-		glog.Errorf("Failed to delete user %s: %v", req.Username, err)
+		glog.Errorf("Failed to delete user %s: %v", req.GetUsername(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to delete user: %v", err)
 	}
 
@@ -163,6 +172,7 @@ func (s *IamGrpcServer) ListUsers(ctx context.Context, req *iam_pb.ListUsersRequ
 	usernames, err := s.credentialManager.ListUsers(ctx)
 	if err != nil {
 		glog.Errorf("Failed to list users: %v", err)
+
 		return nil, err
 	}
 
@@ -175,21 +185,22 @@ func (s *IamGrpcServer) ListUsers(ctx context.Context, req *iam_pb.ListUsersRequ
 // Access Key Management
 
 func (s *IamGrpcServer) CreateAccessKey(ctx context.Context, req *iam_pb.CreateAccessKeyRequest) (*iam_pb.CreateAccessKeyResponse, error) {
-	if req == nil || req.Credential == nil {
+	if req == nil || req.GetCredential() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "credential is required")
 	}
-	glog.V(4).Infof("CreateAccessKey for user: %s", req.Username)
+	glog.V(4).Infof("CreateAccessKey for user: %s", req.GetUsername())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.CreateAccessKey(ctx, req.Username, req.Credential)
+	err := s.credentialManager.CreateAccessKey(ctx, req.GetUsername(), req.GetCredential())
 	if err != nil {
-		if err == credential.ErrUserNotFound {
-			return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+		if errors.Is(err, credential.ErrUserNotFound) {
+			return nil, status.Errorf(codes.NotFound, "user %s not found", req.GetUsername())
 		}
-		glog.Errorf("Failed to create access key for user %s: %v", req.Username, err)
+		glog.Errorf("Failed to create access key for user %s: %v", req.GetUsername(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to create access key: %v", err)
 	}
 
@@ -197,21 +208,22 @@ func (s *IamGrpcServer) CreateAccessKey(ctx context.Context, req *iam_pb.CreateA
 }
 
 func (s *IamGrpcServer) DeleteAccessKey(ctx context.Context, req *iam_pb.DeleteAccessKeyRequest) (*iam_pb.DeleteAccessKeyResponse, error) {
-	glog.V(4).Infof("DeleteAccessKey: %s for user: %s", req.AccessKey, req.Username)
+	glog.V(4).Infof("DeleteAccessKey: %s for user: %s", req.GetAccessKey(), req.GetUsername())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.DeleteAccessKey(ctx, req.Username, req.AccessKey)
+	err := s.credentialManager.DeleteAccessKey(ctx, req.GetUsername(), req.GetAccessKey())
 	if err != nil {
-		if err == credential.ErrUserNotFound {
-			return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+		if errors.Is(err, credential.ErrUserNotFound) {
+			return nil, status.Errorf(codes.NotFound, "user %s not found", req.GetUsername())
 		}
-		if err == credential.ErrAccessKeyNotFound {
-			return nil, status.Errorf(codes.NotFound, "access key %s not found", req.AccessKey)
+		if errors.Is(err, credential.ErrAccessKeyNotFound) {
+			return nil, status.Errorf(codes.NotFound, "access key %s not found", req.GetAccessKey())
 		}
-		glog.Errorf("Failed to delete access key %s for user %s: %v", req.AccessKey, req.Username, err)
+		glog.Errorf("Failed to delete access key %s for user %s: %v", req.GetAccessKey(), req.GetUsername(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to delete access key: %v", err)
 	}
 
@@ -219,18 +231,19 @@ func (s *IamGrpcServer) DeleteAccessKey(ctx context.Context, req *iam_pb.DeleteA
 }
 
 func (s *IamGrpcServer) GetUserByAccessKey(ctx context.Context, req *iam_pb.GetUserByAccessKeyRequest) (*iam_pb.GetUserByAccessKeyResponse, error) {
-	glog.V(4).Infof("GetUserByAccessKey: %s", req.AccessKey)
+	glog.V(4).Infof("GetUserByAccessKey: %s", req.GetAccessKey())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	identity, err := s.credentialManager.GetUserByAccessKey(ctx, req.AccessKey)
+	identity, err := s.credentialManager.GetUserByAccessKey(ctx, req.GetAccessKey())
 	if err != nil {
-		if err == credential.ErrAccessKeyNotFound {
-			return nil, status.Errorf(codes.NotFound, "access key %s not found", req.AccessKey)
+		if errors.Is(err, credential.ErrAccessKeyNotFound) {
+			return nil, status.Errorf(codes.NotFound, "access key %s not found", req.GetAccessKey())
 		}
-		glog.Errorf("Failed to get user by access key %s: %v", req.AccessKey, err)
+		glog.Errorf("Failed to get user by access key %s: %v", req.GetAccessKey(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
 	}
 
@@ -243,31 +256,33 @@ func (s *IamGrpcServer) GetUserByAccessKey(ctx context.Context, req *iam_pb.GetU
 // Policy Management
 
 func (s *IamGrpcServer) PutPolicy(ctx context.Context, req *iam_pb.PutPolicyRequest) (*iam_pb.PutPolicyResponse, error) {
-	glog.V(4).Infof("IAM: Filer.PutPolicy %s", req.Name)
+	glog.V(4).Infof("IAM: Filer.PutPolicy %s", req.GetName())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	if req.Name == "" {
+	if req.GetName() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "policy name is required")
 	}
-	if err := credential.ValidatePolicyName(req.Name); err != nil {
+	if err := credential.ValidatePolicyName(req.GetName()); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	if req.Content == "" {
+	if req.GetContent() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "policy content is required")
 	}
 
 	var policy policy_engine.PolicyDocument
-	if err := json.Unmarshal([]byte(req.Content), &policy); err != nil {
-		glog.Errorf("Failed to unmarshal policy %s: %v", req.Name, err)
+	if err := json.Unmarshal([]byte(req.GetContent()), &policy); err != nil {
+		glog.Errorf("Failed to unmarshal policy %s: %v", req.GetName(), err)
+
 		return nil, err
 	}
 
-	err := s.credentialManager.PutPolicy(ctx, req.Name, policy)
+	err := s.credentialManager.PutPolicy(ctx, req.GetName(), policy)
 	if err != nil {
-		glog.Errorf("Failed to put policy %s: %v", req.Name, err)
+		glog.Errorf("Failed to put policy %s: %v", req.GetName(), err)
+
 		return nil, err
 	}
 
@@ -275,30 +290,32 @@ func (s *IamGrpcServer) PutPolicy(ctx context.Context, req *iam_pb.PutPolicyRequ
 }
 
 func (s *IamGrpcServer) GetPolicy(ctx context.Context, req *iam_pb.GetPolicyRequest) (*iam_pb.GetPolicyResponse, error) {
-	glog.V(4).Infof("GetPolicy: %s", req.Name)
+	glog.V(4).Infof("GetPolicy: %s", req.GetName())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	policy, err := s.credentialManager.GetPolicy(ctx, req.Name)
+	policy, err := s.credentialManager.GetPolicy(ctx, req.GetName())
 	if err != nil {
-		glog.Errorf("Failed to get policy %s: %v", req.Name, err)
+		glog.Errorf("Failed to get policy %s: %v", req.GetName(), err)
+
 		return nil, err
 	}
 
 	if policy == nil {
-		return nil, status.Errorf(codes.NotFound, "policy %s not found", req.Name)
+		return nil, status.Errorf(codes.NotFound, "policy %s not found", req.GetName())
 	}
 
 	jsonBytes, err := json.Marshal(policy)
 	if err != nil {
-		glog.Errorf("Failed to marshal policy %s: %v", req.Name, err)
+		glog.Errorf("Failed to marshal policy %s: %v", req.GetName(), err)
+
 		return nil, err
 	}
 
 	return &iam_pb.GetPolicyResponse{
-		Name:    req.Name,
+		Name:    req.GetName(),
 		Content: string(jsonBytes),
 	}, nil
 }
@@ -313,6 +330,7 @@ func (s *IamGrpcServer) ListPolicies(ctx context.Context, req *iam_pb.ListPolici
 	policiesData, err := s.credentialManager.GetPolicies(ctx)
 	if err != nil {
 		glog.Errorf("Failed to list policies: %v", err)
+
 		return nil, err
 	}
 
@@ -334,15 +352,16 @@ func (s *IamGrpcServer) ListPolicies(ctx context.Context, req *iam_pb.ListPolici
 }
 
 func (s *IamGrpcServer) DeletePolicy(ctx context.Context, req *iam_pb.DeletePolicyRequest) (*iam_pb.DeletePolicyResponse, error) {
-	glog.V(4).Infof("DeletePolicy: %s", req.Name)
+	glog.V(4).Infof("DeletePolicy: %s", req.GetName())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.DeletePolicy(ctx, req.Name)
+	err := s.credentialManager.DeletePolicy(ctx, req.GetName())
 	if err != nil {
-		glog.Errorf("Failed to delete policy %s: %v", req.Name, err)
+		glog.Errorf("Failed to delete policy %s: %v", req.GetName(), err)
+
 		return nil, err
 	}
 
@@ -353,21 +372,22 @@ func (s *IamGrpcServer) DeletePolicy(ctx context.Context, req *iam_pb.DeletePoli
 // Service Account Management
 
 func (s *IamGrpcServer) CreateServiceAccount(ctx context.Context, req *iam_pb.CreateServiceAccountRequest) (*iam_pb.CreateServiceAccountResponse, error) {
-	if req == nil || req.ServiceAccount == nil {
+	if req == nil || req.GetServiceAccount() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "service account is required")
 	}
-	if err := credential.ValidateServiceAccountId(req.ServiceAccount.Id); err != nil {
+	if err := credential.ValidateServiceAccountId(req.GetServiceAccount().GetId()); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	glog.V(4).Infof("CreateServiceAccount: %s", req.ServiceAccount.Id)
+	glog.V(4).Infof("CreateServiceAccount: %s", req.GetServiceAccount().GetId())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.CreateServiceAccount(ctx, req.ServiceAccount)
+	err := s.credentialManager.CreateServiceAccount(ctx, req.GetServiceAccount())
 	if err != nil {
-		glog.Errorf("Failed to create service account %s: %v", req.ServiceAccount.Id, err)
+		glog.Errorf("Failed to create service account %s: %v", req.GetServiceAccount().GetId(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to create service account: %v", err)
 	}
 
@@ -375,18 +395,19 @@ func (s *IamGrpcServer) CreateServiceAccount(ctx context.Context, req *iam_pb.Cr
 }
 
 func (s *IamGrpcServer) UpdateServiceAccount(ctx context.Context, req *iam_pb.UpdateServiceAccountRequest) (*iam_pb.UpdateServiceAccountResponse, error) {
-	if req == nil || req.ServiceAccount == nil {
+	if req == nil || req.GetServiceAccount() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "service account is required")
 	}
-	glog.V(4).Infof("UpdateServiceAccount: %s", req.Id)
+	glog.V(4).Infof("UpdateServiceAccount: %s", req.GetId())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.UpdateServiceAccount(ctx, req.Id, req.ServiceAccount)
+	err := s.credentialManager.UpdateServiceAccount(ctx, req.GetId(), req.GetServiceAccount())
 	if err != nil {
-		glog.Errorf("Failed to update service account %s: %v", req.Id, err)
+		glog.Errorf("Failed to update service account %s: %v", req.GetId(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to update service account: %v", err)
 	}
 
@@ -394,18 +415,19 @@ func (s *IamGrpcServer) UpdateServiceAccount(ctx context.Context, req *iam_pb.Up
 }
 
 func (s *IamGrpcServer) DeleteServiceAccount(ctx context.Context, req *iam_pb.DeleteServiceAccountRequest) (*iam_pb.DeleteServiceAccountResponse, error) {
-	glog.V(4).Infof("DeleteServiceAccount: %s", req.Id)
+	glog.V(4).Infof("DeleteServiceAccount: %s", req.GetId())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	err := s.credentialManager.DeleteServiceAccount(ctx, req.Id)
+	err := s.credentialManager.DeleteServiceAccount(ctx, req.GetId())
 	if err != nil {
-		if err == credential.ErrServiceAccountNotFound {
-			return nil, status.Errorf(codes.NotFound, "service account %s not found", req.Id)
+		if errors.Is(err, credential.ErrServiceAccountNotFound) {
+			return nil, status.Errorf(codes.NotFound, "service account %s not found", req.GetId())
 		}
-		glog.Errorf("Failed to delete service account %s: %v", req.Id, err)
+		glog.Errorf("Failed to delete service account %s: %v", req.GetId(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to delete service account: %v", err)
 	}
 
@@ -413,20 +435,21 @@ func (s *IamGrpcServer) DeleteServiceAccount(ctx context.Context, req *iam_pb.De
 }
 
 func (s *IamGrpcServer) GetServiceAccount(ctx context.Context, req *iam_pb.GetServiceAccountRequest) (*iam_pb.GetServiceAccountResponse, error) {
-	glog.V(4).Infof("GetServiceAccount: %s", req.Id)
+	glog.V(4).Infof("GetServiceAccount: %s", req.GetId())
 
 	if s.credentialManager == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	sa, err := s.credentialManager.GetServiceAccount(ctx, req.Id)
+	sa, err := s.credentialManager.GetServiceAccount(ctx, req.GetId())
 	if err != nil {
-		glog.Errorf("Failed to get service account %s: %v", req.Id, err)
+		glog.Errorf("Failed to get service account %s: %v", req.GetId(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to get service account: %v", err)
 	}
 
 	if sa == nil {
-		return nil, status.Errorf(codes.NotFound, "service account %s not found", req.Id)
+		return nil, status.Errorf(codes.NotFound, "service account %s not found", req.GetId())
 	}
 
 	return &iam_pb.GetServiceAccountResponse{
@@ -444,6 +467,7 @@ func (s *IamGrpcServer) ListServiceAccounts(ctx context.Context, req *iam_pb.Lis
 	accounts, err := s.credentialManager.ListServiceAccounts(ctx)
 	if err != nil {
 		glog.Errorf("Failed to list service accounts: %v", err)
+
 		return nil, status.Errorf(codes.Internal, "failed to list service accounts: %v", err)
 	}
 
@@ -456,8 +480,8 @@ func (s *IamGrpcServer) GetServiceAccountByAccessKey(ctx context.Context, req *i
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "request is required")
 	}
-	glog.V(4).Infof("GetServiceAccountByAccessKey: %s", req.AccessKey)
-	if req.AccessKey == "" {
+	glog.V(4).Infof("GetServiceAccountByAccessKey: %s", req.GetAccessKey())
+	if req.GetAccessKey() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "access key is required")
 	}
 
@@ -465,12 +489,13 @@ func (s *IamGrpcServer) GetServiceAccountByAccessKey(ctx context.Context, req *i
 		return nil, status.Errorf(codes.FailedPrecondition, "credential manager is not configured")
 	}
 
-	sa, err := s.credentialManager.GetStore().GetServiceAccountByAccessKey(ctx, req.AccessKey)
+	sa, err := s.credentialManager.GetStore().GetServiceAccountByAccessKey(ctx, req.GetAccessKey())
 	if err != nil {
-		if err == credential.ErrAccessKeyNotFound {
-			return nil, status.Errorf(codes.NotFound, "access key %s not found", req.AccessKey)
+		if errors.Is(err, credential.ErrAccessKeyNotFound) {
+			return nil, status.Errorf(codes.NotFound, "access key %s not found", req.GetAccessKey())
 		}
-		glog.Errorf("Failed to get service account by access key %s: %v", req.AccessKey, err)
+		glog.Errorf("Failed to get service account by access key %s: %v", req.GetAccessKey(), err)
+
 		return nil, status.Errorf(codes.Internal, "failed to get service account: %v", err)
 	}
 

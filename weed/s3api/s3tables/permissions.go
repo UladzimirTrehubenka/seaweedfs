@@ -23,7 +23,7 @@ type PolicyDocument struct {
 func (pd *PolicyDocument) UnmarshalJSON(data []byte) error {
 	type Alias PolicyDocument
 	aux := &struct {
-		Statement interface{} `json:"Statement"`
+		Statement any `json:"Statement"`
 		*Alias
 	}{
 		Alias: (*Alias)(pd),
@@ -35,7 +35,7 @@ func (pd *PolicyDocument) UnmarshalJSON(data []byte) error {
 
 	// Handle Statement as either a single object or array
 	switch s := aux.Statement.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		// Single statement object - unmarshal to one Statement
 		stmtData, err := json.Marshal(s)
 		if err != nil {
@@ -46,7 +46,7 @@ func (pd *PolicyDocument) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("failed to unmarshal single statement: %w", err)
 		}
 		pd.Statement = []Statement{stmt}
-	case []interface{}:
+	case []any:
 		// Array of statements - normal handling
 		stmtData, err := json.Marshal(s)
 		if err != nil {
@@ -66,11 +66,11 @@ func (pd *PolicyDocument) UnmarshalJSON(data []byte) error {
 }
 
 type Statement struct {
-	Effect    string                            `json:"Effect"`    // "Allow" or "Deny"
-	Principal interface{}                       `json:"Principal"` // Can be string, []string, or map
-	Action    interface{}                       `json:"Action"`    // Can be string or []string
-	Resource  interface{}                       `json:"Resource"`  // Can be string or []string
-	Condition map[string]map[string]interface{} `json:"Condition,omitempty"`
+	Effect    string                    `json:"Effect"`    // "Allow" or "Deny"
+	Principal any                       `json:"Principal"` // Can be string, []string, or map
+	Action    any                       `json:"Action"`    // Can be string or []string
+	Resource  any                       `json:"Resource"`  // Can be string or []string
+	Condition map[string]map[string]any `json:"Condition,omitempty"`
 }
 
 type PolicyContext struct {
@@ -166,9 +166,10 @@ func checkPermission(operation, principal, owner, resourcePolicy, resourceARN st
 		}
 
 		// Statement matches - check effect
-		if stmt.Effect == "Allow" {
+		switch stmt.Effect {
+		case "Allow":
 			hasAllow = true
-		} else if stmt.Effect == "Deny" {
+		case "Deny":
 			// Explicit deny always wins
 			return false
 		}
@@ -199,11 +200,12 @@ func hasIdentityPermission(operation string, ctx *PolicyContext) bool {
 			}
 		}
 	}
+
 	return false
 }
 
 // matchesPrincipal checks if the principal matches the statement's principal
-func matchesPrincipal(principalSpec interface{}, principal string) bool {
+func matchesPrincipal(principalSpec any, principal string) bool {
 	if principalSpec == nil {
 		return false
 	}
@@ -216,7 +218,7 @@ func matchesPrincipal(principalSpec interface{}, principal string) bool {
 		}
 		// Support wildcard matching for principals (e.g., "arn:aws:iam::*:user/admin")
 		return policy_engine.MatchesWildcard(p, principal)
-	case []interface{}:
+	case []any:
 		// Array of principals
 		for _, item := range p {
 			if str, ok := item.(string); ok {
@@ -229,7 +231,7 @@ func matchesPrincipal(principalSpec interface{}, principal string) bool {
 				}
 			}
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		// AWS-style principal with service prefix, e.g., {"AWS": "arn:aws:iam::..."}
 		// For S3 Tables, we primarily care about the AWS key
 		if aws, ok := p["AWS"]; ok {
@@ -241,7 +243,7 @@ func matchesPrincipal(principalSpec interface{}, principal string) bool {
 }
 
 // matchesAction checks if the action matches the statement's action
-func matchesAction(actionSpec interface{}, action string) bool {
+func matchesAction(actionSpec any, action string) bool {
 	if actionSpec == nil {
 		return false
 	}
@@ -250,7 +252,7 @@ func matchesAction(actionSpec interface{}, action string) bool {
 	case string:
 		// Direct match or wildcard
 		return matchesActionPattern(a, action)
-	case []interface{}:
+	case []any:
 		// Array of actions
 		for _, item := range a {
 			if str, ok := item.(string); ok {
@@ -282,7 +284,7 @@ func matchesActionPattern(pattern, action string) bool {
 	return policy_engine.MatchesWildcard(pattern, action)
 }
 
-func matchesConditions(conditions map[string]map[string]interface{}, ctx *PolicyContext) bool {
+func matchesConditions(conditions map[string]map[string]any, ctx *PolicyContext) bool {
 	if len(conditions) == 0 {
 		return true
 	}
@@ -294,10 +296,11 @@ func matchesConditions(conditions map[string]map[string]interface{}, ctx *Policy
 			return false
 		}
 	}
+
 	return true
 }
 
-func matchesConditionOperator(operator string, conditionValues map[string]interface{}, ctx *PolicyContext) bool {
+func matchesConditionOperator(operator string, conditionValues map[string]any, ctx *PolicyContext) bool {
 	evaluator, err := policy_engine.GetConditionEvaluator(operator)
 	if err != nil {
 		return false
@@ -309,6 +312,7 @@ func matchesConditionOperator(operator string, conditionValues map[string]interf
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -329,30 +333,31 @@ func getConditionContextValues(key string, ctx *PolicyContext) []string {
 	case "aws:TagKeys":
 		return ctx.TagKeys
 	}
-	if strings.HasPrefix(key, "aws:RequestTag/") {
-		tagKey := strings.TrimPrefix(key, "aws:RequestTag/")
+	if after, ok := strings.CutPrefix(key, "aws:RequestTag/"); ok {
+		tagKey := after
 		if val, ok := ctx.RequestTags[tagKey]; ok {
 			return []string{val}
 		}
 	}
-	if strings.HasPrefix(key, "aws:ResourceTag/") {
-		tagKey := strings.TrimPrefix(key, "aws:ResourceTag/")
+	if after, ok := strings.CutPrefix(key, "aws:ResourceTag/"); ok {
+		tagKey := after
 		if val, ok := ctx.ResourceTags[tagKey]; ok {
 			return []string{val}
 		}
 	}
-	if strings.HasPrefix(key, "s3tables:TableBucketTag/") {
-		tagKey := strings.TrimPrefix(key, "s3tables:TableBucketTag/")
+	if after, ok := strings.CutPrefix(key, "s3tables:TableBucketTag/"); ok {
+		tagKey := after
 		if val, ok := ctx.TableBucketTags[tagKey]; ok {
 			return []string{val}
 		}
 	}
+
 	return nil
 }
 
 // matchesResource checks if the resource ARN matches the statement's resource specification
 // Returns true if resource matches or if Resource is not specified (implicit match)
-func matchesResource(resourceSpec interface{}, resourceARN string) bool {
+func matchesResource(resourceSpec any, resourceARN string) bool {
 	// If no Resource is specified, match all resources (implicit *)
 	if resourceSpec == nil {
 		return true
@@ -362,7 +367,7 @@ func matchesResource(resourceSpec interface{}, resourceARN string) bool {
 	case string:
 		// Direct match or wildcard
 		return matchesResourcePattern(r, resourceARN)
-	case []interface{}:
+	case []any:
 		// Array of resources - match if any matches
 		for _, item := range r {
 			if str, ok := item.(string); ok {

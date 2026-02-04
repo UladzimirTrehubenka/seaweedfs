@@ -15,7 +15,6 @@ import (
 )
 
 func (s *Store) DeleteEcShardNeedle(ecVolume *erasure_coding.EcVolume, n *needle.Needle, cookie types.Cookie) (int64, error) {
-
 	count, err := s.ReadEcShardNeedle(ecVolume.VolumeId, n, nil)
 
 	if err != nil {
@@ -32,11 +31,9 @@ func (s *Store) DeleteEcShardNeedle(ecVolume *erasure_coding.EcVolume, n *needle
 	}
 
 	return int64(count), nil
-
 }
 
 func (s *Store) doDeleteNeedleFromAtLeastOneRemoteEcShards(ecVolume *erasure_coding.EcVolume, needleId types.NeedleId) error {
-
 	_, _, intervals, err := ecVolume.LocateEcShardNeedle(needleId, ecVolume.Version)
 	if err != nil {
 		return err
@@ -59,11 +56,9 @@ func (s *Store) doDeleteNeedleFromAtLeastOneRemoteEcShards(ecVolume *erasure_cod
 	}
 
 	return err
-
 }
 
 func (s *Store) doDeleteNeedleFromRemoteEcShardServers(shardId erasure_coding.ShardId, ecVolume *erasure_coding.EcVolume, needleId types.NeedleId) error {
-
 	ecVolume.ShardLocationsLock.RLock()
 	sourceDataNodes, hasShardLocations := ecVolume.ShardLocations[shardId]
 	ecVolume.ShardLocationsLock.RUnlock()
@@ -80,13 +75,10 @@ func (s *Store) doDeleteNeedleFromRemoteEcShardServers(shardId erasure_coding.Sh
 	}
 
 	return nil
-
 }
 
 func (s *Store) doDeleteNeedleFromRemoteEcShard(sourceDataNode pb.ServerAddress, vid needle.VolumeId, collection string, version needle.Version, needleId types.NeedleId) error {
-
 	return operation.WithVolumeServerClient(false, sourceDataNode, s.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
-
 		// copy data slice
 		_, err := client.VolumeEcBlobDelete(context.Background(), &volume_server_pb.VolumeEcBlobDeleteRequest{
 			VolumeId:   uint32(vid),
@@ -95,9 +87,9 @@ func (s *Store) doDeleteNeedleFromRemoteEcShard(sourceDataNode pb.ServerAddress,
 			Version:    uint32(version),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to delete from ec shard %d on %s: %v", vid, sourceDataNode, err)
+			return fmt.Errorf("failed to delete from ec shard %d on %s: %w", vid, sourceDataNode, err)
 		}
+
 		return nil
 	})
-
 }

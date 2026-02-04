@@ -26,6 +26,7 @@ func LocateData(largeBlockLength, smallBlockLength int64, shardDatSize int64, of
 			// move to next block
 			blockIndex, isLargeBlock = moveToNextBlock(blockIndex, isLargeBlock, nLargeBlockRows)
 			innerBlockOffset = 0
+
 			continue
 		}
 
@@ -39,7 +40,8 @@ func LocateData(largeBlockLength, smallBlockLength int64, shardDatSize int64, of
 		if int64(size) <= blockRemaining {
 			interval.Size = size
 			intervals = append(intervals, interval)
-			return
+
+			return intervals
 		}
 		interval.Size = types.Size(blockRemaining)
 		intervals = append(intervals, interval)
@@ -47,9 +49,9 @@ func LocateData(largeBlockLength, smallBlockLength int64, shardDatSize int64, of
 		size -= interval.Size
 		blockIndex, isLargeBlock = moveToNextBlock(blockIndex, isLargeBlock, nLargeBlockRows)
 		innerBlockOffset = 0
-
 	}
-	return
+
+	return intervals
 }
 
 func moveToNextBlock(blockIndex int, isLargeBlock bool, nLargeBlockRows int64) (int, bool) {
@@ -59,6 +61,7 @@ func moveToNextBlock(blockIndex int, isLargeBlock bool, nLargeBlockRows int64) (
 		nextIsLargeBlock = false
 		nextBlockIndex = 0
 	}
+
 	return nextBlockIndex, nextIsLargeBlock
 }
 
@@ -70,18 +73,21 @@ func locateOffset(largeBlockLength, smallBlockLength int64, shardDatSize int64, 
 	if offset < nLargeBlockRows*largeRowSize {
 		isLargeBlock = true
 		blockIndex, innerBlockOffset = locateOffsetWithinBlocks(largeBlockLength, offset)
+
 		return
 	}
 
 	isLargeBlock = false
 	offset -= nLargeBlockRows * largeRowSize
 	blockIndex, innerBlockOffset = locateOffsetWithinBlocks(smallBlockLength, offset)
+
 	return
 }
 
 func locateOffsetWithinBlocks(blockLength int64, offset int64) (blockIndex int, innerBlockOffset int64) {
 	blockIndex = int(offset / blockLength)
 	innerBlockOffset = offset % blockLength
+
 	return
 }
 
@@ -94,5 +100,6 @@ func (interval Interval) ToShardIdAndOffset(largeBlockSize, smallBlockSize int64
 		ecFileOffset += int64(interval.LargeBlockRowsCount)*largeBlockSize + int64(rowIndex)*smallBlockSize
 	}
 	ecFileIndex := interval.BlockIndex % DataShardsCount
+
 	return ShardId(ecFileIndex), ecFileOffset
 }

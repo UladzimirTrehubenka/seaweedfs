@@ -2,8 +2,9 @@
 package auth
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/seaweedfs/seaweedfs/weed/sftpd/user"
 )
 
 // Provider defines the interface for authentication providers

@@ -1,14 +1,15 @@
 package grpc
 
 import (
-	"fmt"
+	"errors"
 	"sync"
+
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 func init() {
@@ -37,6 +38,7 @@ func (store *IamGrpcStore) Initialize(configuration util.Configuration, prefix s
 			store.mu.Unlock()
 		}
 	}
+
 	return nil
 }
 
@@ -51,7 +53,8 @@ func (store *IamGrpcStore) withIamClient(fn func(client iam_pb.SeaweedIdentityAc
 	store.mu.RLock()
 	if store.filerAddressFunc == nil {
 		store.mu.RUnlock()
-		return fmt.Errorf("iam_grpc: filer not yet available")
+
+		return errors.New("iam_grpc: filer not yet available")
 	}
 
 	filerAddress := store.filerAddressFunc()
@@ -59,11 +62,12 @@ func (store *IamGrpcStore) withIamClient(fn func(client iam_pb.SeaweedIdentityAc
 	store.mu.RUnlock()
 
 	if filerAddress == "" {
-		return fmt.Errorf("iam_grpc: no filer discovered yet")
+		return errors.New("iam_grpc: no filer discovered yet")
 	}
 
 	return pb.WithGrpcClient(false, 0, func(conn *grpc.ClientConn) error {
 		client := iam_pb.NewSeaweedIdentityAccessManagementClient(conn)
+
 		return fn(client)
 	}, filerAddress.ToGrpcAddress(), false, dialOption)
 }

@@ -20,6 +20,7 @@ import (
 // This ensures the underlying io.ReadCloser (like http.Response.Body) is properly closed
 type decryptReaderCloser struct {
 	io.Reader
+
 	underlyingCloser io.Closer
 }
 
@@ -27,6 +28,7 @@ func (d *decryptReaderCloser) Close() error {
 	if d.underlyingCloser != nil {
 		return d.underlyingCloser.Close()
 	}
+
 	return nil
 }
 
@@ -124,6 +126,7 @@ func validateAndParseSSECHeaders(algorithm, key, keyMD5 string) (*SSECustomerKey
 
 	if keyMD5 != expectedMD5 {
 		glog.Errorf("SSE-C MD5 mismatch: provided='%s', expected='%s'", keyMD5, expectedMD5)
+
 		return nil, ErrSSECustomerKeyMD5Mismatch
 	}
 
@@ -141,6 +144,7 @@ func ValidateSSECHeaders(r *http.Request) error {
 	keyMD5 := r.Header.Get(s3_constants.AmzServerSideEncryptionCustomerKeyMD5)
 
 	_, err := validateAndParseSSECHeaders(algorithm, key, keyMD5)
+
 	return err
 }
 
@@ -172,13 +176,13 @@ func CreateSSECEncryptedReader(r io.Reader, customerKey *SSECustomerKey) (io.Rea
 	// Create AES cipher
 	block, err := aes.NewCipher(customerKey.Key)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create AES cipher: %v", err)
+		return nil, nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Generate random IV
 	iv := make([]byte, s3_constants.AESBlockSize)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate IV: %v", err)
+		return nil, nil, fmt.Errorf("failed to generate IV: %w", err)
 	}
 
 	// Create CTR mode cipher
@@ -206,7 +210,7 @@ func CreateSSECDecryptedReader(r io.Reader, customerKey *SSECustomerKey, iv []by
 	// Create AES cipher
 	block, err := aes.NewCipher(customerKey.Key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Create CTR mode cipher using the IV from metadata
@@ -234,7 +238,7 @@ func CreateSSECEncryptedReaderWithOffset(r io.Reader, customerKey *SSECustomerKe
 	// Create AES cipher
 	block, err := aes.NewCipher(customerKey.Key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Create CTR mode cipher with offset
@@ -252,7 +256,7 @@ func CreateSSECDecryptedReaderWithOffset(r io.Reader, customerKey *SSECustomerKe
 	// Create AES cipher
 	block, err := aes.NewCipher(customerKey.Key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Create CTR mode cipher with offset
@@ -299,6 +303,7 @@ func GetSourceSSECInfo(metadata map[string][]byte) (algorithm string, keyMD5 str
 		keyMD5 = string(md5)
 	}
 	isEncrypted = algorithm != "" && keyMD5 != ""
+
 	return
 }
 
@@ -350,16 +355,16 @@ func DetermineSSECCopyStrategy(srcMetadata map[string][]byte, copySourceKey *SSE
 
 // MapSSECErrorToS3Error maps SSE-C custom errors to S3 API error codes
 func MapSSECErrorToS3Error(err error) s3err.ErrorCode {
-	switch err {
-	case ErrInvalidEncryptionAlgorithm:
+	switch {
+	case errors.Is(err, ErrInvalidEncryptionAlgorithm):
 		return s3err.ErrInvalidEncryptionAlgorithm
-	case ErrInvalidEncryptionKey:
+	case errors.Is(err, ErrInvalidEncryptionKey):
 		return s3err.ErrInvalidEncryptionKey
-	case ErrSSECustomerKeyMD5Mismatch:
+	case errors.Is(err, ErrSSECustomerKeyMD5Mismatch):
 		return s3err.ErrSSECustomerKeyMD5Mismatch
-	case ErrSSECustomerKeyMissing:
+	case errors.Is(err, ErrSSECustomerKeyMissing):
 		return s3err.ErrSSECustomerKeyMissing
-	case ErrSSECustomerKeyNotNeeded:
+	case errors.Is(err, ErrSSECustomerKeyNotNeeded):
 		return s3err.ErrSSECustomerKeyNotNeeded
 	default:
 		return s3err.ErrInvalidRequest

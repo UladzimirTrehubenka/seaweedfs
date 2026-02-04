@@ -44,7 +44,6 @@ func (c *commandRemoteMountBuckets) HasTag(CommandTag) bool {
 }
 
 func (c *commandRemoteMountBuckets) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	remoteMountBucketsCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 
 	remote := remoteMountBucketsCommand.String("remote", "", "an already configured storage name")
@@ -58,24 +57,25 @@ func (c *commandRemoteMountBuckets) Do(args []string, commandEnv *CommandEnv, wr
 
 	if *remote == "" {
 		_, err = listExistingRemoteStorageMounts(commandEnv, writer)
+
 		return err
 	}
 
 	// find configuration for remote storage
 	remoteConf, err := filer.ReadRemoteStorageConf(commandEnv.option.GrpcDialOption, commandEnv.option.FilerAddress, *remote)
 	if err != nil {
-		return fmt.Errorf("find configuration for %s: %v", *remote, err)
+		return fmt.Errorf("find configuration for %s: %w", *remote, err)
 	}
 
 	// get storage client
 	remoteStorageClient, err := remote_storage.GetRemoteStorage(remoteConf)
 	if err != nil {
-		return fmt.Errorf("get storage client for %s: %v", *remote, err)
+		return fmt.Errorf("get storage client for %s: %w", *remote, err)
 	}
 
 	buckets, err := remoteStorageClient.ListBuckets()
 	if err != nil {
-		return fmt.Errorf("list buckets on %s: %v", *remote, err)
+		return fmt.Errorf("list buckets on %s: %w", *remote, err)
 	}
 
 	fillerBucketsPath, err := readFilerBucketsPath(commandEnv)
@@ -101,7 +101,6 @@ func (c *commandRemoteMountBuckets) Do(args []string, commandEnv *CommandEnv, wr
 			}
 		}
 		if *apply {
-
 			dir := util.FullPath(fillerBucketsPath).Child(localBucketName)
 			remoteStorageLocation := &remote_pb.RemoteStorageLocation{
 				Name:   *remote,
@@ -111,14 +110,13 @@ func (c *commandRemoteMountBuckets) Do(args []string, commandEnv *CommandEnv, wr
 
 			// sync metadata from remote
 			if err = syncMetadata(commandEnv, writer, string(dir), true, remoteConf, remoteStorageLocation); err != nil {
-				return fmt.Errorf("pull metadata on %+v: %v", remoteStorageLocation, err)
+				return fmt.Errorf("pull metadata on %+v: %w", remoteStorageLocation, err)
 			}
 
 			// store a mount configuration in filer
 			if err = filer.InsertMountMapping(commandEnv, string(dir), remoteStorageLocation); err != nil {
-				return fmt.Errorf("save mount mapping %s to %+v: %v", dir, remoteStorageLocation, err)
+				return fmt.Errorf("save mount mapping %s to %+v: %w", dir, remoteStorageLocation, err)
 			}
-
 		}
 	}
 

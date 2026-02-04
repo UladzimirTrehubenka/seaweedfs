@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -59,9 +60,10 @@ func RunShell(options ShellOptions) {
 				return err
 			}
 
-			for _, clusterNode := range resp.ClusterNodes {
-				filers = append(filers, pb.ServerAddress(clusterNode.Address))
+			for _, clusterNode := range resp.GetClusterNodes() {
+				filers = append(filers, pb.ServerAddress(clusterNode.GetAddress()))
 			}
+
 			return nil
 		})
 		fmt.Printf("master: %s ", *options.Masters)
@@ -75,9 +77,10 @@ func RunShell(options ShellOptions) {
 	for {
 		cmd, err := line.Prompt("> ")
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				fmt.Printf("%v\n", err)
 			}
+
 			return
 		}
 
@@ -99,15 +102,15 @@ func processEachCmd(cmd string, commandEnv *CommandEnv) bool {
 	if len(cmds) == 0 {
 		return false
 	} else {
-
 		args := cmds[1:]
 
 		cmd := cmds[0]
-		if cmd == "help" || cmd == "?" {
+		switch cmd {
+		case "help", "?":
 			printHelp(cmds)
-		} else if cmd == "exit" || cmd == "quit" {
+		case "exit", "quit":
 			return true
-		} else {
+		default:
 			foundCommand := false
 			for _, c := range Commands {
 				if c.Name() == cmd || c.Name() == "fs."+cmd {
@@ -121,8 +124,8 @@ func processEachCmd(cmd string, commandEnv *CommandEnv) bool {
 				fmt.Fprintf(os.Stderr, "unknown command: %v\n", cmd)
 			}
 		}
-
 	}
+
 	return false
 }
 
@@ -134,11 +137,13 @@ func stripQuotes(s string) string {
 	if len(tokens) > 0 {
 		return tokens[0]
 	}
+
 	return ""
 }
 
 func splitCommandLine(line string) []string {
 	tokens, _ := parseShellInput(line, true)
+
 	return tokens
 }
 
@@ -148,27 +153,31 @@ func parseShellInput(line string, split bool) (args []string, unbalanced bool) {
 	inSingleQuotes := false
 	escaped := false
 
-	for i := 0; i < len(line); i++ {
+	for i := range len(line) {
 		c := line[i]
 
 		if escaped {
 			current.WriteByte(c)
 			escaped = false
+
 			continue
 		}
 
 		if c == '\\' && !inSingleQuotes {
 			escaped = true
+
 			continue
 		}
 
 		if c == '"' && !inSingleQuotes {
 			inDoubleQuotes = !inDoubleQuotes
+
 			continue
 		}
 
 		if c == '\'' && !inDoubleQuotes {
 			inSingleQuotes = !inSingleQuotes
+
 			continue
 		}
 
@@ -177,6 +186,7 @@ func parseShellInput(line string, split bool) (args []string, unbalanced bool) {
 				args = append(args, current.String())
 				current.Reset()
 			}
+
 			continue
 		}
 
@@ -227,6 +237,7 @@ func setCompletionHandler() {
 				c = append(c, i.Name())
 			}
 		}
+
 		return
 	})
 }

@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
 func TestConfigValidation(t *testing.T) {
@@ -165,8 +166,8 @@ func TestWebhookMessageSerialization(t *testing.T) {
 		t.Errorf("Expected event type 'create', got %v", wmMsg.Metadata.Get("event_type"))
 	}
 
-	if eventNotification.NewEntry.Name != "test.txt" {
-		t.Errorf("Expected file name 'test.txt', got %v", eventNotification.NewEntry.Name)
+	if eventNotification.GetNewEntry().GetName() != "test.txt" {
+		t.Errorf("Expected file name 'test.txt', got %v", eventNotification.GetNewEntry().GetName())
 	}
 }
 

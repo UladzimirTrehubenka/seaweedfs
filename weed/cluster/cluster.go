@@ -50,6 +50,7 @@ func (g *ClusterNodeGroups) getGroupMembers(filerGroup FilerGroupName, createIfN
 		members = newGroupMembers()
 		g.groupMembers[filerGroup] = members
 	}
+
 	return members
 }
 
@@ -60,6 +61,7 @@ func (g *ClusterNodeGroups) AddClusterNode(filerGroup FilerGroupName, nodeType s
 	if t := m.addMember(dataCenter, rack, address, version); t != nil {
 		return buildClusterNodeUpdateMessage(true, filerGroup, nodeType, address)
 	}
+
 	return nil
 }
 func (g *ClusterNodeGroups) RemoveClusterNode(filerGroup FilerGroupName, nodeType string, address pb.ServerAddress) []*master_pb.KeepConnectedResponse {
@@ -72,6 +74,7 @@ func (g *ClusterNodeGroups) RemoveClusterNode(filerGroup FilerGroupName, nodeTyp
 	if m.removeMember(address) {
 		return buildClusterNodeUpdateMessage(false, filerGroup, nodeType, address)
 	}
+
 	return nil
 }
 func (g *ClusterNodeGroups) ListClusterNode(filerGroup FilerGroupName) (nodes []*ClusterNode) {
@@ -84,6 +87,7 @@ func (g *ClusterNodeGroups) ListClusterNode(filerGroup FilerGroupName) (nodes []
 	for _, node := range m.members {
 		nodes = append(nodes, node)
 	}
+
 	return
 }
 
@@ -104,6 +108,7 @@ func (cluster *Cluster) getGroupMembers(filerGroup FilerGroupName, nodeType stri
 	case S3Type:
 		return cluster.s3Groups.getGroupMembers(filerGroup, createIfNotFound)
 	}
+
 	return nil
 }
 
@@ -119,6 +124,7 @@ func (cluster *Cluster) AddClusterNode(ns, nodeType string, dataCenter DataCente
 	case MasterType:
 		return buildClusterNodeUpdateMessage(true, filerGroup, nodeType, address)
 	}
+
 	return nil
 }
 
@@ -134,6 +140,7 @@ func (cluster *Cluster) RemoveClusterNode(ns string, nodeType string, address pb
 	case MasterType:
 		return buildClusterNodeUpdateMessage(false, filerGroup, nodeType, address)
 	}
+
 	return nil
 }
 
@@ -147,6 +154,7 @@ func (cluster *Cluster) ListClusterNode(filerGroup FilerGroupName, nodeType stri
 		return cluster.s3Groups.ListClusterNode(filerGroup)
 	case MasterType:
 	}
+
 	return
 }
 
@@ -159,5 +167,6 @@ func buildClusterNodeUpdateMessage(isAdd bool, filerGroup FilerGroupName, nodeTy
 			IsAdd:      isAdd,
 		},
 	})
+
 	return
 }

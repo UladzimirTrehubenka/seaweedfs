@@ -105,11 +105,13 @@ func (dr *DefaultRetention) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	type Alias DefaultRetention
 	aux := &struct {
 		*Alias
+
 		Days  *int `xml:"Days,omitempty"`
 		Years *int `xml:"Years,omitempty"`
 	}{Alias: (*Alias)(dr)}
 	if err := d.DecodeElement(aux, &start); err != nil {
 		glog.V(2).Infof("DefaultRetention.UnmarshalXML: decode error: %v", err)
+
 		return err
 	}
 	if aux.Days != nil {
@@ -126,6 +128,7 @@ func (dr *DefaultRetention) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	} else {
 		glog.V(4).Infof("DefaultRetention.UnmarshalXML: Years not present")
 	}
+
 	return nil
 }
 
@@ -143,7 +146,7 @@ func (dr *DefaultRetention) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 // streaming parsing is acceptable for the memory efficiency benefits.
 func parseXML[T any](request *http.Request, result *T) error {
 	if request.Body == nil {
-		return fmt.Errorf("error parsing XML: empty request body")
+		return errors.New("error parsing XML: empty request body")
 	}
 	defer request.Body.Close()
 
@@ -161,6 +164,7 @@ func parseObjectRetention(request *http.Request) (*ObjectRetention, error) {
 	if err := parseXML(request, &retention); err != nil {
 		return nil, err
 	}
+
 	return &retention, nil
 }
 
@@ -170,6 +174,7 @@ func parseObjectLegalHold(request *http.Request) (*ObjectLegalHold, error) {
 	if err := parseXML(request, &legalHold); err != nil {
 		return nil, err
 	}
+
 	return &legalHold, nil
 }
 
@@ -179,6 +184,7 @@ func parseObjectLockConfiguration(request *http.Request) (*ObjectLockConfigurati
 	if err := parseXML(request, &config); err != nil {
 		return nil, err
 	}
+
 	return &config, nil
 }
 
@@ -231,11 +237,11 @@ func (s3a *S3ApiServer) getObjectRetention(bucket, object, versionId string) (*O
 
 	retention := &ObjectRetention{}
 
-	if modeBytes, exists := entry.Extended[s3_constants.ExtObjectLockModeKey]; exists {
+	if modeBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockModeKey]; exists {
 		retention.Mode = string(modeBytes)
 	}
 
-	if dateBytes, exists := entry.Extended[s3_constants.ExtRetentionUntilDateKey]; exists {
+	if dateBytes, exists := entry.GetExtended()[s3_constants.ExtRetentionUntilDateKey]; exists {
 		if timestamp, err := strconv.ParseInt(string(dateBytes), 10, 64); err == nil {
 			t := time.Unix(timestamp, 0)
 			retention.RetainUntilDate = &t
@@ -250,6 +256,7 @@ func (s3a *S3ApiServer) getObjectRetention(bucket, object, versionId string) (*O
 
 	// Set namespace for S3 compatibility
 	retention.XMLNS = s3_constants.S3Namespace
+
 	return retention, nil
 }
 
@@ -280,7 +287,7 @@ func (s3a *S3ApiServer) setObjectRetention(bucket, object, versionId string, ret
 			// Extract version ID from entry metadata
 			entryPath = object // default to regular object path
 			if entry.Extended != nil {
-				if versionIdBytes, exists := entry.Extended[s3_constants.ExtVersionIdKey]; exists {
+				if versionIdBytes, exists := entry.GetExtended()[s3_constants.ExtVersionIdKey]; exists {
 					versionId = string(versionIdBytes)
 					if versionId != "null" {
 						entryPath = object + ".versions/" + s3a.getVersionFileName(versionId)
@@ -298,7 +305,7 @@ func (s3a *S3ApiServer) setObjectRetention(bucket, object, versionId string, ret
 
 	// Check if object is already under retention
 	if entry.Extended != nil {
-		if existingMode, exists := entry.Extended[s3_constants.ExtObjectLockModeKey]; exists {
+		if existingMode, exists := entry.GetExtended()[s3_constants.ExtObjectLockModeKey]; exists {
 			// Check if attempting to change retention mode
 			if retention.Mode != "" && string(existingMode) != retention.Mode {
 				// Attempting to change retention mode
@@ -313,7 +320,7 @@ func (s3a *S3ApiServer) setObjectRetention(bucket, object, versionId string, ret
 				}
 			}
 
-			if existingDateBytes, dateExists := entry.Extended[s3_constants.ExtRetentionUntilDateKey]; dateExists {
+			if existingDateBytes, dateExists := entry.GetExtended()[s3_constants.ExtRetentionUntilDateKey]; dateExists {
 				if timestamp, err := strconv.ParseInt(string(existingDateBytes), 10, 64); err == nil {
 					existingDate := time.Unix(timestamp, 0)
 
@@ -362,9 +369,10 @@ func (s3a *S3ApiServer) setObjectRetention(bucket, object, versionId string, ret
 	// future implementations might consider using atomic update operations or
 	// entry-level locking for complete safety.
 	bucketDir := s3a.option.BucketsPath + "/" + bucket
-	return s3a.mkFile(bucketDir, entryPath, entry.Chunks, func(updatedEntry *filer_pb.Entry) {
-		updatedEntry.Extended = entry.Extended
-		updatedEntry.WormEnforcedAtTsNs = entry.WormEnforcedAtTsNs
+
+	return s3a.mkFile(bucketDir, entryPath, entry.GetChunks(), func(updatedEntry *filer_pb.Entry) {
+		updatedEntry.Extended = entry.GetExtended()
+		updatedEntry.WormEnforcedAtTsNs = entry.GetWormEnforcedAtTsNs()
 	})
 }
 
@@ -385,7 +393,7 @@ func (s3a *S3ApiServer) getObjectLegalHold(bucket, object, versionId string) (*O
 
 	legalHold := &ObjectLegalHold{}
 
-	if statusBytes, exists := entry.Extended[s3_constants.ExtLegalHoldKey]; exists {
+	if statusBytes, exists := entry.GetExtended()[s3_constants.ExtLegalHoldKey]; exists {
 		legalHold.Status = string(statusBytes)
 	} else {
 		return nil, ErrNoLegalHoldConfiguration
@@ -393,6 +401,7 @@ func (s3a *S3ApiServer) getObjectLegalHold(bucket, object, versionId string) (*O
 
 	// Set namespace for S3 compatibility
 	legalHold.XMLNS = s3_constants.S3Namespace
+
 	return legalHold, nil
 }
 
@@ -423,7 +432,7 @@ func (s3a *S3ApiServer) setObjectLegalHold(bucket, object, versionId string, leg
 			// Extract version ID from entry metadata
 			entryPath = object // default to regular object path
 			if entry.Extended != nil {
-				if versionIdBytes, exists := entry.Extended[s3_constants.ExtVersionIdKey]; exists {
+				if versionIdBytes, exists := entry.GetExtended()[s3_constants.ExtVersionIdKey]; exists {
 					versionId = string(versionIdBytes)
 					if versionId != "null" {
 						entryPath = object + ".versions/" + s3a.getVersionFileName(versionId)
@@ -454,8 +463,9 @@ func (s3a *S3ApiServer) setObjectLegalHold(bucket, object, versionId string, leg
 	// future implementations might consider using atomic update operations or
 	// entry-level locking for complete safety.
 	bucketDir := s3a.option.BucketsPath + "/" + bucket
-	return s3a.mkFile(bucketDir, entryPath, entry.Chunks, func(updatedEntry *filer_pb.Entry) {
-		updatedEntry.Extended = entry.Extended
+
+	return s3a.mkFile(bucketDir, entryPath, entry.GetChunks(), func(updatedEntry *filer_pb.Entry) {
+		updatedEntry.Extended = entry.GetExtended()
 	})
 }
 
@@ -471,6 +481,7 @@ func (s3a *S3ApiServer) isObjectRetentionActive(bucket, object, versionId string
 		if errors.Is(err, ErrNoRetentionConfiguration) {
 			return false, nil
 		}
+
 		return false, err
 	}
 
@@ -489,16 +500,16 @@ func (s3a *S3ApiServer) getRetentionFromEntry(entry *filer_pb.Entry) (*ObjectRet
 
 	retention := &ObjectRetention{}
 
-	if modeBytes, exists := entry.Extended[s3_constants.ExtObjectLockModeKey]; exists {
+	if modeBytes, exists := entry.GetExtended()[s3_constants.ExtObjectLockModeKey]; exists {
 		retention.Mode = string(modeBytes)
 	}
 
-	if dateBytes, exists := entry.Extended[s3_constants.ExtRetentionUntilDateKey]; exists {
+	if dateBytes, exists := entry.GetExtended()[s3_constants.ExtRetentionUntilDateKey]; exists {
 		if timestamp, err := strconv.ParseInt(string(dateBytes), 10, 64); err == nil {
 			t := time.Unix(timestamp, 0)
 			retention.RetainUntilDate = &t
 		} else {
-			return nil, false, fmt.Errorf("failed to parse retention timestamp: corrupted timestamp data")
+			return nil, false, errors.New("failed to parse retention timestamp: corrupted timestamp data")
 		}
 	}
 
@@ -508,6 +519,7 @@ func (s3a *S3ApiServer) getRetentionFromEntry(entry *filer_pb.Entry) (*ObjectRet
 
 	// Check if retention is currently active
 	isActive := retention.RetainUntilDate.After(time.Now())
+
 	return retention, isActive, nil
 }
 
@@ -519,13 +531,14 @@ func (s3a *S3ApiServer) getLegalHoldFromEntry(entry *filer_pb.Entry) (*ObjectLeg
 
 	legalHold := &ObjectLegalHold{}
 
-	if statusBytes, exists := entry.Extended[s3_constants.ExtLegalHoldKey]; exists {
+	if statusBytes, exists := entry.GetExtended()[s3_constants.ExtLegalHoldKey]; exists {
 		legalHold.Status = string(statusBytes)
 	} else {
 		return nil, false, nil
 	}
 
 	isActive := legalHold.Status == s3_constants.LegalHoldOn
+
 	return legalHold, isActive, nil
 }
 
@@ -545,6 +558,7 @@ func (s3a *S3ApiServer) checkGovernanceBypassPermission(request *http.Request, b
 	identity, errCode := s3a.iam.authRequest(request, action)
 	if errCode != s3err.ErrNone {
 		glog.V(3).Infof("IAM auth failed for governance bypass: %v", errCode)
+
 		return false
 	}
 
@@ -558,6 +572,7 @@ func (s3a *S3ApiServer) checkGovernanceBypassPermission(request *http.Request, b
 	adminAction := Action(fmt.Sprintf("%s:%s", s3_constants.ACTION_ADMIN, resource))
 	if identity != nil && identity.CanDo(adminAction, bucket, object) {
 		glog.V(2).Infof("Admin user %s granted governance bypass permission for %s/%s", identity.Name, bucket, object)
+
 		return true
 	}
 
@@ -577,10 +592,12 @@ func (s3a *S3ApiServer) evaluateGovernanceBypassRequest(r *http.Request, bucket,
 	hasPermission := s3a.checkGovernanceBypassPermission(r, bucket, object)
 	if !hasPermission {
 		glog.V(2).Infof("Governance bypass denied for %s/%s: user lacks s3:BypassGovernanceRetention permission", bucket, object)
+
 		return false
 	}
 
 	glog.V(2).Infof("Governance bypass granted for %s/%s: header present and user has permission", bucket, object)
+
 	return true
 }
 
@@ -596,6 +613,7 @@ func (s3a *S3ApiServer) enforceObjectLockProtections(request *http.Request, buck
 		}
 		// For other errors, we can't determine lock status, so we should fail.
 		glog.Errorf("enforceObjectLockProtections: failed to check object lock for bucket %s: %v", bucket, err)
+
 		return err
 	}
 	if !objectLockEnabled {
@@ -620,9 +638,11 @@ func (s3a *S3ApiServer) enforceObjectLockProtections(request *http.Request, buck
 		if errors.Is(err, filer_pb.ErrNotFound) || errors.Is(err, ErrObjectNotFound) || errors.Is(err, ErrVersionNotFound) || errors.Is(err, ErrLatestVersionNotFound) {
 			// Object doesn't exist, so it can't be under retention or legal hold - this is normal
 			glog.V(4).Infof("Object %s/%s (versionId: %s) not found during object lock check (expected during delete operations)", bucket, object, versionId)
+
 			return nil
 		}
 		glog.Warningf("Error retrieving object %s/%s (versionId: %s) for lock check: %v", bucket, object, versionId, err)
+
 		return err
 	}
 
@@ -674,11 +694,12 @@ func (s3a *S3ApiServer) isObjectLockAvailable(bucket string) error {
 		if errors.Is(err, filer_pb.ErrNotFound) {
 			return ErrBucketNotFound
 		}
+
 		return fmt.Errorf("error checking versioning status: %w", err)
 	}
 
 	if !versioningEnabled {
-		return fmt.Errorf("object lock requires versioning to be enabled")
+		return errors.New("object lock requires versioning to be enabled")
 	}
 
 	return nil
@@ -695,7 +716,9 @@ func (s3a *S3ApiServer) handleObjectLockAvailabilityCheck(w http.ResponseWriter,
 			// This matches AWS S3 behavior and s3-tests expectations (400 Bad Request)
 			s3err.WriteErrorResponse(w, request, s3err.ErrInvalidRequest)
 		}
+
 		return false
 	}
+
 	return true
 }

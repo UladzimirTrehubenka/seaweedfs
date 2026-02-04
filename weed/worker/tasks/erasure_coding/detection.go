@@ -53,12 +53,14 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 		// Skip if already EC volume
 		if metric.IsECVolume {
 			skippedAlreadyEC++
+
 			continue
 		}
 
 		// Check minimum size requirement
 		if metric.Size < minSizeBytes {
 			skippedTooSmall++
+
 			continue
 		}
 
@@ -66,12 +68,13 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 		if ecConfig.CollectionFilter != "" {
 			// Parse comma-separated collections
 			allowedCollections := make(map[string]bool)
-			for _, collection := range strings.Split(ecConfig.CollectionFilter, ",") {
+			for collection := range strings.SplitSeq(ecConfig.CollectionFilter, ",") {
 				allowedCollections[strings.TrimSpace(collection)] = true
 			}
 			// Skip if volume's collection is not in the allowed list
 			if !allowedCollections[metric.Collection] {
 				skippedCollectionFilter++
+
 				continue
 			}
 		}
@@ -101,6 +104,7 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 				// Check if ANY task already exists in ActiveTopology for this volume
 				if clusterInfo.ActiveTopology.HasAnyTask(metric.VolumeID) {
 					glog.V(2).Infof("EC Detection: Skipping volume %d, task already exists in ActiveTopology", metric.VolumeID)
+
 					continue
 				}
 
@@ -108,6 +112,7 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 				multiPlan, err := planECDestinations(clusterInfo.ActiveTopology, metric, ecConfig)
 				if err != nil {
 					glog.Warningf("Failed to plan EC destinations for volume %d: %v", metric.VolumeID, err)
+
 					continue // Skip this volume if destination planning fails
 				}
 				glog.Infof("EC Detection: Successfully planned %d destinations for volume %d", len(multiPlan.Plans), metric.VolumeID)
@@ -131,6 +136,7 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 				replicaLocations := findVolumeReplicaLocations(clusterInfo.ActiveTopology, metric.VolumeID, metric.Collection)
 				if len(replicaLocations) == 0 {
 					glog.Warningf("No replica locations found for volume %d, skipping EC", metric.VolumeID)
+
 					continue
 				}
 				glog.Infof("EC Detection: Found %d replica locations for volume %d", len(replicaLocations), metric.VolumeID)
@@ -199,6 +205,7 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 				})
 				if err != nil {
 					glog.Warningf("Failed to add pending EC shard task to ActiveTopology for volume %d: %v", metric.VolumeID, err)
+
 					continue // Skip this volume if topology task addition fails
 				}
 
@@ -209,6 +216,7 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 				sourcesProto, err := convertTaskSourcesToProtobuf(sources, metric.VolumeID, clusterInfo.ActiveTopology)
 				if err != nil {
 					glog.Warningf("Failed to convert sources for EC task on volume %d: %v, skipping", metric.VolumeID, err)
+
 					continue
 				}
 
@@ -234,6 +242,7 @@ func Detection(metrics []*types.VolumeHealthMetrics, clusterInfo *types.ClusterI
 					metric.VolumeID, len(multiPlan.Plans), multiPlan.SuccessfulRack, multiPlan.SuccessfulDCs)
 			} else {
 				glog.Warningf("No ActiveTopology available for destination planning in EC detection")
+
 				continue // Skip this volume if no topology available
 			}
 
@@ -286,12 +295,13 @@ func planECDestinations(activeTopology *topology.ActiveTopology, metric *types.V
 	// Extract rack and DC from topology info
 	topologyInfo := activeTopology.GetTopologyInfo()
 	if topologyInfo != nil {
-		for _, dc := range topologyInfo.DataCenterInfos {
-			for _, rack := range dc.RackInfos {
-				for _, dataNodeInfo := range rack.DataNodeInfos {
-					if dataNodeInfo.Id == metric.Server {
-						sourceDC = dc.Id
-						sourceRack = rack.Id
+		for _, dc := range topologyInfo.GetDataCenterInfos() {
+			for _, rack := range dc.GetRackInfos() {
+				for _, dataNodeInfo := range rack.GetDataNodeInfos() {
+					if dataNodeInfo.GetId() == metric.Server {
+						sourceDC = dc.GetId()
+						sourceRack = rack.GetId()
+
 						break
 					}
 				}
@@ -328,7 +338,7 @@ func planECDestinations(activeTopology *topology.ActiveTopology, metric *types.V
 		// Get the target server address
 		targetAddress, err := util.ResolveServerAddress(disk.NodeID, activeTopology)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve address for target server %s: %v", disk.NodeID, err)
+			return nil, fmt.Errorf("failed to resolve address for target server %s: %w", disk.NodeID, err)
 		}
 
 		plan := &topology.DestinationPlan{
@@ -386,7 +396,7 @@ func createECTargets(multiPlan *topology.MultiDestinationPlan) []*worker_pb.Task
 
 	// Distribute shards in round-robin fashion to spread both data and parity shards
 	// This ensures each target gets a mix of data shards (0-9) and parity shards (10-13)
-	for shardId := uint32(0); shardId < uint32(erasure_coding.TotalShardsCount); shardId++ {
+	for shardId := range uint32(erasure_coding.TotalShardsCount) {
 		targetIndex := int(shardId) % numTargets
 		targetShards[targetIndex] = append(targetShards[targetIndex], shardId)
 	}
@@ -420,6 +430,7 @@ func createECTargets(multiPlan *topology.MultiDestinationPlan) []*worker_pb.Task
 	glog.V(1).Infof("EC planning: distributed %d shards across %d targets using round-robin (data shards 0-%d, parity shards %d-%d)",
 		erasure_coding.TotalShardsCount, numTargets,
 		erasure_coding.DataShardsCount-1, erasure_coding.DataShardsCount, erasure_coding.TotalShardsCount-1)
+
 	return targets
 }
 
@@ -430,7 +441,7 @@ func convertTaskSourcesToProtobuf(sources []topology.TaskSourceSpec, volumeID ui
 	for _, source := range sources {
 		serverAddress, err := util.ResolveServerAddress(source.ServerID, activeTopology)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve address for source server %s: %v", source.ServerID, err)
+			return nil, fmt.Errorf("failed to resolve address for source server %s: %w", source.ServerID, err)
 		}
 
 		pbSource := &worker_pb.TaskSource{
@@ -497,6 +508,7 @@ func selectBestECDestinations(disks []*topology.DiskInfo, sourceRack, sourceDC s
 	result, err := placement.SelectDestinations(candidates, config)
 	if err != nil {
 		glog.V(2).Infof("EC placement failed: %v", err)
+
 		return nil
 	}
 
@@ -513,17 +525,14 @@ func diskInfosToCandidates(disks []*topology.DiskInfo) []*placement.DiskCandidat
 		}
 
 		// Calculate free slots (using default max if not set)
-		freeSlots := int(disk.DiskInfo.MaxVolumeCount - disk.DiskInfo.VolumeCount)
-		if freeSlots < 0 {
-			freeSlots = 0
-		}
+		freeSlots := max(int(disk.DiskInfo.GetMaxVolumeCount()-disk.DiskInfo.GetVolumeCount()), 0)
 
 		// Calculate EC shard count for this specific disk
 		// EcShardInfos contains all shards, so we need to filter by DiskId and sum actual shard counts
 		ecShardCount := 0
 		if disk.DiskInfo.EcShardInfos != nil {
-			for _, shardInfo := range disk.DiskInfo.EcShardInfos {
-				if shardInfo.DiskId == disk.DiskID {
+			for _, shardInfo := range disk.DiskInfo.GetEcShardInfos() {
+				if shardInfo.GetDiskId() == disk.DiskID {
 					ecShardCount += erasure_coding.GetShardCount(shardInfo)
 				}
 			}
@@ -534,13 +543,14 @@ func diskInfosToCandidates(disks []*topology.DiskInfo) []*placement.DiskCandidat
 			DiskID:         disk.DiskID,
 			DataCenter:     disk.DataCenter,
 			Rack:           disk.Rack,
-			VolumeCount:    disk.DiskInfo.VolumeCount,
-			MaxVolumeCount: disk.DiskInfo.MaxVolumeCount,
+			VolumeCount:    disk.DiskInfo.GetVolumeCount(),
+			MaxVolumeCount: disk.DiskInfo.GetMaxVolumeCount(),
 			ShardCount:     ecShardCount,
 			FreeSlots:      freeSlots,
 			LoadCount:      disk.LoadCount,
 		})
 	}
+
 	return candidates
 }
 
@@ -560,6 +570,7 @@ func candidatesToDiskInfos(candidates []*placement.DiskCandidate, originalDisks 
 			result = append(result, disk)
 		}
 	}
+
 	return result
 }
 
@@ -573,8 +584,8 @@ func calculateECScore(disk *topology.DiskInfo, sourceRack, sourceDC string) floa
 	score := 0.0
 
 	// Prefer disks with available capacity (primary factor)
-	if disk.DiskInfo.MaxVolumeCount > 0 {
-		utilization := float64(disk.DiskInfo.VolumeCount) / float64(disk.DiskInfo.MaxVolumeCount)
+	if disk.DiskInfo.GetMaxVolumeCount() > 0 {
+		utilization := float64(disk.DiskInfo.GetVolumeCount()) / float64(disk.DiskInfo.GetMaxVolumeCount())
 		score += (1.0 - utilization) * 60.0 // Up to 60 points for available capacity
 	}
 
@@ -606,6 +617,7 @@ func findVolumeReplicaLocations(activeTopology *topology.ActiveTopology, volumeI
 	if activeTopology == nil {
 		return nil
 	}
+
 	return activeTopology.GetVolumeLocations(volumeID, collection)
 }
 
@@ -615,6 +627,7 @@ func findExistingECShards(activeTopology *topology.ActiveTopology, volumeID uint
 	if activeTopology == nil {
 		return nil
 	}
+
 	return activeTopology.GetECShardLocations(volumeID, collection)
 }
 
@@ -632,13 +645,14 @@ func findVolumeReplicas(activeTopology *topology.ActiveTopology, volumeID uint32
 	var replicaServers []string
 
 	// Iterate through all nodes to find volume replicas
-	for _, dc := range topologyInfo.DataCenterInfos {
-		for _, rack := range dc.RackInfos {
-			for _, nodeInfo := range rack.DataNodeInfos {
-				for _, diskInfo := range nodeInfo.DiskInfos {
-					for _, volumeInfo := range diskInfo.VolumeInfos {
-						if volumeInfo.Id == volumeID && volumeInfo.Collection == collection {
-							replicaServers = append(replicaServers, nodeInfo.Id)
+	for _, dc := range topologyInfo.GetDataCenterInfos() {
+		for _, rack := range dc.GetRackInfos() {
+			for _, nodeInfo := range rack.GetDataNodeInfos() {
+				for _, diskInfo := range nodeInfo.GetDiskInfos() {
+					for _, volumeInfo := range diskInfo.GetVolumeInfos() {
+						if volumeInfo.GetId() == volumeID && volumeInfo.GetCollection() == collection {
+							replicaServers = append(replicaServers, nodeInfo.GetId())
+
 							break // Found volume on this node, move to next node
 						}
 					}

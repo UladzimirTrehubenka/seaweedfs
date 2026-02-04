@@ -3,6 +3,7 @@ package distribution
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // ShardMove represents a planned shard move
@@ -40,15 +41,18 @@ func (p *RebalancePlan) String() string {
 
 // DetailedString returns a detailed multi-line summary
 func (p *RebalancePlan) DetailedString() string {
-	s := fmt.Sprintf("Rebalance Plan:\n")
+	s := "Rebalance Plan:\n"
 	s += fmt.Sprintf("  Total Moves: %d\n", p.TotalMoves)
 	s += fmt.Sprintf("  Across DC: %d\n", p.MovesAcrossDC)
 	s += fmt.Sprintf("  Across Rack: %d\n", p.MovesAcrossRack)
 	s += fmt.Sprintf("  Within Rack: %d\n", p.MovesWithinRack)
-	s += fmt.Sprintf("\nMoves:\n")
+	s += "\nMoves:\n"
+	var sSb49 strings.Builder
 	for i, move := range p.Moves {
-		s += fmt.Sprintf("  %d. %s\n", i+1, move.String())
+		sSb49.WriteString(fmt.Sprintf("  %d. %s\n", i+1, move.String()))
 	}
+	s += sSb49.String()
+
 	return s
 }
 
@@ -129,6 +133,7 @@ func (r *Rebalancer) planDCMoves(analysis *TopologyAnalysis, dist *ECDistributio
 			destNode := r.pickBestDestination(analysis, destDC, "", dist)
 			if destNode == nil {
 				underIdx++
+
 				continue
 			}
 
@@ -184,6 +189,7 @@ func (r *Rebalancer) planRackMoves(analysis *TopologyAnalysis, dist *ECDistribut
 				destNode := r.pickBestDestination(analysis, dc, destRack, dist)
 				if destNode == nil {
 					underIdx++
+
 					continue
 				}
 
@@ -258,6 +264,7 @@ func (r *Rebalancer) planNodeMoves(analysis *TopologyAnalysis, dist *ECDistribut
 					if r.ecConfig.IsParityShard(s) {
 						shardID = s
 						shardIdx = i
+
 						break
 					}
 				}
@@ -360,6 +367,7 @@ func (r *Rebalancer) pickBestDestination(analysis *TopologyAnalysis, targetDC, t
 		if aShards != bShards {
 			return aShards - bShards
 		}
+
 		return b.FreeSlots - a.FreeSlots
 	})
 

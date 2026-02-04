@@ -2,6 +2,7 @@ package dash
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,14 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/admin/maintenance"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
 	"github.com/seaweedfs/seaweedfs/weed/worker/tasks/balance"
 	"github.com/seaweedfs/seaweedfs/weed/worker/tasks/erasure_coding"
 	"github.com/seaweedfs/seaweedfs/weed/worker/tasks/vacuum"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -99,7 +101,7 @@ func NewConfigPersistence(dataDir string) *ConfigPersistence {
 // SaveMaintenanceConfig saves maintenance configuration to protobuf file and JSON reference
 func (cp *ConfigPersistence) SaveMaintenanceConfig(config *MaintenanceConfig) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot save configuration")
+		return errors.New("no data directory specified, cannot save configuration")
 	}
 
 	confDir := filepath.Join(cp.dataDir, ConfigSubdir)
@@ -151,6 +153,7 @@ func (cp *ConfigPersistence) LoadMaintenanceConfig() (*MaintenanceConfig, error)
 		if err := proto.Unmarshal(configData, &config); err == nil {
 			// Always populate policy from separate task configuration files
 			config.Policy = buildPolicyFromTaskConfigs()
+
 			return &config, nil
 		}
 	}
@@ -167,13 +170,14 @@ func (cp *ConfigPersistence) GetConfigPath(filename string) string {
 
 	// All configs go in conf subdirectory
 	confDir := filepath.Join(cp.dataDir, ConfigSubdir)
+
 	return filepath.Join(confDir, filename)
 }
 
 // ListConfigFiles returns all configuration files in the conf subdirectory
 func (cp *ConfigPersistence) ListConfigFiles() ([]string, error) {
 	if cp.dataDir == "" {
-		return nil, fmt.Errorf("no data directory specified")
+		return nil, errors.New("no data directory specified")
 	}
 
 	confDir := filepath.Join(cp.dataDir, ConfigSubdir)
@@ -183,6 +187,7 @@ func (cp *ConfigPersistence) ListConfigFiles() ([]string, error) {
 		if os.IsNotExist(err) {
 			return []string{}, nil
 		}
+
 		return nil, fmt.Errorf("failed to read config directory: %w", err)
 	}
 
@@ -202,7 +207,7 @@ func (cp *ConfigPersistence) ListConfigFiles() ([]string, error) {
 // BackupConfig creates a backup of a configuration file
 func (cp *ConfigPersistence) BackupConfig(filename string) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified")
+		return errors.New("no data directory specified")
 	}
 
 	configPath := cp.GetConfigPath(filename)
@@ -229,13 +234,14 @@ func (cp *ConfigPersistence) BackupConfig(filename string) error {
 	}
 
 	glog.V(1).Infof("Created backup of %s as %s", filename, backupName)
+
 	return nil
 }
 
 // RestoreConfig restores a configuration file from a backup
 func (cp *ConfigPersistence) RestoreConfig(filename, backupName string) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified")
+		return errors.New("no data directory specified")
 	}
 
 	// Determine backup path (conf subdirectory)
@@ -259,6 +265,7 @@ func (cp *ConfigPersistence) RestoreConfig(filename, backupName string) error {
 	}
 
 	glog.V(1).Infof("Restored %s from backup %s", filename, backupName)
+
 	return nil
 }
 
@@ -341,11 +348,12 @@ func (cp *ConfigPersistence) LoadVacuumTaskPolicy() (*worker_pb.TaskPolicy, erro
 		// Validate that it's actually a TaskPolicy with vacuum config
 		if policy.GetVacuumConfig() != nil {
 			glog.V(1).Infof("Loaded vacuum task policy from %s", configPath)
+
 			return &policy, nil
 		}
 	}
 
-	return nil, fmt.Errorf("failed to unmarshal vacuum task configuration")
+	return nil, errors.New("failed to unmarshal vacuum task configuration")
 }
 
 // SaveErasureCodingTaskConfig saves EC task configuration to protobuf file
@@ -430,11 +438,12 @@ func (cp *ConfigPersistence) LoadErasureCodingTaskPolicy() (*worker_pb.TaskPolic
 		// Validate that it's actually a TaskPolicy with EC config
 		if policy.GetErasureCodingConfig() != nil {
 			glog.V(1).Infof("Loaded EC task policy from %s", configPath)
+
 			return &policy, nil
 		}
 	}
 
-	return nil, fmt.Errorf("failed to unmarshal EC task configuration")
+	return nil, errors.New("failed to unmarshal EC task configuration")
 }
 
 // SaveBalanceTaskConfig saves balance task configuration to protobuf file
@@ -513,11 +522,12 @@ func (cp *ConfigPersistence) LoadBalanceTaskPolicy() (*worker_pb.TaskPolicy, err
 		// Validate that it's actually a TaskPolicy with balance config
 		if policy.GetBalanceConfig() != nil {
 			glog.V(1).Infof("Loaded balance task policy from %s", configPath)
+
 			return &policy, nil
 		}
 	}
 
-	return nil, fmt.Errorf("failed to unmarshal balance task configuration")
+	return nil, errors.New("failed to unmarshal balance task configuration")
 }
 
 // SaveReplicationTaskConfig saves replication task configuration to protobuf file
@@ -536,15 +546,17 @@ func (cp *ConfigPersistence) LoadReplicationTaskConfig() (*ReplicationTaskConfig
 				TargetReplicaCount: 1,
 			}, nil
 		}
+
 		return nil, err
 	}
+
 	return &config, nil
 }
 
 // saveTaskConfig is a generic helper for saving task configurations with both protobuf and JSON reference
 func (cp *ConfigPersistence) saveTaskConfig(filename string, config proto.Message) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot save task configuration")
+		return errors.New("no data directory specified, cannot save task configuration")
 	}
 
 	// Create conf subdirectory path
@@ -588,6 +600,7 @@ func (cp *ConfigPersistence) saveTaskConfig(filename string, config proto.Messag
 	}
 
 	glog.V(1).Infof("Saved task configuration to %s (with JSON reference)", configPath)
+
 	return nil
 }
 
@@ -617,6 +630,7 @@ func (cp *ConfigPersistence) loadTaskConfig(filename string, config proto.Messag
 	}
 
 	glog.V(1).Infof("Loaded task configuration from %s", configPath)
+
 	return nil
 }
 
@@ -632,6 +646,7 @@ func (cp *ConfigPersistence) SaveTaskPolicy(taskType string, policy *worker_pb.T
 	case "replication":
 		return cp.SaveReplicationTaskPolicy(policy)
 	}
+
 	return fmt.Errorf("unknown task type: %s", taskType)
 }
 
@@ -651,8 +666,8 @@ func (cp *ConfigPersistence) IsConfigured() bool {
 }
 
 // GetConfigInfo returns information about the configuration storage
-func (cp *ConfigPersistence) GetConfigInfo() map[string]interface{} {
-	info := map[string]interface{}{
+func (cp *ConfigPersistence) GetConfigInfo() map[string]any {
+	info := map[string]any{
 		"data_dir_configured": cp.IsConfigured(),
 		"data_dir":            cp.dataDir,
 		"config_subdir":       ConfigSubdir,
@@ -744,14 +759,15 @@ func buildPolicyFromTaskConfigs() *worker_pb.MaintenancePolicy {
 		}
 	}
 
-	glog.V(1).Infof("Built maintenance policy from separate task configs - %d task policies loaded", len(policy.TaskPolicies))
+	glog.V(1).Infof("Built maintenance policy from separate task configs - %d task policies loaded", len(policy.GetTaskPolicies()))
+
 	return policy
 }
 
 // SaveTaskDetail saves detailed task information to disk
 func (cp *ConfigPersistence) SaveTaskDetail(taskID string, detail *maintenance.TaskDetailData) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot save task detail")
+		return errors.New("no data directory specified, cannot save task detail")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -765,7 +781,7 @@ func (cp *ConfigPersistence) SaveTaskDetail(taskID string, detail *maintenance.T
 	}
 
 	// Save task detail as JSON for easy reading and debugging
-	taskDetailPath := filepath.Join(taskDetailDir, fmt.Sprintf("%s.json", taskID))
+	taskDetailPath := filepath.Join(taskDetailDir, taskID+".json")
 	jsonData, err := json.MarshalIndent(detail, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal task detail to JSON: %w", err)
@@ -776,13 +792,14 @@ func (cp *ConfigPersistence) SaveTaskDetail(taskID string, detail *maintenance.T
 	}
 
 	glog.V(2).Infof("Saved task detail for task %s to %s", taskID, taskDetailPath)
+
 	return nil
 }
 
 // LoadTaskDetail loads detailed task information from disk
 func (cp *ConfigPersistence) LoadTaskDetail(taskID string) (*maintenance.TaskDetailData, error) {
 	if cp.dataDir == "" {
-		return nil, fmt.Errorf("no data directory specified, cannot load task detail")
+		return nil, errors.New("no data directory specified, cannot load task detail")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -790,7 +807,7 @@ func (cp *ConfigPersistence) LoadTaskDetail(taskID string) (*maintenance.TaskDet
 		return nil, fmt.Errorf("invalid task ID: %q contains illegal path characters", taskID)
 	}
 
-	taskDetailPath := filepath.Join(cp.dataDir, TaskDetailsSubdir, fmt.Sprintf("%s.json", taskID))
+	taskDetailPath := filepath.Join(cp.dataDir, TaskDetailsSubdir, taskID+".json")
 	if _, err := os.Stat(taskDetailPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("task detail file not found: %s", taskID)
 	}
@@ -806,13 +823,14 @@ func (cp *ConfigPersistence) LoadTaskDetail(taskID string) (*maintenance.TaskDet
 	}
 
 	glog.V(2).Infof("Loaded task detail for task %s from %s", taskID, taskDetailPath)
+
 	return &detail, nil
 }
 
 // SaveTaskExecutionLogs saves execution logs for a task
 func (cp *ConfigPersistence) SaveTaskExecutionLogs(taskID string, logs []*maintenance.TaskExecutionLog) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot save task logs")
+		return errors.New("no data directory specified, cannot save task logs")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -826,7 +844,7 @@ func (cp *ConfigPersistence) SaveTaskExecutionLogs(taskID string, logs []*mainte
 	}
 
 	// Save logs as JSON for easy reading
-	taskLogsPath := filepath.Join(taskLogsDir, fmt.Sprintf("%s.json", taskID))
+	taskLogsPath := filepath.Join(taskLogsDir, taskID+".json")
 	logsData := struct {
 		TaskID string                          `json:"task_id"`
 		Logs   []*maintenance.TaskExecutionLog `json:"logs"`
@@ -844,13 +862,14 @@ func (cp *ConfigPersistence) SaveTaskExecutionLogs(taskID string, logs []*mainte
 	}
 
 	glog.V(2).Infof("Saved %d execution logs for task %s to %s", len(logs), taskID, taskLogsPath)
+
 	return nil
 }
 
 // LoadTaskExecutionLogs loads execution logs for a task
 func (cp *ConfigPersistence) LoadTaskExecutionLogs(taskID string) ([]*maintenance.TaskExecutionLog, error) {
 	if cp.dataDir == "" {
-		return nil, fmt.Errorf("no data directory specified, cannot load task logs")
+		return nil, errors.New("no data directory specified, cannot load task logs")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -858,7 +877,7 @@ func (cp *ConfigPersistence) LoadTaskExecutionLogs(taskID string) ([]*maintenanc
 		return nil, fmt.Errorf("invalid task ID: %q contains illegal path characters", taskID)
 	}
 
-	taskLogsPath := filepath.Join(cp.dataDir, TaskLogsSubdir, fmt.Sprintf("%s.json", taskID))
+	taskLogsPath := filepath.Join(cp.dataDir, TaskLogsSubdir, taskID+".json")
 	if _, err := os.Stat(taskLogsPath); os.IsNotExist(err) {
 		// Return empty slice if logs don't exist yet
 		return []*maintenance.TaskExecutionLog{}, nil
@@ -878,13 +897,14 @@ func (cp *ConfigPersistence) LoadTaskExecutionLogs(taskID string) ([]*maintenanc
 	}
 
 	glog.V(2).Infof("Loaded %d execution logs for task %s from %s", len(logsData.Logs), taskID, taskLogsPath)
+
 	return logsData.Logs, nil
 }
 
 // DeleteTaskDetail removes task detail and logs from disk
 func (cp *ConfigPersistence) DeleteTaskDetail(taskID string) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot delete task detail")
+		return errors.New("no data directory specified, cannot delete task detail")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -893,25 +913,26 @@ func (cp *ConfigPersistence) DeleteTaskDetail(taskID string) error {
 	}
 
 	// Delete task detail file
-	taskDetailPath := filepath.Join(cp.dataDir, TaskDetailsSubdir, fmt.Sprintf("%s.json", taskID))
+	taskDetailPath := filepath.Join(cp.dataDir, TaskDetailsSubdir, taskID+".json")
 	if err := os.Remove(taskDetailPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete task detail file: %w", err)
 	}
 
 	// Delete task logs file
-	taskLogsPath := filepath.Join(cp.dataDir, TaskLogsSubdir, fmt.Sprintf("%s.json", taskID))
+	taskLogsPath := filepath.Join(cp.dataDir, TaskLogsSubdir, taskID+".json")
 	if err := os.Remove(taskLogsPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete task logs file: %w", err)
 	}
 
 	glog.V(2).Infof("Deleted task detail and logs for task %s", taskID)
+
 	return nil
 }
 
 // ListTaskDetails returns a list of all task IDs that have stored details
 func (cp *ConfigPersistence) ListTaskDetails() ([]string, error) {
 	if cp.dataDir == "" {
-		return nil, fmt.Errorf("no data directory specified, cannot list task details")
+		return nil, errors.New("no data directory specified, cannot list task details")
 	}
 
 	taskDetailDir := filepath.Join(cp.dataDir, TaskDetailsSubdir)
@@ -938,7 +959,7 @@ func (cp *ConfigPersistence) ListTaskDetails() ([]string, error) {
 // CleanupCompletedTasks removes old completed tasks beyond the retention limit
 func (cp *ConfigPersistence) CleanupCompletedTasks() error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot cleanup completed tasks")
+		return errors.New("no data directory specified, cannot cleanup completed tasks")
 	}
 
 	tasksDir := filepath.Join(cp.dataDir, TasksSubdir)
@@ -984,7 +1005,7 @@ func (cp *ConfigPersistence) CleanupCompletedTasks() error {
 // SaveTaskState saves a task state to protobuf file
 func (cp *ConfigPersistence) SaveTaskState(task *maintenance.MaintenanceTask) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot save task state")
+		return errors.New("no data directory specified, cannot save task state")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -997,7 +1018,7 @@ func (cp *ConfigPersistence) SaveTaskState(task *maintenance.MaintenanceTask) er
 		return fmt.Errorf("failed to create tasks directory: %w", err)
 	}
 
-	taskFilePath := filepath.Join(tasksDir, fmt.Sprintf("%s.pb", task.ID))
+	taskFilePath := filepath.Join(tasksDir, task.ID+".pb")
 
 	// Convert task to protobuf
 	pbTask := cp.maintenanceTaskToProtobuf(task)
@@ -1017,13 +1038,14 @@ func (cp *ConfigPersistence) SaveTaskState(task *maintenance.MaintenanceTask) er
 	}
 
 	glog.V(2).Infof("Saved task state for task %s to %s", task.ID, taskFilePath)
+
 	return nil
 }
 
 // LoadTaskState loads a task state from protobuf file
 func (cp *ConfigPersistence) LoadTaskState(taskID string) (*maintenance.MaintenanceTask, error) {
 	if cp.dataDir == "" {
-		return nil, fmt.Errorf("no data directory specified, cannot load task state")
+		return nil, errors.New("no data directory specified, cannot load task state")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -1031,7 +1053,7 @@ func (cp *ConfigPersistence) LoadTaskState(taskID string) (*maintenance.Maintena
 		return nil, fmt.Errorf("invalid task ID: %q contains illegal path characters", taskID)
 	}
 
-	taskFilePath := filepath.Join(cp.dataDir, TasksSubdir, fmt.Sprintf("%s.pb", taskID))
+	taskFilePath := filepath.Join(cp.dataDir, TasksSubdir, taskID+".pb")
 	if _, err := os.Stat(taskFilePath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("task state file not found: %s", taskID)
 	}
@@ -1047,9 +1069,10 @@ func (cp *ConfigPersistence) LoadTaskState(taskID string) (*maintenance.Maintena
 	}
 
 	// Convert protobuf to maintenance task
-	task := cp.protobufToMaintenanceTask(taskStateFile.Task)
+	task := cp.protobufToMaintenanceTask(taskStateFile.GetTask())
 
 	glog.V(2).Infof("Loaded task state for task %s from %s", taskID, taskFilePath)
+
 	return task, nil
 }
 
@@ -1076,6 +1099,7 @@ func (cp *ConfigPersistence) LoadAllTaskStates() ([]*maintenance.MaintenanceTask
 			task, err := cp.LoadTaskState(taskID)
 			if err != nil {
 				glog.Warningf("Failed to load task state for %s: %v", taskID, err)
+
 				continue
 			}
 			tasks = append(tasks, task)
@@ -1083,13 +1107,14 @@ func (cp *ConfigPersistence) LoadAllTaskStates() ([]*maintenance.MaintenanceTask
 	}
 
 	glog.V(1).Infof("Loaded %d task states from disk", len(tasks))
+
 	return tasks, nil
 }
 
 // DeleteTaskState removes a task state file from disk
 func (cp *ConfigPersistence) DeleteTaskState(taskID string) error {
 	if cp.dataDir == "" {
-		return fmt.Errorf("no data directory specified, cannot delete task state")
+		return errors.New("no data directory specified, cannot delete task state")
 	}
 
 	// Validate task ID to prevent path traversal
@@ -1097,12 +1122,13 @@ func (cp *ConfigPersistence) DeleteTaskState(taskID string) error {
 		return fmt.Errorf("invalid task ID: %q contains illegal path characters", taskID)
 	}
 
-	taskFilePath := filepath.Join(cp.dataDir, TasksSubdir, fmt.Sprintf("%s.pb", taskID))
+	taskFilePath := filepath.Join(cp.dataDir, TasksSubdir, taskID+".pb")
 	if err := os.Remove(taskFilePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete task state file: %w", err)
 	}
 
 	glog.V(2).Infof("Deleted task state for task %s", taskID)
+
 	return nil
 }
 
@@ -1165,49 +1191,49 @@ func (cp *ConfigPersistence) maintenanceTaskToProtobuf(task *maintenance.Mainten
 // protobufToMaintenanceTask converts protobuf format to MaintenanceTask
 func (cp *ConfigPersistence) protobufToMaintenanceTask(pbTask *worker_pb.MaintenanceTaskData) *maintenance.MaintenanceTask {
 	task := &maintenance.MaintenanceTask{
-		ID:              pbTask.Id,
-		Type:            maintenance.MaintenanceTaskType(pbTask.Type),
-		Priority:        cp.stringToPriority(pbTask.Priority),
-		Status:          maintenance.MaintenanceTaskStatus(pbTask.Status),
-		VolumeID:        pbTask.VolumeId,
-		Server:          pbTask.Server,
-		Collection:      pbTask.Collection,
-		Reason:          pbTask.Reason,
-		CreatedAt:       time.Unix(pbTask.CreatedAt, 0),
-		ScheduledAt:     time.Unix(pbTask.ScheduledAt, 0),
-		WorkerID:        pbTask.WorkerId,
-		Error:           pbTask.Error,
-		Progress:        pbTask.Progress,
-		RetryCount:      int(pbTask.RetryCount),
-		MaxRetries:      int(pbTask.MaxRetries),
-		CreatedBy:       pbTask.CreatedBy,
-		CreationContext: pbTask.CreationContext,
-		DetailedReason:  pbTask.DetailedReason,
-		Tags:            pbTask.Tags,
+		ID:              pbTask.GetId(),
+		Type:            maintenance.MaintenanceTaskType(pbTask.GetType()),
+		Priority:        cp.stringToPriority(pbTask.GetPriority()),
+		Status:          maintenance.MaintenanceTaskStatus(pbTask.GetStatus()),
+		VolumeID:        pbTask.GetVolumeId(),
+		Server:          pbTask.GetServer(),
+		Collection:      pbTask.GetCollection(),
+		Reason:          pbTask.GetReason(),
+		CreatedAt:       time.Unix(pbTask.GetCreatedAt(), 0),
+		ScheduledAt:     time.Unix(pbTask.GetScheduledAt(), 0),
+		WorkerID:        pbTask.GetWorkerId(),
+		Error:           pbTask.GetError(),
+		Progress:        pbTask.GetProgress(),
+		RetryCount:      int(pbTask.GetRetryCount()),
+		MaxRetries:      int(pbTask.GetMaxRetries()),
+		CreatedBy:       pbTask.GetCreatedBy(),
+		CreationContext: pbTask.GetCreationContext(),
+		DetailedReason:  pbTask.GetDetailedReason(),
+		Tags:            pbTask.GetTags(),
 	}
 
 	// Handle optional timestamps
-	if pbTask.StartedAt > 0 {
-		startTime := time.Unix(pbTask.StartedAt, 0)
+	if pbTask.GetStartedAt() > 0 {
+		startTime := time.Unix(pbTask.GetStartedAt(), 0)
 		task.StartedAt = &startTime
 	}
-	if pbTask.CompletedAt > 0 {
-		completedTime := time.Unix(pbTask.CompletedAt, 0)
+	if pbTask.GetCompletedAt() > 0 {
+		completedTime := time.Unix(pbTask.GetCompletedAt(), 0)
 		task.CompletedAt = &completedTime
 	}
 
 	// Convert assignment history
 	if pbTask.AssignmentHistory != nil {
-		task.AssignmentHistory = make([]*maintenance.TaskAssignmentRecord, 0, len(pbTask.AssignmentHistory))
-		for _, pbRecord := range pbTask.AssignmentHistory {
+		task.AssignmentHistory = make([]*maintenance.TaskAssignmentRecord, 0, len(pbTask.GetAssignmentHistory()))
+		for _, pbRecord := range pbTask.GetAssignmentHistory() {
 			record := &maintenance.TaskAssignmentRecord{
-				WorkerID:      pbRecord.WorkerId,
-				WorkerAddress: pbRecord.WorkerAddress,
-				AssignedAt:    time.Unix(pbRecord.AssignedAt, 0),
-				Reason:        pbRecord.Reason,
+				WorkerID:      pbRecord.GetWorkerId(),
+				WorkerAddress: pbRecord.GetWorkerAddress(),
+				AssignedAt:    time.Unix(pbRecord.GetAssignedAt(), 0),
+				Reason:        pbRecord.GetReason(),
 			}
-			if pbRecord.UnassignedAt > 0 {
-				unassignedTime := time.Unix(pbRecord.UnassignedAt, 0)
+			if pbRecord.GetUnassignedAt() > 0 {
+				unassignedTime := time.Unix(pbRecord.GetUnassignedAt(), 0)
 				record.UnassignedAt = &unassignedTime
 			}
 			task.AssignmentHistory = append(task.AssignmentHistory, record)
@@ -1215,8 +1241,8 @@ func (cp *ConfigPersistence) protobufToMaintenanceTask(pbTask *worker_pb.Mainten
 	}
 
 	// Convert typed parameters if available
-	if pbTask.TypedParams != nil {
-		task.TypedParams = pbTask.TypedParams
+	if pbTask.GetTypedParams() != nil {
+		task.TypedParams = pbTask.GetTypedParams()
 	}
 
 	return task

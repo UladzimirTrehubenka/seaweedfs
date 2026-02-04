@@ -53,6 +53,7 @@ func (store *Cassandra2Store) Initialize(configuration util.Configuration, prefi
 
 func (store *Cassandra2Store) isSuperLargeDirectory(dir string) (dirHash string, isSuperLargeDirectory bool) {
 	dirHash, isSuperLargeDirectory = store.superLargeDirectoryHash[dir]
+
 	return
 }
 
@@ -63,13 +64,13 @@ func (store *Cassandra2Store) initialize(keyspace string, hosts []string, userna
 	}
 	if sslCaPath != "" || sslCertPath != "" || sslKeyPath != "" {
 		if (sslCertPath != "" && sslKeyPath == "") || (sslCertPath == "" && sslKeyPath != "") {
-			return fmt.Errorf("both ssl_cert_path and ssl_key_path must be provided for mTLS, or neither")
+			return errors.New("both ssl_cert_path and ssl_key_path must be provided for mTLS, or neither")
 		}
 
 		for _, path := range []string{sslCaPath, sslCertPath, sslKeyPath} {
 			if path != "" {
 				if _, err := os.Stat(path); err != nil {
-					return fmt.Errorf("ssl file %s not found: %v", path, err)
+					return fmt.Errorf("ssl file %s not found: %w", path, err)
 				}
 			}
 		}
@@ -86,6 +87,7 @@ func (store *Cassandra2Store) initialize(keyspace string, hosts []string, userna
 		for _, host := range hosts {
 			if strings.Contains(host, ":") {
 				hasPort = true
+
 				break
 			}
 		}
@@ -127,7 +129,8 @@ func (store *Cassandra2Store) initialize(keyspace string, hosts []string, userna
 		}
 		existingHash[dirHash] = dir
 	}
-	return
+
+	return err
 }
 
 func (store *Cassandra2Store) BeginTransaction(ctx context.Context) (context.Context, error) {
@@ -141,15 +144,14 @@ func (store *Cassandra2Store) RollbackTransaction(ctx context.Context) error {
 }
 
 func (store *Cassandra2Store) InsertEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
-	dir, name := entry.FullPath.DirAndName()
+	dir, name := entry.DirAndName()
 	if dirHash, ok := store.isSuperLargeDirectory(dir); ok {
 		dir, name = dirHash+name, ""
 	}
 
 	meta, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encode %s: %s", entry.FullPath, err)
+		return fmt.Errorf("encode %s: %w", entry.FullPath, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -159,19 +161,17 @@ func (store *Cassandra2Store) InsertEntry(ctx context.Context, entry *filer.Entr
 	if err := store.session.Query(
 		"INSERT INTO filemeta (dirhash,directory,name,meta) VALUES(?,?,?,?) USING TTL ? ",
 		util.HashStringToLong(dir), dir, name, meta, entry.TtlSec).Exec(); err != nil {
-		return fmt.Errorf("insert %s: %s", entry.FullPath, err)
+		return fmt.Errorf("insert %s: %w", entry.FullPath, err)
 	}
 
 	return nil
 }
 
 func (store *Cassandra2Store) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	return store.InsertEntry(ctx, entry)
 }
 
 func (store *Cassandra2Store) FindEntry(ctx context.Context, fullpath util.FullPath) (entry *filer.Entry, err error) {
-
 	dir, name := fullpath.DirAndName()
 	if dirHash, ok := store.isSuperLargeDirectory(dir); ok {
 		dir, name = dirHash+name, ""
@@ -184,6 +184,7 @@ func (store *Cassandra2Store) FindEntry(ctx context.Context, fullpath util.FullP
 		if errors.Is(err, gocql.ErrNotFound) {
 			return nil, filer_pb.ErrNotFound
 		}
+
 		return nil, err
 	}
 
@@ -192,14 +193,13 @@ func (store *Cassandra2Store) FindEntry(ctx context.Context, fullpath util.FullP
 	}
 	err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData(data))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
 }
 
 func (store *Cassandra2Store) DeleteEntry(ctx context.Context, fullpath util.FullPath) error {
-
 	dir, name := fullpath.DirAndName()
 	if dirHash, ok := store.isSuperLargeDirectory(dir); ok {
 		dir, name = dirHash+name, ""
@@ -208,7 +208,7 @@ func (store *Cassandra2Store) DeleteEntry(ctx context.Context, fullpath util.Ful
 	if err := store.session.Query(
 		"DELETE FROM filemeta WHERE dirhash=? AND directory=? AND name=?",
 		util.HashStringToLong(dir), dir, name).Exec(); err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -222,7 +222,7 @@ func (store *Cassandra2Store) DeleteFolderChildren(ctx context.Context, fullpath
 	if err := store.session.Query(
 		"DELETE FROM filemeta WHERE dirhash=? AND directory=?",
 		util.HashStringToLong(string(fullpath)), fullpath).Exec(); err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	return nil
@@ -233,9 +233,8 @@ func (store *Cassandra2Store) ListDirectoryPrefixedEntries(ctx context.Context, 
 }
 
 func (store *Cassandra2Store) ListDirectoryEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
-
 	if _, ok := store.isSuperLargeDirectory(string(dirPath)); ok {
-		return // nil, filer.ErrUnsupportedSuperLargeDirectoryListing
+		return lastFileName, err // nil, filer.ErrUnsupportedSuperLargeDirectoryListing
 	}
 
 	cqlStr := "SELECT NAME, meta FROM filemeta WHERE dirhash=? AND directory=? AND name>? ORDER BY NAME ASC LIMIT ?"
@@ -254,6 +253,7 @@ func (store *Cassandra2Store) ListDirectoryEntries(ctx context.Context, dirPath 
 		if decodeErr := entry.DecodeAttributesAndChunks(util.MaybeDecompressData(data)); decodeErr != nil {
 			err = decodeErr
 			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
+
 			break
 		}
 
@@ -261,6 +261,7 @@ func (store *Cassandra2Store) ListDirectoryEntries(ctx context.Context, dirPath 
 		if resEachEntryFuncErr != nil {
 			err = fmt.Errorf("failed to process eachEntryFunc for entry %q: %w", entry.FullPath, resEachEntryFuncErr)
 			glog.V(0).InfofCtx(ctx, "failed to process eachEntryFunc for entry %q: %v", entry.FullPath, resEachEntryFuncErr)
+
 			break
 		}
 

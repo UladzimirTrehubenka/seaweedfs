@@ -3,10 +3,12 @@ package s3api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -28,11 +30,11 @@ type BucketMetaData struct {
 
 	Name string
 
-	//By default, when another AWS account uploads an object to S3 bucket,
-	//that account (the object writer) owns the object, has access to it, and
-	//can grant other users access to it through ACLs. You can use Object Ownership
-	//to change this default behavior so that ACLs are disabled and you, as the
-	//bucket owner, automatically own every object in your bucket.
+	// By default, when another AWS account uploads an object to S3 bucket,
+	// that account (the object writer) owns the object, has access to it, and
+	// can grant other users access to it through ACLs. You can use Object Ownership
+	// to change this default behavior so that ACLs are disabled and you, as the
+	// bucket owner, automatically own every object in your bucket.
 	ObjectOwnership string
 
 	// Container for the bucket owner's display name and ID.
@@ -60,8 +62,10 @@ func NewBucketRegistry(s3a *S3ApiServer) *BucketRegistry {
 	err := br.init()
 	if err != nil {
 		glog.Fatal("init bucket registry failed", err)
+
 		return nil
 	}
+
 	return br
 }
 
@@ -73,32 +77,35 @@ func (r *BucketRegistry) init() error {
 		// This ensures cache consistency across multi-filer clusters after restart
 		r.s3a.updateBucketConfigCacheFromEntry(entry)
 		bucketCount++
+
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
 		glog.Errorf("BucketRegistry.init: failed to list buckets: %v", err)
+
 		return err
 	}
 	glog.V(1).Infof("BucketRegistry.init: warmed config cache for %d buckets", bucketCount)
+
 	return nil
 }
 
 func (r *BucketRegistry) LoadBucketMetadata(entry *filer_pb.Entry) {
 	bucketMetadata := buildBucketMetadata(r.s3a.iam, entry)
 	r.metadataCacheLock.Lock()
-	r.metadataCache[entry.Name] = bucketMetadata
+	r.metadataCache[entry.GetName()] = bucketMetadata
 	r.metadataCacheLock.Unlock()
 	// Remove from notFound cache since bucket now exists
-	r.unMarkNotFound(entry.Name)
+	r.unMarkNotFound(entry.GetName())
 }
 
 func buildBucketMetadata(accountManager AccountManager, entry *filer_pb.Entry) *BucketMetaData {
 	entryJson, _ := json.Marshal(entry)
 	glog.V(3).Infof("build bucket metadata,entry=%s", entryJson)
 	bucketMetadata := &BucketMetaData{
-		Name: entry.Name,
+		Name: entry.GetName(),
 
-		//Default ownership: OwnershipBucketOwnerEnforced, which means Acl is disabled
+		// Default ownership: OwnershipBucketOwnerEnforced, which means Acl is disabled
 		ObjectOwnership: s3_constants.OwnershipBucketOwnerEnforced,
 
 		// Default owner: `AccountAdmin`
@@ -108,8 +115,8 @@ func buildBucketMetadata(accountManager AccountManager, entry *filer_pb.Entry) *
 		},
 	}
 	if entry.Extended != nil {
-		//ownership control
-		ownership, ok := entry.Extended[s3_constants.ExtOwnershipKey]
+		// ownership control
+		ownership, ok := entry.GetExtended()[s3_constants.ExtOwnershipKey]
 		if ok {
 			ownership := string(ownership)
 			valid := s3_constants.ValidateOwnership(ownership)
@@ -120,9 +127,9 @@ func buildBucketMetadata(accountManager AccountManager, entry *filer_pb.Entry) *
 			}
 		}
 
-		//access control policy
-		//owner
-		acpOwnerBytes, ok := entry.Extended[s3_constants.ExtAmzOwnerKey]
+		// access control policy
+		// owner
+		acpOwnerBytes, ok := entry.GetExtended()[s3_constants.ExtAmzOwnerKey]
 		if ok && len(acpOwnerBytes) > 0 {
 			ownerAccountId := string(acpOwnerBytes)
 			ownerAccountName := accountManager.GetAccountNameById(ownerAccountId)
@@ -135,8 +142,8 @@ func buildBucketMetadata(accountManager AccountManager, entry *filer_pb.Entry) *
 				}
 			}
 		}
-		//grants
-		acpGrantsBytes, ok := entry.Extended[s3_constants.ExtAmzAclKey]
+		// grants
+		acpGrantsBytes, ok := entry.GetExtended()[s3_constants.ExtAmzAclKey]
 		if ok && len(acpGrantsBytes) > 0 {
 			var grants []*s3.Grant
 			err := json.Unmarshal(acpGrantsBytes, &grants)
@@ -147,12 +154,13 @@ func buildBucketMetadata(accountManager AccountManager, entry *filer_pb.Entry) *
 			}
 		}
 	}
+
 	return bucketMetadata
 }
 
 func (r *BucketRegistry) RemoveBucketMetadata(entry *filer_pb.Entry) {
-	r.removeMetadataCache(entry.Name)
-	r.unMarkNotFound(entry.Name)
+	r.removeMetadataCache(entry.GetName())
+	r.unMarkNotFound(entry.GetName())
 }
 
 func (r *BucketRegistry) GetBucketMetadata(bucketName string) (*BucketMetaData, s3err.ErrorCode) {
@@ -177,6 +185,7 @@ func (r *BucketRegistry) GetBucketMetadata(bucketName string) (*BucketMetaData, 
 
 	r.setMetadataCache(bucketMetadata)
 	r.unMarkNotFound(bucketName)
+
 	return bucketMetadata, s3err.ErrNone
 }
 
@@ -184,7 +193,7 @@ func (r *BucketRegistry) LoadBucketMetadataFromFiler(bucketName string) (*Bucket
 	r.notFoundLock.Lock()
 	defer r.notFoundLock.Unlock()
 
-	//check if already exists
+	// check if already exists
 	r.metadataCacheLock.RLock()
 	bucketMetaData, ok := r.metadataCache[bucketName]
 	r.metadataCacheLock.RUnlock()
@@ -192,16 +201,19 @@ func (r *BucketRegistry) LoadBucketMetadataFromFiler(bucketName string) (*Bucket
 		return bucketMetaData, s3err.ErrNone
 	}
 
-	//if not exists, load from filer
+	// if not exists, load from filer
 	bucketMetadata, err := loadBucketMetadataFromFiler(r, bucketName)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			// The bucket doesn't actually exist and should no longer loaded from the filer
 			r.notFound[bucketName] = struct{}{}
+
 			return nil, s3err.ErrNoSuchBucket
 		}
+
 		return nil, s3err.ErrInternalError
 	}
+
 	return bucketMetadata, s3err.ErrNone
 }
 

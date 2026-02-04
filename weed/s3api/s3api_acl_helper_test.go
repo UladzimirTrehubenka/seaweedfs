@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -39,22 +40,22 @@ func TestGetAccountId(t *testing.T) {
 	req := &http.Request{
 		Header: make(map[string][]string),
 	}
-	//case1
+	// case1
 	//accountId: "admin"
 	req.Header.Set(s3_constants.AmzAccountId, s3_constants.AccountAdminId)
 	if GetAccountId(req) != s3_constants.AccountAdminId {
 		t.Fatal("expect accountId: admin")
 	}
 
-	//case2
+	// case2
 	//accountId: "anoymous"
 	req.Header.Set(s3_constants.AmzAccountId, s3_constants.AccountAnonymousId)
 	if GetAccountId(req) != s3_constants.AccountAnonymousId {
 		t.Fatal("expect accountId: anonymous")
 	}
 
-	//case3
-	//accountId is nil => "anonymous"
+	// case3
+	// accountId is nil => "anonymous"
 	req.Header.Del(s3_constants.AmzAccountId)
 	if GetAccountId(req) != s3_constants.AccountAnonymousId {
 		t.Fatal("expect accountId: anonymous")
@@ -70,8 +71,8 @@ func TestExtractAcl(t *testing.T) {
 	testCases := make([]*Case, 0)
 	accountAdminId := "admin"
 	{
-		//case1 (good case)
-		//parse acp from request body
+		// case1 (good case)
+		// parse acp from request body
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -122,8 +123,8 @@ func TestExtractAcl(t *testing.T) {
 	}
 
 	{
-		//case2 (good case)
-		//parse acp from header (cannedAcl)
+		// case2 (good case)
+		// parse acp from header (cannedAcl)
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -147,8 +148,8 @@ func TestExtractAcl(t *testing.T) {
 	}
 
 	{
-		//case3 (bad case)
-		//parse acp from request body (content is invalid)
+		// case3 (bad case)
+		// parse acp from request body (content is invalid)
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -162,8 +163,8 @@ func TestExtractAcl(t *testing.T) {
 		})
 	}
 
-	//case4 (bad case)
-	//parse acp from header (cannedAcl is invalid)
+	// case4 (bad case)
+	// parse acp from header (cannedAcl is invalid)
 	req := &http.Request{
 		Header: make(map[string][]string),
 	}
@@ -177,8 +178,8 @@ func TestExtractAcl(t *testing.T) {
 	})
 
 	{
-		//case5 (bad case)
-		//parse acp from request body: owner is inconsistent
+		// case5 (bad case)
+		// parse acp from request body: owner is inconsistent
 		req.Body = io.NopCloser(bytes.NewReader([]byte(`
 	<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
 		<Owner>
@@ -230,8 +231,8 @@ func TestParseAndValidateAclHeaders(t *testing.T) {
 	bucketOwner := "admin"
 
 	{
-		//case1 (good case)
-		//parse custom acl
+		// case1 (good case)
+		// parse custom acl
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -268,8 +269,8 @@ func TestParseAndValidateAclHeaders(t *testing.T) {
 		})
 	}
 	{
-		//case2 (good case)
-		//parse canned acl (ownership=ObjectWriter)
+		// case2 (good case)
+		// parse canned acl (ownership=ObjectWriter)
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -299,8 +300,8 @@ func TestParseAndValidateAclHeaders(t *testing.T) {
 		})
 	}
 	{
-		//case3 (good case)
-		//parse canned acl (ownership=OwnershipBucketOwnerPreferred)
+		// case3 (good case)
+		// parse canned acl (ownership=OwnershipBucketOwnerPreferred)
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -323,8 +324,8 @@ func TestParseAndValidateAclHeaders(t *testing.T) {
 		})
 	}
 	{
-		//case4 (bad case)
-		//parse custom acl (grantee id not exists)
+		// case4 (bad case)
+		// parse custom acl (grantee id not exists)
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -338,8 +339,8 @@ func TestParseAndValidateAclHeaders(t *testing.T) {
 	}
 
 	{
-		//case5 (bad case)
-		//parse custom acl (invalid format)
+		// case5 (bad case)
+		// parse custom acl (invalid format)
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -353,8 +354,8 @@ func TestParseAndValidateAclHeaders(t *testing.T) {
 	}
 
 	{
-		//case6 (bad case)
-		//parse canned acl (invalid value)
+		// case6 (bad case)
+		// parse canned acl (invalid value)
 		req := &http.Request{
 			Header: make(map[string][]string),
 		}
@@ -389,6 +390,7 @@ func grantsEquals(a, b []*s3.Grant) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -492,8 +494,8 @@ func TestDetermineReqGrants(t *testing.T) {
 func TestAssembleEntryWithAcp(t *testing.T) {
 	defaultOwner := "admin"
 
-	//case1
-	//assemble with non-empty grants
+	// case1
+	// assemble with non-empty grants
 	expectOwner := "accountS"
 	expectGrants := []*s3.Grant{
 		{
@@ -508,29 +510,28 @@ func TestAssembleEntryWithAcp(t *testing.T) {
 	entry := &filer_pb.Entry{}
 	AssembleEntryWithAcp(entry, expectOwner, expectGrants)
 
-	resultOwner := GetAcpOwner(entry.Extended, defaultOwner)
+	resultOwner := GetAcpOwner(entry.GetExtended(), defaultOwner)
 	if resultOwner != expectOwner {
 		t.Fatalf("owner not expect")
 	}
 
-	resultGrants := GetAcpGrants(entry.Extended)
+	resultGrants := GetAcpGrants(entry.GetExtended())
 	if !grantsEquals(resultGrants, expectGrants) {
 		t.Fatal("grants not expect")
 	}
 
-	//case2
-	//assemble with empty grants (override)
+	// case2
+	// assemble with empty grants (override)
 	AssembleEntryWithAcp(entry, "", nil)
-	resultOwner = GetAcpOwner(entry.Extended, defaultOwner)
+	resultOwner = GetAcpOwner(entry.GetExtended(), defaultOwner)
 	if resultOwner != defaultOwner {
 		t.Fatalf("owner not expect")
 	}
 
-	resultGrants = GetAcpGrants(entry.Extended)
+	resultGrants = GetAcpGrants(entry.GetExtended())
 	if len(resultGrants) != 0 {
 		t.Fatal("grants not expect")
 	}
-
 }
 
 func TestGrantEquals(t *testing.T) {
@@ -569,7 +570,7 @@ func TestGrantEquals(t *testing.T) {
 			Grantee:    &s3.Grantee{},
 		}): false,
 
-		//type not present, compare other fields of grant is meaningless
+		// type not present, compare other fields of grant is meaningless
 		GrantEquals(&s3.Grant{
 			Permission: &s3_constants.PermissionRead,
 			Grantee: &s3.Grantee{

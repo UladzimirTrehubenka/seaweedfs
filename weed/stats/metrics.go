@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus/push"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
@@ -23,6 +24,7 @@ import (
 // making it safe to call multiple times while ensuring immutability.
 var SetVersionInfo = func() func(string, string, string) {
 	var once sync.Once
+
 	return func(version, commitHash, sizeLimit string) {
 		once.Do(func() {
 			BuildInfo.WithLabelValues(version, commitHash, sizeLimit, runtime.GOOS, runtime.GOARCH).Set(1)
@@ -548,6 +550,7 @@ func JoinHostPort(host string, port int) string {
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
 		return host + ":" + portStr
 	}
+
 	return net.JoinHostPort(host, portStr)
 }
 
@@ -564,6 +567,7 @@ func SourceName(port uint32) string {
 	if err != nil {
 		return "unknown"
 	}
+
 	return net.JoinHostPort(hostname, strconv.Itoa(int(port)))
 }
 
@@ -613,7 +617,6 @@ func bucketMetricTTLControl() {
 		bucketLastActiveLock.Unlock()
 		time.Sleep(bucketAtiveTTL)
 	}
-
 }
 
 // UpdateBucketSizeMetrics updates the bucket size gauges

@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	. "github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/stretchr/testify/assert"
+
+	. "github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 func TestEnumScalarType(t *testing.T) {

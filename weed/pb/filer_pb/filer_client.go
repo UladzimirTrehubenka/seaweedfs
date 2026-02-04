@@ -26,11 +26,9 @@ type FilerClient interface {
 }
 
 func GetEntry(ctx context.Context, filerClient FilerClient, fullFilePath util.FullPath) (entry *Entry, err error) {
-
 	dir, name := fullFilePath.DirAndName()
 
 	err = filerClient.WithFilerClient(false, func(client SeaweedFilerClient) error {
-
 		request := &LookupDirectoryEntryRequest{
 			Directory: dir,
 			Name:      name,
@@ -40,15 +38,17 @@ func GetEntry(ctx context.Context, filerClient FilerClient, fullFilePath util.Fu
 		resp, err := LookupEntry(ctx, client, request)
 		if err != nil {
 			glog.V(3).InfofCtx(ctx, "read %s %v: %v", fullFilePath, resp, err)
+
 			return err
 		}
 
-		if resp.Entry == nil {
+		if resp.GetEntry() == nil {
 			// glog.V(3).Infof("read %s entry: %v", fullFilePath, entry)
 			return nil
 		}
 
-		entry = resp.Entry
+		entry = resp.GetEntry()
+
 		return nil
 	})
 
@@ -58,12 +58,12 @@ func GetEntry(ctx context.Context, filerClient FilerClient, fullFilePath util.Fu
 type EachEntryFunction func(entry *Entry, isLast bool) error
 
 func ReadDirAllEntries(ctx context.Context, filerClient FilerClient, fullDirPath util.FullPath, prefix string, fn EachEntryFunction) (err error) {
-
 	var counter uint32
 	var startFrom string
 	var counterFunc = func(entry *Entry, isLast bool) error {
 		counter++
-		startFrom = entry.Name
+		startFrom = entry.GetName()
+
 		return fn(entry, isLast)
 	}
 
@@ -122,7 +122,7 @@ func doSeaweedList(ctx context.Context, client SeaweedFilerClient, fullDirPath u
 	defer cancel()
 	stream, err := client.ListEntries(ctx, request)
 	if err != nil {
-		return fmt.Errorf("list %s: %v", fullDirPath, err)
+		return fmt.Errorf("list %s: %w", fullDirPath, err)
 	}
 
 	var prevEntry *Entry
@@ -130,12 +130,13 @@ func doSeaweedList(ctx context.Context, client SeaweedFilerClient, fullDirPath u
 	for {
 		resp, recvErr := stream.Recv()
 		if recvErr != nil {
-			if recvErr == io.EOF {
+			if errors.Is(recvErr, io.EOF) {
 				if prevEntry != nil {
 					if err := fn(prevEntry, true); err != nil {
 						return err
 					}
 				}
+
 				break
 			} else {
 				return recvErr
@@ -146,7 +147,7 @@ func doSeaweedList(ctx context.Context, client SeaweedFilerClient, fullDirPath u
 				return err
 			}
 		}
-		prevEntry = resp.Entry
+		prevEntry = resp.GetEntry()
 		count++
 		if count > int(limit) && limit != 0 {
 			prevEntry = nil
@@ -157,9 +158,7 @@ func doSeaweedList(ctx context.Context, client SeaweedFilerClient, fullDirPath u
 }
 
 func Exists(ctx context.Context, filerClient FilerClient, parentDirectoryPath string, entryName string, isDirectory bool) (exists bool, err error) {
-
 	err = filerClient.WithFilerClient(false, func(client SeaweedFilerClient) error {
-
 		request := &LookupDirectoryEntryRequest{
 			Directory: parentDirectoryPath,
 			Name:      entryName,
@@ -168,15 +167,17 @@ func Exists(ctx context.Context, filerClient FilerClient, parentDirectoryPath st
 		glog.V(4).InfofCtx(ctx, "exists entry %v/%v: %v", parentDirectoryPath, entryName, request)
 		resp, err := LookupEntry(ctx, client, request)
 		if err != nil {
-			if err == ErrNotFound {
+			if errors.Is(err, ErrNotFound) {
 				exists = false
+
 				return nil
 			}
 			glog.V(0).InfofCtx(ctx, "exists entry %v: %v", request, err)
-			return fmt.Errorf("exists entry %s/%s: %v", parentDirectoryPath, entryName, err)
+
+			return fmt.Errorf("exists entry %s/%s: %w", parentDirectoryPath, entryName, err)
 		}
 
-		exists = resp.Entry.IsDirectory == isDirectory
+		exists = resp.GetEntry().GetIsDirectory() == isDirectory
 
 		return nil
 	})
@@ -185,9 +186,7 @@ func Exists(ctx context.Context, filerClient FilerClient, parentDirectoryPath st
 }
 
 func Touch(ctx context.Context, filerClient FilerClient, parentDirectoryPath string, entryName string, entry *Entry) (err error) {
-
 	return filerClient.WithFilerClient(false, func(client SeaweedFilerClient) error {
-
 		request := &UpdateEntryRequest{
 			Directory: parentDirectoryPath,
 			Entry:     entry,
@@ -196,12 +195,12 @@ func Touch(ctx context.Context, filerClient FilerClient, parentDirectoryPath str
 		glog.V(4).InfofCtx(ctx, "touch entry %v/%v: %v", parentDirectoryPath, entryName, request)
 		if err := UpdateEntry(ctx, client, request); err != nil {
 			glog.V(0).InfofCtx(ctx, "touch exists entry %v: %v", request, err)
-			return fmt.Errorf("touch exists entry %s/%s: %v", parentDirectoryPath, entryName, err)
+
+			return fmt.Errorf("touch exists entry %s/%s: %w", parentDirectoryPath, entryName, err)
 		}
 
 		return nil
 	})
-
 }
 
 func Mkdir(ctx context.Context, filerClient FilerClient, parentDirectoryPath string, dirName string, fn func(entry *Entry)) error {
@@ -235,7 +234,8 @@ func DoMkdir(ctx context.Context, client SeaweedFilerClient, parentDirectoryPath
 	glog.V(1).InfofCtx(ctx, "mkdir: %v", request)
 	if err := CreateEntry(ctx, client, request); err != nil {
 		glog.V(0).InfofCtx(ctx, "mkdir %v: %v", request, err)
-		return fmt.Errorf("mkdir %s/%s: %v", parentDirectoryPath, dirName, err)
+
+		return fmt.Errorf("mkdir %s/%s: %w", parentDirectoryPath, dirName, err)
 	}
 
 	return nil
@@ -243,7 +243,6 @@ func DoMkdir(ctx context.Context, client SeaweedFilerClient, parentDirectoryPath
 
 func MkFile(ctx context.Context, filerClient FilerClient, parentDirectoryPath string, fileName string, chunks []*FileChunk, fn func(entry *Entry)) error {
 	return filerClient.WithFilerClient(false, func(client SeaweedFilerClient) error {
-
 		entry := &Entry{
 			Name:        fileName,
 			IsDirectory: false,
@@ -269,7 +268,8 @@ func MkFile(ctx context.Context, filerClient FilerClient, parentDirectoryPath st
 		glog.V(1).InfofCtx(ctx, "create file: %s/%s", parentDirectoryPath, fileName)
 		if err := CreateEntry(ctx, client, request); err != nil {
 			glog.V(0).InfofCtx(ctx, "create file %v:%v", request, err)
-			return fmt.Errorf("create file %s/%s: %v", parentDirectoryPath, fileName, err)
+
+			return fmt.Errorf("create file %s/%s: %w", parentDirectoryPath, fileName, err)
 		}
 
 		return nil
@@ -296,13 +296,15 @@ func DoRemove(ctx context.Context, client SeaweedFilerClient, parentDirectoryPat
 		if strings.Contains(err.Error(), ErrNotFound.Error()) {
 			return nil
 		}
+
 		return err
 	} else {
-		if resp.Error != "" {
-			if strings.Contains(resp.Error, ErrNotFound.Error()) {
+		if resp.GetError() != "" {
+			if strings.Contains(resp.GetError(), ErrNotFound.Error()) {
 				return nil
 			}
-			return errors.New(resp.Error)
+
+			return errors.New(resp.GetError())
 		}
 	}
 
@@ -331,6 +333,7 @@ func DoDeleteEmptyParentDirectories(ctx context.Context, client SeaweedFilerClie
 	stopStr := string(stopAtPath)
 	if stopAtPath != "" && stopStr != "/" && !strings.HasPrefix(dirPathStr+"/", stopStr+"/") {
 		glog.V(1).InfofCtx(ctx, "DoDeleteEmptyParentDirectories: %s is not under %s, skipping", dirPath, stopAtPath)
+
 		return
 	}
 
@@ -338,17 +341,20 @@ func DoDeleteEmptyParentDirectories(ctx context.Context, client SeaweedFilerClie
 	isEmpty := true
 	err := SeaweedList(ctx, client, dirPathStr, "", func(entry *Entry, isLast bool) error {
 		isEmpty = false
+
 		return io.EOF // Use sentinel error to explicitly stop iteration
 	}, "", false, 1)
 
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		glog.V(3).InfofCtx(ctx, "DoDeleteEmptyParentDirectories: error checking %s: %v", dirPath, err)
+
 		return
 	}
 
 	if !isEmpty {
 		// Directory is not empty, stop checking upward
 		glog.V(3).InfofCtx(ctx, "DoDeleteEmptyParentDirectories: directory %s is not empty, stopping cleanup", dirPath)
+
 		return
 	}
 

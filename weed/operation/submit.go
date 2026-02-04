@@ -24,10 +24,10 @@ type FilePart struct {
 	FileName string
 	FileSize int64
 	MimeType string
-	ModTime  int64 //in seconds
+	ModTime  int64 // in seconds
 	Pref     StoragePreference
-	Server   string //this comes from assign result
-	Fid      string //this comes from assign result, but customizable
+	Server   string // this comes from assign result
+	Fid      string // this comes from assign result, but customizable
 	Fsync    bool
 }
 
@@ -68,6 +68,7 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []*
 		for index := range files {
 			results[index].Error = err.Error()
 		}
+
 		return results, err
 	}
 	for index, file := range files {
@@ -87,6 +88,7 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []*
 		results[index].Fid = file.Fid
 		results[index].FileUrl = ret.PublicUrl + "/" + file.Fid
 	}
+
 	return results, nil
 }
 
@@ -97,6 +99,7 @@ func NewFileParts(fullPathFilenames []string) (ret []*FilePart, err error) {
 			return
 		}
 	}
+
 	return
 }
 func newFilePart(fullPathFilename string) (ret *FilePart, err error) {
@@ -104,6 +107,7 @@ func newFilePart(fullPathFilename string) (ret *FilePart, err error) {
 	fh, openErr := os.Open(fullPathFilename)
 	if openErr != nil {
 		glog.V(0).Info("Failed to open file: ", fullPathFilename)
+
 		return ret, openErr
 	}
 	ret.Reader = fh
@@ -111,6 +115,7 @@ func newFilePart(fullPathFilename string) (ret *FilePart, err error) {
 	fi, fiErr := fh.Stat()
 	if fiErr != nil {
 		glog.V(0).Info("Failed to stat file:", fullPathFilename)
+
 		return ret, fiErr
 	}
 	ret.ModTime = fi.ModTime().UTC().Unix()
@@ -158,10 +163,10 @@ func (fi *FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, j
 			}
 			ret, err = Assign(context.Background(), masterFn, grpcDialOption, ar)
 			if err != nil {
-				return
+				return retSize, err
 			}
 		}
-		for i := int64(0); i < chunks; i++ {
+		for i := range chunks {
 			if fi.Pref.DataCenter == "" {
 				ar := &VolumeAssignRequest{
 					Count:       1,
@@ -174,7 +179,8 @@ func (fi *FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, j
 				if err != nil {
 					// delete all uploaded chunks
 					cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
-					return
+
+					return retSize, err
 				}
 				id = ret.Fid
 			} else {
@@ -192,6 +198,7 @@ func (fi *FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, j
 			if e != nil {
 				// delete all uploaded chunks
 				cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+
 				return 0, e
 			}
 			cm.Chunks = append(cm.Chunks,
@@ -228,9 +235,11 @@ func (fi *FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, j
 		if e != nil {
 			return 0, e
 		}
+
 		return ret.Size, e
 	}
-	return
+
+	return retSize, err
 }
 
 func genFileUrl(ret *AssignResult, id string, usePublicUrl bool) string {
@@ -246,6 +255,7 @@ func genFileUrl(ret *AssignResult, id string, usePublicUrl bool) string {
 			}
 		}
 	}
+
 	return fileUrl
 }
 
@@ -272,6 +282,7 @@ func uploadOneChunk(filename string, reader io.Reader, masterFn GetMasterFn,
 	if uploadError != nil {
 		return 0, uploadError
 	}
+
 	return uploadResult.Size, nil
 }
 
@@ -301,5 +312,6 @@ func uploadChunkedFileManifest(fileUrl string, manifest *ChunkManifest, jwt secu
 	}
 
 	_, e = uploader.UploadData(context.Background(), buf, uploadOption)
+
 	return e
 }

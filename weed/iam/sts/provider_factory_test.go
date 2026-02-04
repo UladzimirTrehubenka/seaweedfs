@@ -15,7 +15,7 @@ func TestProviderFactory_CreateOIDCProvider(t *testing.T) {
 		Name:    "test-oidc",
 		Type:    "oidc",
 		Enabled: true,
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"issuer":       "https://test-issuer.com",
 			"clientId":     "test-client",
 			"clientSecret": "test-secret",
@@ -40,7 +40,7 @@ func TestProviderFactory_DisabledProvider(t *testing.T) {
 		Name:    "disabled-provider",
 		Type:    "oidc",
 		Enabled: false,
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"issuer":   "https://test-issuer.com",
 			"clientId": "test-client",
 		},
@@ -58,7 +58,7 @@ func TestProviderFactory_InvalidProviderType(t *testing.T) {
 		Name:    "invalid-provider",
 		Type:    "unsupported-type",
 		Enabled: true,
-		Config:  map[string]interface{}{},
+		Config:  map[string]any{},
 	}
 
 	provider, err := factory.CreateProvider(config)
@@ -75,7 +75,7 @@ func TestProviderFactory_LoadMultipleProviders(t *testing.T) {
 			Name:    "oidc-provider",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":   "https://oidc-issuer.com",
 				"clientId": "oidc-client",
 			},
@@ -85,7 +85,7 @@ func TestProviderFactory_LoadMultipleProviders(t *testing.T) {
 			Name:    "disabled-provider",
 			Type:    "oidc",
 			Enabled: false,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":   "https://disabled-issuer.com",
 				"clientId": "disabled-client",
 			},
@@ -108,7 +108,7 @@ func TestProviderFactory_ValidateOIDCConfig(t *testing.T) {
 			Name:    "valid-oidc",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":   "https://valid-issuer.com",
 				"clientId": "valid-client",
 			},
@@ -123,7 +123,7 @@ func TestProviderFactory_ValidateOIDCConfig(t *testing.T) {
 			Name:    "invalid-oidc",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"clientId": "valid-client",
 			},
 		}
@@ -138,7 +138,7 @@ func TestProviderFactory_ValidateOIDCConfig(t *testing.T) {
 			Name:    "invalid-oidc",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer": "https://valid-issuer.com",
 			},
 		}
@@ -160,7 +160,7 @@ func TestProviderFactory_ConvertToStringSlice(t *testing.T) {
 	})
 
 	t.Run("interface slice", func(t *testing.T) {
-		input := []interface{}{"a", "b", "c"}
+		input := []any{"a", "b", "c"}
 		result, err := factory.convertToStringSlice(input)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"a", "b", "c"}, result)
@@ -182,7 +182,7 @@ func TestProviderFactory_ConfigConversionErrors(t *testing.T) {
 			Name:    "invalid-scopes",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":   "https://test-issuer.com",
 				"clientId": "test-client",
 				"scopes":   "invalid-not-array", // Should be array
@@ -200,7 +200,7 @@ func TestProviderFactory_ConfigConversionErrors(t *testing.T) {
 			Name:    "invalid-claims",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":        "https://test-issuer.com",
 				"clientId":      "test-client",
 				"claimsMapping": "invalid-not-map", // Should be map
@@ -218,7 +218,7 @@ func TestProviderFactory_ConfigConversionErrors(t *testing.T) {
 			Name:    "invalid-roles",
 			Type:    "oidc",
 			Enabled: true,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"issuer":      "https://test-issuer.com",
 				"clientId":    "test-client",
 				"roleMapping": "invalid-not-map", // Should be map
@@ -243,7 +243,7 @@ func TestProviderFactory_ConvertToStringMap(t *testing.T) {
 	})
 
 	t.Run("interface map", func(t *testing.T) {
-		input := map[string]interface{}{"key1": "value1", "key2": "value2"}
+		input := map[string]any{"key1": "value1", "key2": "value2"}
 		result, err := factory.convertToStringMap(input)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]string{"key1": "value1", "key2": "value2"}, result)
@@ -276,7 +276,7 @@ func TestSTSService_LoadProvidersFromConfig(t *testing.T) {
 				Name:    "test-provider",
 				Type:    "oidc",
 				Enabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"issuer":   "https://test-issuer.com",
 					"clientId": "test-client",
 				},
@@ -308,5 +308,5 @@ func TestSTSService_NoProvidersConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should initialize successfully with no providers
-	assert.Len(t, stsService.providers, 0)
+	assert.Empty(t, stsService.providers)
 }

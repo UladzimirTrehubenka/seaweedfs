@@ -3,18 +3,19 @@ package s3api
 import (
 	"encoding/json"
 	"encoding/xml"
-	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPutBucketAclCannedAclSupport(t *testing.T) {
@@ -74,7 +75,7 @@ func TestPutBucketAclCannedAclSupport(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a request with the specified canned ACL
-			req := httptest.NewRequest("PUT", "/bucket?acl", nil)
+			req := httptest.NewRequest(http.MethodPut, "/bucket?acl", nil)
 			req.Header.Set(s3_constants.AmzCannedAcl, tc.cannedAcl)
 			req.Header.Set(s3_constants.AmzAccountId, "test-account-123")
 
@@ -134,7 +135,7 @@ func TestUpdateBucketConfigCacheConsistency(t *testing.T) {
 
 		// Test what updateBucketConfigCacheFromEntry would create
 		config := &BucketConfig{
-			Name:         entry.Name,
+			Name:         entry.GetName(),
 			Entry:        entry,
 			IsPublicRead: false, // Should be explicitly false
 		}
@@ -147,13 +148,13 @@ func TestUpdateBucketConfigCacheConsistency(t *testing.T) {
 		entry.Extended["some-other-key"] = []byte("some-value")
 
 		config = &BucketConfig{
-			Name:         entry.Name,
+			Name:         entry.GetName(),
 			Entry:        entry,
 			IsPublicRead: false, // Should be explicitly false
 		}
 
 		// Simulate the else branch: no ACL means private bucket
-		if _, exists := entry.Extended[s3_constants.ExtAmzAclKey]; !exists {
+		if _, exists := entry.GetExtended()[s3_constants.ExtAmzAclKey]; !exists {
 			config.IsPublicRead = false
 		}
 
@@ -183,13 +184,13 @@ func TestUpdateBucketConfigCacheConsistency(t *testing.T) {
 		}
 
 		config := &BucketConfig{
-			Name:         entry.Name,
+			Name:         entry.GetName(),
 			Entry:        entry,
 			IsPublicRead: false, // Start with false
 		}
 
 		// Simulate what updateBucketConfigCacheFromEntry would do
-		if acl, exists := entry.Extended[s3_constants.ExtAmzAclKey]; exists {
+		if acl, exists := entry.GetExtended()[s3_constants.ExtAmzAclKey]; exists {
 			config.ACL = acl
 			config.IsPublicRead = parseAndCachePublicReadStatus(acl)
 		}
@@ -389,7 +390,7 @@ func TestListBucketsOwnershipFiltering(t *testing.T) {
 					identity = mockIdentity(tc.requestIdentityId, tc.requestIsAdmin)
 				}
 				if isBucketVisibleToIdentity(entry, identity) {
-					filteredBuckets = append(filteredBuckets, entry.Name)
+					filteredBuckets = append(filteredBuckets, entry.GetName())
 				}
 			}
 
@@ -421,6 +422,7 @@ func mockIdentity(name string, isAdmin bool) *Identity {
 		}
 		identity.Actions = []Action{Action(s3_constants.ACTION_ADMIN)}
 	}
+
 	return identity
 }
 
@@ -471,7 +473,7 @@ func TestListBucketsOwnershipEdgeCases(t *testing.T) {
 			Name:        "test-bucket",
 			IsDirectory: true,
 			Extended: map[string][]byte{
-				s3_constants.AmzIdentityId: []byte{0x00, 0x01, 0x02, 0xFF},
+				s3_constants.AmzIdentityId: {0x00, 0x01, 0x02, 0xFF},
 			},
 			Attributes: &filer_pb.FuseAttributes{
 				Crtime: time.Now().Unix(),
@@ -585,7 +587,7 @@ func TestListBucketsOwnershipWithPermissions(t *testing.T) {
 
 		// Only owned-bucket should remain after ownership filter
 		assert.Len(t, afterOwnershipFilter, 1, "Only owned bucket should pass ownership filter")
-		assert.Equal(t, "owned-bucket", afterOwnershipFilter[0].Name)
+		assert.Equal(t, "owned-bucket", afterOwnershipFilter[0].GetName())
 
 		// Permission checks would apply to afterOwnershipFilter entries
 		// (not tested here as it depends on IAM system)
@@ -651,7 +653,7 @@ func TestListBucketsOwnershipCaseSensitivity(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("identity_%s", tc.requestIdentityId), func(t *testing.T) {
+		t.Run("identity_"+tc.requestIdentityId, func(t *testing.T) {
 			identity := mockIdentity(tc.requestIdentityId, false)
 			isVisible := isBucketVisibleToIdentity(entry, identity)
 
@@ -1010,7 +1012,7 @@ func TestListBucketsIssue7796(t *testing.T) {
 		// Simulate the exact filtering logic from ListBucketsHandler
 		var visibleBuckets []string
 		for _, entry := range buckets {
-			if !entry.IsDirectory {
+			if !entry.GetIsDirectory() {
 				continue
 			}
 
@@ -1020,13 +1022,13 @@ func TestListBucketsIssue7796(t *testing.T) {
 			// Skip permission check if user is already the owner (optimization)
 			if !isOwner {
 				// Check permission
-				hasPermission := geoserverIdentity.CanDo(s3_constants.ACTION_LIST, entry.Name, "")
+				hasPermission := geoserverIdentity.CanDo(s3_constants.ACTION_LIST, entry.GetName(), "")
 				if !hasPermission {
 					continue
 				}
 			}
 
-			visibleBuckets = append(visibleBuckets, entry.Name)
+			visibleBuckets = append(visibleBuckets, entry.GetName())
 		}
 
 		// Expected: geoserver should see:

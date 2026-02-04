@@ -3,6 +3,7 @@ package s3api
 import (
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/google/uuid"
 	"github.com/pquerna/cachecontrol/cacheobject"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -44,6 +46,7 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 	} else if err != s3err.ErrNone {
 		// Other errors (like access denied) should still fail
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -52,10 +55,12 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -63,6 +68,7 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 	if err := s3a.validateObjectLockHeaders(r, versioningEnabled); err != nil {
 		glog.V(2).Infof("NewMultipartUploadHandler: object lock header validation failed for bucket %s, object %s: %v", bucket, object, err)
 		s3err.WriteErrorResponse(w, r, mapValidationErrorToS3Error(err))
+
 		return
 	}
 
@@ -70,6 +76,7 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 	if cacheControl := r.Header.Get("Cache-Control"); cacheControl != "" {
 		if _, err := cacheobject.ParseRequestCacheControl(cacheControl); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
+
 			return
 		}
 	}
@@ -78,6 +85,7 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 	if expires := r.Header.Get("Expires"); expires != "" {
 		if _, err := time.Parse(http.TimeFormat, expires); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrMalformedDate)
+
 			return
 		}
 	}
@@ -92,6 +100,7 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 	metadata, errCode := ParseS3Metadata(r, nil, false)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 	for k, v := range metadata {
@@ -108,11 +117,11 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
 	writeSuccessResponseXML(w, r, response)
-
 }
 
 // CompleteMultipartUploadHandler - Completes multipart upload.
@@ -124,12 +133,14 @@ func (s3a *S3ApiServer) CompleteMultipartUploadHandler(w http.ResponseWriter, r 
 	// Check if bucket exists before completing multipart upload
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
 	parts := &CompleteMultipartUpload{}
 	if err := xmlDecoder(r.Body, parts, r.ContentLength); err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+
 		return
 	}
 
@@ -138,6 +149,7 @@ func (s3a *S3ApiServer) CompleteMultipartUploadHandler(w http.ResponseWriter, r 
 	err := s3a.checkUploadId(object, uploadID)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchUpload)
+
 		return
 	}
 
@@ -146,6 +158,7 @@ func (s3a *S3ApiServer) CompleteMultipartUploadHandler(w http.ResponseWriter, r 
 	if errCode := s3a.checkConditionalHeaders(r, bucket, object); errCode != s3err.ErrNone {
 		glog.V(3).Infof("CompleteMultipartUploadHandler: Conditional header check failed for %s/%s", bucket, object)
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -159,6 +172,7 @@ func (s3a *S3ApiServer) CompleteMultipartUploadHandler(w http.ResponseWriter, r 
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -171,7 +185,6 @@ func (s3a *S3ApiServer) CompleteMultipartUploadHandler(w http.ResponseWriter, r 
 	stats_collect.S3UploadedObjectsCounter.WithLabelValues(bucket).Inc()
 
 	writeSuccessResponseXML(w, r, response)
-
 }
 
 // AbortMultipartUploadHandler - Aborts multipart upload.
@@ -181,6 +194,7 @@ func (s3a *S3ApiServer) AbortMultipartUploadHandler(w http.ResponseWriter, r *ht
 	// Check if bucket exists before aborting multipart upload
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -189,6 +203,7 @@ func (s3a *S3ApiServer) AbortMultipartUploadHandler(w http.ResponseWriter, r *ht
 	err := s3a.checkUploadId(object, uploadID)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchUpload)
+
 		return
 	}
 
@@ -200,6 +215,7 @@ func (s3a *S3ApiServer) AbortMultipartUploadHandler(w http.ResponseWriter, r *ht
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -208,7 +224,6 @@ func (s3a *S3ApiServer) AbortMultipartUploadHandler(w http.ResponseWriter, r *ht
 	//https://docs.aws.amazon.com/AmazonS3/latest/API/API_AbortMultipartUpload.html
 	s3err.WriteEmptyResponse(w, r, http.StatusNoContent)
 	s3err.PostLog(r, http.StatusNoContent, s3err.ErrNone)
-
 }
 
 // ListMultipartUploadsHandler - Lists multipart uploads.
@@ -218,18 +233,21 @@ func (s3a *S3ApiServer) ListMultipartUploadsHandler(w http.ResponseWriter, r *ht
 	// Check if bucket exists before listing multipart uploads
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
 	prefix, keyMarker, uploadIDMarker, delimiter, maxUploads, encodingType := getBucketMultipartResources(r.URL.Query())
 	if maxUploads < 0 {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidMaxUploads)
+
 		return
 	}
 	if keyMarker != "" {
 		// Marker not common with prefix is not implemented.
 		if !strings.HasPrefix(keyMarker, prefix) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNotImplemented)
+
 			return
 		}
 	}
@@ -248,6 +266,7 @@ func (s3a *S3ApiServer) ListMultipartUploadsHandler(w http.ResponseWriter, r *ht
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -263,22 +282,26 @@ func (s3a *S3ApiServer) ListObjectPartsHandler(w http.ResponseWriter, r *http.Re
 	// Check if bucket exists before listing object parts
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
 	uploadID, partNumberMarker, maxParts, _ := getObjectResources(r.URL.Query())
 	if partNumberMarker < 0 {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidPartNumberMarker)
+
 		return
 	}
 	if maxParts < 0 {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidMaxParts)
+
 		return
 	}
 
 	err := s3a.checkUploadId(object, uploadID)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchUpload)
+
 		return
 	}
 
@@ -292,13 +315,13 @@ func (s3a *S3ApiServer) ListObjectPartsHandler(w http.ResponseWriter, r *http.Re
 
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
 	glog.V(3).Infof("ListObjectPartsHandler %s count=%d", string(s3err.EncodeXMLResponse(response)), len(response.Part))
 
 	writeSuccessResponseXML(w, r, response)
-
 }
 
 // PutObjectPartHandler - Put an object part in a multipart upload.
@@ -308,6 +331,7 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 	// Check if bucket exists before putting object part
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -315,6 +339,7 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 	err := s3a.checkUploadId(object, uploadID)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchUpload)
+
 		return
 	}
 
@@ -322,14 +347,17 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 	partID, err := strconv.Atoi(partIDString)
 	if err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidPart)
+
 		return
 	}
 	if partID > s3_constants.MaxS3MultipartParts {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidPart)
+
 		return
 	}
 	if partID < 1 {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInvalidPart)
+
 		return
 	}
 
@@ -337,6 +365,7 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 	if s3ErrCode != s3err.ErrNone {
 		glog.Errorf("PutObjectPartHandler: getRequestDataReader failed with code %v", s3ErrCode)
 		s3err.WriteErrorResponse(w, r, s3ErrCode)
+
 		return
 	}
 	defer dataReader.Close()
@@ -352,17 +381,17 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 		if uploadEntry, err := s3a.getEntry(s3a.genUploadsFolder(bucket), uploadID); err == nil {
 			if uploadEntry.Extended != nil {
 				// Check if this upload uses SSE-KMS
-				if keyIDBytes, exists := uploadEntry.Extended[s3_constants.SeaweedFSSSEKMSKeyID]; exists {
+				if keyIDBytes, exists := uploadEntry.GetExtended()[s3_constants.SeaweedFSSSEKMSKeyID]; exists {
 					keyID := string(keyIDBytes)
 
 					// Build SSE-KMS metadata for this part
 					bucketKeyEnabled := false
-					if bucketKeyBytes, exists := uploadEntry.Extended[s3_constants.SeaweedFSSSEKMSBucketKeyEnabled]; exists && string(bucketKeyBytes) == "true" {
+					if bucketKeyBytes, exists := uploadEntry.GetExtended()[s3_constants.SeaweedFSSSEKMSBucketKeyEnabled]; exists && string(bucketKeyBytes) == "true" {
 						bucketKeyEnabled = true
 					}
 
 					var encryptionContext map[string]string
-					if contextBytes, exists := uploadEntry.Extended[s3_constants.SeaweedFSSSEKMSEncryptionContext]; exists {
+					if contextBytes, exists := uploadEntry.GetExtended()[s3_constants.SeaweedFSSSEKMSEncryptionContext]; exists {
 						// Parse the stored encryption context
 						if err := json.Unmarshal(contextBytes, &encryptionContext); err != nil {
 							glog.Errorf("Failed to parse encryption context for upload %s: %v", uploadID, err)
@@ -374,7 +403,7 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 
 					// Get the base IV for this multipart upload
 					var baseIV []byte
-					if baseIVBytes, exists := uploadEntry.Extended[s3_constants.SeaweedFSSSEKMSBaseIV]; exists {
+					if baseIVBytes, exists := uploadEntry.GetExtended()[s3_constants.SeaweedFSSSEKMSBaseIV]; exists {
 						// Decode the base64 encoded base IV
 						decodedIV, decodeErr := base64.StdEncoding.DecodeString(string(baseIVBytes))
 						if decodeErr == nil && len(decodedIV) == s3_constants.AESBlockSize {
@@ -389,6 +418,7 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 					if len(baseIV) == 0 {
 						glog.Errorf("No valid base IV found for SSE-KMS multipart upload %s - cannot proceed with encryption", uploadID)
 						s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 						return
 					}
 
@@ -406,12 +436,12 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 
 					// Pass the base IV to putToFiler via header
 					r.Header.Set(s3_constants.SeaweedFSSSEKMSBaseIVHeader, base64.StdEncoding.EncodeToString(baseIV))
-
 				} else {
 					// Check if this upload uses SSE-S3
 					if err := s3a.handleSSES3MultipartHeaders(r, uploadEntry, uploadID); err != nil {
 						glog.Errorf("Failed to setup SSE-S3 multipart headers: %v", err)
 						s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 						return
 					}
 				}
@@ -436,6 +466,7 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 		glog.Errorf("PutObjectPart: putToFiler failed with error code %v for bucket=%s, object=%s, partNumber=%d",
 			errCode, bucket, object, partID)
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -448,7 +479,6 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 	s3a.setSSEResponseHeaders(w, r, sseMetadata)
 
 	writeSuccessResponseEmpty(w, r)
-
 }
 
 func (s3a *S3ApiServer) genUploadsFolder(bucket string) string {
@@ -464,22 +494,23 @@ func (s3a *S3ApiServer) genPartUploadPath(bucket, uploadID string, partID int) s
 
 // Generate uploadID hash string from object
 func (s3a *S3ApiServer) generateUploadID(object string) string {
-
 	object = strings.TrimPrefix(object, "/")
 	h := sha1.New()
 	h.Write([]byte(object))
-	return fmt.Sprintf("%x", h.Sum(nil))
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Check object name and uploadID when processing  multipart uploading
 func (s3a *S3ApiServer) checkUploadId(object string, id string) error {
-
 	hash := s3a.generateUploadID(object)
 
 	if !strings.HasPrefix(id, hash) {
 		glog.Errorf("object %s and uploadID %s are not matched", object, id)
+
 		return fmt.Errorf("object %s and uploadID %s are not matched", object, id)
 	}
+
 	return nil
 }
 
@@ -495,6 +526,7 @@ func getBucketMultipartResources(values url.Values) (prefix, keyMarker, uploadID
 		maxUploads = maxUploadsList
 	}
 	encodingType = values.Get("encoding-type")
+
 	return
 }
 
@@ -508,10 +540,11 @@ func getObjectResources(values url.Values) (uploadID string, partNumberMarker, m
 		maxParts = maxPartsList
 	}
 	encodingType = values.Get("encoding-type")
+
 	return
 }
 
-func xmlDecoder(body io.Reader, v interface{}, size int64) error {
+func xmlDecoder(body io.Reader, v any, size int64) error {
 	var lbody io.Reader
 	if size > 0 {
 		lbody = io.LimitReader(body, size)
@@ -522,6 +555,7 @@ func xmlDecoder(body io.Reader, v interface{}, size int64) error {
 	d.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
 		return input, nil
 	}
+
 	return d.Decode(v)
 }
 
@@ -535,18 +569,17 @@ type CompletedPart struct {
 
 // handleSSES3MultipartHeaders handles SSE-S3 multipart upload header setup to reduce nesting complexity
 func (s3a *S3ApiServer) handleSSES3MultipartHeaders(r *http.Request, uploadEntry *filer_pb.Entry, uploadID string) error {
-	if encryptionTypeBytes, exists := uploadEntry.Extended[s3_constants.SeaweedFSSSES3Encryption]; exists && string(encryptionTypeBytes) == s3_constants.SSEAlgorithmAES256 {
-
+	if encryptionTypeBytes, exists := uploadEntry.GetExtended()[s3_constants.SeaweedFSSSES3Encryption]; exists && string(encryptionTypeBytes) == s3_constants.SSEAlgorithmAES256 {
 		// Set SSE-S3 headers to indicate server-side encryption
 		r.Header.Set(s3_constants.AmzServerSideEncryption, s3_constants.SSEAlgorithmAES256)
 
 		// Retrieve and set base IV for consistent multipart encryption - REQUIRED for security
 		var baseIV []byte
-		if baseIVBytes, exists := uploadEntry.Extended[s3_constants.SeaweedFSSSES3BaseIV]; exists {
+		if baseIVBytes, exists := uploadEntry.GetExtended()[s3_constants.SeaweedFSSSES3BaseIV]; exists {
 			// Decode the base64 encoded base IV
 			decodedIV, decodeErr := base64.StdEncoding.DecodeString(string(baseIVBytes))
 			if decodeErr != nil {
-				return fmt.Errorf("failed to decode base IV for SSE-S3 multipart upload %s: %v", uploadID, decodeErr)
+				return fmt.Errorf("failed to decode base IV for SSE-S3 multipart upload %s: %w", uploadID, decodeErr)
 			}
 			if len(decodedIV) != s3_constants.AESBlockSize {
 				return fmt.Errorf("invalid base IV length for SSE-S3 multipart upload %s: expected %d bytes, got %d", uploadID, s3_constants.AESBlockSize, len(decodedIV))
@@ -558,7 +591,7 @@ func (s3a *S3ApiServer) handleSSES3MultipartHeaders(r *http.Request, uploadEntry
 		}
 
 		// Retrieve and set key data for consistent multipart encryption - REQUIRED for decryption
-		if keyDataBytes, exists := uploadEntry.Extended[s3_constants.SeaweedFSSSES3KeyData]; exists {
+		if keyDataBytes, exists := uploadEntry.GetExtended()[s3_constants.SeaweedFSSSES3KeyData]; exists {
 			// Key data is already base64 encoded, pass it directly
 			keyDataStr := string(keyDataBytes)
 			r.Header.Set(s3_constants.SeaweedFSSSES3KeyDataHeader, keyDataStr)
@@ -569,7 +602,7 @@ func (s3a *S3ApiServer) handleSSES3MultipartHeaders(r *http.Request, uploadEntry
 
 		// Pass the base IV to putToFiler via header for offset calculation
 		r.Header.Set(s3_constants.SeaweedFSSSES3BaseIVHeader, base64.StdEncoding.EncodeToString(baseIV))
-
 	}
+
 	return nil
 }

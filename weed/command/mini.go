@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -131,6 +132,7 @@ func getBindIp() string {
 	if *miniBindIp != "" {
 		return *miniBindIp
 	}
+
 	return *miniIp
 }
 
@@ -307,15 +309,16 @@ func init() {
 func calculateOptimalVolumeSizeMB(dataFolder string) uint {
 	// Get disk status for the data folder using OS-independent function
 	diskStatus := stats_collect.NewDiskStatus(dataFolder)
-	if diskStatus == nil || diskStatus.All == 0 {
+	if diskStatus == nil || diskStatus.GetAll() == 0 {
 		glog.Warningf("Could not determine disk size, using default %dMB", defaultMiniVolumeSizeMB)
+
 		return defaultMiniVolumeSizeMB
 	}
 
 	// Calculate optimal size: total disk capacity / 100 for stability
 	// Using total capacity (All) instead of free space ensures consistent volume size
 	// regardless of current disk usage. diskStatus.All is in bytes, convert to MB
-	totalCapacityMB := diskStatus.All / bytesPerMB
+	totalCapacityMB := diskStatus.GetAll() / bytesPerMB
 	initialOptimalMB := uint(totalCapacityMB / 100)
 	optimalMB := initialOptimalMB
 
@@ -350,6 +353,7 @@ func isFlagPassed(name string) bool {
 			found = true
 		}
 	})
+
 	return found
 }
 
@@ -360,6 +364,7 @@ func isPortOpenOnIP(ip string, port int) bool {
 		return false
 	}
 	listener.Close()
+
 	return true
 }
 
@@ -372,6 +377,7 @@ func isPortAvailable(port int) bool {
 		return false
 	}
 	listener.Close()
+
 	return true
 }
 
@@ -379,7 +385,7 @@ func isPortAvailable(port int) bool {
 // It skips any ports that are in the reservedPorts map (for gRPC port collision avoidance)
 // It returns the first available port found within maxAttempts, or 0 if none found
 func findAvailablePortOnIP(ip string, startPort int, maxAttempts int, reservedPorts map[int]bool) int {
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		port := startPort + i
 		// Skip ports reserved for gRPC calculation
 		if reservedPorts[port] {
@@ -420,6 +426,7 @@ func ensurePortAvailableOnIP(portPtr *int, serviceName string, ip string, reserv
 			glog.Infof("Port %d for %s is available, using it instead of %d", newPort, serviceName, original)
 			*portPtr = newPort
 		}
+
 		return nil
 	}
 
@@ -441,6 +448,7 @@ func ensurePortAvailableOnIP(portPtr *int, serviceName string, ip string, reserv
 	} else {
 		glog.V(1).Infof("Port %d for %s is available on %s", original, serviceName, ip)
 	}
+
 	return nil
 }
 
@@ -522,7 +530,7 @@ func ensureAllPortsAvailableOnIP(bindIp string) error {
 	// Log the final port configuration
 	icebergPortStr := "disabled"
 	if miniS3Options.portIceberg != nil && *miniS3Options.portIceberg > 0 {
-		icebergPortStr = fmt.Sprintf("%d", *miniS3Options.portIceberg)
+		icebergPortStr = strconv.Itoa(*miniS3Options.portIceberg)
 	}
 	glog.Infof("Final port configuration - Master: %d, Filer: %d, Volume: %d, S3: %d, Iceberg: %s, WebDAV: %d, Admin: %d",
 		*miniMasterOptions.port, *miniFilerOptions.port, *miniOptions.v.port,
@@ -609,12 +617,13 @@ func loadMiniConfigurationFile(dataFolder string) (map[string]string, error) {
 			return options, nil
 		}
 		glog.Warningf("Failed to read configuration file %s: %v", configFile, err)
+
 		return options, err
 	}
 
 	// Parse the file line by line
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(data), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 
 		// Skip empty lines and comments
@@ -642,6 +651,7 @@ func loadMiniConfigurationFile(dataFolder string) (map[string]string, error) {
 	}
 
 	glog.Infof("Loaded %d options from configuration file %s", len(options), configFile)
+
 	return options, nil
 }
 
@@ -651,6 +661,7 @@ func applyConfigFileOptions(options map[string]string) {
 		// Skip port flags that were explicitly passed on CLI
 		if explicitPortFlags[key] {
 			glog.V(2).Infof("Skipping config file option %s=%s (explicitly specified on command line)", key, value)
+
 			continue
 		}
 		// Set the flag value if it hasn't been explicitly set on command line
@@ -671,6 +682,7 @@ func saveMiniConfiguration(dataFolder string) error {
 	configDir := util.ResolvePath(util.StringSplit(dataFolder, ",")[0])
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		glog.Warningf("Failed to create config directory %s: %v", configDir, err)
+
 		return err
 	}
 
@@ -699,22 +711,23 @@ func saveMiniConfiguration(dataFolder string) error {
 
 	// Add auto-calculated volume size if it was computed
 	if !isFlagPassed("master.volumeSizeLimitMB") && miniMasterOptions.volumeSizeLimitMB != nil {
-		sb.WriteString(fmt.Sprintf("\n# Auto-calculated volume size based on total disk capacity\n"))
-		sb.WriteString(fmt.Sprintf("# Delete this line to force recalculation on next startup\n"))
+		sb.WriteString("\n# Auto-calculated volume size based on total disk capacity\n")
+		sb.WriteString("# Delete this line to force recalculation on next startup\n")
 		sb.WriteString(fmt.Sprintf("master.volumeSizeLimitMB=%d\n", *miniMasterOptions.volumeSizeLimitMB))
 	}
 
 	if err := os.WriteFile(configFile, []byte(sb.String()), 0644); err != nil {
 		glog.Warningf("Failed to save configuration to %s: %v", configFile, err)
+
 		return err
 	}
 
 	glog.Infof("Mini configuration saved to %s", configFile)
+
 	return nil
 }
 
 func runMini(cmd *Command, args []string) bool {
-
 	// Capture which port flags were explicitly passed on CLI BEFORE config file is applied
 	// This is necessary to distinguish user-specified ports from defaults or config file options
 	explicitPortFlags = make(map[string]bool)
@@ -842,6 +855,7 @@ func runMini(cmd *Command, args []string) bool {
 	} else {
 		select {}
 	}
+
 	return true
 }
 
@@ -920,6 +934,7 @@ func waitForServiceReady(name string, port int, bindIp string) {
 		if err == nil {
 			resp.Body.Close()
 			glog.Infof("%s service is ready at %s", name, address)
+
 			return
 		}
 		attempt++
@@ -1022,7 +1037,7 @@ func startMiniAdminWithWorker(allServicesReady chan struct{}) {
 
 // waitForAdminServerReady pings the admin server HTTP endpoint to check if it's ready
 func waitForAdminServerReady(adminAddr string) error {
-	healthAddr := fmt.Sprintf("%s/health", adminAddr)
+	healthAddr := adminAddr + "/health"
 	maxAttempts := 60 // 60 * 500ms = 30 seconds max wait
 	attempt := 0
 	client := &http.Client{
@@ -1034,6 +1049,7 @@ func waitForAdminServerReady(adminAddr string) error {
 		if err == nil {
 			resp.Body.Close()
 			glog.V(1).Infof("Admin server is ready at %s", adminAddr)
+
 			return nil
 		}
 		attempt++
@@ -1055,6 +1071,7 @@ func waitForWorkerReady(workerGrpcAddr string) {
 		if err == nil {
 			conn.Close()
 			glog.V(1).Infof("Worker is ready at %s", workerGrpcAddr)
+
 			return
 		}
 		attempt++

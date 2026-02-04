@@ -4,16 +4,17 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 )
 
 func TestSequencer(t *testing.T) {
 	seq, err := NewSnowflakeSequencer("for_test", 1)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	last := uint64(0)
 	bytes := make([]byte, types.NeedleIdSize)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		next := seq.NextFileId(1)
 		types.NeedleIdToBytes(bytes, types.NeedleId(next))
 		println(hex.EncodeToString(bytes))
@@ -22,5 +23,4 @@ func TestSequencer(t *testing.T) {
 		}
 		last = next
 	}
-
 }

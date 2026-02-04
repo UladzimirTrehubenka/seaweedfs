@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mount/meta_cache"
@@ -23,6 +24,7 @@ const (
 // to handle concurrent readdir operations from NFS-Ganesha and other multi-threaded clients.
 type DirectoryHandle struct {
 	sync.Mutex
+
 	isFinished        bool
 	entryStream       []*filer.Entry
 	entryStreamOffset uint64
@@ -41,6 +43,7 @@ func (dh *DirectoryHandle) reset() {
 
 type DirectoryHandleToInode struct {
 	sync.Mutex
+
 	dir2inode map[DirectoryHandleId]*DirectoryHandle
 }
 
@@ -58,6 +61,7 @@ func (wfs *WFS) AcquireDirectoryHandle() (DirectoryHandleId, *DirectoryHandle) {
 	dh := &DirectoryHandle{}
 	dh.reset()
 	wfs.dhMap.dir2inode[fh] = dh
+
 	return fh, dh
 }
 
@@ -70,6 +74,7 @@ func (wfs *WFS) GetDirectoryHandle(dhid DirectoryHandleId) *DirectoryHandle {
 	dh := &DirectoryHandle{}
 	dh.reset()
 	wfs.dhMap.dir2inode[dhid] = dh
+
 	return dh
 }
 
@@ -95,6 +100,7 @@ func (wfs *WFS) OpenDir(cancel <-chan struct{}, input *fuse.OpenIn, out *fuse.Op
 	}
 	dhid, _ := wfs.AcquireDirectoryHandle()
 	out.Fh = uint64(dhid)
+
 	return fuse.OK
 }
 
@@ -194,6 +200,7 @@ func (wfs *WFS) doReadDirectory(input *fuse.ReadIn, out *fuse.DirEntryList, isPl
 			wfs.outputFilerEntry(entryOut, inode, entry)
 			wfs.inodeToPath.Lookup(dirPath.Child(dirEntry.Name), entry.Crtime.Unix(), entry.IsDirectory(), len(entry.HardLinkId) > 0, entry.Inode, true)
 		}
+
 		return true
 	}
 
@@ -223,16 +230,19 @@ func (wfs *WFS) doReadDirectory(input *fuse.ReadIn, out *fuse.DirEntryList, isPl
 
 			if err := meta_cache.EnsureVisited(wfs.metaCache, wfs, dirPath); err != nil {
 				glog.Errorf("dir ReadDirAll %s: %v", dirPath, err)
+
 				return fuse.EIO
 			}
 
 			// Load entries from beginning to fill cache up to the requested offset
 			loadErr := wfs.metaCache.ListDirectoryEntries(context.Background(), dirPath, "", false, skipCount+int64(batchSize), func(entry *filer.Entry) (bool, error) {
 				dh.entryStream = append(dh.entryStream, entry)
+
 				return true, nil
 			})
 			if loadErr != nil {
 				glog.Errorf("list meta cache: %v", loadErr)
+
 				return fuse.EIO
 			}
 		}
@@ -258,6 +268,7 @@ func (wfs *WFS) doReadDirectory(input *fuse.ReadIn, out *fuse.DirEntryList, isPl
 		// Cache exhausted, load next batch
 		if err := meta_cache.EnsureVisited(wfs.metaCache, wfs, dirPath); err != nil {
 			glog.Errorf("dir ReadDirAll %s: %v", dirPath, err)
+
 			return fuse.EIO
 		}
 
@@ -270,12 +281,15 @@ func (wfs *WFS) doReadDirectory(input *fuse.ReadIn, out *fuse.DirEntryList, isPl
 			loadedCount++
 			if !processEachEntryFn(entry, currentIndex) {
 				bufferFull = true
+
 				return false, nil
 			}
+
 			return true, nil
 		})
 		if loadErr != nil {
 			glog.Errorf("list meta cache: %v", loadErr)
+
 			return fuse.EIO
 		}
 

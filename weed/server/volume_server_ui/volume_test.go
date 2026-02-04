@@ -12,27 +12,27 @@ func TestStatusTpl(t *testing.T) {
 	args := struct {
 		Version       string
 		Masters       []string
-		Volumes       interface{}
-		EcVolumes     interface{}
-		RemoteVolumes interface{}
-		DiskStatuses  interface{}
-		Stats         interface{}
+		Volumes       any
+		EcVolumes     any
+		RemoteVolumes any
+		DiskStatuses  any
+		Stats         any
 		Counters      *stats.ServerStats
 	}{
 		Version: "3.59",
 		Masters: []string{"localhost:9333"},
-		EcVolumes: []interface{}{
+		EcVolumes: []any{
 			struct {
 				VolumeId   uint32
 				Collection string
 				Size       uint64
-				Shards     []interface{}
+				Shards     []any
 				CreatedAt  time.Time
 			}{
 				VolumeId:   1,
 				Collection: "ectest",
 				Size:       8 * 1024 * 1024,
-				Shards: []interface{}{
+				Shards: []any{
 					struct {
 						ShardId uint8
 						Size    int64

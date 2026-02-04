@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -21,12 +22,12 @@ func NewProviderRegistry() *ProviderRegistry {
 // RegisterProvider registers a new identity provider
 func (r *ProviderRegistry) RegisterProvider(provider IdentityProvider) error {
 	if provider == nil {
-		return fmt.Errorf("provider cannot be nil")
+		return errors.New("provider cannot be nil")
 	}
 
 	name := provider.Name()
 	if name == "" {
-		return fmt.Errorf("provider name cannot be empty")
+		return errors.New("provider name cannot be empty")
 	}
 
 	r.mu.Lock()
@@ -37,6 +38,7 @@ func (r *ProviderRegistry) RegisterProvider(provider IdentityProvider) error {
 	}
 
 	r.providers[name] = provider
+
 	return nil
 }
 
@@ -46,6 +48,7 @@ func (r *ProviderRegistry) GetProvider(name string) (IdentityProvider, bool) {
 	defer r.mu.RUnlock()
 
 	provider, exists := r.providers[name]
+
 	return provider, exists
 }
 
@@ -58,6 +61,7 @@ func (r *ProviderRegistry) ListProviders() []string {
 	for name := range r.providers {
 		names = append(names, name)
 	}
+
 	return names
 }
 
@@ -71,6 +75,7 @@ func (r *ProviderRegistry) UnregisterProvider(name string) error {
 	}
 
 	delete(r.providers, name)
+
 	return nil
 }
 

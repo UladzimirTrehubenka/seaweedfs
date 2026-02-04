@@ -2,12 +2,13 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"slices"
 )
 
 // handleDescribeGroups handles DescribeGroups API (key 15)
 func (h *Handler) handleDescribeGroups(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// Parse request
 	request, err := h.parseDescribeGroupsRequest(requestBody, apiVersion)
 	if err != nil {
@@ -31,7 +32,6 @@ func (h *Handler) handleDescribeGroups(correlationID uint32, apiVersion uint16, 
 
 // handleListGroups handles ListGroups API (key 16)
 func (h *Handler) handleListGroups(correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// Parse request (ListGroups has minimal request structure)
 	request, err := h.parseListGroupsRequest(requestBody, apiVersion)
 	if err != nil {
@@ -78,7 +78,7 @@ func (h *Handler) describeGroup(groupID string) DescribeGroupsGroup {
 		var assignmentBytes []byte
 		if len(member.Assignment) > 0 {
 			// In a real implementation, this would serialize the assignment properly
-			assignmentBytes = []byte(fmt.Sprintf("assignment:%d", len(member.Assignment)))
+			assignmentBytes = fmt.Appendf(nil, "assignment:%d", len(member.Assignment))
 		}
 
 		members = append(members, DescribeGroupsMember{
@@ -150,13 +150,7 @@ func (h *Handler) listAllGroups(statesFilter []string) []ListGroupsGroup {
 
 		// Apply state filter if provided
 		if len(statesFilter) > 0 {
-			matchesFilter := false
-			for _, state := range statesFilter {
-				if stateStr == state {
-					matchesFilter = true
-					break
-				}
-			}
+			matchesFilter := slices.Contains(statesFilter, stateStr)
 			if !matchesFilter {
 				continue
 			}
@@ -227,7 +221,7 @@ func (h *Handler) parseDescribeGroupsRequest(data []byte, apiVersion uint16) (*D
 
 	// Skip client_id if present (depends on version)
 	if len(data) < 4 {
-		return nil, fmt.Errorf("request too short")
+		return nil, errors.New("request too short")
 	}
 
 	// Group IDs array
@@ -235,7 +229,7 @@ func (h *Handler) parseDescribeGroupsRequest(data []byte, apiVersion uint16) (*D
 	offset += 4
 
 	request.GroupIDs = make([]string, groupCount)
-	for i := uint32(0); i < groupCount; i++ {
+	for i := range groupCount {
 		if offset+2 > len(data) {
 			return nil, fmt.Errorf("invalid group ID at index %d", i)
 		}
@@ -270,7 +264,7 @@ func (h *Handler) parseListGroupsRequest(data []byte, apiVersion uint16) (*ListG
 
 		if statesCount > 0 {
 			request.StatesFilter = make([]string, statesCount)
-			for i := uint32(0); i < statesCount; i++ {
+			for i := range statesCount {
 				if offset+2 > len(data) {
 					break
 				}

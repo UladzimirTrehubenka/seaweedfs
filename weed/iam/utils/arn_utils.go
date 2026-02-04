@@ -81,6 +81,7 @@ func ExtractRoleNameFromPrincipal(principal string) string {
 		if slash := strings.Index(afterMarker, "/"); slash != -1 {
 			return afterMarker[:slash]
 		}
+
 		return afterMarker
 	}
 
@@ -168,13 +169,10 @@ func ParseRoleARN(roleArn string) ARNInfo {
 
 	// Validate ARN structure: should be either "role/..." or "ACCOUNT:role/..."
 	// Split on ':' to separate account ID (if present) from resource type
-	resourcePart := remainder
-	accountPart := ""
-
-	if colonIdx := strings.Index(remainder, ":"); colonIdx != -1 {
-		// Standard format with account ID: "ACCOUNT:role/..."
-		accountPart = remainder[:colonIdx]
-		resourcePart = remainder[colonIdx+1:]
+	accountPart, resourcePart, ok := strings.Cut(remainder, ":")
+	if !ok {
+		resourcePart = remainder
+		accountPart = ""
 	}
 
 	// Verify the resource type is exactly "role/"
@@ -224,13 +222,10 @@ func ParsePrincipalARN(principal string) ARNInfo {
 
 		// Validate ARN structure: should be either "assumed-role/..." or "ACCOUNT:assumed-role/..."
 		// Split on ':' to separate account ID (if present) from resource type
-		resourcePart := remainder
-		accountPart := ""
-
-		if colonIdx := strings.Index(remainder, ":"); colonIdx != -1 {
-			// Standard format with account ID: "ACCOUNT:assumed-role/..."
-			accountPart = remainder[:colonIdx]
-			resourcePart = remainder[colonIdx+1:]
+		accountPart, resourcePart, ok := strings.Cut(remainder, ":")
+		if !ok {
+			resourcePart = remainder
+			accountPart = ""
 		}
 
 		// Verify the resource type is exactly "assumed-role/"

@@ -12,6 +12,7 @@ func StructToSchema(instance any) *schema_pb.RecordType {
 		return nil
 	}
 	st := reflectTypeToSchemaType(myType)
+
 	return st.GetRecordType()
 }
 
@@ -22,13 +23,13 @@ func CreateCombinedRecordType(keyRecordType *schema_pb.RecordType, valueRecordTy
 
 	// Add key fields with "key_" prefix
 	if keyRecordType != nil {
-		for _, field := range keyRecordType.Fields {
+		for _, field := range keyRecordType.GetFields() {
 			keyField := &schema_pb.Field{
-				Name:       "key_" + field.Name,
-				FieldIndex: field.FieldIndex, // Will be reindexed later
-				Type:       field.Type,
-				IsRepeated: field.IsRepeated,
-				IsRequired: field.IsRequired,
+				Name:       "key_" + field.GetName(),
+				FieldIndex: field.GetFieldIndex(), // Will be reindexed later
+				Type:       field.GetType(),
+				IsRepeated: field.GetIsRepeated(),
+				IsRequired: field.GetIsRequired(),
 			}
 			combinedFields = append(combinedFields, keyField)
 		}
@@ -36,9 +37,7 @@ func CreateCombinedRecordType(keyRecordType *schema_pb.RecordType, valueRecordTy
 
 	// Add value fields (no prefix)
 	if valueRecordType != nil {
-		for _, field := range valueRecordType.Fields {
-			combinedFields = append(combinedFields, field)
-		}
+		combinedFields = append(combinedFields, valueRecordType.GetFields()...)
 	}
 
 	// Reindex all fields to have sequential indices
@@ -95,11 +94,13 @@ func reflectTypeToSchemaType(t reflect.Type) *schema_pb.Type {
 				Type: schemaField,
 			})
 		}
+
 		return &schema_pb.Type{
 			Kind: &schema_pb.Type_RecordType{
 				RecordType: recordType,
 			},
 		}
 	}
+
 	return nil
 }

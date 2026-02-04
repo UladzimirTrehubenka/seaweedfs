@@ -59,9 +59,8 @@ func (l *loggingT) swap(writers [numSeverity]flushSyncWriter) (old [numSeverity]
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	old = l.file
-	for i, w := range writers {
-		logging.file[i] = w
-	}
+	logging.file = writers
+
 	return
 }
 
@@ -128,11 +127,13 @@ func TestInfoDepth(t *testing.T) {
 		x := strings.Index(msg, " ")
 		if x < 0 {
 			t.Errorf("InfoDepth[%d]: missing ' ': %q", i, m)
+
 			continue
 		}
 		line, err := strconv.Atoi(msg[:x])
 		if err != nil {
 			t.Errorf("InfoDepth[%d]: bad line number: %q", i, m)
+
 			continue
 		}
 		wantLine++
@@ -408,7 +409,7 @@ func TestLogBacktraceAt(t *testing.T) {
 }
 
 func BenchmarkHeader(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf, _, _ := logging.header(infoLog, 0)
 		logging.putBuffer(buf)
 	}

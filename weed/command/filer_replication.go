@@ -29,7 +29,6 @@ var cmdFilerReplicate = &Command{
 }
 
 func runFilerReplicate(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	util.LoadConfiguration("replication", true)
 	util.LoadConfiguration("notification", true)
@@ -47,6 +46,7 @@ func runFilerReplicate(cmd *Command, args []string) bool {
 			}
 			glog.V(0).Infof("Configure notification input to %s", input.GetName())
 			notificationInput = input
+
 			break
 		}
 	}
@@ -54,6 +54,7 @@ func runFilerReplicate(cmd *Command, args []string) bool {
 	if notificationInput == nil {
 		println("No notification is defined in notification.toml file.")
 		println("Please follow 'weed scaffold -config=notification' to see example notification configurations.")
+
 		return true
 	}
 
@@ -75,6 +76,7 @@ func runFilerReplicate(cmd *Command, args []string) bool {
 		for _, sk := range sink.Sinks {
 			println("    " + sk.GetName())
 		}
+
 		return true
 	}
 
@@ -87,6 +89,7 @@ func runFilerReplicate(cmd *Command, args []string) bool {
 			if onFailureFn != nil {
 				onFailureFn()
 			}
+
 			continue
 		}
 		if key == "" {
@@ -94,11 +97,12 @@ func runFilerReplicate(cmd *Command, args []string) bool {
 			if onSuccessFn != nil {
 				onSuccessFn()
 			}
+
 			continue
 		}
-		if m.OldEntry != nil && m.NewEntry == nil {
+		if m.GetOldEntry() != nil && m.GetNewEntry() == nil {
 			glog.V(1).Infof("delete: %s", key)
-		} else if m.OldEntry == nil && m.NewEntry != nil {
+		} else if m.GetOldEntry() == nil && m.GetNewEntry() != nil {
 			glog.V(1).Infof("add: %s", key)
 		} else {
 			glog.V(1).Infof("modify: %s", key)
@@ -115,7 +119,6 @@ func runFilerReplicate(cmd *Command, args []string) bool {
 			}
 		}
 	}
-
 }
 
 func findSink(config *util.ViperProxy) sink.ReplicationSink {
@@ -128,9 +131,11 @@ func findSink(config *util.ViperProxy) sink.ReplicationSink {
 			}
 			glog.V(0).Infof("Configure sink to %s", sk.GetName())
 			dataSink = sk
+
 			break
 		}
 	}
+
 	return dataSink
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -153,12 +154,12 @@ Performance Features:
 }
 
 func runDB(cmd *Command, args []string) bool {
-
 	util.LoadConfiguration("security", false)
 
 	// Validate options
 	if *dbOptions.masterAddr == "" {
 		fmt.Fprintf(os.Stderr, "Error: master address is required\n")
+
 		return false
 	}
 
@@ -166,6 +167,7 @@ func runDB(cmd *Command, args []string) bool {
 	authMethod, err := parseAuthMethod(*dbOptions.authMethod)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
 		return false
 	}
 
@@ -173,6 +175,7 @@ func runDB(cmd *Command, args []string) bool {
 	users, err := parseUsers(*dbOptions.users, authMethod)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
 		return false
 	}
 
@@ -180,12 +183,14 @@ func runDB(cmd *Command, args []string) bool {
 	idleTimeout, err := time.ParseDuration(*dbOptions.idleTimeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing idle timeout: %v\n", err)
+
 		return false
 	}
 
 	// Validate port number
 	if err := validatePortNumber(*dbOptions.port); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
 		return false
 	}
 
@@ -195,6 +200,7 @@ func runDB(cmd *Command, args []string) bool {
 		cert, err := tls.LoadX509KeyPair(*dbOptions.tlsCert, *dbOptions.tlsKey)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading TLS certificates: %v\n", err)
+
 			return false
 		}
 		tlsConfig = &tls.Config{
@@ -218,6 +224,7 @@ func runDB(cmd *Command, args []string) bool {
 	dbServer, err := postgres.NewPostgreSQLServer(config, *dbOptions.masterAddr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating database server: %v\n", err)
+
 		return false
 	}
 
@@ -245,6 +252,7 @@ func runDB(cmd *Command, args []string) bool {
 		// Show first user as example
 		for username := range users {
 			fmt.Printf("  psql -h %s -p %d -U %s -d %s\n", *dbOptions.host, *dbOptions.port, username, *dbOptions.database)
+
 			break
 		}
 	}
@@ -265,6 +273,7 @@ func runDB(cmd *Command, args []string) bool {
 	err = dbServer.Start()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error starting database server: %v\n", err)
+
 		return false
 	}
 
@@ -290,11 +299,13 @@ func runDB(cmd *Command, args []string) bool {
 	case err := <-done:
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error stopping database server: %v\n", err)
+
 			return false
 		}
 		fmt.Printf("Database server stopped successfully\n")
 	case <-ctx.Done():
 		fmt.Fprintf(os.Stderr, "Timeout waiting for database server to stop\n")
+
 		return false
 	}
 
@@ -325,8 +336,9 @@ func parseUsers(usersStr string, authMethod postgres.AuthMethod) (map[string]str
 	if usersStr == "" {
 		// No users specified
 		if authMethod != postgres.AuthTrust {
-			return nil, fmt.Errorf("users must be specified when auth method is not 'trust'")
+			return nil, errors.New("users must be specified when auth method is not 'trust'")
 		}
+
 		return users, nil
 	}
 
@@ -347,20 +359,20 @@ func parseUsers(usersStr string, authMethod postgres.AuthMethod) (map[string]str
 	}
 
 	// Invalid format
-	return nil, fmt.Errorf("invalid user credentials format. Use JSON format '{\"user\":\"pass\"}' or file format '@/path/to/users.json' or 'path/to/users.json'. Legacy semicolon-separated format is no longer supported")
+	return nil, errors.New("invalid user credentials format. Use JSON format '{\"user\":\"pass\"}' or file format '@/path/to/users.json' or 'path/to/users.json'. Legacy semicolon-separated format is no longer supported")
 }
 
 // parseUsersJSON parses user credentials from JSON format
 func parseUsersJSON(jsonStr string, authMethod postgres.AuthMethod) (map[string]string, error) {
 	var users map[string]string
 	if err := json.Unmarshal([]byte(jsonStr), &users); err != nil {
-		return nil, fmt.Errorf("invalid JSON format for users: %v", err)
+		return nil, fmt.Errorf("invalid JSON format for users: %w", err)
 	}
 
 	// Validate users
 	for username, password := range users {
 		if username == "" {
-			return nil, fmt.Errorf("empty username in JSON user specification")
+			return nil, errors.New("empty username in JSON user specification")
 		}
 		if authMethod != postgres.AuthTrust && password == "" {
 			return nil, fmt.Errorf("empty password for user '%s' with auth method", username)
@@ -378,7 +390,7 @@ func parseUsersFile(filePath string, authMethod postgres.AuthMethod) (map[string
 	// Read file content
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read users file '%s': %v", filePath, err)
+		return nil, fmt.Errorf("failed to read users file '%s': %w", filePath, err)
 	}
 
 	contentStr := strings.TrimSpace(string(content))
@@ -400,5 +412,6 @@ func validatePortNumber(port int) error {
 	if port < 1024 {
 		fmt.Fprintf(os.Stderr, "Warning: port number %d may require root privileges\n", port)
 	}
+
 	return nil
 }

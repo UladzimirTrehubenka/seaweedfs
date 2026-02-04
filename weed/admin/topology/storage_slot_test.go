@@ -1,12 +1,12 @@
 package topology
 
 import (
-	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
-	"github.com/stretchr/testify/assert"
 )
 
 // NOTE: These tests are designed to work with any value of erasure_coding.DataShardsCount.
@@ -55,13 +55,13 @@ func TestStorageSlotChangeArithmetic(t *testing.T) {
 
 	// Test ToVolumeSlots conversion
 	impact1 := StorageSlotChange{VolumeSlots: 5, ShardSlots: 10}
-	assert.Equal(t, int64(6), impact1.ToVolumeSlots(), fmt.Sprintf("ToVolumeSlots should be 5 + 10/%d = 6", erasure_coding.DataShardsCount))
+	assert.Equal(t, int64(6), impact1.ToVolumeSlots(), "ToVolumeSlots should be 5 + 10/%d = 6", erasure_coding.DataShardsCount)
 
 	impact2 := StorageSlotChange{VolumeSlots: -2, ShardSlots: 25}
-	assert.Equal(t, int64(0), impact2.ToVolumeSlots(), fmt.Sprintf("ToVolumeSlots should be -2 + 25/%d = 0", erasure_coding.DataShardsCount))
+	assert.Equal(t, int64(0), impact2.ToVolumeSlots(), "ToVolumeSlots should be -2 + 25/%d = 0", erasure_coding.DataShardsCount)
 
 	impact3 := StorageSlotChange{VolumeSlots: 3, ShardSlots: 7}
-	assert.Equal(t, int64(3), impact3.ToVolumeSlots(), fmt.Sprintf("ToVolumeSlots should be 3 + 7/%d = 3 (integer division)", erasure_coding.DataShardsCount))
+	assert.Equal(t, int64(3), impact3.ToVolumeSlots(), "ToVolumeSlots should be 3 + 7/%d = 3 (integer division)", erasure_coding.DataShardsCount)
 }
 
 // TestStorageSlotChange tests the new dual-level storage slot tracking
@@ -262,7 +262,7 @@ func TestStorageSlotChangeCapacityCalculation(t *testing.T) {
 	capacityAfterShards := activeTopology.GetEffectiveAvailableCapacity("10.0.0.1:8080", 0)
 	// Dynamic calculation: 5 shards < DataShardsCount, so no volume impact
 	expectedImpact5 := int64(5 / erasure_coding.DataShardsCount) // Should be 0 for any reasonable DataShardsCount
-	assert.Equal(t, int64(90-expectedImpact5), capacityAfterShards, fmt.Sprintf("5 shard slots should consume %d volume slot equivalent (5/%d = %d)", expectedImpact5, erasure_coding.DataShardsCount, expectedImpact5))
+	assert.Equal(t, int64(90-expectedImpact5), capacityAfterShards, "5 shard slots should consume %d volume slot equivalent (5/%d = %d)", expectedImpact5, erasure_coding.DataShardsCount, expectedImpact5)
 
 	// Add more shards to reach threshold
 	additionalShards := int32(erasure_coding.DataShardsCount)                        // Add exactly one volume worth of shards
@@ -286,7 +286,7 @@ func TestStorageSlotChangeCapacityCalculation(t *testing.T) {
 	totalShards := 5 + erasure_coding.DataShardsCount
 	expectedImpact15 := int64(totalShards / erasure_coding.DataShardsCount) // Should be 1
 	capacityAfterMoreShards := activeTopology.GetEffectiveAvailableCapacity("10.0.0.1:8080", 0)
-	assert.Equal(t, int64(90-expectedImpact15), capacityAfterMoreShards, fmt.Sprintf("%d shard slots should consume %d volume slot equivalent (%d/%d = %d)", totalShards, expectedImpact15, totalShards, erasure_coding.DataShardsCount, expectedImpact15))
+	assert.Equal(t, int64(90-expectedImpact15), capacityAfterMoreShards, "%d shard slots should consume %d volume slot equivalent (%d/%d = %d)", totalShards, expectedImpact15, totalShards, erasure_coding.DataShardsCount, expectedImpact15)
 
 	// Add a full volume task
 	targetImpact3 := StorageSlotChange{VolumeSlots: 1, ShardSlots: 0} // Target gains 1 volume
@@ -451,9 +451,9 @@ func TestECMultipleTargets(t *testing.T) {
 	expectedTarget3Impact := int64(4 / erasure_coding.DataShardsCount) // 4 shards impact
 
 	assert.Equal(t, int64(40), sourceCapacity, "Source: 40 (EC source reserves with zero StorageSlotChange impact)")
-	assert.Equal(t, int64(25-expectedTarget1Impact), target1Capacity, fmt.Sprintf("Target 1: 25 - %d (5 shards/%d = %d impact) = %d", expectedTarget1Impact, erasure_coding.DataShardsCount, expectedTarget1Impact, 25-expectedTarget1Impact))
-	assert.Equal(t, int64(32-expectedTarget2Impact), target2Capacity, fmt.Sprintf("Target 2: 32 - %d (5 shards/%d = %d impact) = %d", expectedTarget2Impact, erasure_coding.DataShardsCount, expectedTarget2Impact, 32-expectedTarget2Impact))
-	assert.Equal(t, int64(23-expectedTarget3Impact), target3Capacity, fmt.Sprintf("Target 3: 23 - %d (4 shards/%d = %d impact) = %d", expectedTarget3Impact, erasure_coding.DataShardsCount, expectedTarget3Impact, 23-expectedTarget3Impact))
+	assert.Equal(t, int64(25-expectedTarget1Impact), target1Capacity, "Target 1: 25 - %d (5 shards/%d = %d impact) = %d", expectedTarget1Impact, erasure_coding.DataShardsCount, expectedTarget1Impact, 25-expectedTarget1Impact)
+	assert.Equal(t, int64(32-expectedTarget2Impact), target2Capacity, "Target 2: 32 - %d (5 shards/%d = %d impact) = %d", expectedTarget2Impact, erasure_coding.DataShardsCount, expectedTarget2Impact, 32-expectedTarget2Impact)
+	assert.Equal(t, int64(23-expectedTarget3Impact), target3Capacity, "Target 3: 23 - %d (4 shards/%d = %d impact) = %d", expectedTarget3Impact, erasure_coding.DataShardsCount, expectedTarget3Impact, 23-expectedTarget3Impact)
 
 	t.Logf("EC operation distributed %d shards across %d targets", len(shardDestinations), 3)
 	t.Logf("Capacity impacts: EC source reserves with zero impact, Targets minimal (shards < %d)", erasure_coding.DataShardsCount)
@@ -665,10 +665,10 @@ func TestReplicatedVolumeECOperations(t *testing.T) {
 	// Verify capacity impact on all source replicas (each should reserve with zero impact)
 	for i, source := range sources {
 		plannedVol, reservedVol, plannedShard, reservedShard, _ := testGetDiskStorageImpact(activeTopology, source.ServerID, source.DiskID)
-		assert.Equal(t, int64(0), plannedVol, fmt.Sprintf("Source replica %d should reserve with zero volume slot impact", i+1))
-		assert.Equal(t, int64(0), reservedVol, fmt.Sprintf("Source replica %d should have no active volume slots", i+1))
-		assert.Equal(t, int32(0), plannedShard, fmt.Sprintf("Source replica %d should have no planned shard slots", i+1))
-		assert.Equal(t, int32(0), reservedShard, fmt.Sprintf("Source replica %d should have no active shard slots", i+1))
+		assert.Equal(t, int64(0), plannedVol, "Source replica %d should reserve with zero volume slot impact", i+1)
+		assert.Equal(t, int64(0), reservedVol, "Source replica %d should have no active volume slots", i+1)
+		assert.Equal(t, int32(0), plannedShard, "Source replica %d should have no planned shard slots", i+1)
+		assert.Equal(t, int32(0), reservedShard, "Source replica %d should have no active shard slots", i+1)
 		// Note: EstimatedSize tracking is no longer exposed via public API
 	}
 
@@ -680,8 +680,8 @@ func TestReplicatedVolumeECOperations(t *testing.T) {
 
 	for serverID, expectedShards := range destinationCounts {
 		plannedVol, _, plannedShard, _, _ := testGetDiskStorageImpact(activeTopology, serverID, 0)
-		assert.Equal(t, int64(0), plannedVol, fmt.Sprintf("Destination %s should have no planned volume slots", serverID))
-		assert.Equal(t, int32(expectedShards), plannedShard, fmt.Sprintf("Destination %s should plan to receive %d shards", serverID, expectedShards))
+		assert.Equal(t, int64(0), plannedVol, "Destination %s should have no planned volume slots", serverID)
+		assert.Equal(t, int32(expectedShards), plannedShard, "Destination %s should plan to receive %d shards", serverID, expectedShards)
 	}
 
 	// Verify effective capacity calculation for sources (should have zero EC impact)
@@ -705,9 +705,9 @@ func TestReplicatedVolumeECOperations(t *testing.T) {
 	dest6ShardImpact := int64(4 / erasure_coding.DataShardsCount) // 4 shards impact
 
 	// Destinations should be reduced by shard impact
-	assert.Equal(t, int64(85-dest4ShardImpact), destCapacity4, fmt.Sprintf("Dest 4: 100 - 15 (current) - %d (5 shards/%d = %d impact) = %d", dest4ShardImpact, erasure_coding.DataShardsCount, dest4ShardImpact, 85-dest4ShardImpact))
-	assert.Equal(t, int64(80-dest5ShardImpact), destCapacity5, fmt.Sprintf("Dest 5: 100 - 20 (current) - %d (5 shards/%d = %d impact) = %d", dest5ShardImpact, erasure_coding.DataShardsCount, dest5ShardImpact, 80-dest5ShardImpact))
-	assert.Equal(t, int64(75-dest6ShardImpact), destCapacity6, fmt.Sprintf("Dest 6: 100 - 25 (current) - %d (4 shards/%d = %d impact) = %d", dest6ShardImpact, erasure_coding.DataShardsCount, dest6ShardImpact, 75-dest6ShardImpact))
+	assert.Equal(t, int64(85-dest4ShardImpact), destCapacity4, "Dest 4: 100 - 15 (current) - %d (5 shards/%d = %d impact) = %d", dest4ShardImpact, erasure_coding.DataShardsCount, dest4ShardImpact, 85-dest4ShardImpact)
+	assert.Equal(t, int64(80-dest5ShardImpact), destCapacity5, "Dest 5: 100 - 20 (current) - %d (5 shards/%d = %d impact) = %d", dest5ShardImpact, erasure_coding.DataShardsCount, dest5ShardImpact, 80-dest5ShardImpact)
+	assert.Equal(t, int64(75-dest6ShardImpact), destCapacity6, "Dest 6: 100 - 25 (current) - %d (4 shards/%d = %d impact) = %d", dest6ShardImpact, erasure_coding.DataShardsCount, dest6ShardImpact, 75-dest6ShardImpact)
 
 	t.Logf("Replicated volume EC operation: %d source replicas, %d EC shards distributed across %d destinations",
 		len(sources), len(shardDestinations), len(destinationCounts))
@@ -819,11 +819,11 @@ func TestECWithOldShardCleanup(t *testing.T) {
 	assert.NoError(t, err, "Should successfully create EC task with mixed cleanup types")
 
 	// Verify capacity impact on volume replica sources (zero impact for EC)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		source := sources[i]
 		plannedVol, _, plannedShard, _, _ := testGetDiskStorageImpact(activeTopology, source.ServerID, source.DiskID)
-		assert.Equal(t, int64(0), plannedVol, fmt.Sprintf("Volume replica source %d should have zero volume slot impact", i+1))
-		assert.Equal(t, int32(0), plannedShard, fmt.Sprintf("Volume replica source %d should have zero shard slot impact", i+1))
+		assert.Equal(t, int64(0), plannedVol, "Volume replica source %d should have zero volume slot impact", i+1)
+		assert.Equal(t, int32(0), plannedShard, "Volume replica source %d should have zero shard slot impact", i+1)
 		// Note: EstimatedSize tracking is no longer exposed via public API
 	}
 
@@ -831,8 +831,8 @@ func TestECWithOldShardCleanup(t *testing.T) {
 	for i := 2; i < 4; i++ {
 		source := sources[i]
 		plannedVol, _, plannedShard, _, _ := testGetDiskStorageImpact(activeTopology, source.ServerID, source.DiskID)
-		assert.Equal(t, int64(0), plannedVol, fmt.Sprintf("EC shard source %d should have zero volume slot impact", i+1))
-		assert.Equal(t, int32(-erasure_coding.TotalShardsCount), plannedShard, fmt.Sprintf("EC shard source %d should free %d shard slots", i+1, erasure_coding.TotalShardsCount))
+		assert.Equal(t, int64(0), plannedVol, "EC shard source %d should have zero volume slot impact", i+1)
+		assert.Equal(t, int32(-erasure_coding.TotalShardsCount), plannedShard, "EC shard source %d should free %d shard slots", i+1, erasure_coding.TotalShardsCount)
 		// Note: EstimatedSize tracking is no longer exposed via public API
 	}
 
@@ -852,15 +852,15 @@ func TestECWithOldShardCleanup(t *testing.T) {
 	capacity6 := activeTopology.GetEffectiveAvailableCapacity("10.0.0.6:8080", 0) // Receiving new EC shards
 
 	// Servers freeing old EC shards should have INCREASED capacity (freed shard slots provide capacity)
-	assert.Equal(t, int64(98), capacity3, fmt.Sprintf("Server 3: 100 - 3 (current) + 1 (freeing %d shards) = 98", erasure_coding.TotalShardsCount))
-	assert.Equal(t, int64(94), capacity4, fmt.Sprintf("Server 4: 100 - 7 (current) + 1 (freeing %d shards) = 94", erasure_coding.TotalShardsCount))
+	assert.Equal(t, int64(98), capacity3, "Server 3: 100 - 3 (current) + 1 (freeing %d shards) = 98", erasure_coding.TotalShardsCount)
+	assert.Equal(t, int64(94), capacity4, "Server 4: 100 - 7 (current) + 1 (freeing %d shards) = 94", erasure_coding.TotalShardsCount)
 
 	// Servers receiving new EC shards should have slightly reduced capacity
 	server5ShardImpact := int64(9 / erasure_coding.DataShardsCount) // 9 shards impact
 	server6ShardImpact := int64(5 / erasure_coding.DataShardsCount) // 5 shards impact
 
-	assert.Equal(t, int64(80-server5ShardImpact), capacity5, fmt.Sprintf("Server 5: 100 - 20 (current) - %d (9 shards/%d = %d impact) = %d", server5ShardImpact, erasure_coding.DataShardsCount, server5ShardImpact, 80-server5ShardImpact))
-	assert.Equal(t, int64(75-server6ShardImpact), capacity6, fmt.Sprintf("Server 6: 100 - 25 (current) - %d (5 shards/%d = %d impact) = %d", server6ShardImpact, erasure_coding.DataShardsCount, server6ShardImpact, 75-server6ShardImpact))
+	assert.Equal(t, int64(80-server5ShardImpact), capacity5, "Server 5: 100 - 20 (current) - %d (9 shards/%d = %d impact) = %d", server5ShardImpact, erasure_coding.DataShardsCount, server5ShardImpact, 80-server5ShardImpact)
+	assert.Equal(t, int64(75-server6ShardImpact), capacity6, "Server 6: 100 - 25 (current) - %d (5 shards/%d = %d impact) = %d", server6ShardImpact, erasure_coding.DataShardsCount, server6ShardImpact, 75-server6ShardImpact)
 
 	t.Logf("EC operation with cleanup: %d volume replicas + %d old EC shard locations → %d new EC shards",
 		2, 2, len(shardDestinations))
@@ -955,7 +955,7 @@ func TestStorageSlotChangeConversions(t *testing.T) {
 	dataShards := int32(erasure_coding.DataShardsCount)
 
 	// Test conversion constants
-	assert.Equal(t, int(dataShards), ShardsPerVolumeSlot, fmt.Sprintf("Should use erasure_coding.DataShardsCount (%d) shards per volume slot", dataShards))
+	assert.Equal(t, ShardsPerVolumeSlot, int(dataShards), "Should use erasure_coding.DataShardsCount (%d) shards per volume slot", dataShards)
 
 	// Test basic conversions using dynamic values
 	volumeOnly := StorageSlotChange{VolumeSlots: 5, ShardSlots: 0}
@@ -964,16 +964,16 @@ func TestStorageSlotChangeConversions(t *testing.T) {
 
 	// Test ToVolumeSlots conversion - these should work regardless of DataShardsCount value
 	assert.Equal(t, int64(5), volumeOnly.ToVolumeSlots(), "5 volume slots = 5 volume slots")
-	assert.Equal(t, int64(2), shardOnly.ToVolumeSlots(), fmt.Sprintf("%d shard slots = 2 volume slots", 2*dataShards))
+	assert.Equal(t, int64(2), shardOnly.ToVolumeSlots(), "%d shard slots = 2 volume slots", 2*dataShards)
 	expectedMixedVolumes := int64(2 + (dataShards+5)/dataShards) // 2 + floor((DataShardsCount+5)/DataShardsCount)
-	assert.Equal(t, expectedMixedVolumes, mixed.ToVolumeSlots(), fmt.Sprintf("2 volume + %d shards = %d volume slots", dataShards+5, expectedMixedVolumes))
+	assert.Equal(t, expectedMixedVolumes, mixed.ToVolumeSlots(), "2 volume + %d shards = %d volume slots", dataShards+5, expectedMixedVolumes)
 
 	// Test ToShardSlots conversion
 	expectedVolumeShards := int32(5 * dataShards)
-	assert.Equal(t, expectedVolumeShards, volumeOnly.ToShardSlots(), fmt.Sprintf("5 volume slots = %d shard slots", expectedVolumeShards))
-	assert.Equal(t, 2*dataShards, shardOnly.ToShardSlots(), fmt.Sprintf("%d shard slots = %d shard slots", 2*dataShards, 2*dataShards))
+	assert.Equal(t, expectedVolumeShards, volumeOnly.ToShardSlots(), "5 volume slots = %d shard slots", expectedVolumeShards)
+	assert.Equal(t, 2*dataShards, shardOnly.ToShardSlots(), "%d shard slots = %d shard slots", 2*dataShards, 2*dataShards)
 	expectedMixedShards := int32(2*dataShards + dataShards + 5)
-	assert.Equal(t, expectedMixedShards, mixed.ToShardSlots(), fmt.Sprintf("2 volume + %d shards = %d shard slots", dataShards+5, expectedMixedShards))
+	assert.Equal(t, expectedMixedShards, mixed.ToShardSlots(), "2 volume + %d shards = %d shard slots", dataShards+5, expectedMixedShards)
 
 	// Test capacity accommodation checks using shard-based comparison
 	availableVolumes := int32(10)
@@ -990,10 +990,10 @@ func TestStorageSlotChangeConversions(t *testing.T) {
 	shardShardsNeeded := 5 * dataShards
 	mixedShardsNeeded := 8*dataShards + 3*dataShards
 
-	assert.True(t, available.CanAccommodate(smallVolumeRequest), fmt.Sprintf("Should accommodate small volume request (%d <= %d shards)", smallShardsNeeded, availableShards))
-	assert.False(t, available.CanAccommodate(largeVolumeRequest), fmt.Sprintf("Should NOT accommodate large volume request (%d > %d shards)", largeShardsNeeded, availableShards))
-	assert.True(t, available.CanAccommodate(shardRequest), fmt.Sprintf("Should accommodate shard request (%d <= %d shards)", shardShardsNeeded, availableShards))
-	assert.False(t, available.CanAccommodate(mixedRequest), fmt.Sprintf("Should NOT accommodate mixed request (%d > %d shards)", mixedShardsNeeded, availableShards))
+	assert.True(t, available.CanAccommodate(smallVolumeRequest), "Should accommodate small volume request (%d <= %d shards)", smallShardsNeeded, availableShards)
+	assert.False(t, available.CanAccommodate(largeVolumeRequest), "Should NOT accommodate large volume request (%d > %d shards)", largeShardsNeeded, availableShards)
+	assert.True(t, available.CanAccommodate(shardRequest), "Should accommodate shard request (%d <= %d shards)", shardShardsNeeded, availableShards)
+	assert.False(t, available.CanAccommodate(mixedRequest), "Should NOT accommodate mixed request (%d > %d shards)", mixedShardsNeeded, availableShards)
 
 	t.Logf("Conversion tests passed: %d shards = 1 volume slot", ShardsPerVolumeSlot)
 	t.Logf("Mixed capacity (%d volumes + %d shards) = %d equivalent volume slots",

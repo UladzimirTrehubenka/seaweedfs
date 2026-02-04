@@ -8,7 +8,7 @@ import (
 
 func TestAWSIAMMatch(t *testing.T) {
 	evalCtx := &EvaluationContext{
-		RequestContext: map[string]interface{}{
+		RequestContext: map[string]any{
 			"aws:username":      "testuser",
 			"saml:username":     "john.doe",
 			"oidc:sub":          "user123",
@@ -112,7 +112,7 @@ func TestAWSIAMMatch(t *testing.T) {
 
 func TestExpandPolicyVariables(t *testing.T) {
 	evalCtx := &EvaluationContext{
-		RequestContext: map[string]interface{}{
+		RequestContext: map[string]any{
 			"aws:username":  "alice",
 			"saml:username": "alice.smith",
 			"oidc:sub":      "sub123",

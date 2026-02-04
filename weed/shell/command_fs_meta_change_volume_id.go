@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -44,7 +45,6 @@ func (c *commandFsMetaChangeVolumeId) HasTag(CommandTag) bool {
 }
 
 func (c *commandFsMetaChangeVolumeId) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	fsMetaChangeVolumeIdCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	dir := fsMetaChangeVolumeIdCommand.String("dir", "/", "fix all metadata under this folder")
 	mappingFileName := fsMetaChangeVolumeIdCommand.String("mapping", "", "a file with multiple volume id changes, with each line as x=>y")
@@ -66,24 +66,25 @@ func (c *commandFsMetaChangeVolumeId) Do(args []string, commandEnv *CommandEnv, 
 		readMappingFromFile(*mappingFileName, mapping)
 	} else {
 		if *fromVolumeId == *toVolumeId {
-			return fmt.Errorf("no volume id changes")
+			return errors.New("no volume id changes")
 		}
 		if *fromVolumeId == 0 || *toVolumeId == 0 {
-			return fmt.Errorf("volume id can not be zero")
+			return errors.New("volume id can not be zero")
 		}
 		mapping[needle.VolumeId(*fromVolumeId)] = needle.VolumeId(*toVolumeId)
 	}
 
 	return commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 		return filer_pb.TraverseBfs(context.Background(), commandEnv, util.FullPath(*dir), func(parentPath util.FullPath, entry *filer_pb.Entry) error {
-			if !entry.IsDirectory {
+			if !entry.GetIsDirectory() {
 				var hasChanges bool
-				for _, chunk := range entry.Chunks {
-					if chunk.IsChunkManifest {
-						fmt.Printf("Change volume id for large file is not implemented yet: %s/%s\n", parentPath, entry.Name)
+				for _, chunk := range entry.GetChunks() {
+					if chunk.GetIsChunkManifest() {
+						fmt.Printf("Change volume id for large file is not implemented yet: %s/%s\n", parentPath, entry.GetName())
+
 						return nil
 					}
-					chunkVolumeId := chunk.Fid.VolumeId
+					chunkVolumeId := chunk.GetFid().GetVolumeId()
 					if toVolumeId, found := mapping[needle.VolumeId(chunkVolumeId)]; found {
 						hasChanges = true
 						chunk.Fid.VolumeId = uint32(toVolumeId)
@@ -91,17 +92,18 @@ func (c *commandFsMetaChangeVolumeId) Do(args []string, commandEnv *CommandEnv, 
 					}
 				}
 				if hasChanges {
-					println("Updating", parentPath, entry.Name)
+					println("Updating", parentPath, entry.GetName())
 					if *applyChanges {
 						if updateErr := filer_pb.UpdateEntry(context.Background(), client, &filer_pb.UpdateEntryRequest{
 							Directory: string(parentPath),
 							Entry:     entry,
 						}); updateErr != nil {
-							fmt.Printf("failed to update %s/%s: %v\n", parentPath, entry.Name, updateErr)
+							fmt.Printf("failed to update %s/%s: %v\n", parentPath, entry.GetName(), updateErr)
 						}
 					}
 				}
 			}
+
 			return nil
 		})
 	})
@@ -110,17 +112,18 @@ func (c *commandFsMetaChangeVolumeId) Do(args []string, commandEnv *CommandEnv, 
 func readMappingFromFile(filename string, mapping map[needle.VolumeId]needle.VolumeId) error {
 	mappingFile, openErr := os.Open(filename)
 	if openErr != nil {
-		return fmt.Errorf("failed to open file %s: %v", filename, openErr)
+		return fmt.Errorf("failed to open file %s: %w", filename, openErr)
 	}
 	defer mappingFile.Close()
 	mappingContent, readErr := io.ReadAll(mappingFile)
 	if readErr != nil {
-		return fmt.Errorf("failed to read file %s: %v", filename, readErr)
+		return fmt.Errorf("failed to read file %s: %w", filename, readErr)
 	}
-	for _, line := range strings.Split(string(mappingContent), "\n") {
+	for line := range strings.SplitSeq(string(mappingContent), "\n") {
 		parts := strings.Split(line, "=>")
 		if len(parts) != 2 {
 			println("unrecognized line:", line)
+
 			continue
 		}
 		x, errX := strconv.ParseUint(strings.TrimSpace(parts[0]), 10, 64)
@@ -133,5 +136,6 @@ func readMappingFromFile(filename string, mapping map[needle.VolumeId]needle.Vol
 		}
 		mapping[needle.VolumeId(x)] = needle.VolumeId(y)
 	}
+
 	return nil
 }

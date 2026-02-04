@@ -3,8 +3,9 @@ package types
 import (
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
 	"google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/worker_pb"
 )
 
 // TaskType represents the type of maintenance task

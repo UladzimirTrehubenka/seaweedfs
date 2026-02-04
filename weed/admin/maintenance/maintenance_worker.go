@@ -68,6 +68,7 @@ func GetTaskExecutorFactory(taskType MaintenanceTaskType) (TaskExecutorFactory, 
 	executorRegistryMutex.RLock()
 	defer executorRegistryMutex.RUnlock()
 	factory, exists := taskExecutorFactories[taskType]
+
 	return factory, exists
 }
 
@@ -83,6 +84,7 @@ func GetSupportedExecutorTaskTypes() []MaintenanceTaskType {
 	for taskType := range taskExecutorFactories {
 		taskTypes = append(taskTypes, taskType)
 	}
+
 	return taskTypes
 }
 
@@ -174,6 +176,7 @@ func (mws *MaintenanceWorkerService) executeGenericTask(task *MaintenanceTask) e
 	mws.updateTaskProgress(task.ID, 100)
 
 	glog.V(2).Infof("Generic task %s completed successfully", task.ID)
+
 	return nil
 }
 
@@ -228,6 +231,7 @@ func (mws *MaintenanceWorkerService) Start() error {
 	go mws.workerLoop()
 
 	glog.Infof("Maintenance worker %s started at %s", mws.workerID, mws.address)
+
 	return nil
 }
 
@@ -244,6 +248,7 @@ func (mws *MaintenanceWorkerService) Stop() {
 		select {
 		case <-timeout.C:
 			glog.Warningf("Worker %s stopping with %d tasks still running", mws.workerID, len(mws.currentTasks))
+
 			return
 		case <-time.After(time.Second):
 			// Check again
@@ -339,8 +344,8 @@ func (mws *MaintenanceWorkerService) updateTaskProgress(taskID string, progress 
 }
 
 // GetStatus returns the current status of the worker
-func (mws *MaintenanceWorkerService) GetStatus() map[string]interface{} {
-	return map[string]interface{}{
+func (mws *MaintenanceWorkerService) GetStatus() map[string]any {
+	return map[string]any{
 		"worker_id":      mws.workerID,
 		"address":        mws.address,
 		"running":        mws.running,

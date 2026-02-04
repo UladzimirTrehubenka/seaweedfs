@@ -71,5 +71,4 @@ func TestTTLReadWrite(t *testing.T) {
 	if ttl.Minutes() != ttl3.Minutes() {
 		t.Errorf("ttl:%v ttl3:%v", ttl, ttl3)
 	}
-
 }

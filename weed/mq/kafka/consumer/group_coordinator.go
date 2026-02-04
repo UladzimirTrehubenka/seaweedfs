@@ -194,6 +194,7 @@ func (gc *GroupCoordinator) ListGroups() []string {
 	for groupID := range gc.groups {
 		groups = append(groups, groupID)
 	}
+
 	return groups
 }
 
@@ -209,6 +210,7 @@ func (gc *GroupCoordinator) FindStaticMember(group *ConsumerGroup, instanceID st
 	if memberID, exists := group.StaticMembers[instanceID]; exists {
 		return group.Members[memberID]
 	}
+
 	return nil
 }
 
@@ -221,6 +223,7 @@ func (gc *GroupCoordinator) FindStaticMemberLocked(group *ConsumerGroup, instanc
 	if memberID, exists := group.StaticMembers[instanceID]; exists {
 		return group.Members[memberID]
 	}
+
 	return nil
 }
 
@@ -276,7 +279,8 @@ func (gc *GroupCoordinator) GenerateMemberID(clientID, clientHost string) string
 	// EXPERIMENT: Use simpler member ID format like real Kafka brokers
 	// Real Kafka uses format like: "consumer-1-uuid" or "consumer-groupId-uuid"
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(clientID+"-"+clientHost)))
-	return fmt.Sprintf("consumer-%s", hash[:16]) // Shorter, simpler format
+
+	return "consumer-" + hash[:16] // Shorter, simpler format
 }
 
 // ValidateSessionTimeout checks if session timeout is within acceptable range
@@ -366,11 +370,11 @@ func (gc *GroupCoordinator) Close() {
 }
 
 // GetGroupStats returns statistics about the group coordinator
-func (gc *GroupCoordinator) GetGroupStats() map[string]interface{} {
+func (gc *GroupCoordinator) GetGroupStats() map[string]any {
 	gc.groupsMu.RLock()
 	defer gc.groupsMu.RUnlock()
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"total_groups": len(gc.groups),
 		"group_states": make(map[string]int),
 	}

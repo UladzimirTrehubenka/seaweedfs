@@ -3,6 +3,7 @@ package command
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -99,8 +100,8 @@ type VolumeFileScanner4Export struct {
 
 func (scanner *VolumeFileScanner4Export) VisitSuperBlock(superBlock super_block.SuperBlock) error {
 	scanner.version = superBlock.Version
-	return nil
 
+	return nil
 }
 func (scanner *VolumeFileScanner4Export) ReadNeedleBody() bool {
 	return true
@@ -117,6 +118,7 @@ func (scanner *VolumeFileScanner4Export) VisitNeedle(n *needle.Needle, offset in
 		if newerThanUnix >= 0 && n.HasLastModifiedDate() && n.LastModified < uint64(newerThanUnix) {
 			glog.V(3).Infof("Skipping this file, as it's old enough: LastModified %d vs %d",
 				n.LastModified, newerThanUnix)
+
 			return nil
 		}
 		scanner.counter++
@@ -127,6 +129,7 @@ func (scanner *VolumeFileScanner4Export) VisitNeedle(n *needle.Needle, offset in
 			return writeFile(vid, n)
 		} else {
 			printNeedle(vid, n, scanner.version, false, offset, n.DiskSize(scanner.version))
+
 			return nil
 		}
 	}
@@ -143,16 +146,17 @@ func (scanner *VolumeFileScanner4Export) VisitNeedle(n *needle.Needle, offset in
 	} else {
 		glog.V(2).Infof("Skipping later-updated Id %d size %d", n.Id, n.Size)
 	}
+
 	return nil
 }
 
 func runExport(cmd *Command, args []string) bool {
-
 	var err error
 
 	if *newer != "" {
 		if newerThan, err = time.ParseInLocation(timeFormat, *newer, localLocation); err != nil {
 			fmt.Println("cannot parse 'newer' argument: " + err.Error())
+
 			return false
 		}
 		newerThanUnix = newerThan.Unix()
@@ -165,11 +169,13 @@ func runExport(cmd *Command, args []string) bool {
 	if *output != "" {
 		if *output != "-" && !strings.HasSuffix(*output, ".tar") {
 			fmt.Println("the output file", *output, "should be '-' or end with .tar")
+
 			return false
 		}
 
 		if fileNameTemplate, err = template.New("name").Parse(*format); err != nil {
 			fmt.Println("cannot parse format " + *format + ": " + err.Error())
+
 			return false
 		}
 
@@ -214,9 +220,10 @@ func runExport(cmd *Command, args []string) bool {
 	}
 
 	err = storage.ScanVolumeFile(util.ResolvePath(*export.dir), *export.collection, vid, storage.NeedleMapInMemory, volumeFileScanner)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		glog.Errorf("Export Volume File [ERROR] %s\n", err)
 	}
+
 	return true
 }
 
@@ -263,5 +270,6 @@ func writeFile(vid needle.VolumeId, n *needle.Needle) (err error) {
 		return err
 	}
 	_, err = tarOutputFile.Write(n.Data)
-	return
+
+	return err
 }

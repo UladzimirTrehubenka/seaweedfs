@@ -11,11 +11,12 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/ThreeDotsLabs/watermill/message/router/plugin"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/notification"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -181,6 +182,7 @@ func (w *Queue) handleWebhook(msg *message.Message) error {
 	var n filer_pb.EventNotification
 	if err := proto.Unmarshal(msg.Payload, &n); err != nil {
 		glog.Errorf("failed to unmarshal protobuf message: %v", err)
+
 		return err
 	}
 
@@ -193,6 +195,7 @@ func (w *Queue) handleWebhook(msg *message.Message) error {
 
 	if err := w.client.sendMessage(webhookMsg); err != nil {
 		glog.Errorf("failed to send message to webhook %s: %v", webhookMsg.Key, err)
+
 		return err
 	}
 
@@ -211,10 +214,12 @@ func (w *Queue) logDeadLetterMessages() error {
 			case msg, ok := <-ch:
 				if !ok {
 					glog.Info("dead letter channel closed")
+
 					return
 				}
 				if msg == nil {
 					glog.Errorf("received nil message from dead letter channel")
+
 					continue
 				}
 				key := "unknown"

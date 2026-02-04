@@ -2,7 +2,9 @@ package s3api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -28,20 +30,23 @@ func (bpe *BucketPolicyEngine) LoadBucketPolicy(bucket string, entry *filer_pb.E
 		return nil
 	}
 
-	policyJSON, exists := entry.Extended[BUCKET_POLICY_METADATA_KEY]
+	policyJSON, exists := entry.GetExtended()[BUCKET_POLICY_METADATA_KEY]
 	if !exists || len(policyJSON) == 0 {
 		// No policy for this bucket - remove it if it exists
 		bpe.engine.DeleteBucketPolicy(bucket)
+
 		return nil
 	}
 
 	// Set the policy in the engine
 	if err := bpe.engine.SetBucketPolicy(bucket, string(policyJSON)); err != nil {
 		glog.Errorf("Failed to load bucket policy for %s: %v", bucket, err)
+
 		return err
 	}
 
 	glog.V(3).Infof("Loaded bucket policy for %s into policy engine", bucket)
+
 	return nil
 }
 
@@ -52,6 +57,7 @@ func (bpe *BucketPolicyEngine) LoadBucketPolicyFromCache(bucket string, policyDo
 	if policyDoc == nil {
 		// No policy for this bucket - remove it if it exists
 		bpe.engine.DeleteBucketPolicy(bucket)
+
 		return nil
 	}
 
@@ -60,16 +66,19 @@ func (bpe *BucketPolicyEngine) LoadBucketPolicyFromCache(bucket string, policyDo
 	policyJSON, err := json.Marshal(policyDoc)
 	if err != nil {
 		glog.Errorf("Failed to marshal bucket policy for %s: %v", bucket, err)
+
 		return err
 	}
 
 	// Set the policy in the engine
 	if err := bpe.engine.SetBucketPolicy(bucket, string(policyJSON)); err != nil {
 		glog.Errorf("Failed to load bucket policy for %s: %v", bucket, err)
+
 		return err
 	}
 
 	glog.V(4).Infof("Loaded bucket policy for %s into policy engine from cache", bucket)
+
 	return nil
 }
 
@@ -108,13 +117,13 @@ func (bpe *BucketPolicyEngine) ListBucketPolicies() []string {
 //   - allowed: whether the policy allows the action
 //   - evaluated: whether a policy was found and evaluated (false = no policy exists)
 //   - error: any error during evaluation
-func (bpe *BucketPolicyEngine) EvaluatePolicy(bucket, object, action, principal string, r *http.Request, claims map[string]interface{}, objectEntry map[string][]byte) (allowed bool, evaluated bool, err error) {
+func (bpe *BucketPolicyEngine) EvaluatePolicy(bucket, object, action, principal string, r *http.Request, claims map[string]any, objectEntry map[string][]byte) (allowed bool, evaluated bool, err error) {
 	// Validate required parameters
 	if bucket == "" {
-		return false, false, fmt.Errorf("bucket cannot be empty")
+		return false, false, errors.New("bucket cannot be empty")
 	}
 	if action == "" {
-		return false, false, fmt.Errorf("action cannot be empty")
+		return false, false, errors.New("action cannot be empty")
 	}
 
 	// Convert action to S3 action format
@@ -144,9 +153,7 @@ func (bpe *BucketPolicyEngine) EvaluatePolicy(bucket, object, action, principal 
 
 		// Extract principal-related variables (aws:username, etc.) from principal ARN
 		principalVars := policy_engine.ExtractPrincipalVariables(principal)
-		for k, v := range principalVars {
-			args.Conditions[k] = v
-		}
+		maps.Copy(args.Conditions, principalVars)
 
 		// Extract JWT claims if authenticated via JWT or STS
 		if claims != nil {

@@ -42,15 +42,9 @@ func TestBatchConstruction(t *testing.T) {
 
 		// Debug: show what bytes the CRC is calculated over
 		t.Logf("CRC data (first 100 bytes):")
-		dumpSize := 100
-		if len(crcData) < dumpSize {
-			dumpSize = len(crcData)
-		}
+		dumpSize := min(len(crcData), 100)
 		for i := 0; i < dumpSize; i += 16 {
-			end := i + 16
-			if end > dumpSize {
-				end = dumpSize
-			}
+			end := min(i+16, dumpSize)
 			t.Logf("  %04d: %x", i, crcData[i:end])
 		}
 	} else {
@@ -234,7 +228,7 @@ func constructTestBatch(baseOffset int64, timestamp time.Time, key, value []byte
 }
 
 // verifyField logs a field's value
-func verifyField(t *testing.T, name string, bytes []byte, value interface{}) {
+func verifyField(t *testing.T, name string, bytes []byte, value any) {
 	t.Logf("  %s: %x (value: %v)", name, bytes, value)
 }
 
@@ -242,12 +236,10 @@ func verifyField(t *testing.T, name string, bytes []byte, value interface{}) {
 func hexDumpTest(data []byte) string {
 	var buf bytes.Buffer
 	for i := 0; i < len(data); i += 16 {
-		end := i + 16
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(i+16, len(data))
 		buf.WriteString(fmt.Sprintf("  %04d: %x\n", i, data[i:end]))
 	}
+
 	return buf.String()
 }
 
@@ -289,11 +281,11 @@ func TestConcurrentBatchConstruction(t *testing.T) {
 	const numBatches = 10
 	results := make(chan bool, numBatches)
 
-	for i := 0; i < numBatches; i++ {
+	for i := range numBatches {
 		go func(id int) {
 			batch := constructTestBatch(int64(id), timestamp,
-				[]byte(fmt.Sprintf("key-%d", id)),
-				[]byte(fmt.Sprintf("value-%d", id)))
+				fmt.Appendf(nil, "key-%d", id),
+				fmt.Appendf(nil, "value-%d", id))
 
 			// Validate CRC
 			storedCRC := binary.BigEndian.Uint32(batch[17:21])
@@ -305,7 +297,7 @@ func TestConcurrentBatchConstruction(t *testing.T) {
 
 	// Check all results
 	allValid := true
-	for i := 0; i < numBatches; i++ {
+	for i := range numBatches {
 		if !<-results {
 			allValid = false
 			t.Errorf("Batch %d has invalid CRC", i)

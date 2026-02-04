@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -23,34 +24,33 @@ func mapErrorToPostgreSQLCode(err error) string {
 	}
 
 	// Use typed errors for robust error mapping
-	switch err.(type) {
-	case engine.ParseError:
-		return "42601" // Syntax error
-
-	case engine.TableNotFoundError:
-		return "42P01" // Undefined table
-
-	case engine.ColumnNotFoundError:
-		return "42703" // Undefined column
-
-	case engine.UnsupportedFeatureError:
-		return "0A000" // Feature not supported
-
-	case engine.AggregationError:
-		// Aggregation errors are usually function-related issues
-		return "42883" // Undefined function (aggregation function issues)
-
-	case engine.DataSourceError:
-		// Data source errors are usually access or connection issues
-		return "08000" // Connection exception
-
-	case engine.OptimizationError:
-		// Optimization failures are usually feature limitations
-		return "0A000" // Feature not supported
-
-	case engine.NoSchemaError:
-		// Topic exists but no schema available
-		return "42P01" // Undefined table (treat as table not found)
+	{
+		var errCase0 engine.ParseError
+		var errCase1 engine.TableNotFoundError
+		var errCase2 engine.ColumnNotFoundError
+		var errCase3 engine.UnsupportedFeatureError
+		var errCase4 engine.AggregationError
+		var errCase5 engine.DataSourceError
+		var errCase6 engine.OptimizationError
+		var errCase7 engine.NoSchemaError
+		switch {
+		case errors.As(err, &errCase0):
+			return "42601"
+		case errors.As(err, &errCase1):
+			return "42P01"
+		case errors.As(err, &errCase2):
+			return "42703"
+		case errors.As(err, &errCase3):
+			return "0A000"
+		case errors.As(err, &errCase4):
+			return "42883"
+		case errors.As(err, &errCase5):
+			return "08000"
+		case errors.As(err, &errCase6):
+			return "0A000"
+		case errors.As(err, &errCase7):
+			return "42P01"
+		}
 	}
 
 	// Fallback: analyze error message for backward compatibility with non-typed errors
@@ -198,6 +198,7 @@ func (s *PostgreSQLServer) handleSimpleQuery(session *PostgreSQLSession, query s
 			if err != nil {
 				return err
 			}
+
 			continue // Continue with next statement
 		}
 
@@ -303,7 +304,7 @@ func (s *PostgreSQLServer) handleSystemQuery(session *PostgreSQLSession, query s
 	case "select current_setting('server_version')":
 		return &SystemQueryResult{
 			Columns: []string{"server_version"},
-			Rows:    [][]string{{fmt.Sprintf("%s (SeaweedFS)", version.VERSION_NUMBER)}},
+			Rows:    [][]string{{version.VERSION_NUMBER + " (SeaweedFS)"}},
 		}
 	case "select current_setting('server_encoding')":
 		return &SystemQueryResult{
@@ -361,9 +362,7 @@ func (s *PostgreSQLServer) sendSystemQueryResult(session *PostgreSQLSession, res
 
 	// Create column descriptions for system query results
 	columns := make([]string, len(result.Columns))
-	for i, col := range result.Columns {
-		columns[i] = col
-	}
+	copy(columns, result.Columns)
 
 	// Convert to sqltypes.Value format
 	var sqlRows [][]sqltypes.Value
@@ -477,6 +476,7 @@ func (s *PostgreSQLServer) handleDescribe(session *PostgreSQLSession, msgBody []
 		Columns: []string{},
 		Rows:    [][]sqltypes.Value{},
 	}
+
 	return s.sendRowDescription(session, tempResult)
 }
 
@@ -535,6 +535,7 @@ func (s *PostgreSQLServer) sendParameterStatus(session *PostgreSQLSession, name,
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -550,6 +551,7 @@ func (s *PostgreSQLServer) sendBackendKeyData(session *PostgreSQLSession) error 
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -564,6 +566,7 @@ func (s *PostgreSQLServer) sendReadyForQuery(session *PostgreSQLSession) error {
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -629,6 +632,7 @@ func (s *PostgreSQLServer) sendRowDescription(session *PostgreSQLSession, result
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -677,6 +681,7 @@ func (s *PostgreSQLServer) sendDataRow(session *PostgreSQLSession, row []sqltype
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -697,6 +702,7 @@ func (s *PostgreSQLServer) sendCommandComplete(session *PostgreSQLSession, tag s
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -710,6 +716,7 @@ func (s *PostgreSQLServer) sendParseComplete(session *PostgreSQLSession) error {
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -723,6 +730,7 @@ func (s *PostgreSQLServer) sendBindComplete(session *PostgreSQLSession) error {
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -736,6 +744,7 @@ func (s *PostgreSQLServer) sendCloseComplete(session *PostgreSQLSession) error {
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -757,6 +766,7 @@ func (s *PostgreSQLServer) sendError(session *PostgreSQLSession, code, message s
 	if err == nil {
 		err = session.writer.Flush()
 	}
+
 	return err
 }
 
@@ -788,9 +798,9 @@ func (s *PostgreSQLServer) getPostgreSQLTypeFromSchema(result *engine.QueryResul
 		if tableInfo, err := s.sqlEngine.GetCatalog().GetTableInfo(result.Database, result.Table); err == nil {
 			if tableInfo.Schema != nil && tableInfo.Schema.RecordType != nil {
 				// Look for the field in the schema
-				for _, field := range tableInfo.Schema.RecordType.Fields {
-					if field.Name == columnName {
-						return s.mapSchemaTypeToPostgreSQL(field.Type)
+				for _, field := range tableInfo.Schema.RecordType.GetFields() {
+					if field.GetName() == columnName {
+						return s.mapSchemaTypeToPostgreSQL(field.GetType())
 					}
 				}
 			}
@@ -817,7 +827,7 @@ func (s *PostgreSQLServer) mapSchemaTypeToPostgreSQL(fieldType *schema_pb.Type) 
 		return PG_TYPE_TEXT
 	}
 
-	switch kind := fieldType.Kind.(type) {
+	switch kind := fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		switch kind.ScalarType {
 		case schema_pb.ScalarType_BOOL:
@@ -884,6 +894,7 @@ func (s *PostgreSQLServer) getPostgreSQLTypeFromData(columns []string, rows [][]
 				if valueStr == "true" || valueStr == "false" {
 					return PG_TYPE_BOOL
 				}
+
 				return PG_TYPE_TEXT
 			}
 		}

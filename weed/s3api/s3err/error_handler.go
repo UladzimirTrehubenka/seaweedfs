@@ -3,7 +3,6 @@ package s3err
 import (
 	"bytes"
 	"encoding/xml"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil"
 	"github.com/gorilla/mux"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
@@ -21,17 +21,18 @@ const (
 	MimeXML  mimeType = "application/xml"
 )
 
-func WriteAwsXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, result interface{}) {
+func WriteAwsXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, result any) {
 	var bytesBuffer bytes.Buffer
 	err := xmlutil.BuildXML(result, xml.NewEncoder(&bytesBuffer))
 	if err != nil {
 		WriteErrorResponse(w, r, ErrInternalError)
+
 		return
 	}
 	WriteResponse(w, r, statusCode, bytesBuffer.Bytes(), MimeXML)
 }
 
-func WriteXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, response interface{}) {
+func WriteXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, response any) {
 	WriteResponse(w, r, statusCode, EncodeXMLResponse(response), MimeXML)
 }
 
@@ -61,21 +62,22 @@ func getRESTErrorResponse(err APIError, resource string, bucket, object string) 
 		Key:        object,
 		Message:    err.Description,
 		Resource:   resource,
-		RequestID:  fmt.Sprintf("%d", time.Now().UnixNano()),
+		RequestID:  strconv.FormatInt(time.Now().UnixNano(), 10),
 	}
 }
 
 // Encodes the response headers into XML format.
-func EncodeXMLResponse(response interface{}) []byte {
+func EncodeXMLResponse(response any) []byte {
 	var bytesBuffer bytes.Buffer
 	bytesBuffer.WriteString(xml.Header)
 	e := xml.NewEncoder(&bytesBuffer)
 	e.Encode(response)
+
 	return bytesBuffer.Bytes()
 }
 
 func setCommonHeaders(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("x-amz-request-id", fmt.Sprintf("%d", time.Now().UnixNano()))
+	w.Header().Set("x-amz-request-id", strconv.FormatInt(time.Now().UnixNano(), 10))
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	// Handle CORS headers for requests with Origin header

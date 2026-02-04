@@ -1,5 +1,4 @@
 //go:build tarantool
-// +build tarantool
 
 package tarantool
 
@@ -8,9 +7,10 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/tarantool/go-tarantool/v2/crud"
 	"github.com/tarantool/go-tarantool/v2/pool"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 )
 
 const (

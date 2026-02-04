@@ -1,11 +1,8 @@
 //go:build !5BytesOffset
-// +build !5BytesOffset
 
 package types
 
-import (
-	"fmt"
-)
+import "strconv"
 
 type OffsetHigher struct {
 	// b4 byte
@@ -52,6 +49,7 @@ func (offset Offset) IsZero() bool {
 
 func ToOffset(offset int64) Offset {
 	smaller := uint32(offset / int64(NeedlePaddingSize))
+
 	return Uint32ToOffset(smaller)
 }
 
@@ -60,5 +58,5 @@ func (offset Offset) ToActualOffset() (actualOffset int64) {
 }
 
 func (offset Offset) String() string {
-	return fmt.Sprintf("%d", int64(offset.b0)+int64(offset.b1)<<8+int64(offset.b2)<<16+int64(offset.b3)<<24)
+	return strconv.FormatInt(int64(offset.b0)+int64(offset.b1)<<8+int64(offset.b2)<<16+int64(offset.b3)<<24, 10)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 func base64MD5(b []byte) string {
 	s := md5.Sum(b)
+
 	return base64.StdEncoding.EncodeToString(s[:])
 }
 
@@ -162,7 +164,7 @@ func TestSSECHeaderValidationErrors(t *testing.T) {
 			}
 
 			err := ValidateSSECHeaders(req)
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Expected error %v, got %v", tt.wantErr, err)
 			}
 		})

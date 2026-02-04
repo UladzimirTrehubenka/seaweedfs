@@ -37,7 +37,6 @@ type CollectionInfo struct {
 }
 
 func (c *commandCollectionList) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	collections, err := ListCollectionNames(commandEnv, true, true)
 
 	if err != nil {
@@ -73,42 +72,44 @@ func ListCollectionNames(commandEnv *CommandEnv, includeNormalVolumes, includeEc
 			IncludeNormalVolumes: includeNormalVolumes,
 			IncludeEcVolumes:     includeEcVolumes,
 		})
+
 		return err
 	})
 	if err != nil {
 		return
 	}
-	for _, c := range resp.Collections {
-		collections = append(collections, c.Name)
+	for _, c := range resp.GetCollections() {
+		collections = append(collections, c.GetName())
 	}
+
 	return
 }
 
 func addToCollection(collectionInfos map[string]*CollectionInfo, vif *master_pb.VolumeInformationMessage) {
-	c := vif.Collection
+	c := vif.GetCollection()
 	cif, found := collectionInfos[c]
 	if !found {
 		cif = &CollectionInfo{}
 		collectionInfos[c] = cif
 	}
-	replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(vif.ReplicaPlacement))
+	replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(vif.GetReplicaPlacement()))
 	copyCount := float64(replicaPlacement.GetCopyCount())
-	cif.Size += float64(vif.Size) / copyCount
-	cif.DeleteCount += float64(vif.DeleteCount) / copyCount
-	cif.FileCount += float64(vif.FileCount) / copyCount
-	cif.DeletedByteCount += float64(vif.DeletedByteCount) / copyCount
+	cif.Size += float64(vif.GetSize()) / copyCount
+	cif.DeleteCount += float64(vif.GetDeleteCount()) / copyCount
+	cif.FileCount += float64(vif.GetFileCount()) / copyCount
+	cif.DeletedByteCount += float64(vif.GetDeletedByteCount()) / copyCount
 	cif.VolumeCount++
 }
 
 func collectCollectionInfo(t *master_pb.TopologyInfo, collectionInfos map[string]*CollectionInfo) {
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
-				for _, diskInfo := range dn.DiskInfos {
-					for _, vi := range diskInfo.VolumeInfos {
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
+				for _, diskInfo := range dn.GetDiskInfos() {
+					for _, vi := range diskInfo.GetVolumeInfos() {
 						addToCollection(collectionInfos, vi)
 					}
-					//for _, ecShardInfo := range diskInfo.EcShardInfos {
+					// for _, ecShardInfo := range diskInfo.EcShardInfos {
 					//
 					//}
 				}

@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -15,7 +16,6 @@ const (
 )
 
 func GetSyncOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, dir string) (lastOffsetTsNs int64, readErr error) {
-
 	dirHash := uint32(util.HashStringToLong(dir))
 
 	readErr = pb.WithFilerClient(false, 0, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
@@ -27,28 +27,25 @@ func GetSyncOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, dir s
 			return err
 		}
 
-		if len(resp.Error) != 0 {
-			return errors.New(resp.Error)
+		if len(resp.GetError()) != 0 {
+			return errors.New(resp.GetError())
 		}
-		if len(resp.Value) < 8 {
+		if len(resp.GetValue()) < 8 {
 			return nil
 		}
 
-		lastOffsetTsNs = int64(util.BytesToUint64(resp.Value))
+		lastOffsetTsNs = int64(util.BytesToUint64(resp.GetValue()))
 
 		return nil
 	})
 
 	return
-
 }
 
 func SetSyncOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, dir string, offsetTsNs int64) error {
-
 	dirHash := uint32(util.HashStringToLong(dir))
 
 	return pb.WithFilerClient(false, 0, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-
 		syncKey := []byte(SyncKeyPrefix + "____")
 		util.Uint32toBytes(syncKey[len(SyncKeyPrefix):len(SyncKeyPrefix)+4], dirHash)
 
@@ -63,12 +60,10 @@ func SetSyncOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, dir s
 			return err
 		}
 
-		if len(resp.Error) != 0 {
-			return errors.New(resp.Error)
+		if len(resp.GetError()) != 0 {
+			return errors.New(resp.GetError())
 		}
 
 		return nil
-
 	})
-
 }

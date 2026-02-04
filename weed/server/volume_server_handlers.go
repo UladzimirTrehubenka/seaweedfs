@@ -84,14 +84,17 @@ func (vs *VolumeServer) tryProxyToReplica(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		glog.V(1).Infof("parsing vid %s: %v", r.URL.Path, err)
 		w.WriteHeader(http.StatusBadRequest)
+
 		return true // handled (with error)
 	}
 
 	volume := vs.store.GetVolume(volumeId)
 	if volume != nil && volume.ReplicaPlacement != nil && volume.ReplicaPlacement.HasReplication() {
 		vs.proxyReqToTargetServer(w, r)
+
 		return true // handled by proxy
 	}
+
 	return false // no proxy available
 }
 
@@ -120,15 +123,18 @@ func (vs *VolumeServer) waitForDownloadSlot(w http.ResponseWriter, r *http.Reque
 				r.URL.Path, inFlightDownloadSize, vs.concurrentDownloadLimit)
 			glog.V(1).Infof("too many requests: %v", err)
 			writeJsonError(w, r, http.StatusTooManyRequests, err)
+
 			return false
 		case util.HttpStatusCancelled:
 			glog.V(1).Infof("request %s cancelled from %s: %v", r.URL.Path, r.RemoteAddr, r.Context().Err())
 			w.WriteHeader(util.HttpStatusCancelled)
+
 			return false
 		}
 		inFlightDownloadSize = atomic.LoadInt64(&vs.inFlightDownloadDataSize)
 		stats.VolumeServerInFlightDownloadSize.Set(float64(inFlightDownloadSize))
 	}
+
 	return true
 }
 
@@ -189,16 +195,19 @@ func (vs *VolumeServer) waitForUploadSlot(w http.ResponseWriter, r *http.Request
 				inFlightUploadDataSize, vs.concurrentUploadLimit)
 			glog.V(1).Infof("too many requests: %v", err)
 			writeJsonError(w, r, http.StatusTooManyRequests, err)
+
 			return false
 		case util.HttpStatusCancelled:
 			glog.V(1).Infof("request cancelled from %s: %v", r.RemoteAddr, r.Context().Err())
 			writeJsonError(w, r, util.HttpStatusCancelled, r.Context().Err())
+
 			return false
 		}
 
 		inFlightUploadDataSize = atomic.LoadInt64(&vs.inFlightUploadDataSize)
 		stats.VolumeServerInFlightUploadSize.Set(float64(inFlightUploadDataSize))
 	}
+
 	return true
 }
 
@@ -294,8 +303,10 @@ func getContentLength(r *http.Request) int64 {
 		if err != nil {
 			return 0
 		}
+
 		return length
 	}
+
 	return 0
 }
 
@@ -326,7 +337,6 @@ func (vs *VolumeServer) publicReadOnlyHandler(w http.ResponseWriter, r *http.Req
 }
 
 func (vs *VolumeServer) maybeCheckJwtAuthorization(r *http.Request, vid, fid string, isWrite bool) bool {
-
 	var signingKey security.SigningKey
 
 	if isWrite {
@@ -346,16 +356,19 @@ func (vs *VolumeServer) maybeCheckJwtAuthorization(r *http.Request, vid, fid str
 	tokenStr := security.GetJwt(r)
 	if tokenStr == "" {
 		glog.V(1).Infof("missing jwt from %s", r.RemoteAddr)
+
 		return false
 	}
 
 	token, err := security.DecodeJwt(signingKey, tokenStr, &security.SeaweedFileIdClaims{})
 	if err != nil {
 		glog.V(1).Infof("jwt verification error from %s: %v", r.RemoteAddr, err)
+
 		return false
 	}
 	if !token.Valid {
 		glog.V(1).Infof("jwt invalid from %s: %v", r.RemoteAddr, tokenStr)
+
 		return false
 	}
 
@@ -366,10 +379,13 @@ func (vs *VolumeServer) maybeCheckJwtAuthorization(r *http.Request, vid, fid str
 		expectedFid := vid + "," + fid
 		if sc.Fid != expectedFid {
 			glog.V(1).Infof("jwt fid mismatch from %s: token has %q, request has %q", r.RemoteAddr, sc.Fid, expectedFid)
+
 			return false
 		}
+
 		return true
 	}
 	glog.V(1).Infof("unexpected jwt from %s: %v", r.RemoteAddr, tokenStr)
+
 	return false
 }

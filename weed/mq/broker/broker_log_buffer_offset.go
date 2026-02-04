@@ -29,7 +29,7 @@ func (b *MessageQueueBroker) AddToBufferWithOffset(
 	}
 
 	// PERFORMANCE OPTIMIZATION: Pre-process expensive operations OUTSIDE the lock
-	processingTsNs := message.TsNs
+	processingTsNs := message.GetTsNs()
 	if processingTsNs == 0 {
 		processingTsNs = time.Now().UnixNano()
 	}
@@ -37,9 +37,9 @@ func (b *MessageQueueBroker) AddToBufferWithOffset(
 	// Create LogEntry with assigned offset
 	logEntry := &filer_pb.LogEntry{
 		TsNs:             processingTsNs,
-		PartitionKeyHash: util.HashToInt32(message.Key),
-		Data:             message.Value,
-		Key:              message.Key,
+		PartitionKeyHash: util.HashToInt32(message.GetKey()),
+		Data:             message.GetValue(),
+		Key:              message.GetKey(),
 		Offset:           offset, // Add the assigned offset
 	}
 
@@ -140,10 +140,10 @@ func (b *MessageQueueBroker) CreateOffsetSubscription(
 }
 
 // GetOffsetMetrics returns offset metrics for monitoring
-func (b *MessageQueueBroker) GetOffsetMetrics() map[string]interface{} {
+func (b *MessageQueueBroker) GetOffsetMetrics() map[string]any {
 	metrics := b.offsetManager.GetOffsetMetrics()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"partition_count":      metrics.PartitionCount,
 		"total_offsets":        metrics.TotalOffsets,
 		"active_subscriptions": metrics.ActiveSubscriptions,

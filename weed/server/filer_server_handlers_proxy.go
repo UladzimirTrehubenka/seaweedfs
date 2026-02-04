@@ -1,6 +1,8 @@
 package weed_server
 
 import (
+	"maps"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
@@ -29,6 +31,7 @@ func (fs *FilerServer) maybeGetVolumeJwtAuthorizationToken(fileId string, isWrit
 	} else {
 		encodedJwt = security.GenJwtForVolumeServer(fs.volumeGuard.ReadSigningKey, fs.volumeGuard.ReadExpiresAfterSec, fileId)
 	}
+
 	return string(encodedJwt)
 }
 
@@ -38,11 +41,13 @@ func (fs *FilerServer) proxyToVolumeServer(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		glog.ErrorfCtx(ctx, "locate %s: %v", fileId, err)
 		w.WriteHeader(http.StatusInternalServerError)
+
 		return
 	}
 
 	if len(urlStrings) == 0 {
 		w.WriteHeader(http.StatusNotFound)
+
 		return
 	}
 
@@ -50,6 +55,7 @@ func (fs *FilerServer) proxyToVolumeServer(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		glog.ErrorfCtx(ctx, "NewRequest %s: %v", urlStrings[0], err)
 		w.WriteHeader(http.StatusInternalServerError)
+
 		return
 	}
 
@@ -68,17 +74,15 @@ func (fs *FilerServer) proxyToVolumeServer(w http.ResponseWriter, r *http.Reques
 	if postErr != nil {
 		glog.ErrorfCtx(ctx, "post to filer: %v", postErr)
 		w.WriteHeader(http.StatusInternalServerError)
+
 		return
 	}
 	defer util_http.CloseResponse(proxyResponse)
 
-	for k, v := range proxyResponse.Header {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), proxyResponse.Header)
 	w.WriteHeader(proxyResponse.StatusCode)
 
 	buf := mem.Allocate(128 * 1024)
 	defer mem.Free(buf)
 	io.CopyBuffer(w, proxyResponse.Body, buf)
-
 }

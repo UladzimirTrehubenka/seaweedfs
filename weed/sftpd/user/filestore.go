@@ -48,7 +48,7 @@ type UserNotFoundError struct {
 }
 
 func (e *UserNotFoundError) Error() string {
-	return fmt.Sprintf("user not found: %s", e.Username)
+	return "user not found: " + e.Username
 }
 
 // NewFileStore creates a new user store from a JSON file
@@ -105,7 +105,6 @@ func (s *FileStore) loadUsers() error {
 			user.HomeDir = path.Clean(user.HomeDir)
 		}
 		s.users[user.Username] = user
-
 	}
 
 	return nil
@@ -215,6 +214,7 @@ func (s *FileStore) DeleteUser(username string) error {
 	_, exists := s.users[username]
 	if !exists {
 		s.mu.Unlock()
+
 		return &UserNotFoundError{Username: username}
 	}
 

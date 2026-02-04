@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/topology"
 )
@@ -19,18 +20,21 @@ func EnsureTopologyId(topo *topology.Topology, checkLeaderFn func() bool, persis
 	for {
 		if !checkLeaderFn() {
 			glog.V(0).Infof("lost leadership while saving topologyId")
+
 			return
 		}
 
 		// Another concurrent operation may have set the ID between generation and now.
 		if latestId := topo.GetTopologyId(); latestId != "" {
 			glog.V(1).Infof("topologyId was set concurrently to %s, aborting generation", latestId)
+
 			return
 		}
 
 		if err := persistFn(topologyId); err != nil {
 			glog.Errorf("failed to save topologyId, will retry: %v", err)
 			time.Sleep(time.Second)
+
 			continue
 		}
 
@@ -41,6 +45,7 @@ func EnsureTopologyId(topo *topology.Topology, checkLeaderFn func() bool, persis
 		} else {
 			glog.V(0).Infof("TopologyId generated: %s", topologyId)
 		}
+
 		break
 	}
 }

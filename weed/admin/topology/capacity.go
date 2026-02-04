@@ -2,6 +2,7 @@ package topology
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
@@ -32,6 +33,7 @@ func (at *ActiveTopology) GetEffectiveAvailableCapacity(nodeID string, diskID ui
 
 	// Use the same logic as getEffectiveAvailableCapacityUnsafe but with locking
 	capacity := at.getEffectiveAvailableCapacityUnsafe(disk)
+
 	return int64(capacity.VolumeSlots)
 }
 
@@ -97,41 +99,45 @@ func (at *ActiveTopology) GetDisksWithEffectiveCapacity(taskType TaskType, exclu
 			if int64(effectiveCapacity.VolumeSlots) >= minCapacity {
 				// Create a new DiskInfo with current capacity information
 				diskCopy := DiskInfo{
-					NodeID:     disk.DiskInfo.NodeID,
-					DiskID:     disk.DiskInfo.DiskID,
-					DiskType:   disk.DiskInfo.DiskType,
-					DataCenter: disk.DiskInfo.DataCenter,
-					Rack:       disk.DiskInfo.Rack,
+					NodeID:     disk.NodeID,
+					DiskID:     disk.DiskID,
+					DiskType:   disk.DiskType,
+					DataCenter: disk.DataCenter,
+					Rack:       disk.Rack,
 					LoadCount:  len(disk.pendingTasks) + len(disk.assignedTasks), // Count all tasks
 				}
 
 				// Create a new protobuf DiskInfo to avoid modifying the original
 				diskInfoCopy := &master_pb.DiskInfo{
-					DiskId:            disk.DiskInfo.DiskInfo.DiskId,
-					MaxVolumeCount:    disk.DiskInfo.DiskInfo.MaxVolumeCount,
-					VolumeCount:       disk.DiskInfo.DiskInfo.MaxVolumeCount - int64(effectiveCapacity.VolumeSlots),
-					VolumeInfos:       disk.DiskInfo.DiskInfo.VolumeInfos,
-					EcShardInfos:      disk.DiskInfo.DiskInfo.EcShardInfos,
-					RemoteVolumeCount: disk.DiskInfo.DiskInfo.RemoteVolumeCount,
-					ActiveVolumeCount: disk.DiskInfo.DiskInfo.ActiveVolumeCount,
-					FreeVolumeCount:   disk.DiskInfo.DiskInfo.FreeVolumeCount,
+					DiskId:            disk.DiskInfo.DiskInfo.GetDiskId(),
+					MaxVolumeCount:    disk.DiskInfo.DiskInfo.GetMaxVolumeCount(),
+					VolumeCount:       disk.DiskInfo.DiskInfo.GetMaxVolumeCount() - int64(effectiveCapacity.VolumeSlots),
+					VolumeInfos:       disk.DiskInfo.DiskInfo.GetVolumeInfos(),
+					EcShardInfos:      disk.DiskInfo.DiskInfo.GetEcShardInfos(),
+					RemoteVolumeCount: disk.DiskInfo.DiskInfo.GetRemoteVolumeCount(),
+					ActiveVolumeCount: disk.DiskInfo.DiskInfo.GetActiveVolumeCount(),
+					FreeVolumeCount:   disk.DiskInfo.DiskInfo.GetFreeVolumeCount(),
 				}
 				diskCopy.DiskInfo = diskInfoCopy
-				diskCopy.DiskInfo.MaxVolumeCount = disk.DiskInfo.DiskInfo.MaxVolumeCount // Ensure Max is set
+				diskCopy.DiskInfo.MaxVolumeCount = disk.DiskInfo.DiskInfo.GetMaxVolumeCount() // Ensure Max is set
 
 				available = append(available, &diskCopy)
 			} else {
-				glog.V(2).Infof("Disk %s:%d capacity %d < %d (Max:%d, Vol:%d)", disk.NodeID, disk.DiskInfo.DiskID, effectiveCapacity.VolumeSlots, minCapacity, disk.DiskInfo.DiskInfo.MaxVolumeCount, disk.DiskInfo.DiskInfo.VolumeCount)
+				glog.V(2).Infof("Disk %s:%d capacity %d < %d (Max:%d, Vol:%d)", disk.NodeID, disk.DiskID, effectiveCapacity.VolumeSlots, minCapacity, disk.DiskInfo.DiskInfo.GetMaxVolumeCount(), disk.DiskInfo.DiskInfo.GetVolumeCount())
 			}
 		} else {
 			tasksInfo := ""
+			var tasksInfoSb128 strings.Builder
 			for _, t := range disk.pendingTasks {
-				tasksInfo += fmt.Sprintf("[P:%s,Vol:%d] ", t.TaskType, t.VolumeID)
+				tasksInfoSb128.WriteString(fmt.Sprintf("[P:%s,Vol:%d] ", t.TaskType, t.VolumeID))
 			}
+			tasksInfo += tasksInfoSb128.String()
+			var tasksInfoSb131 strings.Builder
 			for _, t := range disk.assignedTasks {
-				tasksInfo += fmt.Sprintf("[A:%s,Vol:%d] ", t.TaskType, t.VolumeID)
+				tasksInfoSb131.WriteString(fmt.Sprintf("[A:%s,Vol:%d] ", t.TaskType, t.VolumeID))
 			}
-			glog.V(2).Infof("Disk %s:%d unavailable. Load: %d, MaxLoad: %d. Tasks: %s", disk.NodeID, disk.DiskInfo.DiskID, len(disk.pendingTasks)+len(disk.assignedTasks), MaxConcurrentTasksPerDisk, tasksInfo)
+			tasksInfo += tasksInfoSb131.String()
+			glog.V(2).Infof("Disk %s:%d unavailable. Load: %d, MaxLoad: %d. Tasks: %s", disk.NodeID, disk.DiskID, len(disk.pendingTasks)+len(disk.assignedTasks), MaxConcurrentTasksPerDisk, tasksInfo)
 		}
 	}
 	glog.V(2).Infof("GetDisksWithEffectiveCapacity found %d available disks", len(available))
@@ -160,24 +166,24 @@ func (at *ActiveTopology) GetDisksForPlanning(taskType TaskType, excludeNodeID s
 			if int64(planningCapacity.VolumeSlots) >= minCapacity {
 				// Create a new DiskInfo with planning information
 				diskCopy := DiskInfo{
-					NodeID:     disk.DiskInfo.NodeID,
-					DiskID:     disk.DiskInfo.DiskID,
-					DiskType:   disk.DiskInfo.DiskType,
-					DataCenter: disk.DiskInfo.DataCenter,
-					Rack:       disk.DiskInfo.Rack,
+					NodeID:     disk.NodeID,
+					DiskID:     disk.DiskID,
+					DiskType:   disk.DiskType,
+					DataCenter: disk.DataCenter,
+					Rack:       disk.Rack,
 					LoadCount:  len(disk.pendingTasks) + len(disk.assignedTasks),
 				}
 
 				// Create a new protobuf DiskInfo to avoid modifying the original
 				diskInfoCopy := &master_pb.DiskInfo{
-					DiskId:            disk.DiskInfo.DiskInfo.DiskId,
-					MaxVolumeCount:    disk.DiskInfo.DiskInfo.MaxVolumeCount,
-					VolumeCount:       disk.DiskInfo.DiskInfo.MaxVolumeCount - int64(planningCapacity.VolumeSlots),
-					VolumeInfos:       disk.DiskInfo.DiskInfo.VolumeInfos,
-					EcShardInfos:      disk.DiskInfo.DiskInfo.EcShardInfos,
-					RemoteVolumeCount: disk.DiskInfo.DiskInfo.RemoteVolumeCount,
-					ActiveVolumeCount: disk.DiskInfo.DiskInfo.ActiveVolumeCount,
-					FreeVolumeCount:   disk.DiskInfo.DiskInfo.FreeVolumeCount,
+					DiskId:            disk.DiskInfo.DiskInfo.GetDiskId(),
+					MaxVolumeCount:    disk.DiskInfo.DiskInfo.GetMaxVolumeCount(),
+					VolumeCount:       disk.DiskInfo.DiskInfo.GetMaxVolumeCount() - int64(planningCapacity.VolumeSlots),
+					VolumeInfos:       disk.DiskInfo.DiskInfo.GetVolumeInfos(),
+					EcShardInfos:      disk.DiskInfo.DiskInfo.GetEcShardInfos(),
+					RemoteVolumeCount: disk.DiskInfo.DiskInfo.GetRemoteVolumeCount(),
+					ActiveVolumeCount: disk.DiskInfo.DiskInfo.GetActiveVolumeCount(),
+					FreeVolumeCount:   disk.DiskInfo.DiskInfo.GetFreeVolumeCount(),
 				}
 				diskCopy.DiskInfo = diskInfoCopy
 
@@ -207,6 +213,7 @@ func (at *ActiveTopology) CanAccommodateTask(nodeID string, diskID uint32, taskT
 
 	// Check effective capacity
 	effectiveCapacity := at.getEffectiveAvailableCapacityUnsafe(disk)
+
 	return int64(effectiveCapacity.VolumeSlots) >= volumesNeeded
 }
 
@@ -216,16 +223,13 @@ func (at *ActiveTopology) getPlanningCapacityUnsafe(disk *activeDisk) StorageSlo
 		return StorageSlotChange{}
 	}
 
-	baseAvailableVolumes := disk.DiskInfo.DiskInfo.MaxVolumeCount - disk.DiskInfo.DiskInfo.VolumeCount
+	baseAvailableVolumes := disk.DiskInfo.DiskInfo.GetMaxVolumeCount() - disk.DiskInfo.DiskInfo.GetVolumeCount()
 
 	// Use the centralized helper function to calculate task storage impact
 	totalImpact := at.calculateTaskStorageImpact(disk)
 
 	// Calculate available capacity considering impact (negative impact reduces availability)
-	availableVolumeSlots := baseAvailableVolumes - totalImpact.ToVolumeSlots()
-	if availableVolumeSlots < 0 {
-		availableVolumeSlots = 0
-	}
+	availableVolumeSlots := max(baseAvailableVolumes-totalImpact.ToVolumeSlots(), 0)
 
 	// Return detailed capacity information
 	return StorageSlotChange{
@@ -298,14 +302,11 @@ func (at *ActiveTopology) getEffectiveAvailableCapacityUnsafe(disk *activeDisk) 
 		return StorageSlotChange{}
 	}
 
-	baseAvailable := disk.DiskInfo.DiskInfo.MaxVolumeCount - disk.DiskInfo.DiskInfo.VolumeCount
+	baseAvailable := disk.DiskInfo.DiskInfo.GetMaxVolumeCount() - disk.DiskInfo.DiskInfo.GetVolumeCount()
 	netImpact := at.getEffectiveCapacityUnsafe(disk)
 
 	// Calculate available volume slots (negative impact reduces availability)
-	availableVolumeSlots := baseAvailable - netImpact.ToVolumeSlots()
-	if availableVolumeSlots < 0 {
-		availableVolumeSlots = 0
-	}
+	availableVolumeSlots := max(baseAvailable-netImpact.ToVolumeSlots(), 0)
 
 	// Return detailed capacity information
 	return StorageSlotChange{

@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seaweedfs/seaweedfs/weed/iam/ldap"
 	"github.com/seaweedfs/seaweedfs/weed/iam/oidc"
 	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
 	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestFullOIDCWorkflow tests the complete OIDC → STS → Policy workflow
@@ -73,6 +74,7 @@ func TestFullOIDCWorkflow(t *testing.T) {
 			if !tt.expectedAllow {
 				assert.Error(t, err)
 				assert.Nil(t, response)
+
 				return
 			}
 
@@ -149,6 +151,7 @@ func TestFullLDAPWorkflow(t *testing.T) {
 			if !tt.expectedAllow {
 				assert.Error(t, err)
 				assert.Nil(t, response)
+
 				return
 			}
 
@@ -365,7 +368,7 @@ func TestTrustPolicyWildcardPrincipal(t *testing.T) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "*", // Wildcard should allow any federated provider
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -384,7 +387,7 @@ func TestTrustPolicyWildcardPrincipal(t *testing.T) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": []string{"specific-provider", "*"}, // Array with wildcard
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -420,7 +423,7 @@ func TestTrustPolicyWildcardPrincipal(t *testing.T) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -439,8 +442,8 @@ func TestTrustPolicyWildcardPrincipal(t *testing.T) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
-						"Federated": []interface{}{"specific-provider", "test-oidc"},
+					Principal: map[string]any{
+						"Federated": []any{"specific-provider", "test-oidc"},
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
 				},
@@ -532,11 +535,11 @@ func TestOIDCClaimsTrustPolicy(t *testing.T) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
-					Condition: map[string]map[string]interface{}{
+					Condition: map[string]map[string]any{
 						"StringLike": {
 							"oidc:roles": "Dev.SeaweedFS.*",
 						},
@@ -560,6 +563,7 @@ func TestOIDCClaimsTrustPolicy(t *testing.T) {
 		})
 		signedToken, err := token.SignedString([]byte("test-signing-key-32-characters-long"))
 		require.NoError(t, err)
+
 		return signedToken
 	}
 
@@ -604,6 +608,7 @@ func createTestJWT(t *testing.T, issuer, subject, signingKey string) string {
 
 	tokenString, err := token.SignedString([]byte(signingKey))
 	require.NoError(t, err)
+
 	return tokenString
 }
 
@@ -714,7 +719,7 @@ func setupTestPoliciesAndRoles(t *testing.T, manager *IAMManager) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-oidc",
 					},
 					Action: []string{"sts:AssumeRoleWithWebIdentity"},
@@ -732,7 +737,7 @@ func setupTestPoliciesAndRoles(t *testing.T, manager *IAMManager) {
 			Statement: []policy.Statement{
 				{
 					Effect: "Allow",
-					Principal: map[string]interface{}{
+					Principal: map[string]any{
 						"Federated": "test-ldap",
 					},
 					Action: []string{"sts:AssumeRoleWithCredentials"},

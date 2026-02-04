@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -52,6 +53,7 @@ func (s3a *S3ApiServer) startBucketSizeMetricsLoop(ctx context.Context) {
 	// Create lock client for distributed lock
 	if len(s3a.option.Filers) == 0 {
 		glog.V(1).Infof("No filers configured, skipping bucket size metrics collection")
+
 		return
 	}
 	filer := s3a.option.Filers[0]
@@ -71,6 +73,7 @@ func (s3a *S3ApiServer) startBucketSizeMetricsLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			glog.V(1).Infof("Stopping bucket size metrics collection")
+
 			return
 		case <-ticker.C:
 			// Only collect metrics if we hold the lock
@@ -88,6 +91,7 @@ func (s3a *S3ApiServer) collectAndUpdateBucketSizeMetrics(ctx context.Context) {
 	collectionInfos, err := s3a.collectCollectionInfoFromMaster(ctx)
 	if err != nil {
 		glog.V(2).Infof("Failed to collect collection info from master: %v", err)
+
 		return
 	}
 
@@ -95,6 +99,7 @@ func (s3a *S3ApiServer) collectAndUpdateBucketSizeMetrics(ctx context.Context) {
 	buckets, err := s3a.listBucketNames(ctx)
 	if err != nil {
 		glog.V(2).Infof("Failed to list buckets for size metrics: %v", err)
+
 		return
 	}
 
@@ -116,7 +121,7 @@ func (s3a *S3ApiServer) collectAndUpdateBucketSizeMetrics(ctx context.Context) {
 // This is the same approach used by shell command s3.bucket.quota.enforce.
 func (s3a *S3ApiServer) collectCollectionInfoFromMaster(ctx context.Context) (map[string]*CollectionInfo, error) {
 	if len(s3a.option.Masters) == 0 {
-		return nil, fmt.Errorf("no masters configured")
+		return nil, errors.New("no masters configured")
 	}
 
 	// Convert masters slice to map for WithOneOfGrpcMasterClients
@@ -133,10 +138,11 @@ func (s3a *S3ApiServer) collectCollectionInfoFromMaster(ctx context.Context) (ma
 		if err != nil {
 			return fmt.Errorf("failed to get volume list: %w", err)
 		}
-		if resp == nil || resp.TopologyInfo == nil {
-			return fmt.Errorf("empty topology info from master")
+		if resp == nil || resp.GetTopologyInfo() == nil {
+			return errors.New("empty topology info from master")
 		}
-		collectCollectionInfoFromTopology(resp.TopologyInfo, collectionInfos)
+		collectCollectionInfoFromTopology(resp.GetTopologyInfo(), collectionInfos)
+
 		return nil
 	})
 	if err != nil {
@@ -169,18 +175,19 @@ func (s3a *S3ApiServer) listBucketNames(ctx context.Context) ([]string, error) {
 			for {
 				resp, err := stream.Recv()
 				if err != nil {
-					if err == io.EOF {
+					if errors.Is(err, io.EOF) {
 						break
 					}
+
 					return fmt.Errorf("error receiving bucket list entries: %w", err)
 				}
 				entriesReceived++
-				if resp.Entry != nil {
-					lastFileName = resp.Entry.Name
-					if resp.Entry.IsDirectory {
+				if resp.GetEntry() != nil {
+					lastFileName = resp.GetEntry().GetName()
+					if resp.GetEntry().GetIsDirectory() {
 						// Skip .uploads and other hidden directories
-						if !strings.HasPrefix(resp.Entry.Name, ".") {
-							buckets = append(buckets, resp.Entry.Name)
+						if !strings.HasPrefix(resp.GetEntry().GetName(), ".") {
+							buckets = append(buckets, resp.GetEntry().GetName())
 						}
 					}
 				}
@@ -191,6 +198,7 @@ func (s3a *S3ApiServer) listBucketNames(ctx context.Context) ([]string, error) {
 				break
 			}
 		}
+
 		return nil
 	})
 
@@ -205,12 +213,12 @@ func collectCollectionInfoFromTopology(t *master_pb.TopologyInfo, collectionInfo
 	// Track which volumes we've already seen to deduplicate by volume ID
 	seenVolumes := make(map[volumeKey]bool)
 
-	for _, dc := range t.DataCenterInfos {
-		for _, r := range dc.RackInfos {
-			for _, dn := range r.DataNodeInfos {
-				for _, diskInfo := range dn.DiskInfos {
-					for _, vi := range diskInfo.VolumeInfos {
-						c := vi.Collection
+	for _, dc := range t.GetDataCenterInfos() {
+		for _, r := range dc.GetRackInfos() {
+			for _, dn := range r.GetDataNodeInfos() {
+				for _, diskInfo := range dn.GetDiskInfos() {
+					for _, vi := range diskInfo.GetVolumeInfos() {
+						c := vi.GetCollection()
 						cif, found := collectionInfos[c]
 						if !found {
 							cif = &CollectionInfo{}
@@ -218,10 +226,10 @@ func collectCollectionInfoFromTopology(t *master_pb.TopologyInfo, collectionInfo
 						}
 
 						// Always add to physical size (all replicas)
-						cif.PhysicalSize += float64(vi.Size)
+						cif.PhysicalSize += float64(vi.GetSize())
 
 						// Check if we've already counted this volume for logical stats
-						key := volumeKey{collection: c, volumeId: vi.Id}
+						key := volumeKey{collection: c, volumeId: vi.GetId()}
 						if seenVolumes[key] {
 							// Already counted this volume, skip logical stats
 							continue
@@ -229,10 +237,10 @@ func collectCollectionInfoFromTopology(t *master_pb.TopologyInfo, collectionInfo
 						seenVolumes[key] = true
 
 						// First time seeing this volume - add to logical stats
-						cif.Size += float64(vi.Size)
-						cif.FileCount += float64(vi.FileCount)
-						cif.DeleteCount += float64(vi.DeleteCount)
-						cif.DeletedByteCount += float64(vi.DeletedByteCount)
+						cif.Size += float64(vi.GetSize())
+						cif.FileCount += float64(vi.GetFileCount())
+						cif.DeleteCount += float64(vi.GetDeleteCount())
+						cif.DeletedByteCount += float64(vi.GetDeletedByteCount())
 						cif.VolumeCount++
 					}
 				}

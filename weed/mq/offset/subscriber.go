@@ -1,6 +1,7 @@
 package offset
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -43,7 +44,6 @@ func (s *OffsetSubscriber) CreateSubscription(
 	offsetType schema_pb.OffsetType,
 	startOffset int64,
 ) (*OffsetSubscription, error) {
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -71,6 +71,7 @@ func (s *OffsetSubscriber) CreateSubscription(
 	}
 
 	s.subscriptions[subscriptionID] = subscription
+
 	return subscription, nil
 }
 
@@ -99,6 +100,7 @@ func (s *OffsetSubscriber) CloseSubscription(subscriptionID string) error {
 
 	subscription.IsActive = false
 	delete(s.subscriptions, subscriptionID)
+
 	return nil
 }
 
@@ -109,7 +111,6 @@ func (s *OffsetSubscriber) resolveStartOffset(
 	offsetType schema_pb.OffsetType,
 	requestedOffset int64,
 ) (int64, error) {
-
 	switch offsetType {
 	case schema_pb.OffsetType_EXACT_OFFSET:
 		// Validate that the requested offset exists
@@ -129,6 +130,7 @@ func (s *OffsetSubscriber) resolveStartOffset(
 		if err != nil {
 			return 0, err
 		}
+
 		return hwm, nil
 
 	case schema_pb.OffsetType_RESUME_OR_EARLIEST:
@@ -143,6 +145,7 @@ func (s *OffsetSubscriber) resolveStartOffset(
 		if err != nil {
 			return 0, err
 		}
+
 		return hwm, nil
 
 	default:
@@ -173,7 +176,7 @@ func (s *OffsetSubscriber) validateAndGetOffset(namespace, topicName string, par
 // SeekToOffset seeks a subscription to a specific offset
 func (sub *OffsetSubscription) SeekToOffset(offset int64) error {
 	if !sub.IsActive {
-		return fmt.Errorf("subscription is not active")
+		return errors.New("subscription is not active")
 	}
 
 	// Validate the offset
@@ -191,6 +194,7 @@ func (sub *OffsetSubscription) SeekToOffset(offset int64) error {
 	}
 
 	sub.CurrentOffset = offset
+
 	return nil
 }
 
@@ -207,7 +211,7 @@ func (sub *OffsetSubscription) AdvanceOffset() {
 // GetLag returns the lag between current position and high water mark
 func (sub *OffsetSubscription) GetLag() (int64, error) {
 	if !sub.IsActive {
-		return 0, fmt.Errorf("subscription is not active")
+		return 0, errors.New("subscription is not active")
 	}
 
 	hwm, err := sub.offsetRegistry.GetHighWaterMark(sub.Namespace, sub.TopicName, sub.Partition)
@@ -215,10 +219,7 @@ func (sub *OffsetSubscription) GetLag() (int64, error) {
 		return 0, fmt.Errorf("failed to get high water mark: %w", err)
 	}
 
-	lag := hwm - sub.CurrentOffset
-	if lag < 0 {
-		lag = 0
-	}
+	lag := max(hwm-sub.CurrentOffset, 0)
 
 	return lag, nil
 }
@@ -226,7 +227,7 @@ func (sub *OffsetSubscription) GetLag() (int64, error) {
 // IsAtEnd checks if the subscription has reached the end of available data
 func (sub *OffsetSubscription) IsAtEnd() (bool, error) {
 	if !sub.IsActive {
-		return true, fmt.Errorf("subscription is not active")
+		return true, errors.New("subscription is not active")
 	}
 
 	hwm, err := sub.offsetRegistry.GetHighWaterMark(sub.Namespace, sub.TopicName, sub.Partition)
@@ -247,7 +248,7 @@ type OffsetRange struct {
 // GetOffsetRange returns a range of offsets for batch reading
 func (sub *OffsetSubscription) GetOffsetRange(maxCount int64) (*OffsetRange, error) {
 	if !sub.IsActive {
-		return nil, fmt.Errorf("subscription is not active")
+		return nil, errors.New("subscription is not active")
 	}
 
 	hwm, err := sub.offsetRegistry.GetHighWaterMark(sub.Namespace, sub.TopicName, sub.Partition)
@@ -273,6 +274,7 @@ func (sub *OffsetSubscription) GetOffsetRange(maxCount int64) (*OffsetRange, err
 	}
 
 	count := endOffset - startOffset + 1
+
 	return &OffsetRange{
 		StartOffset: startOffset,
 		EndOffset:   endOffset,
@@ -302,7 +304,7 @@ func NewOffsetSeeker(offsetRegistry *PartitionOffsetRegistry) *OffsetSeeker {
 func (seeker *OffsetSeeker) SeekToTimestamp(partition *schema_pb.Partition, timestamp int64) (int64, error) {
 	// TODO: This requires integration with the storage layer to map timestamps to offsets
 	// For now, return an error indicating this feature needs implementation
-	return 0, fmt.Errorf("timestamp-to-offset mapping not implemented yet")
+	return 0, errors.New("timestamp-to-offset mapping not implemented yet")
 }
 
 // ValidateOffsetRange validates that an offset range is valid

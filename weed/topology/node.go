@@ -29,6 +29,7 @@ type CapacityReservation struct {
 // CapacityReservations manages capacity reservations for a node
 type CapacityReservations struct {
 	sync.RWMutex
+
 	reservations   map[string]*CapacityReservation
 	reservedCounts map[types.DiskType]int64
 }
@@ -54,8 +55,10 @@ func (cr *CapacityReservations) removeReservation(reservationId string) bool {
 	if reservation, exists := cr.reservations[reservationId]; exists {
 		delete(cr.reservations, reservationId)
 		cr.decrementCount(reservation.diskType, reservation.count)
+
 		return true
 	}
+
 	return false
 }
 
@@ -86,6 +89,7 @@ func (cr *CapacityReservations) doAddReservation(diskType types.DiskType, count 
 		createdAt:     now,
 	}
 	cr.reservedCounts[diskType] += count
+
 	return reservationId
 }
 
@@ -148,7 +152,7 @@ type Node interface {
 	Children() []Node
 	Parent() Node
 
-	GetValue() interface{} //get reference to the topology,dc,rack,datanode
+	GetValue() any // get reference to the topology,dc,rack,datanode
 }
 
 type NodeImpl struct {
@@ -159,9 +163,9 @@ type NodeImpl struct {
 	children     map[NodeId]Node
 	maxVolumeId  needle.VolumeId
 
-	//for rack, data center, topology
+	// for rack, data center, topology
 	nodeType string
-	value    interface{}
+	value    any
 
 	// capacity reservations to prevent race conditions during volume creation
 	capacityReservations *CapacityReservations
@@ -178,7 +182,7 @@ func (n *NodeImpl) PickNodesByWeight(numberOfNodes int, option *VolumeGrowOption
 	n.RLock()
 	candidates := make([]Node, 0, len(n.children))
 	candidatesWeights := make([]int64, 0, len(n.children))
-	//pick nodes which has enough free volumes as candidates, and use free volumes number as node weight.
+	// pick nodes which has enough free volumes as candidates, and use free volumes number as node weight.
 	for _, node := range n.children {
 		if node.AvailableSpaceFor(option) <= 0 {
 			continue
@@ -190,12 +194,13 @@ func (n *NodeImpl) PickNodesByWeight(numberOfNodes int, option *VolumeGrowOption
 	n.RUnlock()
 	if len(candidates) < numberOfNodes {
 		glog.V(0).Infoln(n.Id(), "failed to pick", numberOfNodes, "from ", len(candidates), "node candidates")
+
 		return nil, nil, errors.New("Not enough data nodes found!")
 	}
 
-	//pick nodes randomly by weights, the node picked earlier has higher final weights
+	// pick nodes randomly by weights, the node picked earlier has higher final weights
 	sortedCandidates := make([]Node, 0, len(candidates))
-	for i := 0; i < len(candidates); i++ {
+	for range candidates {
 		// Break if no more weights available to prevent panic in rand.Int64N
 		if totalWeights <= 0 {
 			break
@@ -207,6 +212,7 @@ func (n *NodeImpl) PickNodesByWeight(numberOfNodes int, option *VolumeGrowOption
 				sortedCandidates = append(sortedCandidates, candidates[k])
 				candidatesWeights[k] = 0
 				totalWeights -= weights
+
 				break
 			}
 			lastWeights += weights
@@ -226,6 +232,7 @@ func (n *NodeImpl) PickNodesByWeight(numberOfNodes int, option *VolumeGrowOption
 				restNodes = append(restNodes, sortedCandidates[k+1:numberOfNodes]...)
 			}
 			ret = true
+
 			break
 		} else {
 			errs = append(errs, string(node.Id())+":"+err.Error())
@@ -235,7 +242,8 @@ func (n *NodeImpl) PickNodesByWeight(numberOfNodes int, option *VolumeGrowOption
 	if !ret {
 		return nil, nil, errors.New("No matching data node found! \n" + strings.Join(errs, "\n"))
 	}
-	return
+
+	return firstNode, restNodes, err
 }
 
 func (n *NodeImpl) IsDataNode() bool {
@@ -254,6 +262,7 @@ func (n *NodeImpl) IsLocked() (isTryLock bool) {
 	if isTryLock = n.TryRLock(); isTryLock {
 		n.RUnlock()
 	}
+
 	return !isTryLock
 }
 
@@ -261,6 +270,7 @@ func (n *NodeImpl) String() string {
 	if n.parent != nil {
 		return n.parent.String() + ":" + string(n.id)
 	}
+
 	return string(n.id)
 }
 
@@ -279,6 +289,7 @@ func (n *NodeImpl) AvailableSpaceFor(option *VolumeGrowOption) int64 {
 	if ecShardCount > 0 {
 		freeVolumeSlotCount = freeVolumeSlotCount - ecShardCount/erasure_coding.DataShardsCount - 1
 	}
+
 	return freeVolumeSlotCount
 }
 
@@ -286,6 +297,7 @@ func (n *NodeImpl) AvailableSpaceFor(option *VolumeGrowOption) int64 {
 func (n *NodeImpl) AvailableSpaceForReservation(option *VolumeGrowOption) int64 {
 	baseAvailable := n.AvailableSpaceFor(option)
 	reservedCount := n.capacityReservations.getReservedCount(option.DiskType)
+
 	return baseAvailable - reservedCount
 }
 
@@ -327,6 +339,7 @@ func (n *NodeImpl) Children() (ret []Node) {
 	for _, c := range n.children {
 		ret = append(ret, c)
 	}
+
 	return ret
 }
 
@@ -334,7 +347,7 @@ func (n *NodeImpl) Parent() Node {
 	return n.parent
 }
 
-func (n *NodeImpl) GetValue() interface{} {
+func (n *NodeImpl) GetValue() any {
 	return n.value
 }
 
@@ -376,6 +389,7 @@ func (n *NodeImpl) reserveOneVolumeInternal(r int64, option *VolumeGrowOption, u
 				if dn.IsTerminating {
 					continue
 				}
+
 				return dn, nil
 			}
 			if useReservations {
@@ -384,21 +398,22 @@ func (n *NodeImpl) reserveOneVolumeInternal(r int64, option *VolumeGrowOption, u
 				assignedNode, err = node.ReserveOneVolume(r, option)
 			}
 			if err == nil {
-				return
+				return assignedNode, err
 			}
 		}
 	}
+
 	return nil, errors.New("No free volume slot found!")
 }
 
-func (n *NodeImpl) UpAdjustDiskUsageDelta(diskType types.DiskType, diskUsage *DiskUsageCounts) { //can be negative
+func (n *NodeImpl) UpAdjustDiskUsageDelta(diskType types.DiskType, diskUsage *DiskUsageCounts) { // can be negative
 	existingDisk := n.getOrCreateDisk(diskType)
 	existingDisk.addDiskUsageCounts(diskUsage)
 	if n.parent != nil {
 		n.parent.UpAdjustDiskUsageDelta(diskType, diskUsage)
 	}
 }
-func (n *NodeImpl) UpAdjustMaxVolumeId(vid needle.VolumeId) { //can be negative
+func (n *NodeImpl) UpAdjustMaxVolumeId(vid needle.VolumeId) { // can be negative
 	if n.maxVolumeId < vid {
 		n.maxVolumeId = vid
 		if n.parent != nil {
@@ -445,7 +460,7 @@ func (n *NodeImpl) UnlinkChildNode(nodeId NodeId) {
 func (n *NodeImpl) CollectDeadNodeAndFullVolumes(freshThreshHoldUnixTime int64, volumeSizeLimit uint64, growThreshold float64) {
 	if n.IsRack() {
 		for _, c := range n.Children() {
-			dn := c.(*DataNode) //can not cast n to DataNode
+			dn := c.(*DataNode) // can not cast n to DataNode
 			for _, v := range dn.GetVolumes() {
 				topo := n.GetTopology()
 				diskType := types.ToDiskType(v.DiskType)
@@ -460,7 +475,7 @@ func (n *NodeImpl) CollectDeadNodeAndFullVolumes(freshThreshHoldUnixTime int64, 
 					// After 20s(grpc timeout), theoretically all the heartbeats of the volume server have reached the master,
 					// the volume size should be correct, not the size before the vacuum.
 					if !ok || time.Now().Add(-20*time.Second).After(vacuumTime) {
-						//fmt.Println("volume",v.Id,"size",v.Size,">",volumeSizeLimit)
+						// fmt.Println("volume",v.Id,"size",v.Size,">",volumeSizeLimit)
 						topo.chanFullVolumes <- v
 					}
 				} else if float64(v.Size) > float64(volumeSizeLimit)*growThreshold {
@@ -489,5 +504,6 @@ func (n *NodeImpl) GetTopology() *Topology {
 	for p.Parent() != nil {
 		p = p.Parent()
 	}
+
 	return p.GetValue().(*Topology)
 }

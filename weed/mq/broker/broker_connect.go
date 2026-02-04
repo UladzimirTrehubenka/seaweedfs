@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -14,12 +15,11 @@ import (
 
 // BrokerConnectToBalancer connects to the broker balancer and sends stats
 func (b *MessageQueueBroker) BrokerConnectToBalancer(brokerBalancer string, stopCh chan struct{}) error {
-
 	self := string(b.option.BrokerAddress())
 
 	glog.V(0).Infof("broker %s connects to balancer %s", self, brokerBalancer)
 	if brokerBalancer == "" {
-		return fmt.Errorf("no balancer found")
+		return errors.New("no balancer found")
 	}
 
 	// connect to the lock owner
@@ -55,10 +55,11 @@ func (b *MessageQueueBroker) BrokerConnectToBalancer(brokerBalancer string, stop
 				},
 			})
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					// return err
 				}
-				return fmt.Errorf("send stats message to balancer %s: %v", brokerBalancer, err)
+
+				return fmt.Errorf("send stats message to balancer %s: %w", brokerBalancer, err)
 			}
 			// glog.V(3).Infof("sent stats: %+v", stats)
 
@@ -94,7 +95,6 @@ func (b *MessageQueueBroker) KeepConnectedToBrokerBalancer(newBrokerBalancerCh c
 							return
 						default:
 						}
-
 					}
 				}()
 			}

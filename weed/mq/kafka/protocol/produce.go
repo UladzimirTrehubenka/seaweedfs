@@ -3,19 +3,22 @@ package protocol
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/compression"
 	"github.com/seaweedfs/seaweedfs/weed/mq/kafka/schema"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
-	"google.golang.org/protobuf/proto"
 )
 
 func (h *Handler) handleProduce(ctx context.Context, correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// Version-specific handling
 	switch apiVersion {
 	case 0, 1:
@@ -32,21 +35,21 @@ func (h *Handler) handleProduceV0V1(ctx context.Context, correlationID uint32, a
 	// Request format: client_id + acks(2) + timeout(4) + topics_array
 
 	if len(requestBody) < 8 { // client_id_size(2) + acks(2) + timeout(4)
-		return nil, fmt.Errorf("Produce request too short")
+		return nil, errors.New("Produce request too short")
 	}
 
 	// Skip client_id
 	clientIDSize := binary.BigEndian.Uint16(requestBody[0:2])
 
 	if len(requestBody) < 2+int(clientIDSize) {
-		return nil, fmt.Errorf("Produce request client_id too short")
+		return nil, errors.New("Produce request client_id too short")
 	}
 
 	_ = string(requestBody[2 : 2+int(clientIDSize)]) // clientID
 	offset := 2 + int(clientIDSize)
 
 	if len(requestBody) < offset+10 { // acks(2) + timeout(4) + topics_count(4)
-		return nil, fmt.Errorf("Produce request missing data")
+		return nil, errors.New("Produce request missing data")
 	}
 
 	// Parse acks and timeout
@@ -204,7 +207,6 @@ func (h *Handler) handleProduceV0V1(ctx context.Context, correlationID uint32, a
 // - CRC32 validation
 // - Individual record extraction
 func (h *Handler) parseRecordSet(recordSetData []byte) (recordCount int32, totalSize int32, err error) {
-
 	// Heuristic: permit short inputs for tests
 	if len(recordSetData) < 61 {
 		// If very small, decide error vs fallback
@@ -217,6 +219,7 @@ func (h *Handler) parseRecordSet(recordSetData []byte) (recordCount int32, total
 			if cnt <= 0 || cnt > 1000000 {
 				cnt = 1
 			}
+
 			return cnt, int32(len(recordSetData)), nil
 		}
 		// Otherwise default to 1 record
@@ -246,7 +249,7 @@ func (h *Handler) produceToSeaweedMQ(ctx context.Context, topic string, partitio
 	records := h.extractAllRecords(recordSetData)
 
 	if len(records) == 0 {
-		return 0, fmt.Errorf("failed to parse Kafka record set: no records extracted")
+		return 0, errors.New("failed to parse Kafka record set: no records extracted")
 	}
 
 	// Publish all records and return the offset of the first record (base offset)
@@ -277,6 +280,7 @@ func (h *Handler) extractAllRecords(recordSetData []byte) []struct{ Key, Value [
 		// Always include records, even if both key and value are null
 		// Schema Registry Noop records may have null values
 		results = append(results, struct{ Key, Value []byte }{Key: key, Value: value})
+
 		return results
 	}
 
@@ -300,6 +304,7 @@ func (h *Handler) extractAllRecords(recordSetData []byte) []struct{ Key, Value [
 		key, value := h.extractFirstRecord(recordSetData)
 		// Always include records, even if both key and value are null
 		results = append(results, struct{ Key, Value []byte }{Key: key, Value: value})
+
 		return results
 	}
 
@@ -333,6 +338,7 @@ func (h *Handler) extractAllRecords(recordSetData []byte) []struct{ Key, Value [
 			// Fallback to extractFirstRecord
 			key, value := h.extractFirstRecord(recordSetData)
 			results = append(results, struct{ Key, Value []byte }{Key: key, Value: value})
+
 			return results
 		}
 		recordsData = decompressed
@@ -424,7 +430,6 @@ func (h *Handler) extractAllRecords(recordSetData []byte) []struct{ Key, Value [
 
 // extractFirstRecord extracts the first record from a Kafka record batch
 func (h *Handler) extractFirstRecord(recordSetData []byte) ([]byte, []byte) {
-
 	if len(recordSetData) < 61 {
 		// Record set too small to contain a valid Kafka v2 batch
 		return nil, nil
@@ -518,11 +523,12 @@ func (h *Handler) extractFirstRecord(recordSetData []byte) ([]byte, []byte) {
 	recordOffset += varintLen
 
 	var key []byte
-	if keyLength == -1 {
+	switch keyLength {
+	case -1:
 		key = nil // null key
-	} else if keyLength == 0 {
+	case 0:
 		key = []byte{} // empty key
-	} else {
+	default:
 		if recordOffset+int(keyLength) > len(recordData) {
 			// Key length exceeds available data
 			return nil, nil
@@ -540,11 +546,12 @@ func (h *Handler) extractFirstRecord(recordSetData []byte) ([]byte, []byte) {
 	recordOffset += varintLen
 
 	var value []byte
-	if valueLength == -1 {
+	switch valueLength {
+	case -1:
 		value = nil // null value
-	} else if valueLength == 0 {
+	case 0:
 		value = []byte{} // empty value
-	} else {
+	default:
 		if recordOffset+int(valueLength) > len(recordData) {
 			// Value length exceeds available data
 			return nil, nil
@@ -590,7 +597,6 @@ func decodeVarint(data []byte) (int64, int) {
 
 // handleProduceV2Plus handles Produce API v2-v7 (Kafka 0.11+)
 func (h *Handler) handleProduceV2Plus(ctx context.Context, correlationID uint32, apiVersion uint16, requestBody []byte) ([]byte, error) {
-
 	// For now, use simplified parsing similar to v0/v1 but handle v2+ response format
 	// In v2+, the main differences are:
 	// - Request: transactional_id field (nullable string) at the beginning
@@ -739,6 +745,7 @@ func (h *Handler) handleProduceV2Plus(ctx context.Context, correlationID uint32,
 									time.Sleep(200 * time.Millisecond) // Brief delay for schema validation failures
 								}
 								errorCode = 0xFFFF // UNKNOWN_SERVER_ERROR (-1 as uint16)
+
 								break
 							}
 
@@ -755,6 +762,7 @@ func (h *Handler) handleProduceV2Plus(ctx context.Context, correlationID uint32,
 							offsetProduced, prodErr := h.produceSchemaBasedRecord(ctx, topicName, int32(partitionID), kv.Key, kv.Value)
 							if prodErr != nil {
 								errorCode = 0xFFFF // UNKNOWN_SERVER_ERROR (-1 as uint16)
+
 								break
 							}
 							if idx == 0 {
@@ -829,8 +837,10 @@ func (h *Handler) performSchemaValidation(topicName string, schemaID uint32, mes
 		if h.isStrictSchemaValidation() {
 			// Add delay before returning schema validation error to prevent overloading
 			time.Sleep(100 * time.Millisecond)
+
 			return fmt.Errorf("topic %s requires schema but no expected schema found: %w", topicName, err)
 		}
+
 		return nil
 	}
 
@@ -839,6 +849,7 @@ func (h *Handler) performSchemaValidation(topicName string, schemaID uint32, mes
 	if err != nil {
 		// Add delay before returning schema validation error to prevent overloading
 		time.Sleep(100 * time.Millisecond)
+
 		return fmt.Errorf("invalid expected schema ID for topic %s: %w", topicName, err)
 	}
 
@@ -849,11 +860,13 @@ func (h *Handler) performSchemaValidation(topicName string, schemaID uint32, mes
 		if err != nil {
 			// Add delay before returning schema validation error to prevent overloading
 			time.Sleep(100 * time.Millisecond)
+
 			return fmt.Errorf("failed to check schema evolution for topic %s: %w", topicName, err)
 		}
 		if !compatible {
 			// Add delay before returning schema validation error to prevent overloading
 			time.Sleep(100 * time.Millisecond)
+
 			return fmt.Errorf("schema ID %d is not compatible with expected schema %d for topic %s",
 				schemaID, expectedSchemaID, topicName)
 		}
@@ -959,7 +972,7 @@ func (h *Handler) validateProtobufMessage(schemaID uint32, messageBytes []byte) 
 	// Validate message against schema
 	envelope, ok := schema.ParseConfluentEnvelope(messageBytes)
 	if !ok {
-		return fmt.Errorf("invalid Confluent envelope")
+		return errors.New("invalid Confluent envelope")
 	}
 
 	return protobufSchema.ValidateMessage(envelope.Payload)
@@ -982,7 +995,7 @@ func (h *Handler) validateJSONSchemaMessage(schemaID uint32, messageBytes []byte
 	// Parse envelope and validate payload
 	envelope, ok := schema.ParseConfluentEnvelope(messageBytes)
 	if !ok {
-		return fmt.Errorf("invalid Confluent envelope")
+		return errors.New("invalid Confluent envelope")
 	}
 
 	// Validate JSON payload against schema
@@ -1002,6 +1015,7 @@ func (h *Handler) isSchemaValidationError(err error) bool {
 		return false
 	}
 	errStr := strings.ToLower(err.Error())
+
 	return strings.Contains(errStr, "schema") ||
 		strings.Contains(errStr, "decode") ||
 		strings.Contains(errStr, "validation") ||
@@ -1028,7 +1042,7 @@ func (h *Handler) getTopicCompatibilityLevel(topicName string) schema.Compatibil
 // parseSchemaID parses a schema ID from string
 func (h *Handler) parseSchemaID(schemaIDStr string) (uint32, error) {
 	if schemaIDStr == "" {
-		return 0, fmt.Errorf("empty schema ID")
+		return 0, errors.New("empty schema ID")
 	}
 
 	var schemaID uint64
@@ -1052,10 +1066,8 @@ func (h *Handler) isSystemTopic(topicName string) bool {
 		"__transaction_state", // Kafka transaction state topic
 	}
 
-	for _, systemTopic := range systemTopics {
-		if topicName == systemTopic {
-			return true
-		}
+	if slices.Contains(systemTopics, topicName) {
+		return true
 	}
 
 	// Also check for topics with system prefixes
@@ -1065,10 +1077,10 @@ func (h *Handler) isSystemTopic(topicName string) bool {
 // produceSchemaBasedRecord produces a record using schema-based encoding to RecordValue
 // ctx controls the publish timeout - if client cancels, produce operation is cancelled
 func (h *Handler) produceSchemaBasedRecord(ctx context.Context, topic string, partition int32, key []byte, value []byte) (int64, error) {
-
 	// System topics should always bypass schema processing and be stored as-is
 	if h.isSystemTopic(topic) {
 		offset, err := h.seaweedMQHandler.ProduceRecord(ctx, topic, partition, key, value)
+
 		return offset, err
 	}
 
@@ -1090,6 +1102,7 @@ func (h *Handler) produceSchemaBasedRecord(ctx context.Context, topic string, pa
 			if err != nil {
 				// Add delay before returning schema decoding error to prevent overloading
 				time.Sleep(100 * time.Millisecond)
+
 				return 0, fmt.Errorf("failed to decode schematized key: %w", err)
 			}
 		}
@@ -1105,6 +1118,7 @@ func (h *Handler) produceSchemaBasedRecord(ctx context.Context, topic string, pa
 				// If message has schema ID (magic byte 0x00), decoding MUST succeed
 				// Do not fall back to raw storage - this would corrupt the data model
 				time.Sleep(100 * time.Millisecond)
+
 				return 0, fmt.Errorf("message has schema ID but decoding failed (schema registry may be unavailable): %w", err)
 			}
 		}
@@ -1282,6 +1296,7 @@ func (h *Handler) scheduleSchemaRegistration(topicName string, recordType *schem
 	h.registeredSchemasMu.RLock()
 	if h.registeredSchemas[schemaKey] {
 		h.registeredSchemasMu.RUnlock()
+
 		return // Already registered
 	}
 	h.registeredSchemasMu.RUnlock()
@@ -1317,6 +1332,7 @@ func (h *Handler) scheduleKeySchemaRegistration(topicName string, recordType *sc
 	h.registeredSchemasMu.RLock()
 	if h.registeredSchemas[schemaKey] {
 		h.registeredSchemasMu.RUnlock()
+
 		return // Already registered
 	}
 	h.registeredSchemasMu.RUnlock()
@@ -1396,10 +1412,10 @@ func (h *Handler) getRecordTypeHash(recordType *schema_pb.RecordType) uint32 {
 	}
 
 	// Simple hash based on field count and first field name
-	hash := uint32(len(recordType.Fields))
-	if len(recordType.Fields) > 0 {
+	hash := uint32(len(recordType.GetFields()))
+	if len(recordType.GetFields()) > 0 {
 		// Use first field name for additional uniqueness
-		firstFieldName := recordType.Fields[0].Name
+		firstFieldName := recordType.GetFields()[0].GetName()
 		for _, char := range firstFieldName {
 			hash = hash*31 + uint32(char)
 		}
@@ -1416,7 +1432,7 @@ func (h *Handler) createCombinedRecordValue(keyDecodedMsg *schema.DecodedMessage
 
 	// Add key fields with "key_" prefix
 	if keyDecodedMsg != nil && keyDecodedMsg.RecordValue != nil {
-		for fieldName, fieldValue := range keyDecodedMsg.RecordValue.Fields {
+		for fieldName, fieldValue := range keyDecodedMsg.RecordValue.GetFields() {
 			combinedFields["key_"+fieldName] = fieldValue
 		}
 		// Note: The message key bytes are stored in the _key system column (from logEntry.Key)
@@ -1425,9 +1441,7 @@ func (h *Handler) createCombinedRecordValue(keyDecodedMsg *schema.DecodedMessage
 
 	// Add value fields (no prefix)
 	if valueDecodedMsg != nil && valueDecodedMsg.RecordValue != nil {
-		for fieldName, fieldValue := range valueDecodedMsg.RecordValue.Fields {
-			combinedFields[fieldName] = fieldValue
-		}
+		maps.Copy(combinedFields, valueDecodedMsg.RecordValue.GetFields())
 	}
 
 	return &schema_pb.RecordValue{
@@ -1438,7 +1452,7 @@ func (h *Handler) createCombinedRecordValue(keyDecodedMsg *schema.DecodedMessage
 // inferRecordTypeFromCachedSchema attempts to infer RecordType from a cached schema
 func (h *Handler) inferRecordTypeFromCachedSchema(cachedSchema *schema.CachedSchema) (*schema_pb.RecordType, error) {
 	if cachedSchema == nil {
-		return nil, fmt.Errorf("cached schema is nil")
+		return nil, errors.New("cached schema is nil")
 	}
 
 	switch cachedSchema.Format {
@@ -1460,6 +1474,7 @@ func (h *Handler) inferRecordTypeFromAvroSchema(avroSchema string) (*schema_pb.R
 	h.inferredRecordTypesMu.RLock()
 	if recordType, exists := h.inferredRecordTypes[avroSchema]; exists {
 		h.inferredRecordTypesMu.RUnlock()
+
 		return recordType, nil
 	}
 	h.inferredRecordTypesMu.RUnlock()
@@ -1491,6 +1506,7 @@ func (h *Handler) inferRecordTypeFromProtobufSchema(protobufSchema string) (*sch
 	h.inferredRecordTypesMu.RLock()
 	if recordType, exists := h.inferredRecordTypes[cacheKey]; exists {
 		h.inferredRecordTypesMu.RUnlock()
+
 		return recordType, nil
 	}
 	h.inferredRecordTypesMu.RUnlock()
@@ -1522,6 +1538,7 @@ func (h *Handler) inferRecordTypeFromJSONSchema(jsonSchema string) (*schema_pb.R
 	h.inferredRecordTypesMu.RLock()
 	if recordType, exists := h.inferredRecordTypes[cacheKey]; exists {
 		h.inferredRecordTypesMu.RUnlock()
+
 		return recordType, nil
 	}
 	h.inferredRecordTypesMu.RUnlock()

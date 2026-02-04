@@ -38,6 +38,7 @@ func (partition Partition) Equals(other Partition) bool {
 	if partition.UnixTimeNs != other.UnixTimeNs {
 		return false
 	}
+
 	return true
 }
 
@@ -50,17 +51,17 @@ func (partition Partition) LogicalEquals(other Partition) bool {
 
 func FromPbPartition(partition *schema_pb.Partition) Partition {
 	return Partition{
-		RangeStart: partition.RangeStart,
-		RangeStop:  partition.RangeStop,
-		RingSize:   partition.RingSize,
-		UnixTimeNs: partition.UnixTimeNs,
+		RangeStart: partition.GetRangeStart(),
+		RangeStop:  partition.GetRangeStop(),
+		RingSize:   partition.GetRingSize(),
+		UnixTimeNs: partition.GetUnixTimeNs(),
 	}
 }
 
 func SplitPartitions(targetCount int32, ts int64) []*Partition {
 	partitions := make([]*Partition, 0, targetCount)
 	partitionSize := PartitionCount / targetCount
-	for i := int32(0); i < targetCount; i++ {
+	for i := range targetCount {
 		partitionStop := (i + 1) * partitionSize
 		if i == targetCount-1 {
 			partitionStop = PartitionCount
@@ -72,6 +73,7 @@ func SplitPartitions(targetCount int32, ts int64) []*Partition {
 			UnixTimeNs: ts,
 		})
 	}
+
 	return partitions
 }
 
@@ -91,6 +93,7 @@ func (partition Partition) Overlaps(partition2 Partition) bool {
 	if partition.RangeStop <= partition2.RangeStart {
 		return false
 	}
+
 	return true
 }
 
@@ -107,10 +110,12 @@ func ParsePartitionBoundary(name string) (start, stop int32) {
 	if err != nil {
 		return 0, 0
 	}
+
 	return start, stop
 }
 
 func PartitionDir(t Topic, p Partition) string {
 	partitionGeneration := time.Unix(0, p.UnixTimeNs).UTC().Format(PartitionGenerationFormat)
+
 	return fmt.Sprintf("%s/%s/%04d-%04d", t.Dir(), partitionGeneration, p.RangeStart, p.RangeStop)
 }

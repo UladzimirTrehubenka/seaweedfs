@@ -142,6 +142,7 @@ func TestWhereClauseComparisonOperators(t *testing.T) {
 	baselineResult, _ := engine.ExecuteSQL(context.Background(), "SELECT id FROM user_events")
 	if len(baselineResult.Rows) == 0 {
 		t.Skip("No test data available")
+
 		return
 	}
 
@@ -169,6 +170,7 @@ func TestWhereClauseComparisonOperators(t *testing.T) {
 
 		if err != nil {
 			t.Errorf("Operator %s failed: %v", op.op, err)
+
 			continue
 		}
 

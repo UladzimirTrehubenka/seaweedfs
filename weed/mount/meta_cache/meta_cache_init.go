@@ -17,11 +17,9 @@ func EnsureVisited(mc *MetaCache, client filer_pb.FilerClient, dirPath util.Full
 	var uncachedPaths []util.FullPath
 	currentPath := dirPath
 
-	for {
+	for !mc.isCachedFn(currentPath) {
 		// If this path is cached, all ancestors are also cached
-		if mc.isCachedFn(currentPath) {
-			break
-		}
+
 		uncachedPaths = append(uncachedPaths, currentPath)
 
 		// Continue to parent directory
@@ -46,6 +44,7 @@ func EnsureVisited(mc *MetaCache, client filer_pb.FilerClient, dirPath util.Full
 			return doEnsureVisited(ctx, mc, client, path)
 		})
 	}
+
 	return g.Wait()
 }
 
@@ -56,7 +55,7 @@ const batchInsertSize = 100
 
 func doEnsureVisited(ctx context.Context, mc *MetaCache, client filer_pb.FilerClient, path util.FullPath) error {
 	// Use singleflight to deduplicate concurrent requests for the same path
-	_, err, _ := mc.visitGroup.Do(string(path), func() (interface{}, error) {
+	_, err, _ := mc.visitGroup.Do(string(path), func() (any, error) {
 		// Check for cancellation before starting
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -74,6 +73,7 @@ func doEnsureVisited(ctx context.Context, mc *MetaCache, client filer_pb.FilerCl
 
 		fetchErr := util.Retry("ReadDirAllEntries", func() error {
 			batch = nil // Reset batch on retry, allow GC of previous entries
+
 			return filer_pb.ReadDirAllEntries(ctx, client, path, "", func(pbEntry *filer_pb.Entry, isLast bool) error {
 				entry := filer.FromPbEntry(string(path), pbEntry)
 				if IsHiddenSystemEntry(string(path), entry.Name()) {
@@ -92,6 +92,7 @@ func doEnsureVisited(ctx context.Context, mc *MetaCache, client filer_pb.FilerCl
 					// Create new slice to allow GC of flushed entries
 					batch = make([]*filer.Entry, 0, batchInsertSize)
 				}
+
 				return nil
 			})
 		})
@@ -107,8 +108,10 @@ func doEnsureVisited(ctx context.Context, mc *MetaCache, client filer_pb.FilerCl
 			}
 		}
 		mc.markCachedFn(path)
+
 		return nil, nil
 	})
+
 	return err
 }
 

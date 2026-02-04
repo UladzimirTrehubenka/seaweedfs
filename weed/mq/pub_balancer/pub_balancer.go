@@ -2,13 +2,14 @@ package pub_balancer
 
 import (
 	cmap "github.com/orcaman/concurrent-map/v2"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 const (
-	MaxPartitionCount  = 8 * 9 * 5 * 7 //2520
+	MaxPartitionCount  = 8 * 9 * 5 * 7 // 2520
 	LockBrokerBalancer = "broker_balancer"
 )
 
@@ -53,6 +54,7 @@ func (balancer *PubBalancer) AddBroker(broker string) (brokerStats *BrokerStats)
 		}
 	}
 	balancer.onPubAddBroker(broker, brokerStats)
+
 	return brokerStats
 }
 
@@ -79,9 +81,9 @@ func (balancer *PubBalancer) OnBrokerStatsUpdated(broker string, brokerStats *Br
 	brokerStats.UpdateStats(receivedStats)
 
 	// update TopicToBrokers
-	for _, topicPartitionStats := range receivedStats.Stats {
-		topicKey := topic.FromPbTopic(topicPartitionStats.Topic).String()
-		partition := topicPartitionStats.Partition
+	for _, topicPartitionStats := range receivedStats.GetStats() {
+		topicKey := topic.FromPbTopic(topicPartitionStats.GetTopic()).String()
+		partition := topicPartitionStats.GetPartition()
 		partitionSlotToBrokerList, found := balancer.TopicToBrokers.Get(topicKey)
 		if !found {
 			partitionSlotToBrokerList = NewPartitionSlotToBrokerList(MaxPartitionCount)
@@ -89,7 +91,7 @@ func (balancer *PubBalancer) OnBrokerStatsUpdated(broker string, brokerStats *Br
 				partitionSlotToBrokerList, _ = balancer.TopicToBrokers.Get(topicKey)
 			}
 		}
-		partitionSlotToBrokerList.AddBroker(partition, broker, topicPartitionStats.Follower)
+		partitionSlotToBrokerList.AddBroker(partition, broker, topicPartitionStats.GetFollower())
 	}
 }
 

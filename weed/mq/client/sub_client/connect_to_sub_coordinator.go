@@ -12,7 +12,6 @@ func (sub *TopicSubscriber) doKeepConnectedToSubCoordinator() {
 	waitTime := 1 * time.Second
 	for {
 		for _, broker := range sub.bootstrapBrokers {
-
 			select {
 			case <-sub.ctx.Done():
 				return
@@ -26,21 +25,23 @@ func (sub *TopicSubscriber) doKeepConnectedToSubCoordinator() {
 				if err != nil {
 					return err
 				}
-				brokerLeader = resp.Broker
+				brokerLeader = resp.GetBroker()
+
 				return nil
 			})
 			if err != nil {
 				glog.V(0).Infof("broker coordinator on %s: %v", broker, err)
+
 				continue
 			}
 			glog.V(0).Infof("found broker coordinator: %v", brokerLeader)
 
 			// connect to the balancer
 			pb.WithBrokerGrpcClient(true, brokerLeader, sub.SubscriberConfig.GrpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
-
 				stream, err := client.SubscriberToSubCoordinator(sub.ctx)
 				if err != nil {
 					glog.V(0).Infof("subscriber %s: %v", sub.ContentConfig.Topic, err)
+
 					return err
 				}
 				waitTime = 1 * time.Second
@@ -58,12 +59,12 @@ func (sub *TopicSubscriber) doKeepConnectedToSubCoordinator() {
 					},
 				}); err != nil {
 					glog.V(0).Infof("subscriber %s send init: %v", sub.ContentConfig.Topic, err)
+
 					return err
 				}
 
 				go func() {
 					for reply := range sub.brokerPartitionAssignmentAckChan {
-
 						select {
 						case <-sub.ctx.Done():
 							return
@@ -73,6 +74,7 @@ func (sub *TopicSubscriber) doKeepConnectedToSubCoordinator() {
 						glog.V(0).Infof("subscriber instance %s ack %+v", sub.SubscriberConfig.ConsumerGroupInstanceId, reply)
 						if err := stream.Send(reply); err != nil {
 							glog.V(0).Infof("subscriber %s reply: %v", sub.ContentConfig.Topic, err)
+
 							return
 						}
 					}
@@ -83,6 +85,7 @@ func (sub *TopicSubscriber) doKeepConnectedToSubCoordinator() {
 					resp, err := stream.Recv()
 					if err != nil {
 						glog.V(0).Infof("subscriber %s receive: %v", sub.ContentConfig.Topic, err)
+
 						return err
 					}
 

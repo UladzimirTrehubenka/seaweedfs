@@ -51,11 +51,13 @@ func TestExtractPrincipalVariablesWithPaths(t *testing.T) {
 				actualValues, ok := result[key]
 				if !ok {
 					t.Errorf("Expected key %s not found in result", key)
+
 					continue
 				}
 
 				if len(actualValues) != len(expectedValues) {
 					t.Errorf("For key %s: expected %d values, got %d", key, len(expectedValues), len(actualValues))
+
 					continue
 				}
 

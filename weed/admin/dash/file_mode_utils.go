@@ -3,7 +3,7 @@ package dash
 // FormatFileMode converts file mode to Unix-style string representation (e.g., "drwxr-xr-x")
 // Handles both Go's os.ModeDir format and standard Unix file type bits
 func FormatFileMode(mode uint32) string {
-	var result []byte = make([]byte, 10)
+	var result = make([]byte, 10)
 
 	// File type - handle Go's os.ModeDir first, then standard Unix file type bits
 	if mode&0x80000000 != 0 { // Go's os.ModeDir (0x80000000 = 2147483648)

@@ -13,7 +13,7 @@ import (
 func TestAppend(t *testing.T) {
 	n := &Needle{
 
-		Cookie:       types.Cookie(123),   // Cookie Cookie   `comment:"random number to mitigate brute force lookups"`
+		Cookie:       types.Cookie(123),   // Cookie `comment:"random number to mitigate brute force lookups"`
 		Id:           types.NeedleId(123), // Id     NeedleId `comment:"needle id"`
 		Size:         8,                   // Size   uint32   `comment:"sum of DataSize,Data,NameSize,Name,MimeSize,Mime"`
 		DataSize:     4,                   // DataSize     uint32 `comment:"Data size"` //version2
@@ -32,9 +32,10 @@ func TestAppend(t *testing.T) {
 		Padding:      nil,                 // Padding    []byte `comment:"Aligned to 8 bytes"`
 	}
 
-	tempFile, err := os.CreateTemp("", ".dat")
+	tempFile, err := os.CreateTemp(t.TempDir(), ".dat")
 	if err != nil {
 		t.Errorf("Fail TempFile. %v", err)
+
 		return
 	}
 

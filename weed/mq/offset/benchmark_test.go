@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -55,7 +56,7 @@ func BenchmarkBatchOffsetAssignment(b *testing.B) {
 	for _, batchSize := range batchSizes {
 		b.Run(fmt.Sprintf("BatchSize%d", batchSize), func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				manager.AssignOffsets(batchSize)
 			}
 		})
@@ -65,7 +66,7 @@ func BenchmarkBatchOffsetAssignment(b *testing.B) {
 // BenchmarkSQLOffsetStorage benchmarks SQL storage operations
 func BenchmarkSQLOffsetStorage(b *testing.B) {
 	// Create temporary database
-	tmpFile, err := os.CreateTemp("", "benchmark_*.db")
+	tmpFile, err := os.CreateTemp(b.TempDir(), "benchmark_*.db")
 	if err != nil {
 		b.Fatalf("Failed to create temp database: %v", err)
 	}
@@ -95,7 +96,7 @@ func BenchmarkSQLOffsetStorage(b *testing.B) {
 
 	b.Run("SaveCheckpoint", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			storage.SaveCheckpoint("test-namespace", "test-topic", partition, int64(i))
 		}
 	})
@@ -103,40 +104,40 @@ func BenchmarkSQLOffsetStorage(b *testing.B) {
 	b.Run("LoadCheckpoint", func(b *testing.B) {
 		storage.SaveCheckpoint("test-namespace", "test-topic", partition, 1000)
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			storage.LoadCheckpoint("test-namespace", "test-topic", partition)
 		}
 	})
 
 	b.Run("SaveOffsetMapping", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			storage.SaveOffsetMapping(partitionKey, int64(i), int64(i*1000), 100)
 		}
 	})
 
 	// Pre-populate for read benchmarks
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		storage.SaveOffsetMapping(partitionKey, int64(i), int64(i*1000), 100)
 	}
 
 	b.Run("GetHighestOffset", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			storage.GetHighestOffset("test-namespace", "test-topic", partition)
 		}
 	})
 
 	b.Run("LoadOffsetMappings", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			storage.LoadOffsetMappings(partitionKey)
 		}
 	})
 
 	b.Run("GetOffsetMappingsByRange", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			start := int64(i % 900)
 			end := start + 100
 			storage.GetOffsetMappingsByRange(partitionKey, start, end)
@@ -145,7 +146,7 @@ func BenchmarkSQLOffsetStorage(b *testing.B) {
 
 	b.Run("GetPartitionStats", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			storage.GetPartitionStats(partitionKey)
 		}
 	})
@@ -169,14 +170,14 @@ func BenchmarkInMemoryVsSQL(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			manager.AssignOffset()
 		}
 	})
 
 	// SQL storage benchmark
 	b.Run("SQL", func(b *testing.B) {
-		tmpFile, err := os.CreateTemp("", "benchmark_sql_*.db")
+		tmpFile, err := os.CreateTemp(b.TempDir(), "benchmark_sql_*.db")
 		if err != nil {
 			b.Fatalf("Failed to create temp database: %v", err)
 		}
@@ -201,7 +202,7 @@ func BenchmarkInMemoryVsSQL(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			manager.AssignOffset()
 		}
 	})
@@ -225,7 +226,7 @@ func BenchmarkOffsetSubscription(b *testing.B) {
 
 	b.Run("CreateSubscription", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			subscriptionID := fmt.Sprintf("bench-sub-%d", i)
 			_, err := subscriber.CreateSubscription(
 				subscriptionID,
@@ -255,28 +256,28 @@ func BenchmarkOffsetSubscription(b *testing.B) {
 
 	b.Run("GetOffsetRange", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			sub.GetOffsetRange(100)
 		}
 	})
 
 	b.Run("AdvanceOffset", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			sub.AdvanceOffset()
 		}
 	})
 
 	b.Run("GetLag", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			sub.GetLag()
 		}
 	})
 
 	b.Run("SeekToOffset", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			offset := int64(i % 9000) // Stay within bounds
 			sub.SeekToOffset(offset)
 		}
@@ -297,7 +298,7 @@ func BenchmarkSMQOffsetIntegration(b *testing.B) {
 
 	b.Run("PublishRecord", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			key := fmt.Sprintf("key-%d", i)
 			integration.PublishRecord("test-namespace", "test-topic", partition, []byte(key), &schema_pb.RecordValue{})
 		}
@@ -309,11 +310,11 @@ func BenchmarkSMQOffsetIntegration(b *testing.B) {
 		for _, batchSize := range batchSizes {
 			b.Run(fmt.Sprintf("BatchSize%d", batchSize), func(b *testing.B) {
 				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
+				for i := range b.N {
 					records := make([]PublishRecordRequest, batchSize)
-					for j := 0; j < batchSize; j++ {
+					for j := range batchSize {
 						records[j] = PublishRecordRequest{
-							Key:   []byte(fmt.Sprintf("batch-%d-key-%d", i, j)),
+							Key:   fmt.Appendf(nil, "batch-%d-key-%d", i, j),
 							Value: &schema_pb.RecordValue{},
 						}
 					}
@@ -325,9 +326,9 @@ func BenchmarkSMQOffsetIntegration(b *testing.B) {
 
 	// Pre-populate for subscription benchmarks
 	records := make([]PublishRecordRequest, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		records[i] = PublishRecordRequest{
-			Key:   []byte(fmt.Sprintf("pre-key-%d", i)),
+			Key:   fmt.Appendf(nil, "pre-key-%d", i),
 			Value: &schema_pb.RecordValue{},
 		}
 	}
@@ -335,7 +336,7 @@ func BenchmarkSMQOffsetIntegration(b *testing.B) {
 
 	b.Run("CreateSubscription", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			subscriptionID := fmt.Sprintf("integration-sub-%d", i)
 			_, err := integration.CreateSubscription(
 				subscriptionID,
@@ -353,14 +354,14 @@ func BenchmarkSMQOffsetIntegration(b *testing.B) {
 
 	b.Run("GetHighWaterMark", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			integration.GetHighWaterMark("test-namespace", "test-topic", partition)
 		}
 	})
 
 	b.Run("GetPartitionOffsetInfo", func(b *testing.B) {
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			integration.GetPartitionOffsetInfo("test-namespace", "test-topic", partition)
 		}
 	})
@@ -391,7 +392,7 @@ func BenchmarkConcurrentOperations(b *testing.B) {
 	})
 
 	// Pre-populate for concurrent reads
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		key := fmt.Sprintf("read-key-%d", i)
 		integration.PublishRecord("test-namespace", "test-topic", partition, []byte(key), &schema_pb.RecordValue{})
 	}
@@ -441,7 +442,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			manager.AssignOffset()
 			// Note: Checkpointing now happens automatically in background every 2 seconds
 		}

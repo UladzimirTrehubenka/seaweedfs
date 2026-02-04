@@ -3,8 +3,9 @@ package iam
 import (
 	"testing"
 
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 )
 
 func TestHash(t *testing.T) {
@@ -60,7 +61,7 @@ func TestGenerateSecretAccessKey(t *testing.T) {
 
 func TestGenerateSecretAccessKey_URLSafe(t *testing.T) {
 	// Generate multiple keys to increase probability of catching unsafe chars
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		secretKey, err := GenerateSecretAccessKey()
 		assert.NoError(t, err)
 

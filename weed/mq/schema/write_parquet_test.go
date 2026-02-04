@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
@@ -54,7 +56,6 @@ func TestWriteReadParquet(t *testing.T) {
 	if err = os.Remove(filename); err != nil {
 		t.Fatalf("os.Remove failed: %v", err)
 	}
-
 }
 
 func testWritingParquetFile(t *testing.T, count int, filename string, parquetSchema *parquet.Schema, recordType *schema_pb.RecordType) {
@@ -71,7 +72,7 @@ func testWritingParquetFile(t *testing.T, count int, filename string, parquetSch
 	defer file.Close()
 	writer := parquet.NewWriter(file, parquetSchema, parquet.Compression(&zstd.Codec{Level: zstd.DefaultLevel}))
 	rowBuilder := parquet.NewRowBuilder(parquetSchema)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rowBuilder.Reset()
 		// generate random data
 		recordValue := RecordBegin().
@@ -145,7 +146,7 @@ func testReadingParquetFile(t *testing.T, filename string, parquetSchema *parque
 		rowCount, err := reader.ReadRows(rows)
 
 		// Process the rows first, even if EOF is returned
-		for i := 0; i < rowCount; i++ {
+		for i := range rowCount {
 			row := rows[i]
 			// convert parquet row to schema_pb.RecordValue
 			recordValue, err := ToRecordValue(recordType, parquetLevels, row)
@@ -160,7 +161,7 @@ func testReadingParquetFile(t *testing.T, filename string, parquetSchema *parque
 
 		// Check for end conditions after processing rows
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			t.Fatalf("reader.Read failed: %v", err)
@@ -170,5 +171,6 @@ func testReadingParquetFile(t *testing.T, filename string, parquetSchema *parque
 		}
 	}
 	fmt.Printf("total: %v\n", total)
-	return
+
+	return total
 }

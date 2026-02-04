@@ -104,6 +104,7 @@ func (po *PendingOperations) removeOperationUnlocked(op *PendingOperation) {
 		for i, other := range ops {
 			if other.TaskID == op.TaskID {
 				po.bySourceNode[op.SourceNode] = append(ops[:i], ops[i+1:]...)
+
 				break
 			}
 		}
@@ -115,6 +116,7 @@ func (po *PendingOperations) removeOperationUnlocked(op *PendingOperation) {
 			for i, other := range ops {
 				if other.TaskID == op.TaskID {
 					po.byDestNode[op.DestNode] = append(ops[:i], ops[i+1:]...)
+
 					break
 				}
 			}
@@ -128,6 +130,7 @@ func (po *PendingOperations) HasPendingOperationOnVolume(volumeID uint32) bool {
 	defer po.mutex.RUnlock()
 
 	_, exists := po.byVolumeID[volumeID]
+
 	return exists
 }
 
@@ -148,6 +151,7 @@ func (po *PendingOperations) WouldConflictWithPending(volumeID uint32, opType Pe
 		// Volume already has a pending operation
 		glog.V(3).Infof("Volume %d conflict: already has %s operation (task %s)",
 			volumeID, existing.OperationType, existing.TaskID)
+
 		return true
 	}
 
@@ -299,6 +303,7 @@ func (po *PendingOperations) GetStats() PendingOperationsStats {
 	}
 
 	stats.TotalEstimatedSize = totalSize
+
 	return stats
 }
 

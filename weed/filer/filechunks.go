@@ -3,6 +3,7 @@ package filer
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 
@@ -13,57 +14,61 @@ import (
 
 func TotalSize(chunks []*filer_pb.FileChunk) (size uint64) {
 	for _, c := range chunks {
-		t := uint64(c.Offset + int64(c.Size))
+		t := uint64(c.GetOffset() + int64(c.GetSize()))
 		if size < t {
 			size = t
 		}
 	}
+
 	return
 }
 
 func FileSize(entry *filer_pb.Entry) (size uint64) {
-	if entry == nil || entry.Attributes == nil {
+	if entry == nil || entry.GetAttributes() == nil {
 		return 0
 	}
-	fileSize := entry.Attributes.FileSize
-	if entry.RemoteEntry != nil {
-		if entry.RemoteEntry.RemoteMtime > entry.Attributes.Mtime {
-			fileSize = maxUint64(fileSize, uint64(entry.RemoteEntry.RemoteSize))
+	fileSize := entry.GetAttributes().GetFileSize()
+	if entry.GetRemoteEntry() != nil {
+		if entry.GetRemoteEntry().GetRemoteMtime() > entry.GetAttributes().GetMtime() {
+			fileSize = maxUint64(fileSize, uint64(entry.GetRemoteEntry().GetRemoteSize()))
 		}
 	}
+
 	return maxUint64(TotalSize(entry.GetChunks()), fileSize)
 }
 
 func ETag(entry *filer_pb.Entry) (etag string) {
-	if entry.Attributes == nil || entry.Attributes.Md5 == nil {
+	if entry.GetAttributes() == nil || entry.Attributes.Md5 == nil {
 		return ETagChunks(entry.GetChunks())
 	}
-	return fmt.Sprintf("%x", entry.Attributes.Md5)
+
+	return hex.EncodeToString(entry.GetAttributes().GetMd5())
 }
 
 func ETagEntry(entry *Entry) (etag string) {
 	if entry.IsInRemoteOnly() {
-		return entry.Remote.RemoteETag
+		return entry.Remote.GetRemoteETag()
 	}
-	if entry.Attr.Md5 == nil {
+	if entry.Md5 == nil {
 		return ETagChunks(entry.GetChunks())
 	}
-	return fmt.Sprintf("%x", entry.Attr.Md5)
+
+	return hex.EncodeToString(entry.Md5)
 }
 
 func ETagChunks(chunks []*filer_pb.FileChunk) (etag string) {
 	if len(chunks) == 1 {
-		return fmt.Sprintf("%x", util.Base64Md5ToBytes(chunks[0].ETag))
+		return hex.EncodeToString(util.Base64Md5ToBytes(chunks[0].GetETag()))
 	}
 	var md5Digests [][]byte
 	for _, c := range chunks {
-		md5Digests = append(md5Digests, util.Base64Md5ToBytes(c.ETag))
+		md5Digests = append(md5Digests, util.Base64Md5ToBytes(c.GetETag()))
 	}
+
 	return fmt.Sprintf("%x-%d", util.Md5(bytes.Join(md5Digests, nil)), len(chunks))
 }
 
 func CompactFileChunks(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, chunks []*filer_pb.FileChunk) (compacted, garbage []*filer_pb.FileChunk) {
-
 	visibles, _ := NonOverlappingVisibleIntervals(ctx, lookupFileIdFn, chunks, 0, math.MaxInt64)
 
 	compacted, garbage = SeparateGarbageChunks(visibles, chunks)
@@ -84,6 +89,7 @@ func SeparateGarbageChunks(visibles *IntervalList[*VisibleInterval], chunks []*f
 			garbage = append(garbage, chunk)
 		}
 	}
+
 	return compacted, garbage
 }
 
@@ -96,11 +102,11 @@ func FindGarbageChunks(visibles *IntervalList[*VisibleInterval], start int64, st
 			garbageFileIds[interval.fileId] = struct{}{}
 		}
 	}
+
 	return
 }
 
 func MinusChunks(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, as, bs []*filer_pb.FileChunk) (delta []*filer_pb.FileChunk, err error) {
-
 	aData, aMeta, aErr := ResolveChunkManifest(ctx, lookupFileIdFn, as, 0, math.MaxInt64)
 	if aErr != nil {
 		return nil, aErr
@@ -112,11 +118,11 @@ func MinusChunks(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFuncti
 
 	delta = append(delta, DoMinusChunks(aData, bData)...)
 	delta = append(delta, DoMinusChunks(aMeta, bMeta)...)
+
 	return
 }
 
 func DoMinusChunks(as, bs []*filer_pb.FileChunk) (delta []*filer_pb.FileChunk) {
-
 	fileIds := make(map[string]bool)
 	for _, interval := range bs {
 		fileIds[interval.GetFileIdString()] = true
@@ -131,7 +137,6 @@ func DoMinusChunks(as, bs []*filer_pb.FileChunk) (delta []*filer_pb.FileChunk) {
 }
 
 func DoMinusChunksBySourceFileId(as, bs []*filer_pb.FileChunk) (delta []*filer_pb.FileChunk) {
-
 	fileIds := make(map[string]bool)
 	for _, interval := range bs {
 		fileIds[interval.GetFileIdString()] = true
@@ -185,15 +190,12 @@ func (cv *ChunkView) IsFullChunk() bool {
 }
 
 func ViewFromChunks(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, chunks []*filer_pb.FileChunk, offset int64, size int64) (chunkViews *IntervalList[*ChunkView]) {
-
 	visibles, _ := NonOverlappingVisibleIntervals(ctx, lookupFileIdFn, chunks, offset, offset+size)
 
 	return ViewFromVisibleIntervals(visibles, offset, size)
-
 }
 
 func ViewFromVisibleIntervals(visibles *IntervalList[*VisibleInterval], offset int64, size int64) (chunkViews *IntervalList[*ChunkView]) {
-
 	stop := offset + size
 	if size == math.MaxInt64 {
 		stop = math.MaxInt64
@@ -231,45 +233,41 @@ func ViewFromVisibleIntervals(visibles *IntervalList[*VisibleInterval], offset i
 	}
 
 	return chunkViews
-
 }
 
 func MergeIntoVisibles(visibles *IntervalList[*VisibleInterval], start int64, stop int64, chunk *filer_pb.FileChunk) {
-
 	newV := &VisibleInterval{
 		start:         start,
 		stop:          stop,
 		fileId:        chunk.GetFileIdString(),
-		modifiedTsNs:  chunk.ModifiedTsNs,
-		offsetInChunk: start - chunk.Offset, // the starting position in the chunk
-		chunkSize:     chunk.Size,           // size of the chunk
-		cipherKey:     chunk.CipherKey,
-		isGzipped:     chunk.IsCompressed,
+		modifiedTsNs:  chunk.GetModifiedTsNs(),
+		offsetInChunk: start - chunk.GetOffset(), // the starting position in the chunk
+		chunkSize:     chunk.GetSize(),           // size of the chunk
+		cipherKey:     chunk.GetCipherKey(),
+		isGzipped:     chunk.GetIsCompressed(),
 	}
 
-	visibles.InsertInterval(start, stop, chunk.ModifiedTsNs, newV)
+	visibles.InsertInterval(start, stop, chunk.GetModifiedTsNs(), newV)
 }
 
 func MergeIntoChunkViews(chunkViews *IntervalList[*ChunkView], start int64, stop int64, chunk *filer_pb.FileChunk) {
-
 	chunkView := &ChunkView{
 		FileId:        chunk.GetFileIdString(),
-		OffsetInChunk: start - chunk.Offset,
+		OffsetInChunk: start - chunk.GetOffset(),
 		ViewSize:      uint64(stop - start),
 		ViewOffset:    start,
-		ChunkSize:     chunk.Size,
-		CipherKey:     chunk.CipherKey,
-		IsGzipped:     chunk.IsCompressed,
-		ModifiedTsNs:  chunk.ModifiedTsNs,
+		ChunkSize:     chunk.GetSize(),
+		CipherKey:     chunk.GetCipherKey(),
+		IsGzipped:     chunk.GetIsCompressed(),
+		ModifiedTsNs:  chunk.GetModifiedTsNs(),
 	}
 
-	chunkViews.InsertInterval(start, stop, chunk.ModifiedTsNs, chunkView)
+	chunkViews.InsertInterval(start, stop, chunk.GetModifiedTsNs(), chunkView)
 }
 
 // NonOverlappingVisibleIntervals translates the file chunk into VisibleInterval in memory
 // If the file chunk content is a chunk manifest
 func NonOverlappingVisibleIntervals(ctx context.Context, lookupFileIdFn wdclient.LookupFileIdFunctionType, chunks []*filer_pb.FileChunk, startOffset int64, stopOffset int64) (visibles *IntervalList[*VisibleInterval], err error) {
-
 	chunks, _, err = ResolveChunkManifest(ctx, lookupFileIdFn, chunks, startOffset, stopOffset)
 	if err != nil {
 		return
@@ -309,17 +307,4 @@ func (v *VisibleInterval) Clone() IntervalValue {
 		cipherKey:     v.cipherKey,
 		isGzipped:     v.isGzipped,
 	}
-}
-
-func min(x, y int64) int64 {
-	if x <= y {
-		return x
-	}
-	return y
-}
-func max(x, y int64) int64 {
-	if x <= y {
-		return y
-	}
-	return x
 }

@@ -2,6 +2,7 @@ package mount
 
 import (
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
@@ -17,6 +18,7 @@ func (wfs *WFS) AcquireHandle(inode uint64, flags, uid, gid uint32) (fileHandle 
 		// need to AcquireFileHandle again to ensure correct handle counter
 		fileHandle = wfs.fhMap.AcquireFileHandle(wfs, inode, entry)
 	}
+
 	return
 }
 

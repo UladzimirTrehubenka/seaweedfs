@@ -5,13 +5,14 @@ import (
 	"sync"
 
 	"github.com/rdleal/intervalst/interval"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"github.com/seaweedfs/seaweedfs/weed/mq/pub_balancer"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util/buffered_queue"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type PublisherConfiguration struct {
@@ -24,6 +25,7 @@ type PublisherConfiguration struct {
 
 type PublishClient struct {
 	mq_pb.SeaweedMessaging_PublishMessageClient
+
 	Broker string
 	Err    error
 }
@@ -49,6 +51,7 @@ func NewTopicPublisher(config *PublisherConfiguration) (tp *TopicPublisher, err 
 	go func() {
 		if err = tp.startSchedulerThread(&wg); err != nil {
 			log.Println(err)
+
 			return
 		}
 	}()
@@ -59,7 +62,6 @@ func NewTopicPublisher(config *PublisherConfiguration) (tp *TopicPublisher, err 
 }
 
 func (p *TopicPublisher) Shutdown() error {
-
 	if inputBuffers, found := p.partition2Buffer.AllIntersections(0, pub_balancer.MaxPartitionCount); found {
 		for _, inputBuffer := range inputBuffers {
 			inputBuffer.CloseInput()

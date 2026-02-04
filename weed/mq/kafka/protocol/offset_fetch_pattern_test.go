@@ -32,8 +32,8 @@ func TestOffsetCommitFetchPattern(t *testing.T) {
 
 	// Simulate message production
 	messages := make([][]byte, messageCount)
-	for i := 0; i < messageCount; i++ {
-		messages[i] = []byte(fmt.Sprintf("message-%d", i))
+	for i := range messageCount {
+		messages[i] = fmt.Appendf(nil, "message-%d", i)
 	}
 
 	// Test: Sequential consumption with offset commits
@@ -43,10 +43,7 @@ func TestOffsetCommitFetchPattern(t *testing.T) {
 
 		for nextOffset < int64(messageCount) {
 			// Step 1: Fetch batch of messages starting from nextOffset
-			endOffset := nextOffset + int64(batchSize)
-			if endOffset > int64(messageCount) {
-				endOffset = int64(messageCount)
-			}
+			endOffset := min(nextOffset+int64(batchSize), int64(messageCount))
 
 			fetchedCount := endOffset - nextOffset
 			if fetchedCount <= 0 {
@@ -82,7 +79,7 @@ func TestOffsetCommitFetchPattern(t *testing.T) {
 			t.Errorf("Not all messages consumed: got %d, expected %d", len(consumedOffsets), messageCount)
 		}
 
-		for i := 0; i < messageCount; i++ {
+		for i := range messageCount {
 			if !consumedOffsets[int64(i)] {
 				t.Errorf("Message at offset %d not consumed", i)
 			}

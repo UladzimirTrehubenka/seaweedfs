@@ -523,7 +523,7 @@ func TestSSES3KeyGeneration(t *testing.T) {
 	}
 
 	// Verify keys are unique
-	for i := 0; i < len(keys); i++ {
+	for i := range keys {
 		for j := i + 1; j < len(keys); j++ {
 			if bytes.Equal(keys[i].Key, keys[j].Key) {
 				t.Errorf("Keys %d and %d are identical (should be unique)", i, j)
@@ -756,7 +756,7 @@ func TestProcessSSES3Request(t *testing.T) {
 	}
 
 	// Create SSE-S3 request
-	req := httptest.NewRequest("PUT", "/bucket/object", nil)
+	req := httptest.NewRequest(http.MethodPut, "/bucket/object", nil)
 	req.Header.Set(s3_constants.AmzServerSideEncryption, "AES256")
 
 	// Process request

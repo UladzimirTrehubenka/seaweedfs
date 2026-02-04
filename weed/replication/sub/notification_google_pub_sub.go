@@ -6,11 +6,12 @@ import (
 	"os"
 
 	"cloud.google.com/go/pubsub"
+	"google.golang.org/api/option"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/api/option"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -30,6 +31,7 @@ func (k *GooglePubSubInput) GetName() string {
 func (k *GooglePubSubInput) Initialize(configuration util.Configuration, prefix string) error {
 	glog.V(0).Infof("notification.google_pub_sub.project_id: %v", configuration.GetString(prefix+"project_id"))
 	glog.V(0).Infof("notification.google_pub_sub.topic: %v", configuration.GetString(prefix+"topic"))
+
 	return k.initialize(
 		configuration.GetString(prefix+"google_application_credentials"),
 		configuration.GetString(prefix+"project_id"),
@@ -38,7 +40,6 @@ func (k *GooglePubSubInput) Initialize(configuration util.Configuration, prefix 
 }
 
 func (k *GooglePubSubInput) initialize(google_application_credentials, projectId, topicName string) (err error) {
-
 	ctx := context.Background()
 	// Creates a client.
 	if google_application_credentials == "" {
@@ -91,7 +92,6 @@ func (k *GooglePubSubInput) initialize(google_application_credentials, projectId
 }
 
 func (k *GooglePubSubInput) ReceiveMessage() (key string, message *filer_pb.EventNotification, onSuccessFn func(), onFailureFn func(), err error) {
-
 	m := <-k.messageChan
 
 	onSuccessFn = func() {
@@ -107,7 +107,8 @@ func (k *GooglePubSubInput) ReceiveMessage() (key string, message *filer_pb.Even
 	err = proto.Unmarshal(m.Data, message)
 
 	if err != nil {
-		err = fmt.Errorf("unmarshal message from google pubsub %s: %v", k.topicName, err)
+		err = fmt.Errorf("unmarshal message from google pubsub %s: %w", k.topicName, err)
+
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
@@ -15,6 +16,7 @@ func (s *AdminServer) ShowLogin(c *gin.Context) {
 	session := sessions.Default(c)
 	if session.Get("authenticated") == true {
 		c.Redirect(http.StatusSeeOther, "/admin")
+
 		return
 	}
 
@@ -55,10 +57,12 @@ func (s *AdminServer) HandleLogin(adminUser, adminPassword, readOnlyUser, readOn
 				// Log the detailed error server-side for diagnostics
 				glog.Errorf("Failed to save session for user %s: %v", loginUsername, err)
 				c.Redirect(http.StatusSeeOther, "/login?error=Unable to create session. Please try again or contact administrator.")
+
 				return
 			}
 
 			c.Redirect(http.StatusSeeOther, "/admin")
+
 			return
 		}
 

@@ -42,20 +42,20 @@ func TestECRebalanceWithLimitedSlots(t *testing.T) {
 	// Log per-node details
 	for _, node := range ecNodes {
 		shardCount := 0
-		for _, diskInfo := range node.info.DiskInfos {
-			for _, ecShard := range diskInfo.EcShardInfos {
+		for _, diskInfo := range node.info.GetDiskInfos() {
+			for _, ecShard := range diskInfo.GetEcShardInfos() {
 				shardCount += erasure_coding.GetShardCount(ecShard)
 			}
 		}
 		t.Logf("  Node %s (rack %s): %d shards, %d free slots",
-			node.info.Id, node.rack, shardCount, node.freeEcSlot)
+			node.info.GetId(), node.rack, shardCount, node.freeEcSlot)
 	}
 
 	// Calculate total EC shards
 	totalEcShards := 0
 	for _, node := range ecNodes {
-		for _, diskInfo := range node.info.DiskInfos {
-			for _, ecShard := range diskInfo.EcShardInfos {
+		for _, diskInfo := range node.info.GetDiskInfos() {
+			for _, ecShard := range diskInfo.GetEcShardInfos() {
 				totalEcShards += erasure_coding.GetShardCount(ecShard)
 			}
 		}
@@ -120,15 +120,15 @@ func TestECRebalanceZeroFreeSlots(t *testing.T) {
 	t.Logf("Zero free slots scenario:")
 	for _, node := range ecNodes {
 		shardCount := 0
-		for _, diskInfo := range node.info.DiskInfos {
-			for _, ecShard := range diskInfo.EcShardInfos {
+		for _, diskInfo := range node.info.GetDiskInfos() {
+			for _, ecShard := range diskInfo.GetEcShardInfos() {
 				shardCount += erasure_coding.GetShardCount(ecShard)
 			}
 		}
 		t.Logf("  Node %s: %d shards, %d free slots, volumeCount=%d, max=%d",
-			node.info.Id, shardCount, node.freeEcSlot,
-			node.info.DiskInfos[string(types.HardDriveType)].VolumeCount,
-			node.info.DiskInfos[string(types.HardDriveType)].MaxVolumeCount)
+			node.info.GetId(), shardCount, node.freeEcSlot,
+			node.info.GetDiskInfos()[string(types.HardDriveType)].GetVolumeCount(),
+			node.info.GetDiskInfos()[string(types.HardDriveType)].GetMaxVolumeCount())
 	}
 	t.Logf("  Total free slots: %d", totalFreeEcSlots)
 
@@ -237,6 +237,7 @@ func buildEcShards(volumeIds []uint32) []*master_pb.VolumeEcShardInformationMess
 			ShardSizes:  si.SizesInt64(),
 		})
 	}
+
 	return shards
 }
 

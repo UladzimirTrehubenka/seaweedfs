@@ -31,7 +31,7 @@ func TestBrokerOffsetManager_AssignOffset(t *testing.T) {
 	testPartition := createTestPartition()
 
 	// Test sequential offset assignment
-	for i := int64(0); i < 10; i++ {
+	for i := range int64(10) {
 		assignedOffset, err := manager.AssignOffset(testTopic, testPartition)
 		if err != nil {
 			t.Fatalf("Failed to assign offset %d: %v", i, err)

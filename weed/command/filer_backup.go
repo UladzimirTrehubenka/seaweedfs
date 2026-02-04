@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -14,7 +16,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/http"
-	"google.golang.org/grpc"
 )
 
 type FilerBackupOptions struct {
@@ -66,7 +67,6 @@ var cmdFilerBackup = &Command{
 }
 
 func runFilerBackup(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	util.LoadConfiguration("replication", true)
 
@@ -90,11 +90,10 @@ const (
 )
 
 func doFilerBackup(grpcDialOption grpc.DialOption, backupOption *FilerBackupOptions, clientId int32, clientEpoch int32) error {
-
 	// find data sink
 	dataSink := findSink(util.GetViper())
 	if dataSink == nil {
-		return fmt.Errorf("no data sink configured in replication.toml")
+		return errors.New("no data sink configured in replication.toml")
 	}
 
 	sourceFiler := pb.ServerAddress(*backupOption.filer)
@@ -104,7 +103,7 @@ func doFilerBackup(grpcDialOption grpc.DialOption, backupOption *FilerBackupOpti
 	if *backupOption.excludeFileName != "" {
 		var err error
 		if reExcludeFileName, err = regexp.Compile(*backupOption.excludeFileName); err != nil {
-			return fmt.Errorf("error compile regexp %v for exclude file name: %+v", *backupOption.excludeFileName, err)
+			return fmt.Errorf("error compile regexp %v for exclude file name: %+w", *backupOption.excludeFileName, err)
 		}
 	}
 	timeAgo := *backupOption.timeAgo
@@ -147,14 +146,17 @@ func doFilerBackup(grpcDialOption grpc.DialOption, backupOption *FilerBackupOpti
 			// ignore HTTP 404 from remote reads
 			if errors.Is(err, http.ErrNotFound) {
 				glog.V(0).Infof("got 404 error for %s, ignore it: %s", getSourceKey(resp), err.Error())
+
 				return nil
 			}
 			// also ignore missing volume/lookup errors coming from LookupFileId or vid map
 			errStr := err.Error()
 			if strings.Contains(errStr, "LookupFileId") || (strings.Contains(errStr, "volume id") && strings.Contains(errStr, "not found")) {
 				glog.V(0).Infof("got missing-volume error for %s, ignore it: %s", getSourceKey(resp), errStr)
+
 				return nil
 			}
+
 			return err
 		}
 	} else {
@@ -163,6 +165,7 @@ func doFilerBackup(grpcDialOption grpc.DialOption, backupOption *FilerBackupOpti
 
 	processEventFnWithOffset := pb.AddOffsetFunc(processEventFn, 3*time.Second, func(counter int64, lastTsNs int64) error {
 		glog.V(0).Infof("backup %s progressed to %v %0.2f/sec", sourceFiler, time.Unix(0, lastTsNs), float64(counter)/float64(3))
+
 		return setOffset(grpcDialOption, sourceFiler, BackupKeyPrefix, int32(sinkId), lastTsNs)
 	})
 
@@ -202,19 +205,19 @@ func doFilerBackup(grpcDialOption grpc.DialOption, backupOption *FilerBackupOpti
 	}
 
 	return pb.FollowMetadata(sourceFiler, grpcDialOption, metadataFollowOption, processEventFnWithOffset)
-
 }
 
 func getSourceKey(resp *filer_pb.SubscribeMetadataResponse) string {
-	if resp == nil || resp.EventNotification == nil {
+	if resp == nil || resp.GetEventNotification() == nil {
 		return ""
 	}
-	message := resp.EventNotification
-	if message.NewEntry != nil {
-		return string(util.FullPath(message.NewParentPath).Child(message.NewEntry.Name))
+	message := resp.GetEventNotification()
+	if message.GetNewEntry() != nil {
+		return string(util.FullPath(message.GetNewParentPath()).Child(message.GetNewEntry().GetName()))
 	}
-	if message.OldEntry != nil {
-		return string(util.FullPath(resp.Directory).Child(message.OldEntry.Name))
+	if message.GetOldEntry() != nil {
+		return string(util.FullPath(resp.GetDirectory()).Child(message.GetOldEntry().GetName()))
 	}
+
 	return ""
 }

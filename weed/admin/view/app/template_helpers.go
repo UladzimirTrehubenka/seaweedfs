@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // getStatusColor returns Bootstrap color class for status
@@ -37,6 +38,7 @@ func formatBytes(bytes int64) string {
 	if i == 0 {
 		return fmt.Sprintf("%.0f %s", value, units[i])
 	}
+
 	return fmt.Sprintf("%.1f %s", value, units[i])
 }
 
@@ -49,12 +51,14 @@ func formatNumber(num int64) string {
 	str := strconv.FormatInt(num, 10)
 	result := ""
 
+	var resultSb52 strings.Builder
 	for i, char := range str {
 		if i > 0 && (len(str)-i)%3 == 0 {
-			result += ","
+			resultSb52.WriteString(",")
 		}
-		result += string(char)
+		resultSb52.WriteRune(char)
 	}
+	result += resultSb52.String()
 
 	return result
 }
@@ -64,5 +68,6 @@ func calculatePercent(current, max int) int {
 	if max == 0 {
 		return 0
 	}
+
 	return (current * 100) / max
 }

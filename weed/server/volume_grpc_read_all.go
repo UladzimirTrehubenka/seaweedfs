@@ -9,12 +9,12 @@ import (
 )
 
 func (vs *VolumeServer) ReadAllNeedles(req *volume_server_pb.ReadAllNeedlesRequest, stream volume_server_pb.VolumeServer_ReadAllNeedlesServer) (err error) {
-
-	for _, vid := range req.VolumeIds {
+	for _, vid := range req.GetVolumeIds() {
 		if err := vs.streamReadOneVolume(needle.VolumeId(vid), stream); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -29,7 +29,7 @@ func (vs *VolumeServer) streamReadOneVolume(vid needle.VolumeId, stream volume_s
 		V:      v,
 	}
 
-	offset := int64(v.SuperBlock.BlockSize())
+	offset := int64(v.BlockSize())
 
 	return storage.ScanVolumeFileFrom(v.Version(), v.DataBackend, offset, scanner)
 }

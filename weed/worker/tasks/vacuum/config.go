@@ -1,7 +1,7 @@
 package vacuum
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/seaweedfs/seaweedfs/weed/admin/config"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -12,6 +12,7 @@ import (
 // Config extends BaseConfig with vacuum-specific settings
 type Config struct {
 	base.BaseConfig
+
 	GarbageThreshold    float64 `json:"garbage_threshold"`
 	MinVolumeAgeSeconds int     `json:"min_volume_age_seconds"`
 	MinIntervalSeconds  int     `json:"min_interval_seconds"`
@@ -51,26 +52,26 @@ func (c *Config) ToTaskPolicy() *worker_pb.TaskPolicy {
 // FromTaskPolicy loads configuration from a TaskPolicy protobuf message
 func (c *Config) FromTaskPolicy(policy *worker_pb.TaskPolicy) error {
 	if policy == nil {
-		return fmt.Errorf("policy is nil")
+		return errors.New("policy is nil")
 	}
 
 	// Set general TaskPolicy fields
-	c.Enabled = policy.Enabled
-	c.MaxConcurrent = int(policy.MaxConcurrent)
-	c.ScanIntervalSeconds = int(policy.RepeatIntervalSeconds) // Direct seconds-to-seconds mapping
+	c.Enabled = policy.GetEnabled()
+	c.MaxConcurrent = int(policy.GetMaxConcurrent())
+	c.ScanIntervalSeconds = int(policy.GetRepeatIntervalSeconds()) // Direct seconds-to-seconds mapping
 
 	// Set vacuum-specific fields from the task config
 	if vacuumConfig := policy.GetVacuumConfig(); vacuumConfig != nil {
-		c.GarbageThreshold = float64(vacuumConfig.GarbageThreshold)
-		c.MinVolumeAgeSeconds = int(vacuumConfig.MinVolumeAgeHours * 3600) // Convert hours to seconds
-		c.MinIntervalSeconds = int(vacuumConfig.MinIntervalSeconds)
+		c.GarbageThreshold = float64(vacuumConfig.GetGarbageThreshold())
+		c.MinVolumeAgeSeconds = int(vacuumConfig.GetMinVolumeAgeHours() * 3600) // Convert hours to seconds
+		c.MinIntervalSeconds = int(vacuumConfig.GetMinIntervalSeconds())
 	}
 
 	return nil
 }
 
 // LoadConfigFromPersistence loads configuration from the persistence layer if available
-func LoadConfigFromPersistence(configPersistence interface{}) *Config {
+func LoadConfigFromPersistence(configPersistence any) *Config {
 	config := NewDefaultConfig()
 
 	// Try to load from persistence if available
@@ -80,12 +81,14 @@ func LoadConfigFromPersistence(configPersistence interface{}) *Config {
 		if policy, err := persistence.LoadVacuumTaskPolicy(); err == nil && policy != nil {
 			if err := config.FromTaskPolicy(policy); err == nil {
 				glog.V(1).Infof("Loaded vacuum configuration from persistence")
+
 				return config
 			}
 		}
 	}
 
 	glog.V(1).Infof("Using default vacuum configuration")
+
 	return config
 }
 

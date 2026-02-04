@@ -25,12 +25,12 @@ type Options struct {
 	// This function creates a resource handle (e.g., a connection) for a
 	// resource location.  The function must be thread-safe.
 	Open func(resourceLocation string) (
-		handle interface{},
+		handle any,
 		err error)
 
 	// This function destroys a resource handle and performs the necessary
 	// cleanup to free up resources.  The function must be thread-safe.
-	Close func(handle interface{}) error
+	Close func(handle any) error
 
 	// This specifies the now time function.  When the function is non-nil, the
 	// resource pool will use the specified function instead of time.Now to

@@ -10,25 +10,25 @@ import (
 )
 
 func Replay(filerStore FilerStore, resp *filer_pb.SubscribeMetadataResponse) error {
-	message := resp.EventNotification
+	message := resp.GetEventNotification()
 	var oldPath util.FullPath
 	var newEntry *Entry
-	if message.OldEntry != nil {
-		oldPath = util.NewFullPath(resp.Directory, message.OldEntry.Name)
+	if message.GetOldEntry() != nil {
+		oldPath = util.NewFullPath(resp.GetDirectory(), message.GetOldEntry().GetName())
 		glog.V(4).Infof("deleting %v", oldPath)
 		if err := filerStore.DeleteEntry(context.Background(), oldPath); err != nil {
 			return err
 		}
 	}
 
-	if message.NewEntry != nil {
-		dir := resp.Directory
-		if message.NewParentPath != "" {
-			dir = message.NewParentPath
+	if message.GetNewEntry() != nil {
+		dir := resp.GetDirectory()
+		if message.GetNewParentPath() != "" {
+			dir = message.GetNewParentPath()
 		}
-		key := util.NewFullPath(dir, message.NewEntry.Name)
+		key := util.NewFullPath(dir, message.GetNewEntry().GetName())
 		glog.V(4).Infof("creating %v", key)
-		newEntry = FromPbEntry(dir, message.NewEntry)
+		newEntry = FromPbEntry(dir, message.GetNewEntry())
 		if err := filerStore.InsertEntry(context.Background(), newEntry); err != nil {
 			return err
 		}
@@ -40,7 +40,6 @@ func Replay(filerStore FilerStore, resp *filer_pb.SubscribeMetadataResponse) err
 // ParallelProcessDirectoryStructure processes each entry in parallel, and also ensure parent directories are processed first.
 // This also assumes the parent directories are in the entryChan already.
 func ParallelProcessDirectoryStructure(entryChan chan *Entry, concurrency int, eachEntryFn func(entry *Entry) error) (firstErr error) {
-
 	executors := util.NewLimitedConcurrentExecutor(concurrency)
 
 	var wg sync.WaitGroup
@@ -70,5 +69,6 @@ func ParallelProcessDirectoryStructure(entryChan chan *Entry, concurrency int, e
 		}
 	}
 	wg.Wait()
-	return
+
+	return firstErr
 }

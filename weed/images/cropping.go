@@ -17,12 +17,14 @@ func Cropped(ext string, read io.ReadSeeker, x1, y1, x2, y2 int) (cropped io.Rea
 	srcImage, _, err := image.Decode(read)
 	if err != nil {
 		glog.Error(err)
+
 		return read, err
 	}
 
 	bounds := srcImage.Bounds()
 	if x2 > bounds.Dx() || y2 > bounds.Dy() {
 		read.Seek(0, 0)
+
 		return read, nil
 	}
 
@@ -43,5 +45,6 @@ func Cropped(ext string, read io.ReadSeeker, x1, y1, x2, y2 int) (cropped io.Rea
 			glog.Error(err)
 		}
 	}
+
 	return bytes.NewReader(buf.Bytes()), err
 }

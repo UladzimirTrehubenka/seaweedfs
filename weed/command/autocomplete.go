@@ -8,6 +8,7 @@ import (
 
 	"github.com/posener/complete"
 	completeinstall "github.com/posener/complete/cmd/install"
+
 	flag "github.com/seaweedfs/seaweedfs/weed/util/fla9"
 )
 
@@ -46,11 +47,13 @@ func printAutocompleteScript(shell string) bool {
 	bin, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to get executable path: %s\n", err)
+
 		return false
 	}
 	binPath, err := filepath.Abs(bin)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to get absolute path: %s\n", err)
+
 		return false
 	}
 
@@ -71,38 +74,46 @@ complete -f -c weed -a "(__complete_weed)"
 `, binPath)
 	default:
 		fmt.Fprintf(os.Stderr, "unsupported shell: %s. Supported shells: bash, zsh, fish\n", shell)
+
 		return false
 	}
+
 	return true
 }
 
 func installAutoCompletion() bool {
 	if runtime.GOOS == "windows" {
 		fmt.Println("Windows is not supported")
+
 		return false
 	}
 
 	err := completeinstall.Install("weed")
 	if err != nil {
 		fmt.Printf("install failed! %s\n", err)
+
 		return false
 	}
 	fmt.Printf("autocompletion is enabled. Please restart your shell.\n")
+
 	return true
 }
 
 func uninstallAutoCompletion() bool {
 	if runtime.GOOS == "windows" {
 		fmt.Println("Windows is not supported")
+
 		return false
 	}
 
 	err := completeinstall.Uninstall("weed")
 	if err != nil {
 		fmt.Printf("uninstall failed! %s\n", err)
+
 		return false
 	}
 	fmt.Printf("autocompletion is disabled. Please restart your shell.\n")
+
 	return true
 }
 
@@ -142,6 +153,7 @@ func runAutocomplete(cmd *Command, args []string) bool {
 
 	if len(args) > 1 {
 		cmd.Usage()
+
 		return false
 	}
 

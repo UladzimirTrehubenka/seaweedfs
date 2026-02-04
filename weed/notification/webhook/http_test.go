@@ -16,7 +16,7 @@ func init() {
 }
 
 func TestHttpClientSendMessage(t *testing.T) {
-	var receivedPayload map[string]interface{}
+	var receivedPayload map[string]any
 	var receivedHeaders http.Header
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,6 +24,7 @@ func TestHttpClientSendMessage(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(body, &receivedPayload); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -154,7 +155,7 @@ func TestHttpClientFollowsRedirectAsPost(t *testing.T) {
 	redirectCalled := false
 	finalCalled := false
 	var finalMethod string
-	var finalBody map[string]interface{}
+	var finalBody map[string]any
 
 	// Create final destination server
 	finalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

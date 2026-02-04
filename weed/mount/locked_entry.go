@@ -14,6 +14,7 @@ type LockedEntry struct {
 func (le *LockedEntry) GetEntry() *filer_pb.Entry {
 	le.RLock()
 	defer le.RUnlock()
+
 	return le.Entry
 }
 
@@ -29,17 +30,19 @@ func (le *LockedEntry) UpdateEntry(fn func(entry *filer_pb.Entry)) *filer_pb.Ent
 	le.Lock()
 	defer le.Unlock()
 	fn(le.Entry)
+
 	return le.Entry
 }
 
 func (le *LockedEntry) GetChunks() []*filer_pb.FileChunk {
 	le.RLock()
 	defer le.RUnlock()
-	return le.Entry.Chunks
+
+	return le.Chunks
 }
 
 func (le *LockedEntry) AppendChunks(newChunks []*filer_pb.FileChunk) {
 	le.Lock()
 	defer le.Unlock()
-	le.Entry.Chunks = append(le.Entry.Chunks, newChunks...)
+	le.Chunks = append(le.Chunks, newChunks...)
 }

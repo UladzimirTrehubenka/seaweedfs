@@ -1,7 +1,7 @@
 package buffered_queue
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 )
 
@@ -40,14 +40,14 @@ func NewBufferedQueue[T any](chunkSize int) *BufferedQueue[T] {
 		mutex:     sync.Mutex{},
 	}
 	bq.waitCond = sync.NewCond(&bq.mutex)
+
 	return bq
 }
 
 // Enqueue adds a job to the queue
 func (q *BufferedQueue[T]) Enqueue(job T) error {
-
 	if q.isClosed {
-		return fmt.Errorf("queue is closed")
+		return errors.New("queue is closed")
 	}
 
 	q.mutex.Lock()
@@ -92,6 +92,7 @@ func (q *BufferedQueue[T]) Dequeue() (T, bool) {
 	}
 	if q.count <= 0 && q.isClosed {
 		var a T
+
 		return a, false
 	}
 
@@ -110,12 +111,12 @@ func (q *BufferedQueue[T]) maybeAdjustHeadIndex() {
 		q.head = q.head.next
 		q.last = q.last.next
 		q.last.next = nil
-		//println("reusing chunk", q.last.nodeId)
-		//fmt.Printf("head: %+v\n", q.head)
-		//fmt.Printf("tail: %+v\n", q.tail)
-		//fmt.Printf("last: %+v\n", q.last)
-		//fmt.Printf("count: %d\n", q.count)
-		//for p := q.head; p != nil ; p = p.next {
+		// println("reusing chunk", q.last.nodeId)
+		// fmt.Printf("head: %+v\n", q.head)
+		// fmt.Printf("tail: %+v\n", q.tail)
+		// fmt.Printf("last: %+v\n", q.last)
+		// fmt.Printf("count: %d\n", q.count)
+		// for p := q.head; p != nil ; p = p.next {
 		//	fmt.Printf("Node: %+v\n", p)
 		//}
 	}
@@ -127,12 +128,14 @@ func (q *BufferedQueue[T]) PeekHead() (T, bool) {
 
 	if q.count <= 0 {
 		var a T
+
 		return a, false
 	}
 
 	q.maybeAdjustHeadIndex()
 
 	job := q.head.items[q.head.headIndex]
+
 	return job, true
 }
 
@@ -140,6 +143,7 @@ func (q *BufferedQueue[T]) PeekHead() (T, bool) {
 func (q *BufferedQueue[T]) Size() int {
 	q.mutex.Lock()
 	defer q.mutex.Unlock()
+
 	return q.count
 }
 

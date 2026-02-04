@@ -2,6 +2,7 @@ package mount
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/seaweedfs/go-fuse/v2/fs"
 	"github.com/seaweedfs/go-fuse/v2/fuse"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -46,7 +48,7 @@ import (
  */
 /*
 renameat2()
-       renameat2() has an additional flags argument.  A renameat2() call
+       has an additional flags argument.  A renameat2() call
        with a zero flags argument is equivalent to renameat().
 
        The flags argument is a bit mask consisting of zero or more of
@@ -152,12 +154,12 @@ func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string
 
 	oldDir, code := wfs.inodeToPath.GetPath(in.NodeId)
 	if code != fuse.OK {
-		return
+		return code
 	}
 	oldPath := oldDir.Child(oldName)
 	newDir, code := wfs.inodeToPath.GetPath(in.Newdir)
 	if code != fuse.OK {
-		return
+		return code
 	}
 	newPath := newDir.Child(newName)
 
@@ -188,13 +190,14 @@ func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string
 		stream, err := client.StreamRenameEntry(ctx, request)
 		if err != nil {
 			code = fuse.EIO
-			return fmt.Errorf("dir AtomicRenameEntry %s => %s : %v", oldPath, newPath, err)
+
+			return fmt.Errorf("dir AtomicRenameEntry %s => %s : %w", oldPath, newPath, err)
 		}
 
 		for {
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break
 				} else {
 					if strings.Contains(recvErr.Error(), "not empty") {
@@ -202,45 +205,45 @@ func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string
 					} else if strings.Contains(recvErr.Error(), "not directory") {
 						code = fuse.ENOTDIR
 					}
-					return fmt.Errorf("dir Rename %s => %s receive: %v", oldPath, newPath, recvErr)
+
+					return fmt.Errorf("dir Rename %s => %s receive: %w", oldPath, newPath, recvErr)
 				}
 			}
 
 			if err = wfs.handleRenameResponse(ctx, resp); err != nil {
 				glog.V(0).Infof("dir Rename %s => %s : %v", oldPath, newPath, err)
+
 				return err
 			}
-
 		}
 
 		return nil
-
 	})
 	if err != nil {
 		glog.V(0).Infof("Link: %v", err)
-		return
+
+		return code
 	}
 	wfs.inodeToPath.TouchDirectory(oldDir)
 	wfs.inodeToPath.TouchDirectory(newDir)
 
 	return fuse.OK
-
 }
 
 func (wfs *WFS) handleRenameResponse(ctx context.Context, resp *filer_pb.StreamRenameEntryResponse) error {
 	// comes from filer StreamRenameEntry, can only be create or delete entry
 
-	glog.V(4).Infof("dir Rename %+v", resp.EventNotification)
+	glog.V(4).Infof("dir Rename %+v", resp.GetEventNotification())
 
-	if resp.EventNotification.NewEntry != nil {
+	if resp.GetEventNotification().GetNewEntry() != nil {
 		// with new entry, the old entry name also exists. This is the first step to create new entry
-		newEntry := filer.FromPbEntry(resp.EventNotification.NewParentPath, resp.EventNotification.NewEntry)
+		newEntry := filer.FromPbEntry(resp.GetEventNotification().GetNewParentPath(), resp.GetEventNotification().GetNewEntry())
 		if err := wfs.metaCache.AtomicUpdateEntryFromFiler(ctx, "", newEntry); err != nil {
 			return err
 		}
 
-		oldParent, newParent := util.FullPath(resp.Directory), util.FullPath(resp.EventNotification.NewParentPath)
-		oldName, newName := resp.EventNotification.OldEntry.Name, resp.EventNotification.NewEntry.Name
+		oldParent, newParent := util.FullPath(resp.GetDirectory()), util.FullPath(resp.GetEventNotification().GetNewParentPath())
+		oldName, newName := resp.GetEventNotification().GetOldEntry().GetName(), resp.GetEventNotification().GetNewEntry().GetName()
 
 		oldPath := oldParent.Child(oldName)
 		newPath := newParent.Child(newName)
@@ -260,14 +263,12 @@ func (wfs *WFS) handleRenameResponse(ctx context.Context, resp *filer_pb.StreamR
 			// invalidate attr and data
 			// wfs.fuseServer.InodeNotify(targetInode, 0, -1)
 		}
-
-	} else if resp.EventNotification.OldEntry != nil {
+	} else if resp.GetEventNotification().GetOldEntry() != nil {
 		// without new entry, only old entry name exists. This is the second step to delete old entry
-		if err := wfs.metaCache.AtomicUpdateEntryFromFiler(ctx, util.NewFullPath(resp.Directory, resp.EventNotification.OldEntry.Name), nil); err != nil {
+		if err := wfs.metaCache.AtomicUpdateEntryFromFiler(ctx, util.NewFullPath(resp.GetDirectory(), resp.GetEventNotification().GetOldEntry().GetName()), nil); err != nil {
 			return err
 		}
 	}
 
 	return nil
-
 }

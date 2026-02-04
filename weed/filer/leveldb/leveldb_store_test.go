@@ -34,6 +34,7 @@ func TestCreateAndFind(t *testing.T) {
 
 	if err := testFiler.CreateEntry(ctx, entry1, false, false, nil, false, testFiler.MaxFilenameLength); err != nil {
 		t.Errorf("create entry %v: %v", entry1.FullPath, err)
+
 		return
 	}
 
@@ -41,11 +42,13 @@ func TestCreateAndFind(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("find entry: %v", err)
+
 		return
 	}
 
 	if entry.FullPath != entry1.FullPath {
 		t.Errorf("find wrong entry: %v", entry.FullPath)
+
 		return
 	}
 
@@ -53,6 +56,7 @@ func TestCreateAndFind(t *testing.T) {
 	entries, _, _ := testFiler.ListDirectoryEntries(ctx, util.FullPath("/home/chris/this/is/one"), "", false, 100, "", "", "")
 	if len(entries) != 1 {
 		t.Errorf("list entries count: %v", len(entries))
+
 		return
 	}
 
@@ -60,9 +64,9 @@ func TestCreateAndFind(t *testing.T) {
 	entries, _, _ = testFiler.ListDirectoryEntries(ctx, util.FullPath("/"), "", false, 100, "", "", "")
 	if len(entries) != 1 {
 		t.Errorf("list entries count: %v", len(entries))
+
 		return
 	}
-
 }
 
 func TestEmptyRoot(t *testing.T) {
@@ -78,13 +82,14 @@ func TestEmptyRoot(t *testing.T) {
 	entries, _, err := testFiler.ListDirectoryEntries(ctx, util.FullPath("/"), "", false, 100, "", "", "")
 	if err != nil {
 		t.Errorf("list entries: %v", err)
+
 		return
 	}
 	if len(entries) != 0 {
 		t.Errorf("list entries count: %v", len(entries))
+
 		return
 	}
-
 }
 
 func BenchmarkInsertEntry(b *testing.B) {
@@ -98,7 +103,7 @@ func BenchmarkInsertEntry(b *testing.B) {
 
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		entry := &filer.Entry{
 			FullPath: util.FullPath(fmt.Sprintf("/file%d.txt", i)),
 			Attr: filer.Attr{

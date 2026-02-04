@@ -19,15 +19,15 @@ func TestVolumesBinaryState(t *testing.T) {
 	}
 
 	dns := []*DataNode{
-		&DataNode{
+		{
 			Ip:   "127.0.0.1",
 			Port: 8081,
 		},
-		&DataNode{
+		{
 			Ip:   "127.0.0.1",
 			Port: 8082,
 		},
-		&DataNode{
+		{
 			Ip:   "127.0.0.1",
 			Port: 8083,
 		},
@@ -85,7 +85,7 @@ func TestVolumesBinaryState(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var result []bool
-			for index, _ := range vids {
+			for index := range vids {
 				result = append(result, test.state.IsTrue(vids[index]))
 			}
 			if len(result) != len(test.expectResult) {
@@ -100,7 +100,7 @@ func TestVolumesBinaryState(t *testing.T) {
 			}
 			test.update()
 			var updateResult []bool
-			for index, _ := range vids {
+			for index := range vids {
 				updateResult = append(updateResult, test.state.IsTrue(vids[index]))
 			}
 			if len(updateResult) != len(test.expectResultAfterUpdate) {

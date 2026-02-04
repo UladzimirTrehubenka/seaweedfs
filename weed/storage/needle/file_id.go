@@ -2,7 +2,7 @@ package needle
 
 import (
 	"encoding/hex"
-	"fmt"
+	"errors"
 	"strings"
 
 	. "github.com/seaweedfs/seaweedfs/weed/storage/types"
@@ -38,6 +38,7 @@ func ParseFileIdFromString(fid string) (*FileId, error) {
 		return nil, err
 	}
 	fileId := &FileId{VolumeId: volumeId, Key: nid, Cookie: cookie}
+
 	return fileId, nil
 }
 
@@ -68,6 +69,7 @@ func formatNeedleIdCookie(key NeedleId, cookie Cookie) string {
 	nonzero_index := 0
 	for ; bytes[nonzero_index] == 0 && nonzero_index < NeedleIdSize; nonzero_index++ {
 	}
+
 	return hex.EncodeToString(bytes[nonzero_index:])
 }
 
@@ -75,7 +77,8 @@ func formatNeedleIdCookie(key NeedleId, cookie Cookie) string {
 func splitVolumeId(fid string) (vid string, key_cookie string, err error) {
 	commaIndex := strings.Index(fid, ",")
 	if commaIndex <= 0 {
-		return "", "", fmt.Errorf("wrong fid format")
+		return "", "", errors.New("wrong fid format")
 	}
+
 	return fid[:commaIndex], fid[commaIndex+1:], nil
 }

@@ -2,9 +2,11 @@ package dash
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,9 +48,9 @@ func (s *AdminServer) GetTopics() (*TopicsData, error) {
 		}
 
 		// Convert protobuf topics to TopicInfo - only include available data
-		for _, pbTopic := range resp.Topics {
+		for _, pbTopic := range resp.GetTopics() {
 			topicInfo := TopicInfo{
-				Name:       fmt.Sprintf("%s.%s", pbTopic.Namespace, pbTopic.Name),
+				Name:       fmt.Sprintf("%s.%s", pbTopic.GetNamespace(), pbTopic.GetName()),
 				Partitions: 0, // Will be populated by LookupTopicBrokers call
 				Retention: TopicRetentionInfo{
 					Enabled:      false,
@@ -62,15 +64,15 @@ func (s *AdminServer) GetTopics() (*TopicsData, error) {
 				Topic: pbTopic,
 			})
 			if err == nil {
-				topicInfo.Partitions = len(lookupResp.BrokerPartitionAssignments)
+				topicInfo.Partitions = len(lookupResp.GetBrokerPartitionAssignments())
 			}
 
 			// Get topic configuration for retention information
 			configResp, err := client.GetTopicConfiguration(ctx, &mq_pb.GetTopicConfigurationRequest{
 				Topic: pbTopic,
 			})
-			if err == nil && configResp.Retention != nil {
-				topicInfo.Retention = convertTopicRetention(configResp.Retention)
+			if err == nil && configResp.GetRetention() != nil {
+				topicInfo.Retention = convertTopicRetention(configResp.GetRetention())
 			}
 
 			topics = append(topics, topicInfo)
@@ -184,26 +186,26 @@ func (s *AdminServer) GetTopicDetails(namespace, topicName string) (*TopicDetail
 			Publishers:           []PublisherInfo{},
 			Subscribers:          []TopicSubscriberInfo{},
 			ConsumerGroupOffsets: []ConsumerGroupOffsetInfo{},
-			Retention:            convertTopicRetention(configResp.Retention),
-			CreatedAt:            time.Unix(0, configResp.CreatedAtNs),
-			LastUpdated:          time.Unix(0, configResp.LastUpdatedNs),
+			Retention:            convertTopicRetention(configResp.GetRetention()),
+			CreatedAt:            time.Unix(0, configResp.GetCreatedAtNs()),
+			LastUpdated:          time.Unix(0, configResp.GetLastUpdatedNs()),
 		}
 
 		// Set current time if timestamps are not available
-		if configResp.CreatedAtNs == 0 {
+		if configResp.GetCreatedAtNs() == 0 {
 			topicDetails.CreatedAt = time.Now()
 		}
-		if configResp.LastUpdatedNs == 0 {
+		if configResp.GetLastUpdatedNs() == 0 {
 			topicDetails.LastUpdated = time.Now()
 		}
 
 		// Process partitions
-		for _, assignment := range configResp.BrokerPartitionAssignments {
-			if assignment.Partition != nil {
+		for _, assignment := range configResp.GetBrokerPartitionAssignments() {
+			if assignment.GetPartition() != nil {
 				partitionInfo := PartitionInfo{
-					ID:             assignment.Partition.RangeStart,
-					LeaderBroker:   assignment.LeaderBroker,
-					FollowerBroker: assignment.FollowerBroker,
+					ID:             assignment.GetPartition().GetRangeStart(),
+					LeaderBroker:   assignment.GetLeaderBroker(),
+					FollowerBroker: assignment.GetFollowerBroker(),
 					MessageCount:   0,           // Will be enhanced later with actual stats
 					TotalSize:      0,           // Will be enhanced later with actual stats
 					LastDataTime:   time.Time{}, // Will be enhanced later
@@ -214,23 +216,17 @@ func (s *AdminServer) GetTopicDetails(namespace, topicName string) (*TopicDetail
 		}
 
 		// Process flat schema format
-		if configResp.MessageRecordType != nil {
-			for _, field := range configResp.MessageRecordType.Fields {
-				isKey := false
-				for _, keyCol := range configResp.KeyColumns {
-					if field.Name == keyCol {
-						isKey = true
-						break
-					}
-				}
+		if configResp.GetMessageRecordType() != nil {
+			for _, field := range configResp.GetMessageRecordType().GetFields() {
+				isKey := slices.Contains(configResp.GetKeyColumns(), field.GetName())
 
 				fieldType := "UNKNOWN"
-				if field.Type != nil && field.Type.Kind != nil {
-					fieldType = getFieldTypeName(field.Type)
+				if field.GetType() != nil && field.Type.Kind != nil {
+					fieldType = getFieldTypeName(field.GetType())
 				}
 
 				schemaField := SchemaFieldInfo{
-					Name: field.Name,
+					Name: field.GetName(),
 					Type: fieldType,
 				}
 
@@ -253,8 +249,8 @@ func (s *AdminServer) GetTopicDetails(namespace, topicName string) (*TopicDetail
 			// Log error but don't fail the entire request
 			glog.V(0).Infof("failed to get topic publishers for %s.%s: %v", namespace, topicName, err)
 		} else {
-			glog.V(1).Infof("got %d publishers for topic %s.%s", len(publishersResp.Publishers), namespace, topicName)
-			topicDetails.Publishers = convertTopicPublishers(publishersResp.Publishers)
+			glog.V(1).Infof("got %d publishers for topic %s.%s", len(publishersResp.GetPublishers()), namespace, topicName)
+			topicDetails.Publishers = convertTopicPublishers(publishersResp.GetPublishers())
 		}
 
 		// Get subscribers information
@@ -268,8 +264,8 @@ func (s *AdminServer) GetTopicDetails(namespace, topicName string) (*TopicDetail
 			// Log error but don't fail the entire request
 			glog.V(0).Infof("failed to get topic subscribers for %s.%s: %v", namespace, topicName, err)
 		} else {
-			glog.V(1).Infof("got %d subscribers for topic %s.%s", len(subscribersResp.Subscribers), namespace, topicName)
-			topicDetails.Subscribers = convertTopicSubscribers(subscribersResp.Subscribers)
+			glog.V(1).Infof("got %d subscribers for topic %s.%s", len(subscribersResp.GetSubscribers()), namespace, topicName)
+			topicDetails.Subscribers = convertTopicSubscribers(subscribersResp.GetSubscribers())
 		}
 
 		return nil
@@ -310,22 +306,23 @@ func (s *AdminServer) GetConsumerGroupOffsets(namespace, topicName string) ([]Co
 			Limit:              1000,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to list topic directory %s: %v", topicDir, err)
+			return fmt.Errorf("failed to list topic directory %s: %w", topicDir, err)
 		}
 
 		// Process each version directory
 		for {
 			versionResp, err := versionStream.Recv()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
+
 				return fmt.Errorf("failed to receive version entries: %w", err)
 			}
 
 			// Only process directories that are versions (start with "v")
-			if versionResp.Entry.IsDirectory && strings.HasPrefix(versionResp.Entry.Name, "v") {
-				versionDir := filepath.Join(topicDir, versionResp.Entry.Name)
+			if versionResp.GetEntry().GetIsDirectory() && strings.HasPrefix(versionResp.GetEntry().GetName(), "v") {
+				versionDir := filepath.Join(topicDir, versionResp.GetEntry().GetName())
 
 				// List all partition directories under the version directory (e.g., 0315-0630)
 				partitionStream, err := client.ListEntries(context.Background(), &filer_pb.ListEntriesRequest{
@@ -337,6 +334,7 @@ func (s *AdminServer) GetConsumerGroupOffsets(namespace, topicName string) ([]Co
 				})
 				if err != nil {
 					glog.Warningf("Failed to list version directory %s: %v", versionDir, err)
+
 					continue
 				}
 
@@ -344,23 +342,24 @@ func (s *AdminServer) GetConsumerGroupOffsets(namespace, topicName string) ([]Co
 				for {
 					partitionResp, err := partitionStream.Recv()
 					if err != nil {
-						if err == io.EOF {
+						if errors.Is(err, io.EOF) {
 							break
 						}
 						glog.Warningf("Failed to receive partition entries: %v", err)
+
 						break
 					}
 
 					// Only process directories that are partitions (format: NNNN-NNNN)
-					if partitionResp.Entry.IsDirectory {
+					if partitionResp.GetEntry().GetIsDirectory() {
 						// Parse partition range to get partition start ID (e.g., "0315-0630" -> 315)
 						var partitionStart, partitionStop int32
-						if n, err := fmt.Sscanf(partitionResp.Entry.Name, "%04d-%04d", &partitionStart, &partitionStop); n != 2 || err != nil {
+						if n, err := fmt.Sscanf(partitionResp.GetEntry().GetName(), "%04d-%04d", &partitionStart, &partitionStop); n != 2 || err != nil {
 							// Skip directories that don't match the partition format
 							continue
 						}
 
-						partitionDir := filepath.Join(versionDir, partitionResp.Entry.Name)
+						partitionDir := filepath.Join(versionDir, partitionResp.GetEntry().GetName())
 
 						// List all .offset files in this partition directory
 						offsetStream, err := client.ListEntries(context.Background(), &filer_pb.ListEntriesRequest{
@@ -372,6 +371,7 @@ func (s *AdminServer) GetConsumerGroupOffsets(namespace, topicName string) ([]Co
 						})
 						if err != nil {
 							glog.Warningf("Failed to list partition directory %s: %v", partitionDir, err)
+
 							continue
 						}
 
@@ -379,21 +379,23 @@ func (s *AdminServer) GetConsumerGroupOffsets(namespace, topicName string) ([]Co
 						for {
 							offsetResp, err := offsetStream.Recv()
 							if err != nil {
-								if err == io.EOF {
+								if errors.Is(err, io.EOF) {
 									break
 								}
 								glog.Warningf("Failed to receive offset entries: %v", err)
+
 								break
 							}
 
 							// Only process .offset files
-							if !offsetResp.Entry.IsDirectory && strings.HasSuffix(offsetResp.Entry.Name, ".offset") {
-								consumerGroup := strings.TrimSuffix(offsetResp.Entry.Name, ".offset")
+							if !offsetResp.GetEntry().GetIsDirectory() && strings.HasSuffix(offsetResp.GetEntry().GetName(), ".offset") {
+								consumerGroup := strings.TrimSuffix(offsetResp.GetEntry().GetName(), ".offset")
 
 								// Read the offset value from the file
-								offsetData, err := filer.ReadInsideFiler(client, partitionDir, offsetResp.Entry.Name)
+								offsetData, err := filer.ReadInsideFiler(client, partitionDir, offsetResp.GetEntry().GetName())
 								if err != nil {
-									glog.Warningf("Failed to read offset file %s: %v", offsetResp.Entry.Name, err)
+									glog.Warningf("Failed to read offset file %s: %v", offsetResp.GetEntry().GetName(), err)
+
 									continue
 								}
 
@@ -401,7 +403,7 @@ func (s *AdminServer) GetConsumerGroupOffsets(namespace, topicName string) ([]Co
 									offset := int64(util.BytesToUint64(offsetData))
 
 									// Get the file modification time
-									lastUpdated := time.Unix(offsetResp.Entry.Attributes.Mtime, 0)
+									lastUpdated := time.Unix(offsetResp.GetEntry().GetAttributes().GetMtime(), 0)
 
 									offsets = append(offsets, ConsumerGroupOffsetInfo{
 										ConsumerGroup: consumerGroup,
@@ -435,11 +437,11 @@ func convertRecordTypeToSchemaFields(recordType *schema_pb.RecordType) []SchemaF
 		return schemaFields
 	}
 
-	for _, field := range recordType.Fields {
+	for _, field := range recordType.GetFields() {
 		schemaField := SchemaFieldInfo{
-			Name:     field.Name,
-			Type:     getFieldTypeString(field.Type),
-			Required: field.IsRequired,
+			Name:     field.GetName(),
+			Type:     getFieldTypeString(field.GetType()),
+			Required: field.GetIsRequired(),
 		}
 		schemaFields = append(schemaFields, schemaField)
 	}
@@ -453,13 +455,14 @@ func getFieldTypeString(fieldType *schema_pb.Type) string {
 		return "unknown"
 	}
 
-	switch kind := fieldType.Kind.(type) {
+	switch kind := fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		return getScalarTypeString(kind.ScalarType)
 	case *schema_pb.Type_RecordType:
 		return "record"
 	case *schema_pb.Type_ListType:
-		elementType := getFieldTypeString(kind.ListType.ElementType)
+		elementType := getFieldTypeString(kind.ListType.GetElementType())
+
 		return fmt.Sprintf("list<%s>", elementType)
 	default:
 		return "unknown"
@@ -494,21 +497,21 @@ func convertTopicPublishers(publishers []*mq_pb.TopicPublisher) []PublisherInfo 
 
 	for _, publisher := range publishers {
 		publisherInfo := PublisherInfo{
-			PublisherName:       publisher.PublisherName,
-			ClientID:            publisher.ClientId,
-			PartitionID:         publisher.Partition.RangeStart,
-			Broker:              publisher.Broker,
-			IsActive:            publisher.IsActive,
-			LastPublishedOffset: publisher.LastPublishedOffset,
-			LastAckedOffset:     publisher.LastAckedOffset,
+			PublisherName:       publisher.GetPublisherName(),
+			ClientID:            publisher.GetClientId(),
+			PartitionID:         publisher.GetPartition().GetRangeStart(),
+			Broker:              publisher.GetBroker(),
+			IsActive:            publisher.GetIsActive(),
+			LastPublishedOffset: publisher.GetLastPublishedOffset(),
+			LastAckedOffset:     publisher.GetLastAckedOffset(),
 		}
 
 		// Convert timestamps
-		if publisher.ConnectTimeNs > 0 {
-			publisherInfo.ConnectTime = time.Unix(0, publisher.ConnectTimeNs)
+		if publisher.GetConnectTimeNs() > 0 {
+			publisherInfo.ConnectTime = time.Unix(0, publisher.GetConnectTimeNs())
 		}
-		if publisher.LastSeenTimeNs > 0 {
-			publisherInfo.LastSeenTime = time.Unix(0, publisher.LastSeenTimeNs)
+		if publisher.GetLastSeenTimeNs() > 0 {
+			publisherInfo.LastSeenTime = time.Unix(0, publisher.GetLastSeenTimeNs())
 		}
 
 		publisherInfos = append(publisherInfos, publisherInfo)
@@ -523,22 +526,22 @@ func convertTopicSubscribers(subscribers []*mq_pb.TopicSubscriber) []TopicSubscr
 
 	for _, subscriber := range subscribers {
 		subscriberInfo := TopicSubscriberInfo{
-			ConsumerGroup:      subscriber.ConsumerGroup,
-			ConsumerID:         subscriber.ConsumerId,
-			ClientID:           subscriber.ClientId,
-			PartitionID:        subscriber.Partition.RangeStart,
-			Broker:             subscriber.Broker,
-			IsActive:           subscriber.IsActive,
-			CurrentOffset:      subscriber.CurrentOffset,
-			LastReceivedOffset: subscriber.LastReceivedOffset,
+			ConsumerGroup:      subscriber.GetConsumerGroup(),
+			ConsumerID:         subscriber.GetConsumerId(),
+			ClientID:           subscriber.GetClientId(),
+			PartitionID:        subscriber.GetPartition().GetRangeStart(),
+			Broker:             subscriber.GetBroker(),
+			IsActive:           subscriber.GetIsActive(),
+			CurrentOffset:      subscriber.GetCurrentOffset(),
+			LastReceivedOffset: subscriber.GetLastReceivedOffset(),
 		}
 
 		// Convert timestamps
-		if subscriber.ConnectTimeNs > 0 {
-			subscriberInfo.ConnectTime = time.Unix(0, subscriber.ConnectTimeNs)
+		if subscriber.GetConnectTimeNs() > 0 {
+			subscriberInfo.ConnectTime = time.Unix(0, subscriber.GetConnectTimeNs())
 		}
-		if subscriber.LastSeenTimeNs > 0 {
-			subscriberInfo.LastSeenTime = time.Unix(0, subscriber.LastSeenTimeNs)
+		if subscriber.GetLastSeenTimeNs() > 0 {
+			subscriberInfo.LastSeenTime = time.Unix(0, subscriber.GetLastSeenTimeNs())
 		}
 
 		subscriberInfos = append(subscriberInfos, subscriberInfo)
@@ -559,8 +562,8 @@ func (s *AdminServer) findBrokerLeader() (string, error) {
 			return err
 		}
 
-		for _, node := range resp.ClusterNodes {
-			brokers = append(brokers, node.Address)
+		for _, node := range resp.GetClusterNodes() {
+			brokers = append(brokers, node.GetAddress())
 		}
 
 		return nil
@@ -571,7 +574,7 @@ func (s *AdminServer) findBrokerLeader() (string, error) {
 	}
 
 	if len(brokers) == 0 {
-		return "", fmt.Errorf("no brokers found in cluster")
+		return "", errors.New("no brokers found in cluster")
 	}
 
 	// Try each broker to find the leader
@@ -587,6 +590,7 @@ func (s *AdminServer) findBrokerLeader() (string, error) {
 			if err == nil {
 				return nil // This broker is the leader
 			}
+
 			return err
 		})
 		if err == nil {
@@ -594,7 +598,7 @@ func (s *AdminServer) findBrokerLeader() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no broker leader found")
+	return "", errors.New("no broker leader found")
 }
 
 // withBrokerClient connects to a message queue broker and executes a function
@@ -604,7 +608,7 @@ func (s *AdminServer) withBrokerClient(brokerAddress string, fn func(client mq_p
 
 // convertTopicRetention converts protobuf retention to TopicRetentionInfo
 func convertTopicRetention(retention *mq_pb.TopicRetention) TopicRetentionInfo {
-	if retention == nil || !retention.Enabled {
+	if retention == nil || !retention.GetEnabled() {
 		return TopicRetentionInfo{
 			Enabled:          false,
 			RetentionSeconds: 0,
@@ -614,7 +618,7 @@ func convertTopicRetention(retention *mq_pb.TopicRetention) TopicRetentionInfo {
 	}
 
 	// Convert seconds to human-readable format
-	seconds := retention.RetentionSeconds
+	seconds := retention.GetRetentionSeconds()
 	var displayValue int32
 	var displayUnit string
 
@@ -630,7 +634,7 @@ func convertTopicRetention(retention *mq_pb.TopicRetention) TopicRetentionInfo {
 	}
 
 	return TopicRetentionInfo{
-		Enabled:          retention.Enabled,
+		Enabled:          retention.GetEnabled(),
 		RetentionSeconds: seconds,
 		DisplayValue:     displayValue,
 		DisplayUnit:      displayUnit,
@@ -643,7 +647,7 @@ func getFieldTypeName(fieldType *schema_pb.Type) string {
 		return "UNKNOWN"
 	}
 
-	switch kind := fieldType.Kind.(type) {
+	switch kind := fieldType.GetKind().(type) {
 	case *schema_pb.Type_ScalarType:
 		switch kind.ScalarType {
 		case schema_pb.ScalarType_BOOL:

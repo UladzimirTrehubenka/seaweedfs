@@ -16,6 +16,7 @@ func Get(ctx context.Context) string {
 		return ""
 	}
 	id, _ := ctx.Value(AmzRequestIDHeader).(string)
+
 	return id
 }
 

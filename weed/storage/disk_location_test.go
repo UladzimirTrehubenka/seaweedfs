@@ -82,14 +82,14 @@ func TestUnUsedSpace(t *testing.T) {
 func TestResolveVolumeIDs(t *testing.T) {
 	l := DiskLocation{
 		volumes: map[needle.VolumeId]*Volume{
-			0: &Volume{},
-			1: &Volume{},
-			2: &Volume{},
+			0: {},
+			1: {},
+			2: {},
 		},
 		ecVolumes: map[needle.VolumeId]*erasure_coding.EcVolume{
-			3: &erasure_coding.EcVolume{},
-			4: &erasure_coding.EcVolume{},
-			5: &erasure_coding.EcVolume{},
+			3: {},
+			4: {},
+			5: {},
 		},
 	}
 

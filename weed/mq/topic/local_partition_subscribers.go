@@ -27,6 +27,7 @@ func NewLocalSubscriber() *LocalSubscriber {
 	atomic.StoreInt64(&subscriber.lastSeenTimeNs, now)
 	atomic.StoreInt64(&subscriber.lastReceivedOffset, 0)
 	atomic.StoreInt64(&subscriber.lastAckedOffset, 0)
+
 	return subscriber
 }
 func (p *LocalSubscriber) SignalShutdown() {
@@ -110,6 +111,7 @@ func (p *LocalPartitionSubscribers) GetSubscriberNames() []string {
 	for name := range p.Subscribers {
 		names = append(names, name)
 	}
+
 	return names
 }
 

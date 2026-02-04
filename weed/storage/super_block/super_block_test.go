@@ -17,9 +17,8 @@ func TestSuperBlockReadWrite(t *testing.T) {
 
 	bytes := s.Bytes()
 
-	if !(bytes[2] == 15 && bytes[3] == needle.Day) {
+	if bytes[2] != 15 || bytes[3] != needle.Day {
 		println("byte[2]:", bytes[2], "byte[3]:", bytes[3])
 		t.Fail()
 	}
-
 }

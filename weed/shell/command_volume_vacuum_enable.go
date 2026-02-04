@@ -31,13 +31,13 @@ func (c *commandEnableVacuum) HasTag(CommandTag) bool {
 }
 
 func (c *commandEnableVacuum) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
-
 	if err = commandEnv.confirmIsLocked(args); err != nil {
 		return
 	}
 
 	err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
 		_, err = client.EnableVacuum(context.Background(), &master_pb.EnableVacuumRequest{})
+
 		return err
 	})
 

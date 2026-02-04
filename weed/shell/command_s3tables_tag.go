@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -64,13 +65,13 @@ func (c *commandS3TablesTag) Do(args []string, commandEnv *CommandEnv, writer io
 		}
 	}
 	if count != 1 {
-		return fmt.Errorf("exactly one action must be specified")
+		return errors.New("exactly one action must be specified")
 	}
 	if *bucket == "" {
-		return fmt.Errorf("-bucket is required")
+		return errors.New("-bucket is required")
 	}
 	if *account == "" {
-		return fmt.Errorf("-account is required")
+		return errors.New("-account is required")
 	}
 	resourceArn, err := buildS3TablesBucketARN(*bucket, *account)
 	if err != nil {
@@ -78,7 +79,7 @@ func (c *commandS3TablesTag) Do(args []string, commandEnv *CommandEnv, writer io
 	}
 	if *namespace != "" || *name != "" {
 		if *namespace == "" || *name == "" {
-			return fmt.Errorf("-namespace and -name are required for table tags")
+			return errors.New("-namespace and -name are required for table tags")
 		}
 		resourceArn, err = buildS3TablesTableARN(*bucket, *namespace, *name, *account)
 		if err != nil {
@@ -89,7 +90,7 @@ func (c *commandS3TablesTag) Do(args []string, commandEnv *CommandEnv, writer io
 	switch {
 	case *put:
 		if *tags == "" {
-			return fmt.Errorf("-tags is required")
+			return errors.New("-tags is required")
 		}
 		parsed, err := parseS3TablesTags(*tags)
 		if err != nil {
@@ -108,6 +109,7 @@ func (c *commandS3TablesTag) Do(args []string, commandEnv *CommandEnv, writer io
 		}
 		if len(resp.Tags) == 0 {
 			fmt.Fprintln(writer, "No tags found")
+
 			return nil
 		}
 		for k, v := range resp.Tags {
@@ -115,7 +117,7 @@ func (c *commandS3TablesTag) Do(args []string, commandEnv *CommandEnv, writer io
 		}
 	case *del:
 		if *keys == "" {
-			return fmt.Errorf("-keys is required")
+			return errors.New("-keys is required")
 		}
 		parsed, err := parseS3TablesTagKeys(*keys)
 		if err != nil {
@@ -127,5 +129,6 @@ func (c *commandS3TablesTag) Do(args []string, commandEnv *CommandEnv, writer io
 		}
 		fmt.Fprintln(writer, "Tags removed")
 	}
+
 	return nil
 }

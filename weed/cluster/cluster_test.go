@@ -11,7 +11,7 @@ import (
 func TestConcurrentAddRemoveNodes(t *testing.T) {
 	c := NewCluster()
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -21,7 +21,7 @@ func TestConcurrentAddRemoveNodes(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -30,9 +30,11 @@ func TestConcurrentAddRemoveNodes(t *testing.T) {
 
 			if len(node) == 0 {
 				t.Errorf("TestConcurrentAddRemoveNodes: node[%s] not found", address)
+
 				return
-			} else if node[0].ClusterNodeUpdate.Address != address {
-				t.Errorf("TestConcurrentAddRemoveNodes: expect:%s, actual:%s", address, node[0].ClusterNodeUpdate.Address)
+			} else if node[0].GetClusterNodeUpdate().GetAddress() != address {
+				t.Errorf("TestConcurrentAddRemoveNodes: expect:%s, actual:%s", address, node[0].GetClusterNodeUpdate().GetAddress())
+
 				return
 			}
 		}(i)

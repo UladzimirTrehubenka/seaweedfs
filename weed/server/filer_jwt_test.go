@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/seaweedfs/seaweedfs/weed/security"
 )
 
@@ -30,6 +31,7 @@ func TestFilerServer_maybeCheckJwtAuthorization_Scoped(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to sign token: %v", err)
 		}
+
 		return str
 	}
 

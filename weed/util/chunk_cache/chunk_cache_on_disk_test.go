@@ -23,7 +23,7 @@ func TestOnDisk(t *testing.T) {
 		size   int
 	}
 	testData := make([]*test_data, writeCount)
-	for i := 0; i < writeCount; i++ {
+	for i := range writeCount {
 		buff := make([]byte, 1024)
 		rand.Read(buff)
 		testData[i] = &test_data{
@@ -44,7 +44,7 @@ func TestOnDisk(t *testing.T) {
 
 	// With the new validation system, evicted entries correctly return cache misses (0 bytes)
 	// instead of corrupt data. This is the desired behavior for data integrity.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		data := mem.Allocate(testData[i].size)
 		n, _ := cache.ReadChunkAt(data, testData[i].fileId, 0)
 		// Entries may be evicted due to cache size constraints - this is acceptable
@@ -81,7 +81,7 @@ func TestOnDisk(t *testing.T) {
 
 	// After cache restart, entries may or may not be persisted depending on eviction
 	// With new validation system, we should get either correct data or cache misses
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		data := mem.Allocate(testData[i].size)
 		n, _ := cache.ReadChunkAt(data, testData[i].fileId, 0)
 		if n > 0 {
@@ -110,7 +110,7 @@ func TestOnDisk(t *testing.T) {
 				--- FAIL: TestOnDisk (0.19s)
 				    chunk_cache_on_disk_test.go:73: failed to write to and read from cache: 4
 				FAIL
-				FAIL	github.com/seaweedfs/seaweedfs/weed/util/chunk_cache	0.199s
+				github.com/seaweedfs/seaweedfs/weed/util/chunk_cache	0.199s
 			*/
 			continue
 		}
@@ -129,5 +129,4 @@ func TestOnDisk(t *testing.T) {
 	}
 
 	cache.Shutdown()
-
 }

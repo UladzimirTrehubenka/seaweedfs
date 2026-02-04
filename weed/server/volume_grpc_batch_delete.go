@@ -19,26 +19,28 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 
 	now := uint64(time.Now().Unix())
 
-	for _, fid := range req.FileIds {
+	for _, fid := range req.GetFileIds() {
 		vid, id_cookie, err := operation.ParseFileId(fid)
 		if err != nil {
 			resp.Results = append(resp.Results, &volume_server_pb.DeleteResult{
 				FileId: fid,
 				Status: http.StatusBadRequest,
 				Error:  err.Error()})
+
 			continue
 		}
 
 		n := new(needle.Needle)
 		volumeId, _ := needle.NewVolumeId(vid)
 		ecVolume, isEcVolume := vs.store.FindEcVolume(volumeId)
-		if req.SkipCookieCheck {
+		if req.GetSkipCookieCheck() {
 			n.Id, _, err = needle.ParseNeedleIdCookie(id_cookie)
 			if err != nil {
 				resp.Results = append(resp.Results, &volume_server_pb.DeleteResult{
 					FileId: fid,
 					Status: http.StatusBadRequest,
 					Error:  err.Error()})
+
 				continue
 			}
 		} else {
@@ -51,6 +53,7 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 						Status: http.StatusNotFound,
 						Error:  err.Error(),
 					})
+
 					continue
 				}
 			} else {
@@ -60,6 +63,7 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 						Status: http.StatusNotFound,
 						Error:  err.Error(),
 					})
+
 					continue
 				}
 			}
@@ -69,6 +73,7 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 					Status: http.StatusBadRequest,
 					Error:  "File Random Cookie does not match.",
 				})
+
 				break
 			}
 		}
@@ -79,6 +84,7 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 				Status: http.StatusNotAcceptable,
 				Error:  "ChunkManifest: not allowed in batch delete mode.",
 			})
+
 			continue
 		}
 
@@ -120,5 +126,4 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 	}
 
 	return resp, nil
-
 }

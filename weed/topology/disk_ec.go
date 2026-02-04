@@ -12,6 +12,7 @@ func (d *Disk) GetEcShards() (ret []*erasure_coding.EcVolumeInfo) {
 		ret = append(ret, ecVolumeInfo)
 	}
 	d.RUnlock()
+
 	return ret
 }
 
@@ -54,7 +55,6 @@ func (d *Disk) DeleteEcShard(s *erasure_coding.EcVolumeInfo) {
 			delete(d.ecShards, s.VolumeId)
 		}
 	}
-
 }
 
 func (d *Disk) HasVolumesById(id needle.VolumeId) (hasVolumeId bool) {

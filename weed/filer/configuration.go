@@ -14,7 +14,6 @@ var (
 )
 
 func (f *Filer) LoadConfiguration(config *util.ViperProxy) (isFresh bool) {
-
 	validateOneEnabledStore(config)
 
 	// load configuration for default filer store
@@ -28,6 +27,7 @@ func (f *Filer) LoadConfiguration(config *util.ViperProxy) (isFresh bool) {
 			isFresh = f.SetStore(store)
 			glog.V(0).Infof("configured filer store to %s", store.GetName())
 			hasDefaultStoreConfigured = true
+
 			break
 		}
 	}
@@ -83,7 +83,7 @@ func (f *Filer) LoadConfiguration(config *util.ViperProxy) (isFresh bool) {
 		glog.V(0).Infof("configure filer %s for %s", store.GetName(), location)
 	}
 
-	return
+	return isFresh
 }
 
 func validateOneEnabledStore(config *util.ViperProxy) {

@@ -18,6 +18,7 @@ const cacheHeaderSize = 8 // 4 bytes volumeId + 4 bytes cookie
 func parseCacheHeader(header []byte) (needle.VolumeId, types.Cookie) {
 	volumeId := needle.VolumeId(binary.BigEndian.Uint32(header[0:4]))
 	cookie := types.BytesToCookie(header[4:8])
+
 	return volumeId, cookie
 }
 
@@ -42,7 +43,6 @@ type TieredChunkCache struct {
 var _ ChunkCache = &TieredChunkCache{}
 
 func NewTieredChunkCache(maxEntries int64, dir string, diskSizeInUnit int64, unitSize int64) *TieredChunkCache {
-
 	c := &TieredChunkCache{
 		memCache: NewChunkCacheInMemory(maxEntries),
 	}
@@ -62,6 +62,7 @@ func (c *TieredChunkCache) GetMaxFilePartSizeInCache() (answer uint64) {
 	if c == nil {
 		return 0
 	}
+
 	return c.maxFilePartSizeInCache
 }
 
@@ -78,12 +79,14 @@ func (c *TieredChunkCache) IsInCache(fileId string, lockNeeded bool) (answer boo
 	item := c.memCache.cache.Get(fileId)
 	if item != nil {
 		glog.V(4).Infof("fileId %s is in memcache", fileId)
+
 		return true
 	}
 
 	fid, err := needle.ParseFileIdFromString(fileId)
 	if err != nil {
 		glog.V(4).Infof("failed to parse file id %s", fileId)
+
 		return false
 	}
 
@@ -99,6 +102,7 @@ func (c *TieredChunkCache) IsInCache(fileId string, lockNeeded bool) (answer boo
 
 					if storedVolumeId == fid.VolumeId && storedCookie == fid.Cookie {
 						glog.V(4).Infof("fileId %s is in diskCaches[%d].volume[%d]", fileId, i, k)
+
 						return true
 					}
 					glog.V(4).Infof("fileId %s header mismatch in diskCaches[%d].volume[%d]: stored volume %d cookie %x, expected volume %d cookie %x",
@@ -107,6 +111,7 @@ func (c *TieredChunkCache) IsInCache(fileId string, lockNeeded bool) (answer boo
 			}
 		}
 	}
+
 	return false
 }
 
@@ -132,6 +137,7 @@ func (c *TieredChunkCache) ReadChunkAt(data []byte, fileId string, offset uint64
 	fid, err := needle.ParseFileIdFromString(fileId)
 	if err != nil {
 		glog.Errorf("failed to parse file id %s", fileId)
+
 		return 0, nil
 	}
 
@@ -139,24 +145,23 @@ func (c *TieredChunkCache) ReadChunkAt(data []byte, fileId string, offset uint64
 	if minSize <= c.onDiskCacheSizeLimit0 {
 		n, err = c.readChunkAtWithHeaderValidation(data, fid, offset, 0)
 		if n == int(len(data)) {
-			return
+			return n, err
 		}
 	}
 	if minSize <= c.onDiskCacheSizeLimit1 {
 		n, err = c.readChunkAtWithHeaderValidation(data, fid, offset, 1)
 		if n == int(len(data)) {
-			return
+			return n, err
 		}
 	}
 	{
 		n, err = c.readChunkAtWithHeaderValidation(data, fid, offset, 2)
 		if n == int(len(data)) {
-			return
+			return n, err
 		}
 	}
 
 	return 0, nil
-
 }
 
 func (c *TieredChunkCache) SetChunk(fileId string, data []byte) {
@@ -169,6 +174,7 @@ func (c *TieredChunkCache) SetChunk(fileId string, data []byte) {
 	glog.V(4).Infof("SetChunk %s size %d\n", fileId, len(data))
 	if c.IsInCache(fileId, false) {
 		glog.V(4).Infof("fileId %s is already in cache", fileId)
+
 		return
 	}
 
@@ -187,6 +193,7 @@ func (c *TieredChunkCache) doSetChunk(fileId string, data []byte) {
 	fid, err := needle.ParseFileIdFromString(fileId)
 	if err != nil {
 		glog.Errorf("failed to parse file id %s", fileId)
+
 		return
 	}
 
@@ -207,7 +214,6 @@ func (c *TieredChunkCache) doSetChunk(fileId string, data []byte) {
 	} else {
 		c.diskCaches[2].setChunk(fid.Key, dataWithHeader)
 	}
-
 }
 
 func (c *TieredChunkCache) Shutdown() {
@@ -230,12 +236,14 @@ func (c *TieredChunkCache) readChunkAtWithHeaderValidation(data []byte, fid *nee
 	if err != nil {
 		glog.V(4).Infof("failed to read header for %s from cache level %d: %v",
 			fid.String(), cacheLevel, err)
+
 		return 0, err
 	}
 
 	if headerRead < cacheHeaderSize {
 		glog.V(4).Infof("insufficient data for header validation for %s from cache level %d: read %d bytes",
 			fid.String(), cacheLevel, headerRead)
+
 		return 0, nil // Not enough data for header - likely old format, treat as cache miss
 	}
 
@@ -246,6 +254,7 @@ func (c *TieredChunkCache) readChunkAtWithHeaderValidation(data []byte, fid *nee
 	if storedVolumeId != fid.VolumeId || storedCookie != fid.Cookie {
 		glog.V(4).Infof("header mismatch for %s in cache level %d: stored volume %d cookie %x, expected volume %d cookie %x (possible old format)",
 			fid.String(), cacheLevel, storedVolumeId, storedCookie, fid.VolumeId, fid.Cookie)
+
 		return 0, nil // Treat as cache miss - could be old format or actual mismatch
 	}
 
@@ -258,15 +267,9 @@ func (c *TieredChunkCache) readChunkAtWithHeaderValidation(data []byte, fid *nee
 	if err != nil {
 		glog.V(4).Infof("failed to read data at offset %d for %s from cache level %d: %v",
 			offset, fid.String(), cacheLevel, err)
+
 		return 0, err
 	}
 
 	return n, nil
-}
-
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
 }

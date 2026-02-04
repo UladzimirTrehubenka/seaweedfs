@@ -2,6 +2,7 @@ package operation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -17,7 +18,7 @@ func TailVolume(masterFn GetMasterFn, grpcDialOption grpc.DialOption, vid needle
 	// find volume location, replication, ttl info
 	lookup, err := LookupVolumeId(masterFn, grpcDialOption, vid.String())
 	if err != nil {
-		return fmt.Errorf("look up volume %d: %v", vid, err)
+		return fmt.Errorf("look up volume %d: %w", vid, err)
 	}
 	if len(lookup.Locations) == 0 {
 		return fmt.Errorf("unable to locate volume %d", vid)
@@ -45,16 +46,16 @@ func TailVolumeFromSource(volumeServer pb.ServerAddress, grpcDialOption grpc.Dia
 		for {
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break
 				} else {
 					return recvErr
 				}
 			}
 
-			needleHeader := resp.NeedleHeader
-			needleBody := resp.NeedleBody
-			version := needle.Version(resp.Version)
+			needleHeader := resp.GetNeedleHeader()
+			needleBody := resp.GetNeedleBody()
+			version := needle.Version(resp.GetVersion())
 			if version == 0 {
 				version = needle.GetCurrentVersion()
 			}
@@ -63,16 +64,16 @@ func TailVolumeFromSource(volumeServer pb.ServerAddress, grpcDialOption grpc.Dia
 				continue
 			}
 
-			for !resp.IsLastChunk {
+			for !resp.GetIsLastChunk() {
 				resp, recvErr = stream.Recv()
 				if recvErr != nil {
-					if recvErr == io.EOF {
+					if errors.Is(recvErr, io.EOF) {
 						break
 					} else {
 						return recvErr
 					}
 				}
-				needleBody = append(needleBody, resp.NeedleBody...)
+				needleBody = append(needleBody, resp.GetNeedleBody()...)
 			}
 
 			n := new(needle.Needle)
@@ -87,8 +88,8 @@ func TailVolumeFromSource(volumeServer pb.ServerAddress, grpcDialOption grpc.Dia
 			if err != nil {
 				return err
 			}
-
 		}
+
 		return nil
 	})
 }

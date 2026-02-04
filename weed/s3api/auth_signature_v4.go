@@ -24,6 +24,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -44,11 +45,14 @@ func (iam *IdentityAccessManagement) reqSignatureV4Verify(r *http.Request) (*Ide
 	switch {
 	case isRequestSignatureV4(r):
 		identity, _, errCode := iam.doesSignatureMatch(r)
+
 		return identity, errCode
 	case isRequestPresignedSignatureV4(r):
 		identity, _, errCode := iam.doesPresignedSignatureMatch(r)
+
 		return identity, errCode
 	}
+
 	return nil, s3err.ErrAccessDenied
 }
 
@@ -116,7 +120,7 @@ func parseSignV4(v4Auth string) (sv signValues, aec s3err.ErrorCode) {
 	// Replace all spaced strings, some clients can send spaced
 	// parameters and some won't. So we pro-actively remove any spaces
 	// to make parsing easier.
-	v4Auth = strings.Replace(v4Auth, " ", "", -1)
+	v4Auth = strings.ReplaceAll(v4Auth, " ", "")
 	if v4Auth == "" {
 		return sv, s3err.ErrAuthHeaderEmpty
 	}
@@ -231,6 +235,7 @@ func (iam *IdentityAccessManagement) verifyV4Signature(r *http.Request, shouldCh
 
 			glog.Warningf("InvalidAccessKeyId: attempted key '%s' not found. Available keys: %d, Auth enabled: %v",
 				authInfo.AccessKey, keyCount, iam.isAuthEnabled)
+
 			return nil, nil, "", nil, s3err.ErrInvalidAccessKeyID
 		}
 
@@ -238,6 +243,7 @@ func (iam *IdentityAccessManagement) verifyV4Signature(r *http.Request, shouldCh
 		if cred.isCredentialExpired() {
 			glog.V(2).Infof("Service account credential %s has expired (expiration: %d, now: %d)",
 				authInfo.AccessKey, cred.Expiration, time.Now().Unix())
+
 			return nil, nil, "", nil, s3err.ErrAccessDenied
 		}
 	}
@@ -319,6 +325,7 @@ func (iam *IdentityAccessManagement) validateSTSSessionToken(r *http.Request, se
 	// Check if IAM integration is available
 	if iam.iamIntegration == nil {
 		glog.V(2).Infof("IAM integration not available, cannot validate session token")
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
@@ -327,24 +334,28 @@ func (iam *IdentityAccessManagement) validateSTSSessionToken(r *http.Request, se
 	sessionInfo, err := iam.iamIntegration.ValidateSessionToken(ctx, sessionToken)
 	if err != nil {
 		glog.V(2).Infof("Failed to validate STS session token: %v", err)
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
 	// Check if sessionInfo is nil
 	if sessionInfo == nil {
 		glog.Warningf("STS service returned nil session info for token validation")
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
 	// Check if Credentials are nil
 	if sessionInfo.Credentials == nil {
 		glog.Warningf("STS service returned nil credentials in session info")
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
 	// Validate that credentials have the required access key
 	if sessionInfo.Credentials.AccessKeyId == "" {
 		glog.Warningf("STS service returned empty AccessKeyId in credentials")
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
@@ -356,27 +367,32 @@ func (iam *IdentityAccessManagement) validateSTSSessionToken(r *http.Request, se
 			if len(k) > 4 {
 				return k[:4] + mask
 			}
+
 			return mask
 		}
 		glog.V(2).Infof("Access key mismatch: request has %s, session token has %s",
 			truncateKey(accessKey), truncateKey(sessionInfo.Credentials.AccessKeyId))
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
 	// Check if the session has expired
 	if sessionInfo.ExpiresAt.IsZero() {
 		glog.Warningf("STS service returned zero/empty expiration time")
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
 	if time.Now().After(sessionInfo.ExpiresAt) {
 		glog.V(2).Infof("STS session has expired at %v", sessionInfo.ExpiresAt)
+
 		return nil, nil, s3err.ErrExpiredToken
 	}
 
 	// Validate required credential fields
 	if sessionInfo.Credentials.SecretAccessKey == "" {
 		glog.Warningf("STS service returned empty SecretAccessKey in credentials")
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
@@ -384,6 +400,7 @@ func (iam *IdentityAccessManagement) validateSTSSessionToken(r *http.Request, se
 	if sessionInfo.AssumedRoleUser == "" || sessionInfo.Principal == "" {
 		glog.Warningf("STS service returned empty AssumedRoleUser or Principal (user=%q, principal=%q)",
 			sessionInfo.AssumedRoleUser, sessionInfo.Principal)
+
 		return nil, nil, s3err.ErrInvalidAccessKeyID
 	}
 
@@ -398,10 +415,8 @@ func (iam *IdentityAccessManagement) validateSTSSessionToken(r *http.Request, se
 	// Create claims map from request context
 	// The request context contains user information from the original OIDC token
 	// that was used in AssumeRoleWithWebIdentity (e.g., preferred_username, email, etc.)
-	claims := make(map[string]interface{}, len(sessionInfo.RequestContext))
-	for k, v := range sessionInfo.RequestContext {
-		claims[k] = v
-	}
+	claims := make(map[string]any, len(sessionInfo.RequestContext))
+	maps.Copy(claims, sessionInfo.RequestContext)
 
 	// Create an identity for the STS session
 	// The identity represents the assumed role user
@@ -416,6 +431,7 @@ func (iam *IdentityAccessManagement) validateSTSSessionToken(r *http.Request, se
 
 	glog.V(2).Infof("Successfully validated STS session token for principal: %s, assumed role user: %s",
 		sessionInfo.Principal, sessionInfo.AssumedRoleUser)
+
 	return identity, cred, s3err.ErrNone
 }
 
@@ -430,6 +446,7 @@ func calculateAndVerifySignature(secretKey, method, urlPath, queryStr string, ex
 	if !compareSignatureV4(newSignature, authInfo.Signature) {
 		glog.V(4).Infof("Signature mismatch. Details:\n- CanonicalRequest: %q\n- StringToSign: %q\n- Calculated: %s, Provided: %s",
 			canonicalRequest, stringToSign, newSignature, authInfo.Signature)
+
 		return "", s3err.ErrSignatureDoesNotMatch
 	}
 
@@ -440,6 +457,7 @@ func extractV4AuthInfo(r *http.Request) (*v4AuthInfo, s3err.ErrorCode) {
 	if isRequestPresignedSignatureV4(r) {
 		return extractV4AuthInfoFromQuery(r)
 	}
+
 	return extractV4AuthInfoFromHeader(r)
 }
 
@@ -564,6 +582,7 @@ func getCanonicalQueryString(r *http.Request, isPresigned bool) string {
 		queryForCanonical.Del("X-Amz-Signature")
 		queryToEncode = queryForCanonical.Encode()
 	}
+
 	return queryToEncode
 }
 
@@ -589,16 +608,19 @@ func checkPresignedRequestExpiry(r *http.Request, t time.Time) s3err.ErrorCode {
 	if time.Now().UTC().After(expirationTime) {
 		return s3err.ErrExpiredPresignRequest
 	}
+
 	return s3err.ErrNone
 }
 
 func (iam *IdentityAccessManagement) doesSignatureMatch(r *http.Request) (*Identity, string, s3err.ErrorCode) {
 	identity, _, calculatedSignature, _, errCode := iam.verifyV4Signature(r, false)
+
 	return identity, calculatedSignature, errCode
 }
 
 func (iam *IdentityAccessManagement) doesPresignedSignatureMatch(r *http.Request) (*Identity, string, s3err.ErrorCode) {
 	identity, _, calculatedSignature, _, errCode := iam.verifyV4Signature(r, false)
+
 	return identity, calculatedSignature, errCode
 }
 
@@ -649,6 +671,7 @@ func parseCredentialHeader(credElement string) (ch credentialHeader, aec s3err.E
 	cred.scope.region = credElements[2]
 	cred.scope.service = credElements[3] // "s3"
 	cred.scope.request = credElements[4] // "aws4_request"
+
 	return cred, s3err.ErrNone
 }
 
@@ -665,6 +688,7 @@ func parseSignature(signElement string) (string, s3err.ErrorCode) {
 		return "", s3err.ErrMissingFields
 	}
 	signature := signFields[1]
+
 	return signature, s3err.ErrNone
 }
 
@@ -681,11 +705,11 @@ func parseSignedHeader(signedHdrElement string) ([]string, s3err.ErrorCode) {
 		return nil, s3err.ErrMissingFields
 	}
 	signedHeaders := strings.Split(signedHdrFields[1], ";")
+
 	return signedHeaders, s3err.ErrNone
 }
 
 func (iam *IdentityAccessManagement) doesPolicySignatureV4Match(formValues http.Header) s3err.ErrorCode {
-
 	// Parse credential tag.
 	credHeader, err := parseCredentialHeader("Credential=" + formValues.Get("X-Amz-Credential"))
 	if err != s3err.ErrNone {
@@ -709,6 +733,7 @@ func (iam *IdentityAccessManagement) doesPolicySignatureV4Match(formValues http.
 	if cred.isCredentialExpired() {
 		glog.V(2).Infof("Service account credential %s has expired (expiration: %d, now: %d)",
 			credHeader.accessKey, cred.Expiration, time.Now().Unix())
+
 		return s3err.ErrAccessDenied
 	}
 
@@ -727,6 +752,7 @@ func (iam *IdentityAccessManagement) doesPolicySignatureV4Match(formValues http.
 	if !compareSignatureV4(newSignature, formValues.Get("X-Amz-Signature")) {
 		return s3err.ErrSignatureDoesNotMatch
 	}
+
 	return s3err.ErrNone
 }
 
@@ -744,6 +770,7 @@ func extractSignedHeaders(signedHeaders []string, r *http.Request) (http.Header,
 			// Get host value.
 			hostHeaderValue := extractHostHeader(r)
 			extractedSignedHeaders[header] = []string{hostHeaderValue}
+
 			continue
 		}
 		// For all other headers we need to find them in the HTTP headers and copy them over.
@@ -752,6 +779,7 @@ func extractSignedHeaders(signedHeaders []string, r *http.Request) (http.Header,
 			extractedSignedHeaders[header] = values
 		}
 	}
+
 	return extractedSignedHeaders, s3err.ErrNone
 }
 
@@ -811,6 +839,7 @@ func extractHostHeader(r *http.Request) string {
 		// brackets for IPv6 addresses. This prevents double-bracketing like [[::1]]:8080.
 		// Using Trim handles both well-formed and malformed bracketed hosts.
 		host = strings.Trim(host, "[]")
+
 		return net.JoinHostPort(host, port)
 	}
 
@@ -823,6 +852,7 @@ func extractHostHeader(r *http.Request) string {
 		// This is an IPv6 address. Strip brackets to match AWS SDK behavior.
 		return strings.Trim(host, "[]")
 	}
+
 	return host
 }
 
@@ -849,6 +879,7 @@ func getScope(t time.Time, region string, service string) string {
 		service,
 		"aws4_request",
 	}, "/")
+
 	return scope
 }
 
@@ -863,7 +894,7 @@ func getScope(t time.Time, region string, service string) string {
 //	<SignedHeaders>\n
 //	<HashedPayload>
 func getCanonicalRequest(extractedSignedHeaders http.Header, payload, queryStr, urlPath, method string) string {
-	rawQuery := strings.Replace(queryStr, "+", "%20", -1)
+	rawQuery := strings.ReplaceAll(queryStr, "+", "%20")
 	encodedPath := encodePath(urlPath)
 	canonicalRequest := strings.Join([]string{
 		method,
@@ -873,6 +904,7 @@ func getCanonicalRequest(extractedSignedHeaders http.Header, payload, queryStr, 
 		getSignedHeaders(extractedSignedHeaders),
 		payload,
 	}, "\n")
+
 	return canonicalRequest
 }
 
@@ -881,12 +913,14 @@ func getStringToSign(canonicalRequest string, t time.Time, scope string) string 
 	stringToSign := signV4Algorithm + "\n" + t.Format(iso8601Format) + "\n"
 	stringToSign = stringToSign + scope + "\n"
 	stringToSign = stringToSign + getSHA256Hash([]byte(canonicalRequest))
+
 	return stringToSign
 }
 
 // getSHA256Hash returns hex-encoded SHA256 hash of the input data.
 func getSHA256Hash(data []byte) string {
 	hash := sha256.Sum256(data)
+
 	return hex.EncodeToString(hash[:])
 }
 
@@ -894,6 +928,7 @@ func getSHA256Hash(data []byte) string {
 func sumHMAC(key []byte, data []byte) []byte {
 	hash := hmac.New(sha256.New, key)
 	hash.Write(data)
+
 	return hash.Sum(nil)
 }
 
@@ -903,6 +938,7 @@ func getSigningKey(secretKey string, time string, region string, service string)
 	regionBytes := sumHMAC(date, []byte(region))
 	serviceBytes := sumHMAC(regionBytes, []byte(service))
 	signingKey := sumHMAC(serviceBytes, []byte("aws4_request"))
+
 	return signingKey
 }
 
@@ -930,6 +966,7 @@ func getCanonicalHeaders(signedHeaders http.Header) string {
 		}
 		buf.WriteByte('\n')
 	}
+
 	return buf.String()
 }
 
@@ -948,6 +985,7 @@ func getSignedHeaders(signedHeaders http.Header) string {
 		headers = append(headers, strings.ToLower(k))
 	}
 	sort.Strings(headers)
+
 	return strings.Join(headers, ";")
 }
 
@@ -965,29 +1003,34 @@ func encodePath(pathName string) string {
 	if reservedObjectNames.MatchString(pathName) {
 		return pathName
 	}
-	var encodedPathname string
+	var encodedPathname strings.Builder
 	for _, s := range pathName {
 		if 'A' <= s && s <= 'Z' || 'a' <= s && s <= 'z' || '0' <= s && s <= '9' { // §2.3 Unreserved characters (mark)
-			encodedPathname = encodedPathname + string(s)
-		} else {
-			switch s {
-			case '-', '_', '.', '~', '/': // §2.3 Unreserved characters (mark)
-				encodedPathname = encodedPathname + string(s)
-			default:
-				runeLen := utf8.RuneLen(s)
-				if runeLen < 0 {
-					return pathName
-				}
-				u := make([]byte, runeLen)
-				utf8.EncodeRune(u, s)
-				for _, r := range u {
-					hex := hex.EncodeToString([]byte{r})
-					encodedPathname = encodedPathname + "%" + strings.ToUpper(hex)
-				}
+			encodedPathname.WriteRune(s)
+
+			continue
+		}
+		switch s {
+		case '-', '_', '.', '~', '/': // §2.3 Unreserved characters (mark)
+			encodedPathname.WriteRune(s)
+
+			continue
+		default:
+			l := utf8.RuneLen(s)
+			if l < 0 {
+				// if utf8 cannot convert return the same string as is
+				return pathName
+			}
+			u := make([]byte, l)
+			utf8.EncodeRune(u, s)
+			for _, r := range u {
+				hex := hex.EncodeToString([]byte{r})
+				encodedPathname.WriteString("%" + strings.ToUpper(hex))
 			}
 		}
 	}
-	return encodedPathname
+
+	return encodedPathname.String()
 }
 
 // getSignature final signature in hexadecimal form.

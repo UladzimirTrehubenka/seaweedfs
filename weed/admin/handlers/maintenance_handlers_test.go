@@ -189,7 +189,7 @@ func TestConfigurationValidation(t *testing.T) {
 	// Test that config structs can be validated and converted to protobuf format
 	taskTypes := []struct {
 		name   string
-		config interface{}
+		config any
 	}{
 		{
 			"balance",
@@ -241,33 +241,33 @@ func TestConfigurationValidation(t *testing.T) {
 				if policy == nil {
 					t.Fatal("ToTaskPolicy returned nil")
 				}
-				if policy.Enabled != cfg.Enabled {
-					t.Errorf("Expected Enabled=%v, got %v", cfg.Enabled, policy.Enabled)
+				if policy.GetEnabled() != cfg.Enabled {
+					t.Errorf("Expected Enabled=%v, got %v", cfg.Enabled, policy.GetEnabled())
 				}
-				if policy.MaxConcurrent != int32(cfg.MaxConcurrent) {
-					t.Errorf("Expected MaxConcurrent=%v, got %v", cfg.MaxConcurrent, policy.MaxConcurrent)
+				if policy.GetMaxConcurrent() != int32(cfg.MaxConcurrent) {
+					t.Errorf("Expected MaxConcurrent=%v, got %v", cfg.MaxConcurrent, policy.GetMaxConcurrent())
 				}
 			case *vacuum.Config:
 				policy := cfg.ToTaskPolicy()
 				if policy == nil {
 					t.Fatal("ToTaskPolicy returned nil")
 				}
-				if policy.Enabled != cfg.Enabled {
-					t.Errorf("Expected Enabled=%v, got %v", cfg.Enabled, policy.Enabled)
+				if policy.GetEnabled() != cfg.Enabled {
+					t.Errorf("Expected Enabled=%v, got %v", cfg.Enabled, policy.GetEnabled())
 				}
-				if policy.MaxConcurrent != int32(cfg.MaxConcurrent) {
-					t.Errorf("Expected MaxConcurrent=%v, got %v", cfg.MaxConcurrent, policy.MaxConcurrent)
+				if policy.GetMaxConcurrent() != int32(cfg.MaxConcurrent) {
+					t.Errorf("Expected MaxConcurrent=%v, got %v", cfg.MaxConcurrent, policy.GetMaxConcurrent())
 				}
 			case *erasure_coding.Config:
 				policy := cfg.ToTaskPolicy()
 				if policy == nil {
 					t.Fatal("ToTaskPolicy returned nil")
 				}
-				if policy.Enabled != cfg.Enabled {
-					t.Errorf("Expected Enabled=%v, got %v", cfg.Enabled, policy.Enabled)
+				if policy.GetEnabled() != cfg.Enabled {
+					t.Errorf("Expected Enabled=%v, got %v", cfg.Enabled, policy.GetEnabled())
 				}
-				if policy.MaxConcurrent != int32(cfg.MaxConcurrent) {
-					t.Errorf("Expected MaxConcurrent=%v, got %v", cfg.MaxConcurrent, policy.MaxConcurrent)
+				if policy.GetMaxConcurrent() != int32(cfg.MaxConcurrent) {
+					t.Errorf("Expected MaxConcurrent=%v, got %v", cfg.MaxConcurrent, policy.GetMaxConcurrent())
 				}
 			default:
 				t.Fatalf("Unknown config type: %T", test.config)

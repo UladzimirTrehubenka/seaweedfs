@@ -3,6 +3,7 @@ package weed_server
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,25 +25,25 @@ const (
 )
 
 func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest, stream filer_pb.SeaweedFiler_SubscribeMetadataServer) error {
-
 	ctx := stream.Context()
 	peerAddress := findClientAddress(ctx, 0)
 
-	isReplacing, alreadyKnown, clientName := fs.addClient("", req.ClientName, peerAddress, req.ClientId, req.ClientEpoch)
+	isReplacing, alreadyKnown, clientName := fs.addClient("", req.GetClientName(), peerAddress, req.GetClientId(), req.GetClientEpoch())
 	if isReplacing {
 		fs.filer.MetaAggregator.ListenersCond.Broadcast() // nudges the subscribers that are waiting
 	} else if alreadyKnown {
 		fs.filer.MetaAggregator.ListenersCond.Broadcast() // nudges the subscribers that are waiting
-		return fmt.Errorf("duplicated subscription detected for client %s id %d", clientName, req.ClientId)
+
+		return fmt.Errorf("duplicated subscription detected for client %s id %d", clientName, req.GetClientId())
 	}
 	defer func() {
-		glog.V(0).Infof("disconnect %v subscriber %s clientId:%d", clientName, req.PathPrefix, req.ClientId)
-		fs.deleteClient("", clientName, req.ClientId, req.ClientEpoch)
+		glog.V(0).Infof("disconnect %v subscriber %s clientId:%d", clientName, req.GetPathPrefix(), req.GetClientId())
+		fs.deleteClient("", clientName, req.GetClientId(), req.GetClientEpoch())
 		fs.filer.MetaAggregator.ListenersCond.Broadcast() // nudges the subscribers that are waiting
 	}()
 
-	lastReadTime := log_buffer.NewMessagePosition(req.SinceNs, -2)
-	glog.V(0).Infof(" %v starts to subscribe %s from %+v", clientName, req.PathPrefix, lastReadTime)
+	lastReadTime := log_buffer.NewMessagePosition(req.GetSinceNs(), -2)
+	glog.V(0).Infof(" %v starts to subscribe %s from %+v", clientName, req.GetPathPrefix(), lastReadTime)
 
 	eachEventNotificationFn := fs.eachEventNotificationFn(req, stream, clientName)
 
@@ -54,10 +55,9 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 	var isDone bool
 
 	for {
+		glog.V(4).Infof("read on disk %v aggregated subscribe %s from %+v", clientName, req.GetPathPrefix(), lastReadTime)
 
-		glog.V(4).Infof("read on disk %v aggregated subscribe %s from %+v", clientName, req.PathPrefix, lastReadTime)
-
-		processedTsNs, isDone, readPersistedLogErr = fs.filer.ReadPersistedLogBuffer(lastReadTime, req.UntilNs, eachLogEntryFn)
+		processedTsNs, isDone, readPersistedLogErr = fs.filer.ReadPersistedLogBuffer(lastReadTime, req.GetUntilNs(), eachLogEntryFn)
 		if readPersistedLogErr != nil {
 			return fmt.Errorf("reading from persisted logs: %w", readPersistedLogErr)
 		}
@@ -96,9 +96,9 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 			}
 		}
 
-		glog.V(4).Infof("read in memory %v aggregated subscribe %s from %+v", clientName, req.PathPrefix, lastReadTime)
+		glog.V(4).Infof("read in memory %v aggregated subscribe %s from %+v", clientName, req.GetPathPrefix(), lastReadTime)
 
-		lastReadTime, isDone, readInMemoryLogErr = fs.filer.MetaAggregator.MetaLogBuffer.LoopProcessLogData("aggMeta:"+clientName, lastReadTime, req.UntilNs, func() bool {
+		lastReadTime, isDone, readInMemoryLogErr = fs.filer.MetaAggregator.MetaLogBuffer.LoopProcessLogData("aggMeta:"+clientName, lastReadTime, req.GetUntilNs(), func() bool {
 			// Check if the client has disconnected by monitoring the context
 			select {
 			case <-ctx.Done():
@@ -111,7 +111,8 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 			fs.filer.MetaAggregator.ListenersCond.Wait()
 			atomic.AddInt64(&fs.filer.MetaAggregator.ListenersWaits, -1)
 			fs.filer.MetaAggregator.ListenersLock.Unlock()
-			return fs.hasClient(req.ClientId, req.ClientEpoch)
+
+			return fs.hasClient(req.GetClientId(), req.GetClientEpoch())
 		}, eachLogEntryFn)
 		if readInMemoryLogErr != nil {
 			if errors.Is(readInMemoryLogErr, log_buffer.ResumeFromDiskError) {
@@ -127,8 +128,9 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 		if isDone {
 			return nil
 		}
-		if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+		if !fs.hasClient(req.GetClientId(), req.GetClientEpoch()) {
 			glog.V(0).Infof("client %v is closed", clientName)
+
 			return nil
 		}
 
@@ -136,31 +138,29 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 	}
 
 	return readInMemoryLogErr
-
 }
 
 func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataRequest, stream filer_pb.SeaweedFiler_SubscribeLocalMetadataServer) error {
-
 	ctx := stream.Context()
 	peerAddress := findClientAddress(ctx, 0)
 
 	// use negative client id to differentiate from addClient()/deleteClient() used in SubscribeMetadata()
-	req.ClientId = -req.ClientId
+	req.ClientId = -req.GetClientId()
 
-	isReplacing, alreadyKnown, clientName := fs.addClient("local", req.ClientName, peerAddress, req.ClientId, req.ClientEpoch)
+	isReplacing, alreadyKnown, clientName := fs.addClient("local", req.GetClientName(), peerAddress, req.GetClientId(), req.GetClientEpoch())
 	if isReplacing {
 		fs.listenersCond.Broadcast() // nudges the subscribers that are waiting
 	} else if alreadyKnown {
-		return fmt.Errorf("duplicated local subscription detected for client %s clientId:%d", clientName, req.ClientId)
+		return fmt.Errorf("duplicated local subscription detected for client %s clientId:%d", clientName, req.GetClientId())
 	}
 	defer func() {
-		glog.V(0).Infof("disconnect %v local subscriber %s clientId:%d", clientName, req.PathPrefix, req.ClientId)
-		fs.deleteClient("local", clientName, req.ClientId, req.ClientEpoch)
+		glog.V(0).Infof("disconnect %v local subscriber %s clientId:%d", clientName, req.GetPathPrefix(), req.GetClientId())
+		fs.deleteClient("local", clientName, req.GetClientId(), req.GetClientEpoch())
 		fs.listenersCond.Broadcast() // nudges the subscribers that are waiting
 	}()
 
-	lastReadTime := log_buffer.NewMessagePosition(req.SinceNs, -2)
-	glog.V(0).Infof(" + %v local subscribe %s from %+v clientId:%d", clientName, req.PathPrefix, lastReadTime, req.ClientId)
+	lastReadTime := log_buffer.NewMessagePosition(req.GetSinceNs(), -2)
+	glog.V(0).Infof(" + %v local subscribe %s from %+v clientId:%d", clientName, req.GetPathPrefix(), lastReadTime, req.GetClientId())
 
 	eachEventNotificationFn := fs.eachEventNotificationFn(req, stream, clientName)
 
@@ -185,10 +185,11 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 		if shouldReadFromDisk {
 			// Record the position we are about to read from
 			lastDiskReadTsNs = currentReadTsNs
-			glog.V(4).Infof("read on disk %v local subscribe %s from %+v (lastFlushed: %v)", clientName, req.PathPrefix, lastReadTime, time.Unix(0, currentFlushTsNs))
-			processedTsNs, isDone, readPersistedLogErr = fs.filer.ReadPersistedLogBuffer(lastReadTime, req.UntilNs, eachLogEntryFn)
+			glog.V(4).Infof("read on disk %v local subscribe %s from %+v (lastFlushed: %v)", clientName, req.GetPathPrefix(), lastReadTime, time.Unix(0, currentFlushTsNs))
+			processedTsNs, isDone, readPersistedLogErr = fs.filer.ReadPersistedLogBuffer(lastReadTime, req.GetUntilNs(), eachLogEntryFn)
 			if readPersistedLogErr != nil {
-				glog.V(0).Infof("read on disk %v local subscribe %s from %+v: %v", clientName, req.PathPrefix, lastReadTime, readPersistedLogErr)
+				glog.V(0).Infof("read on disk %v local subscribe %s from %+v: %v", clientName, req.GetPathPrefix(), lastReadTime, readPersistedLogErr)
+
 				return fmt.Errorf("reading from persisted logs: %w", readPersistedLogErr)
 			}
 			if isDone {
@@ -203,7 +204,7 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 			} else {
 				// No data found on disk
 				// Check if we previously got ResumeFromDiskError from memory, meaning we're in a gap
-				if readInMemoryLogErr == log_buffer.ResumeFromDiskError {
+				if errors.Is(readInMemoryLogErr, log_buffer.ResumeFromDiskError) {
 					// We have a gap: requested time < earliest memory time, but no data on disk
 					// Skip forward to earliest memory time to avoid infinite loop
 					earliestTime := fs.filer.LocalMetaLogBuffer.GetEarliestTime()
@@ -216,6 +217,7 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 					} else {
 						// No memory data yet, just wait
 						time.Sleep(1127 * time.Millisecond)
+
 						continue
 					}
 				} else {
@@ -234,10 +236,9 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 			}
 		}
 
-		glog.V(3).Infof("read in memory %v local subscribe %s from %+v", clientName, req.PathPrefix, lastReadTime)
+		glog.V(3).Infof("read in memory %v local subscribe %s from %+v", clientName, req.GetPathPrefix(), lastReadTime)
 
-		lastReadTime, isDone, readInMemoryLogErr = fs.filer.LocalMetaLogBuffer.LoopProcessLogData("localMeta:"+clientName, lastReadTime, req.UntilNs, func() bool {
-
+		lastReadTime, isDone, readInMemoryLogErr = fs.filer.LocalMetaLogBuffer.LoopProcessLogData("localMeta:"+clientName, lastReadTime, req.GetUntilNs(), func() bool {
 			// Check if the client has disconnected by monitoring the context
 			select {
 			case <-ctx.Done():
@@ -250,22 +251,24 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 			fs.listenersCond.Wait()
 			atomic.AddInt64(&fs.listenersWaits, -1)
 			fs.listenersLock.Unlock()
-			if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+			if !fs.hasClient(req.GetClientId(), req.GetClientEpoch()) {
 				return false
 			}
+
 			return true
 		}, eachLogEntryFn)
 		if readInMemoryLogErr != nil {
-			if readInMemoryLogErr == log_buffer.ResumeFromDiskError {
+			if errors.Is(readInMemoryLogErr, log_buffer.ResumeFromDiskError) {
 				// Memory buffer says the requested time is too old
 				// Retry disk read if: (a) flush advanced, or (b) read position advanced (draining backlog)
 				currentFlushTsNs := fs.filer.LocalMetaLogBuffer.GetLastFlushTsNs()
 				currentReadTsNs := lastReadTime.Time.UnixNano()
 				if currentFlushTsNs > lastCheckedFlushTsNs || currentReadTsNs > lastDiskReadTsNs {
 					glog.V(0).Infof("retry disk read %v local subscribe %s (lastFlushed: %v -> %v, readTs: %v -> %v)",
-						clientName, req.PathPrefix,
+						clientName, req.GetPathPrefix(),
 						time.Unix(0, lastCheckedFlushTsNs), time.Unix(0, currentFlushTsNs),
 						time.Unix(0, lastDiskReadTsNs), time.Unix(0, currentReadTsNs))
+
 					continue
 				}
 				// No progress possible, wait for new data to arrive (event-driven, not polling)
@@ -274,34 +277,35 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 				fs.listenersCond.Wait()
 				atomic.AddInt64(&fs.listenersWaits, -1)
 				fs.listenersLock.Unlock()
+
 				continue
 			}
 			glog.Errorf("processed to %v: %v", lastReadTime, readInMemoryLogErr)
-			if readInMemoryLogErr != log_buffer.ResumeError {
+			if !errors.Is(readInMemoryLogErr, log_buffer.ResumeError) {
 				break
 			}
 		}
 		if isDone {
 			return nil
 		}
-		if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+		if !fs.hasClient(req.GetClientId(), req.GetClientEpoch()) {
 			return nil
 		}
 	}
 
 	return readInMemoryLogErr
-
 }
 
 func eachLogEntryFn(eachEventNotificationFn func(dirPath string, eventNotification *filer_pb.EventNotification, tsNs int64) error) log_buffer.EachLogEntryFuncType {
 	return func(logEntry *filer_pb.LogEntry) (bool, error) {
 		event := &filer_pb.SubscribeMetadataResponse{}
-		if err := proto.Unmarshal(logEntry.Data, event); err != nil {
+		if err := proto.Unmarshal(logEntry.GetData(), event); err != nil {
 			glog.Errorf("unexpected unmarshal filer_pb.SubscribeMetadataResponse: %v", err)
+
 			return false, fmt.Errorf("unexpected unmarshal filer_pb.SubscribeMetadataResponse: %w", err)
 		}
 
-		if err := eachEventNotificationFn(event.Directory, event.EventNotification, event.TsNs); err != nil {
+		if err := eachEventNotificationFn(event.GetDirectory(), event.GetEventNotification(), event.GetTsNs()); err != nil {
 			return false, err
 		}
 
@@ -326,8 +330,8 @@ func (fs *FilerServer) eachEventNotificationFn(req *filer_pb.SubscribeMetadataRe
 
 		filtered++
 		foundSelf := false
-		for _, sig := range eventNotification.Signatures {
-			if sig == req.Signature && req.Signature != 0 {
+		for _, sig := range eventNotification.GetSignatures() {
+			if sig == req.GetSignature() && req.GetSignature() != 0 {
 				return nil
 			}
 			if sig == fs.filer.Signature {
@@ -340,10 +344,10 @@ func (fs *FilerServer) eachEventNotificationFn(req *filer_pb.SubscribeMetadataRe
 
 		// get complete path to the file or directory
 		var entryName string
-		if eventNotification.OldEntry != nil {
-			entryName = eventNotification.OldEntry.Name
-		} else if eventNotification.NewEntry != nil {
-			entryName = eventNotification.NewEntry.Name
+		if eventNotification.GetOldEntry() != nil {
+			entryName = eventNotification.GetOldEntry().GetName()
+		} else if eventNotification.GetNewEntry() != nil {
+			entryName = eventNotification.GetNewEntry().GetName()
 		}
 
 		fullpath := util.Join(dirPath, entryName)
@@ -353,15 +357,15 @@ func (fs *FilerServer) eachEventNotificationFn(req *filer_pb.SubscribeMetadataRe
 			return nil
 		}
 
-		if hasPrefixIn(fullpath, req.PathPrefixes) {
+		if hasPrefixIn(fullpath, req.GetPathPrefixes()) {
 			// good
-		} else if matchByDirectory(dirPath, req.Directories) {
+		} else if matchByDirectory(dirPath, req.GetDirectories()) {
 			// good
 		} else {
-			if !strings.HasPrefix(fullpath, req.PathPrefix) {
-				if eventNotification.NewParentPath != "" {
-					newFullPath := util.Join(eventNotification.NewParentPath, entryName)
-					if !strings.HasPrefix(newFullPath, req.PathPrefix) {
+			if !strings.HasPrefix(fullpath, req.GetPathPrefix()) {
+				if eventNotification.GetNewParentPath() != "" {
+					newFullPath := util.Join(eventNotification.GetNewParentPath(), entryName)
+					if !strings.HasPrefix(newFullPath, req.GetPathPrefix()) {
 						return nil
 					}
 				} else {
@@ -371,7 +375,7 @@ func (fs *FilerServer) eachEventNotificationFn(req *filer_pb.SubscribeMetadataRe
 		}
 
 		// collect timestamps for path
-		stats.FilerServerLastSendTsOfSubscribeGauge.WithLabelValues(fs.option.Host.String(), req.ClientName, req.PathPrefix).Set(float64(tsNs))
+		stats.FilerServerLastSendTsOfSubscribeGauge.WithLabelValues(fs.option.Host.String(), req.GetClientName(), req.GetPathPrefix()).Set(float64(tsNs))
 
 		message := &filer_pb.SubscribeMetadataResponse{
 			Directory:         dirPath,
@@ -381,9 +385,11 @@ func (fs *FilerServer) eachEventNotificationFn(req *filer_pb.SubscribeMetadataRe
 		// println("sending", dirPath, entryName)
 		if err := stream.Send(message); err != nil {
 			glog.V(0).Infof("=> client %v: %+v", clientName, err)
+
 			return err
 		}
 		filtered = 0
+
 		return nil
 	}
 }
@@ -394,16 +400,12 @@ func hasPrefixIn(text string, prefixes []string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
 func matchByDirectory(dirPath string, directories []string) bool {
-	for _, dir := range directories {
-		if dirPath == dir {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(directories, dirPath)
 }
 
 func (fs *FilerServer) addClient(prefix string, clientType string, clientAddress string, clientId int32, clientEpoch int32) (isReplacing, alreadyKnown bool, clientName string) {
@@ -420,6 +422,7 @@ func (fs *FilerServer) addClient(prefix string, clientType string, clientAddress
 			alreadyKnown = true
 		}
 	}
+
 	return
 }
 
@@ -444,5 +447,6 @@ func (fs *FilerServer) hasClient(clientId int32, clientEpoch int32) bool {
 			return true
 		}
 	}
+
 	return false
 }

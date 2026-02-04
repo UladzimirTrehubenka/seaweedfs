@@ -13,7 +13,7 @@ func TestSchemaReconstruction_Avro(t *testing.T) {
 	// Create mock schema registry
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/schemas/ids/1" {
-			response := map[string]interface{}{
+			response := map[string]any{
 				"schema": `{
 					"type": "record",
 					"name": "User",
@@ -59,7 +59,7 @@ func TestSchemaReconstruction_Avro(t *testing.T) {
 	}
 
 	// Create original test data
-	originalRecord := map[string]interface{}{
+	originalRecord := map[string]any{
 		"id":   int32(123),
 		"name": "John Doe",
 	}
@@ -104,12 +104,12 @@ func TestSchemaReconstruction_Avro(t *testing.T) {
 	}
 
 	// Verify data integrity through the round trip
-	if finalDecodedMsg.RecordValue.Fields["id"].GetInt32Value() != 123 {
-		t.Errorf("Expected id=123, got %v", finalDecodedMsg.RecordValue.Fields["id"].GetInt32Value())
+	if finalDecodedMsg.RecordValue.GetFields()["id"].GetInt32Value() != 123 {
+		t.Errorf("Expected id=123, got %v", finalDecodedMsg.RecordValue.GetFields()["id"].GetInt32Value())
 	}
 
-	if finalDecodedMsg.RecordValue.Fields["name"].GetStringValue() != "John Doe" {
-		t.Errorf("Expected name='John Doe', got %v", finalDecodedMsg.RecordValue.Fields["name"].GetStringValue())
+	if finalDecodedMsg.RecordValue.GetFields()["name"].GetStringValue() != "John Doe" {
+		t.Errorf("Expected name='John Doe', got %v", finalDecodedMsg.RecordValue.GetFields()["name"].GetStringValue())
 	}
 
 	// Verify schema information is preserved
@@ -141,7 +141,7 @@ func TestSchemaReconstruction_MultipleFormats(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create test RecordValue
-			testMap := map[string]interface{}{
+			testMap := map[string]any{
 				"id":   int32(456),
 				"name": "Jane Smith",
 			}
@@ -309,7 +309,7 @@ func TestSchemaMetadata_Preservation(t *testing.T) {
 // Benchmark tests for reconstruction performance
 func BenchmarkSchemaReconstruction_Avro(b *testing.B) {
 	// Setup
-	testMap := map[string]interface{}{
+	testMap := map[string]any{
 		"id":   int32(123),
 		"name": "John Doe",
 	}
@@ -324,8 +324,7 @@ func BenchmarkSchemaReconstruction_Avro(b *testing.B) {
 		b.Skip("Skipping benchmark - no registry available")
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// This will fail without proper registry setup, but measures the overhead
 		_, _ = manager.EncodeMessage(recordValue, 1, FormatAvro)
 	}
@@ -334,8 +333,7 @@ func BenchmarkSchemaReconstruction_Avro(b *testing.B) {
 func BenchmarkConfluentEnvelope_Creation(b *testing.B) {
 	payload := []byte("test-payload-for-benchmarking")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = CreateConfluentEnvelope(FormatAvro, 1, nil, payload)
 	}
 }
@@ -343,8 +341,7 @@ func BenchmarkConfluentEnvelope_Creation(b *testing.B) {
 func BenchmarkConfluentEnvelope_Parsing(b *testing.B) {
 	envelope := CreateConfluentEnvelope(FormatAvro, 1, nil, []byte("test-payload"))
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = ParseConfluentEnvelope(envelope)
 	}
 }

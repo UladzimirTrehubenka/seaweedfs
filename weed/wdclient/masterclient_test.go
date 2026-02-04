@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"google.golang.org/grpc"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 )
 
 // TestWaitUntilConnectedWithoutKeepConnected verifies that WaitUntilConnected

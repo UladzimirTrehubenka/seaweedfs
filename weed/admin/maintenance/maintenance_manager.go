@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -73,7 +74,8 @@ func buildPolicyFromTaskConfigs() *worker_pb.MaintenancePolicy {
 		}
 	}
 
-	glog.V(1).Infof("Built maintenance policy from separate task configs - %d task policies loaded", len(policy.TaskPolicies))
+	glog.V(1).Infof("Built maintenance policy from separate task configs - %d task policies loaded", len(policy.GetTaskPolicies()))
+
 	return policy
 }
 
@@ -124,6 +126,7 @@ func NewMaintenanceManager(adminClient AdminClient, config *MaintenanceConfig) *
 func (mm *MaintenanceManager) Start() error {
 	if !mm.config.Enabled {
 		glog.V(1).Infof("Maintenance system is disabled")
+
 		return nil
 	}
 
@@ -140,6 +143,7 @@ func (mm *MaintenanceManager) Start() error {
 	go mm.topologyStatusLoop() // Periodic diagnostic logging
 
 	glog.Infof("Maintenance manager started with scan interval %ds", mm.config.ScanIntervalSeconds)
+
 	return nil
 }
 
@@ -235,8 +239,10 @@ func (mm *MaintenanceManager) getScanInterval(baseInterval time.Duration) time.D
 				currentInterval = maxInterval
 			}
 		}
+
 		return currentInterval
 	}
+
 	return baseInterval
 }
 
@@ -277,12 +283,14 @@ func (mm *MaintenanceManager) topologyStatusLoop() {
 func (mm *MaintenanceManager) logTopologyStatus() {
 	if mm.scanner == nil || mm.scanner.integration == nil {
 		glog.V(2).Infof("Topology status: scanner/integration not available")
+
 		return
 	}
 
 	activeTopology := mm.scanner.integration.GetActiveTopology()
 	if activeTopology == nil {
 		glog.V(1).Infof("Topology status: ActiveTopology is nil")
+
 		return
 	}
 
@@ -322,6 +330,7 @@ func (mm *MaintenanceManager) performScan() {
 		mm.handleScanError(err)
 		mm.mutex.Unlock()
 		glog.Warningf("Maintenance scan failed: %v", err)
+
 		return
 	}
 
@@ -366,10 +375,9 @@ func (mm *MaintenanceManager) handleScanError(err error) {
 
 	// Use exponential backoff with jitter
 	if mm.errorCount > 1 {
-		mm.backoffDelay = mm.backoffDelay * 2
-		if mm.backoffDelay > 5*time.Minute {
-			mm.backoffDelay = 5 * time.Minute // Cap at 5 minutes
-		}
+		mm.backoffDelay = min(mm.backoffDelay*2,
+			// Cap at 5 minutes
+			5*time.Minute)
 	}
 
 	// Reduce log frequency based on error count and time
@@ -419,6 +427,7 @@ func isConnectionError(err error) bool {
 		return false
 	}
 	errStr := err.Error()
+
 	return strings.Contains(errStr, "connection refused") ||
 		strings.Contains(errStr, "connection error") ||
 		strings.Contains(errStr, "dial tcp") ||
@@ -496,16 +505,18 @@ func (mm *MaintenanceManager) ReloadTaskConfigurations() error {
 	if mm.scanner != nil && mm.scanner.integration != nil {
 		mm.scanner.integration.ConfigureTasksFromPolicy()
 		glog.V(1).Infof("Task configurations reloaded from policy")
+
 		return nil
 	}
 
-	return fmt.Errorf("integration not available for configuration reload")
+	return errors.New("integration not available for configuration reload")
 }
 
 // GetErrorState returns the current error state for monitoring
 func (mm *MaintenanceManager) GetErrorState() (errorCount int, lastError error, backoffDelay time.Duration) {
 	mm.mutex.RLock()
 	defer mm.mutex.RUnlock()
+
 	return mm.errorCount, mm.lastError, mm.backoffDelay
 }
 
@@ -527,7 +538,7 @@ func (mm *MaintenanceManager) TriggerScan() error {
 // triggerScanInternal handles both manual and automatic scan triggers
 func (mm *MaintenanceManager) triggerScanInternal(isManual bool) error {
 	if !mm.running {
-		return fmt.Errorf("maintenance manager is not running")
+		return errors.New("maintenance manager is not running")
 	}
 
 	// Prevent multiple concurrent scans
@@ -539,19 +550,21 @@ func (mm *MaintenanceManager) triggerScanInternal(isManual bool) error {
 		} else {
 			glog.V(2).Infof("Automatic scan already in progress, ignoring scheduled scan")
 		}
-		return fmt.Errorf("scan already in progress")
+
+		return errors.New("scan already in progress")
 	}
 	mm.scanInProgress = true
 	mm.mutex.Unlock()
 
 	go mm.performScan()
+
 	return nil
 }
 
 // UpdateConfig updates the maintenance configuration
 func (mm *MaintenanceManager) UpdateConfig(config *MaintenanceConfig) error {
 	if config == nil {
-		return fmt.Errorf("config cannot be nil")
+		return errors.New("config cannot be nil")
 	}
 
 	mm.config = config
@@ -564,6 +577,7 @@ func (mm *MaintenanceManager) UpdateConfig(config *MaintenanceConfig) error {
 	}
 
 	glog.V(1).Infof("Maintenance configuration updated")
+
 	return nil
 }
 
@@ -574,7 +588,7 @@ func (mm *MaintenanceManager) saveTaskConfigsFromPolicy(policy *worker_pb.Mainte
 	}
 
 	glog.V(1).Infof("Propagating maintenance policy changes to separate task configs")
-	for taskType, taskPolicy := range policy.TaskPolicies {
+	for taskType, taskPolicy := range policy.GetTaskPolicies() {
 		if err := mm.queue.persistence.SaveTaskPolicy(taskType, taskPolicy); err != nil {
 			glog.Errorf("Failed to save task policy for %s: %v", taskType, err)
 		}
@@ -599,11 +613,13 @@ func (mm *MaintenanceManager) CancelTask(taskID string) error {
 		for i, pendingTask := range mm.queue.pendingTasks {
 			if pendingTask.ID == taskID {
 				mm.queue.pendingTasks = append(mm.queue.pendingTasks[:i], mm.queue.pendingTasks[i+1:]...)
+
 				break
 			}
 		}
 
 		glog.V(2).Infof("Cancelled task %s", taskID)
+
 		return nil
 	}
 

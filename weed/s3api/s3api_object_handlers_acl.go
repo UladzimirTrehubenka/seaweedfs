@@ -21,6 +21,7 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -30,12 +31,14 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	// Check if versioning is configured for the bucket (Enabled or Suspended)
 	versioningConfigured, err := s3a.isVersioningConfigured(bucket)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("GetObjectAclHandler: Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -56,13 +59,15 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			glog.Errorf("GetObjectAclHandler: Failed to get object version %s for %s/%s: %v", versionId, bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		// Check if this is a delete marker
 		if entry.Extended != nil {
-			if deleteMarker, exists := entry.Extended[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
+			if deleteMarker, exists := entry.GetExtended()[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 				return
 			}
 		}
@@ -72,16 +77,19 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			if errors.Is(err, filer_pb.ErrNotFound) {
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 				return
 			}
 			glog.Errorf("GetObjectAclHandler: error checking object %s/%s: %v", bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 			return
 		}
 	}
 
 	if entry == nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 		return
 	}
 
@@ -91,7 +99,7 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	amzAccountId := r.Header.Get(s3_constants.AmzAccountId)
 
 	if entry.Extended != nil {
-		if ownerBytes, exists := entry.Extended[s3_constants.ExtAmzOwnerKey]; exists {
+		if ownerBytes, exists := entry.GetExtended()[s3_constants.ExtAmzOwnerKey]; exists {
 			objectOwner = string(ownerBytes)
 		}
 	}
@@ -112,7 +120,7 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Get grants from stored ACL metadata
-	grants := GetAcpGrants(entry.Extended)
+	grants := GetAcpGrants(entry.GetExtended())
 	if len(grants) > 0 {
 		// Convert AWS SDK grants to local Grant format
 		for _, grant := range grants {
@@ -164,6 +172,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)
+
 		return
 	}
 
@@ -173,12 +182,14 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	// Check if versioning is configured for the bucket (Enabled or Suspended)
 	versioningConfigured, err := s3a.isVersioningConfigured(bucket)
 	if err != nil {
-		if err == filer_pb.ErrNotFound {
+		if errors.Is(err, filer_pb.ErrNotFound) {
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchBucket)
+
 			return
 		}
 		glog.Errorf("PutObjectAclHandler: Error checking versioning status for bucket %s: %v", bucket, err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 
@@ -199,13 +210,15 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			glog.Errorf("PutObjectAclHandler: Failed to get object version %s for %s/%s: %v", versionId, bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 			return
 		}
 
 		// Check if this is a delete marker
 		if entry.Extended != nil {
-			if deleteMarker, exists := entry.Extended[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
+			if deleteMarker, exists := entry.GetExtended()[s3_constants.ExtDeleteMarkerKey]; exists && string(deleteMarker) == "true" {
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 				return
 			}
 		}
@@ -215,16 +228,19 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			if errors.Is(err, filer_pb.ErrNotFound) {
 				s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 				return
 			}
 			glog.Errorf("PutObjectAclHandler: error checking object %s/%s: %v", bucket, object, err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 			return
 		}
 	}
 
 	if entry == nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+
 		return
 	}
 
@@ -233,7 +249,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	amzAccountId := r.Header.Get(s3_constants.AmzAccountId)
 
 	if entry.Extended != nil {
-		if ownerBytes, exists := entry.Extended[s3_constants.ExtAmzOwnerKey]; exists {
+		if ownerBytes, exists := entry.GetExtended()[s3_constants.ExtAmzOwnerKey]; exists {
 			objectOwner = string(ownerBytes)
 		}
 	}
@@ -252,6 +268,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 			glog.V(3).Infof("PutObjectAclHandler: Access denied - user %s is not owner of object %s/%s (owner: %s)",
 				amzAccountId, bucket, object, objectOwner)
 			s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 			return
 		}
 
@@ -262,6 +279,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		if errCode != s3err.ErrNone {
 			glog.V(3).Infof("PutObjectAclHandler: Auth failed for WriteAcp action on %s/%s: %v", bucket, object, errCode)
 			s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 			return
 		}
 
@@ -269,6 +287,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		if identity == nil || !identity.CanDo(writeAcpAction, bucket, object) {
 			glog.V(3).Infof("PutObjectAclHandler: Identity %v cannot perform WriteAcp on %s/%s", identity, bucket, object)
 			s3err.WriteErrorResponse(w, r, s3err.ErrAccessDenied)
+
 			return
 		}
 	} else {
@@ -279,6 +298,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	bucketConfig, errCode := s3a.getBucketConfig(bucket)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -290,6 +310,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	grants, errCode := ExtractAcl(r, s3a.iam, bucketOwnership, bucketOwnerId, objectOwner, amzAccountId)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -297,6 +318,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 	if errCode := AssembleEntryWithAcp(entry, objectOwner, grants); errCode != s3err.ErrNone {
 		glog.Errorf("PutObjectAclHandler: failed to assemble entry with ACP: %v", errCode)
 		s3err.WriteErrorResponse(w, r, errCode)
+
 		return
 	}
 
@@ -312,7 +334,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 			// Extract version ID from the entry to determine where it's stored
 			var actualVersionId string
 			if entry.Extended != nil {
-				if versionIdBytes, exists := entry.Extended[s3_constants.ExtVersionIdKey]; exists {
+				if versionIdBytes, exists := entry.GetExtended()[s3_constants.ExtVersionIdKey]; exists {
 					actualVersionId = string(versionIdBytes)
 				}
 			}
@@ -340,12 +362,14 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		if _, err := client.UpdateEntry(context.Background(), request); err != nil {
 			return err
 		}
+
 		return nil
 	})
 
 	if err != nil {
 		glog.Errorf("PutObjectAclHandler: failed to update entry: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+
 		return
 	}
 

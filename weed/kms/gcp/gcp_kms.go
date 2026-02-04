@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -41,13 +42,13 @@ type GCPKMSConfig struct {
 // NewGCPKMSProvider creates a new Google Cloud KMS provider
 func NewGCPKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, error) {
 	if config == nil {
-		return nil, fmt.Errorf("Google Cloud KMS configuration is required")
+		return nil, errors.New("Google Cloud KMS configuration is required")
 	}
 
 	// Extract configuration
 	projectID := config.GetString("project_id")
 	if projectID == "" {
-		return nil, fmt.Errorf("project_id is required for Google Cloud KMS provider")
+		return nil, errors.New("project_id is required for Google Cloud KMS provider")
 	}
 
 	credentialsFile := config.GetString("credentials_file")
@@ -75,7 +76,7 @@ func NewGCPKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, error
 		clientOptions = append(clientOptions, option.WithCredentialsJSON(credBytes))
 		glog.V(1).Infof("GCP KMS: Using provided credentials JSON")
 	} else if !useDefaultCredentials {
-		return nil, fmt.Errorf("either credentials_file, credentials_json, or use_default_credentials=true must be provided")
+		return nil, errors.New("either credentials_file, credentials_json, or use_default_credentials=true must be provided")
 	} else {
 		glog.V(1).Infof("GCP KMS: Using default credentials")
 	}
@@ -96,17 +97,18 @@ func NewGCPKMSProvider(config util.Configuration) (seaweedkms.KMSProvider, error
 	}
 
 	glog.V(1).Infof("Google Cloud KMS provider initialized for project %s", projectID)
+
 	return provider, nil
 }
 
 // GenerateDataKey generates a new data encryption key using Google Cloud KMS
 func (p *GCPKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkms.GenerateDataKeyRequest) (*seaweedkms.GenerateDataKeyResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("GenerateDataKeyRequest cannot be nil")
+		return nil, errors.New("GenerateDataKeyRequest cannot be nil")
 	}
 
 	if req.KeyID == "" {
-		return nil, fmt.Errorf("KeyID is required")
+		return nil, errors.New("KeyID is required")
 	}
 
 	// Validate key spec
@@ -147,29 +149,30 @@ func (p *GCPKMSProvider) GenerateDataKey(ctx context.Context, req *seaweedkms.Ge
 	}
 
 	// Create standardized envelope format for consistent API behavior
-	envelopeBlob, err := seaweedkms.CreateEnvelope("gcp", encryptResp.Name, string(encryptResp.Ciphertext), nil)
+	envelopeBlob, err := seaweedkms.CreateEnvelope("gcp", encryptResp.GetName(), string(encryptResp.GetCiphertext()), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ciphertext envelope: %w", err)
 	}
 
 	response := &seaweedkms.GenerateDataKeyResponse{
-		KeyID:          encryptResp.Name, // GCP returns the full resource name
+		KeyID:          encryptResp.GetName(), // GCP returns the full resource name
 		Plaintext:      dataKey,
 		CiphertextBlob: envelopeBlob, // Store in standardized envelope format
 	}
 
 	glog.V(4).Infof("GCP KMS: Generated and encrypted data key using key %s", req.KeyID)
+
 	return response, nil
 }
 
 // Decrypt decrypts an encrypted data key using Google Cloud KMS
 func (p *GCPKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.DecryptRequest) (*seaweedkms.DecryptResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("DecryptRequest cannot be nil")
+		return nil, errors.New("DecryptRequest cannot be nil")
 	}
 
 	if len(req.CiphertextBlob) == 0 {
-		return nil, fmt.Errorf("CiphertextBlob cannot be empty")
+		return nil, errors.New("CiphertextBlob cannot be empty")
 	}
 
 	// Parse the ciphertext envelope to extract key information
@@ -180,7 +183,7 @@ func (p *GCPKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.DecryptReq
 
 	keyName := envelope.KeyID
 	if keyName == "" {
-		return nil, fmt.Errorf("envelope missing key ID")
+		return nil, errors.New("envelope missing key ID")
 	}
 
 	// Convert string back to bytes
@@ -207,21 +210,22 @@ func (p *GCPKMSProvider) Decrypt(ctx context.Context, req *seaweedkms.DecryptReq
 
 	response := &seaweedkms.DecryptResponse{
 		KeyID:     keyName,
-		Plaintext: decryptResp.Plaintext,
+		Plaintext: decryptResp.GetPlaintext(),
 	}
 
 	glog.V(4).Infof("GCP KMS: Decrypted data key using key %s", keyName)
+
 	return response, nil
 }
 
 // DescribeKey validates that a key exists and returns its metadata
 func (p *GCPKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.DescribeKeyRequest) (*seaweedkms.DescribeKeyResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("DescribeKeyRequest cannot be nil")
+		return nil, errors.New("DescribeKeyRequest cannot be nil")
 	}
 
 	if req.KeyID == "" {
-		return nil, fmt.Errorf("KeyID is required")
+		return nil, errors.New("KeyID is required")
 	}
 
 	// Build the request to get the crypto key
@@ -237,19 +241,19 @@ func (p *GCPKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.Descri
 	}
 
 	response := &seaweedkms.DescribeKeyResponse{
-		KeyID:       key.Name,
-		ARN:         key.Name, // GCP uses resource names instead of ARNs
+		KeyID:       key.GetName(),
+		ARN:         key.GetName(), // GCP uses resource names instead of ARNs
 		Description: "Google Cloud KMS key",
 	}
 
 	// Map GCP key purpose to our usage enum
-	if key.Purpose == kmspb.CryptoKey_ENCRYPT_DECRYPT {
+	if key.GetPurpose() == kmspb.CryptoKey_ENCRYPT_DECRYPT {
 		response.KeyUsage = seaweedkms.KeyUsageEncryptDecrypt
 	}
 
 	// Map GCP key state to our state enum
 	// Get the primary version to check its state
-	if key.Primary != nil && key.Primary.State == kmspb.CryptoKeyVersion_ENABLED {
+	if key.GetPrimary() != nil && key.GetPrimary().GetState() == kmspb.CryptoKeyVersion_ENABLED {
 		response.KeyState = seaweedkms.KeyStateEnabled
 	} else {
 		response.KeyState = seaweedkms.KeyStateDisabled
@@ -259,13 +263,14 @@ func (p *GCPKMSProvider) DescribeKey(ctx context.Context, req *seaweedkms.Descri
 	response.Origin = seaweedkms.KeyOriginGCP
 
 	glog.V(4).Infof("GCP KMS: Described key %s (state: %s)", req.KeyID, response.KeyState)
+
 	return response, nil
 }
 
 // GetKeyID resolves a key name to the full resource name
 func (p *GCPKMSProvider) GetKeyID(ctx context.Context, keyIdentifier string) (string, error) {
 	if keyIdentifier == "" {
-		return "", fmt.Errorf("key identifier cannot be empty")
+		return "", errors.New("key identifier cannot be empty")
 	}
 
 	// If it's already a full resource name, return as-is
@@ -289,10 +294,12 @@ func (p *GCPKMSProvider) Close() error {
 		err := p.client.Close()
 		if err != nil {
 			glog.Errorf("Error closing GCP KMS client: %v", err)
+
 			return err
 		}
 	}
 	glog.V(2).Infof("Google Cloud KMS provider closed")
+
 	return nil
 }
 
@@ -308,6 +315,7 @@ func (p *GCPKMSProvider) encryptionContextToAAD(context map[string]string) strin
 	for k, v := range context {
 		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
 	}
+
 	return strings.Join(parts, "&")
 }
 

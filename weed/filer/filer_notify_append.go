@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -12,7 +13,6 @@ import (
 )
 
 func (f *Filer) appendToFile(targetFile string, data []byte) error {
-
 	assignResult, uploadResult, err2 := f.assignAndUpload(targetFile, data)
 	if err2 != nil {
 		return err2
@@ -22,7 +22,7 @@ func (f *Filer) appendToFile(targetFile string, data []byte) error {
 	fullpath := util.FullPath(targetFile)
 	entry, err := f.FindEntry(context.Background(), fullpath)
 	var offset int64 = 0
-	if err == filer_pb.ErrNotFound {
+	if errors.Is(err, filer_pb.ErrNotFound) {
 		entry = &Entry{
 			FullPath: fullpath,
 			Attr: Attr{
@@ -34,7 +34,7 @@ func (f *Filer) appendToFile(targetFile string, data []byte) error {
 			},
 		}
 	} else if err != nil {
-		return fmt.Errorf("find %s: %v", fullpath, err)
+		return fmt.Errorf("find %s: %w", fullpath, err)
 	} else {
 		offset = int64(TotalSize(entry.GetChunks()))
 	}
@@ -53,10 +53,10 @@ func (f *Filer) assignAndUpload(targetFile string, data []byte) (*operation.Assi
 	rule := f.FilerConf.MatchStorageRule(targetFile)
 	assignRequest := &operation.VolumeAssignRequest{
 		Count:               1,
-		Collection:          util.Nvl(f.metaLogCollection, rule.Collection),
-		Replication:         util.Nvl(f.metaLogReplication, rule.Replication),
-		DiskType:            rule.DiskType,
-		WritableVolumeCount: rule.VolumeGrowthCount,
+		Collection:          util.Nvl(f.metaLogCollection, rule.GetCollection()),
+		Replication:         util.Nvl(f.metaLogReplication, rule.GetReplication()),
+		DiskType:            rule.GetDiskType(),
+		WritableVolumeCount: rule.GetVolumeGrowthCount(),
 	}
 
 	assignResult, err := operation.Assign(context.Background(), f.GetMaster, f.GrpcDialOption, assignRequest)
@@ -81,12 +81,12 @@ func (f *Filer) assignAndUpload(targetFile string, data []byte) (*operation.Assi
 
 	uploader, err := operation.NewUploader()
 	if err != nil {
-		return nil, nil, fmt.Errorf("upload data %s: %v", targetUrl, err)
+		return nil, nil, fmt.Errorf("upload data %s: %w", targetUrl, err)
 	}
 
 	uploadResult, err := uploader.UploadData(context.Background(), data, uploadOption)
 	if err != nil {
-		return nil, nil, fmt.Errorf("upload data %s: %v", targetUrl, err)
+		return nil, nil, fmt.Errorf("upload data %s: %w", targetUrl, err)
 	}
 	// println("uploaded to", targetUrl)
 	return assignResult, uploadResult, nil

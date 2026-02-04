@@ -52,13 +52,13 @@ func TestSSEKMSChunkMetadataAssignment(t *testing.T) {
 			EncryptionContext: sseKMSKey.EncryptionContext,
 			BucketKeyEnabled:  sseKMSKey.BucketKeyEnabled,
 			IV:                sseKMSKey.IV,
-			ChunkOffset:       chunk.Offset, // Set chunk-specific offset
+			ChunkOffset:       chunk.GetOffset(), // Set chunk-specific offset
 		}
 
 		// Serialize per-chunk metadata
 		chunkMetadata, serErr := SerializeSSEKMSMetadata(chunkSSEKey)
 		if serErr != nil {
-			t.Fatalf("Failed to serialize SSE-KMS metadata for chunk at offset %d: %v", chunk.Offset, serErr)
+			t.Fatalf("Failed to serialize SSE-KMS metadata for chunk at offset %d: %v", chunk.GetOffset(), serErr)
 		}
 		chunk.SseMetadata = chunkMetadata
 	}
@@ -66,7 +66,7 @@ func TestSSEKMSChunkMetadataAssignment(t *testing.T) {
 	// VERIFICATION 1: Each chunk should have different metadata (due to different ChunkOffset)
 	metadataSet := make(map[string]bool)
 	for i, chunk := range simulatedChunks {
-		metadataStr := string(chunk.SseMetadata)
+		metadataStr := string(chunk.GetSseMetadata())
 		if metadataSet[metadataStr] {
 			t.Errorf("Chunk %d has duplicate metadata (should be unique per chunk)", i)
 		}
@@ -74,11 +74,11 @@ func TestSSEKMSChunkMetadataAssignment(t *testing.T) {
 
 		// Deserialize and verify ChunkOffset
 		var metadata SSEKMSMetadata
-		if err := json.Unmarshal(chunk.SseMetadata, &metadata); err != nil {
+		if err := json.Unmarshal(chunk.GetSseMetadata(), &metadata); err != nil {
 			t.Fatalf("Failed to deserialize chunk %d metadata: %v", i, err)
 		}
 
-		expectedOffset := chunk.Offset
+		expectedOffset := chunk.GetOffset()
 		if metadata.PartOffset != expectedOffset {
 			t.Errorf("Chunk %d: expected PartOffset=%d, got %d", i, expectedOffset, metadata.PartOffset)
 		}
@@ -89,15 +89,15 @@ func TestSSEKMSChunkMetadataAssignment(t *testing.T) {
 	// VERIFICATION 2: Verify metadata can be deserialized and has correct ChunkOffset
 	for i, chunk := range simulatedChunks {
 		// Deserialize chunk metadata
-		deserializedKey, err := DeserializeSSEKMSMetadata(chunk.SseMetadata)
+		deserializedKey, err := DeserializeSSEKMSMetadata(chunk.GetSseMetadata())
 		if err != nil {
 			t.Fatalf("Failed to deserialize chunk %d metadata: %v", i, err)
 		}
 
 		// Verify the deserialized key has correct ChunkOffset
-		if deserializedKey.ChunkOffset != chunk.Offset {
+		if deserializedKey.ChunkOffset != chunk.GetOffset() {
 			t.Errorf("Chunk %d: deserialized ChunkOffset=%d, expected %d",
-				i, deserializedKey.ChunkOffset, chunk.Offset)
+				i, deserializedKey.ChunkOffset, chunk.GetOffset())
 		}
 
 		// Verify IV is set (should be inherited from base)
@@ -127,7 +127,7 @@ func TestSSEKMSChunkMetadataAssignment(t *testing.T) {
 
 	// Chunks 2 and 3 should NOT have the same metadata as base (proving we're not reusing)
 	for i := 1; i < len(simulatedChunks); i++ {
-		if bytes.Equal(simulatedChunks[i].SseMetadata, baseMetadata) {
+		if bytes.Equal(simulatedChunks[i].GetSseMetadata(), baseMetadata) {
 			t.Errorf("CRITICAL BUG: Chunk %d reuses base metadata (should have per-chunk metadata)", i)
 		}
 	}
@@ -177,7 +177,7 @@ func TestSSES3ChunkMetadataAssignment(t *testing.T) {
 		chunk.SseType = filer_pb.SSEType_SSE_S3
 
 		// Calculate chunk-specific IV using base IV and chunk offset
-		chunkIV, _ := calculateIVWithOffset(sseS3Key.IV, chunk.Offset)
+		chunkIV, _ := calculateIVWithOffset(sseS3Key.IV, chunk.GetOffset())
 
 		// Create a copy of the SSE-S3 key with chunk-specific IV
 		chunkSSEKey := &SSES3Key{
@@ -190,7 +190,7 @@ func TestSSES3ChunkMetadataAssignment(t *testing.T) {
 		// Serialize per-chunk metadata
 		chunkMetadata, serErr := SerializeSSES3Metadata(chunkSSEKey)
 		if serErr != nil {
-			t.Fatalf("Failed to serialize SSE-S3 metadata for chunk at offset %d: %v", chunk.Offset, serErr)
+			t.Fatalf("Failed to serialize SSE-S3 metadata for chunk at offset %d: %v", chunk.GetOffset(), serErr)
 		}
 		chunk.SseMetadata = chunkMetadata
 	}
@@ -198,32 +198,32 @@ func TestSSES3ChunkMetadataAssignment(t *testing.T) {
 	// VERIFICATION 1: Each chunk should have different metadata (due to different IVs)
 	metadataSet := make(map[string]bool)
 	for i, chunk := range simulatedChunks {
-		metadataStr := string(chunk.SseMetadata)
+		metadataStr := string(chunk.GetSseMetadata())
 		if metadataSet[metadataStr] {
 			t.Errorf("Chunk %d has duplicate metadata (should be unique per chunk)", i)
 		}
 		metadataSet[metadataStr] = true
 
 		// Deserialize and verify IV
-		deserializedKey, err := DeserializeSSES3Metadata(chunk.SseMetadata, keyManager)
+		deserializedKey, err := DeserializeSSES3Metadata(chunk.GetSseMetadata(), keyManager)
 		if err != nil {
 			t.Fatalf("Failed to deserialize chunk %d metadata: %v", i, err)
 		}
 
 		// Calculate expected IV for this chunk
-		expectedIV, _ := calculateIVWithOffset(baseIV, chunk.Offset)
+		expectedIV, _ := calculateIVWithOffset(baseIV, chunk.GetOffset())
 		if !bytes.Equal(deserializedKey.IV, expectedIV) {
 			t.Errorf("Chunk %d: IV mismatch\nExpected: %x\nGot: %x",
 				i, expectedIV[:8], deserializedKey.IV[:8])
 		}
 
-		t.Logf("✓ Chunk %d: IV correctly adjusted for offset=%d", i, chunk.Offset)
+		t.Logf("✓ Chunk %d: IV correctly adjusted for offset=%d", i, chunk.GetOffset())
 	}
 
 	// VERIFICATION 2: Verify decryption works with per-chunk IVs
 	for i, chunk := range simulatedChunks {
 		// Deserialize chunk metadata
-		deserializedKey, err := DeserializeSSES3Metadata(chunk.SseMetadata, keyManager)
+		deserializedKey, err := DeserializeSSES3Metadata(chunk.GetSseMetadata(), keyManager)
 		if err != nil {
 			t.Fatalf("Failed to deserialize chunk %d metadata: %v", i, err)
 		}
@@ -255,12 +255,12 @@ func TestSSES3ChunkMetadataAssignment(t *testing.T) {
 
 	// VERIFICATION 3: Ensure base IV is NOT reused for non-zero offset chunks (the bug we're preventing)
 	for i := 1; i < len(simulatedChunks); i++ {
-		if bytes.Equal(simulatedChunks[i].SseMetadata, baseMetadata) {
+		if bytes.Equal(simulatedChunks[i].GetSseMetadata(), baseMetadata) {
 			t.Errorf("CRITICAL BUG: Chunk %d reuses base metadata (should have per-chunk metadata)", i)
 		}
 
 		// Verify chunk metadata has different IV than base IV
-		deserializedKey, _ := DeserializeSSES3Metadata(simulatedChunks[i].SseMetadata, keyManager)
+		deserializedKey, _ := DeserializeSSES3Metadata(simulatedChunks[i].GetSseMetadata(), keyManager)
 		if bytes.Equal(deserializedKey.IV, baseIV) {
 			t.Errorf("CRITICAL BUG: Chunk %d uses base IV (should use offset-adjusted IV)", i)
 		}

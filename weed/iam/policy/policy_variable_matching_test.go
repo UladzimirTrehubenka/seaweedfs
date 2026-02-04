@@ -50,7 +50,7 @@ func TestPolicyVariableMatchingInActionsAndResources(t *testing.T) {
 		principal      string
 		action         string
 		resource       string
-		requestContext map[string]interface{}
+		requestContext map[string]any
 		expectedEffect Effect
 		description    string
 	}{
@@ -59,7 +59,7 @@ func TestPolicyVariableMatchingInActionsAndResources(t *testing.T) {
 			principal: "test-user",
 			action:    "s3:AssumedRole", // Should match s3:${aws:principaltype}* when principaltype=AssumedRole
 			resource:  "arn:aws:s3:::user-testuser/file.txt",
-			requestContext: map[string]interface{}{
+			requestContext: map[string]any{
 				"aws:username":      "testuser",
 				"aws:principaltype": "AssumedRole",
 			},
@@ -71,7 +71,7 @@ func TestPolicyVariableMatchingInActionsAndResources(t *testing.T) {
 			principal: "alice",
 			action:    "s3:GetObject",
 			resource:  "arn:aws:s3:::user-alice/document.pdf", // Should match user-${aws:username}/*
-			requestContext: map[string]interface{}{
+			requestContext: map[string]any{
 				"aws:username": "alice",
 			},
 			expectedEffect: EffectAllow,
@@ -82,7 +82,7 @@ func TestPolicyVariableMatchingInActionsAndResources(t *testing.T) {
 			principal: "bob",
 			action:    "s3:GetObject",
 			resource:  "arn:aws:s3:::shared/bob/data.json", // Should match shared/${saml:username}/*
-			requestContext: map[string]interface{}{
+			requestContext: map[string]any{
 				"saml:username": "bob",
 			},
 			expectedEffect: EffectAllow,
@@ -93,7 +93,7 @@ func TestPolicyVariableMatchingInActionsAndResources(t *testing.T) {
 			principal: "charlie",
 			action:    "s3:GetObject",
 			resource:  "arn:aws:s3:::user-alice/file.txt", // charlie trying to access alice's files
-			requestContext: map[string]interface{}{
+			requestContext: map[string]any{
 				"aws:username": "charlie",
 			},
 			expectedEffect: EffectDeny,
@@ -104,7 +104,7 @@ func TestPolicyVariableMatchingInActionsAndResources(t *testing.T) {
 			principal:      "dave",
 			action:         "s3:GetObject",
 			resource:       "arn:aws:s3:::user-dave/file.txt",
-			requestContext: map[string]interface{}{
+			requestContext: map[string]any{
 				// Missing aws:username context
 			},
 			expectedEffect: EffectDeny,
@@ -155,7 +155,7 @@ func TestActionResourceConsistencyWithStringConditions(t *testing.T) {
 				Effect:   "Allow",
 				Action:   []string{"S3:GET*"},                    // Uppercase action pattern
 				Resource: []string{"arn:aws:s3:::TEST-BUCKET/*"}, // Uppercase resource pattern
-				Condition: map[string]map[string]interface{}{
+				Condition: map[string]map[string]any{
 					"StringLikeIgnoreCase": {
 						"s3:RequestedRegion": "US-*", // Uppercase condition pattern
 					},
@@ -171,7 +171,7 @@ func TestActionResourceConsistencyWithStringConditions(t *testing.T) {
 		Principal: "test-user",
 		Action:    "s3:getobject",                      // lowercase action
 		Resource:  "arn:aws:s3:::test-bucket/file.txt", // lowercase resource
-		RequestContext: map[string]interface{}{
+		RequestContext: map[string]any{
 			"s3:RequestedRegion": "us-east-1", // lowercase condition value
 		},
 	}

@@ -35,9 +35,10 @@ func RecordTypeBegin() *RecordTypeBuilder {
 // RecordTypeEnd finishes the building of a RecordValue
 func (rtb *RecordTypeBuilder) RecordTypeEnd() *schema_pb.RecordType {
 	// be consistent with parquet.node.go `func (g Group) Fields() []Field`
-	sort.Slice(rtb.recordType.Fields, func(i, j int) bool {
-		return rtb.recordType.Fields[i].Name < rtb.recordType.Fields[j].Name
+	sort.Slice(rtb.recordType.GetFields(), func(i, j int) bool {
+		return rtb.recordType.GetFields()[i].GetName() < rtb.recordType.GetFields()[j].GetName()
 	})
+
 	return rtb.recordType
 }
 
@@ -51,6 +52,7 @@ func (rtb *RecordTypeBuilder) WithField(name string, scalarType *schema_pb.Type)
 		Name: name,
 		Type: scalarType,
 	})
+
 	return rtb
 }
 
@@ -59,6 +61,7 @@ func (rtb *RecordTypeBuilder) WithRecordField(name string, recordType *schema_pb
 		Name: name,
 		Type: &schema_pb.Type{Kind: &schema_pb.Type_RecordType{RecordType: recordType}},
 	})
+
 	return rtb
 }
 

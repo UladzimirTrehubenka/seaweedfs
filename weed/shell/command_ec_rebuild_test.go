@@ -2,7 +2,7 @@ package shell
 
 import (
 	"bytes"
-	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -36,13 +36,13 @@ func TestEcShardMapRegister(t *testing.T) {
 	}
 
 	// Verify shard distribution
-	for i := 0; i < 7; i++ {
-		if len(locations[i]) != 1 || locations[i][0].info.Id != "node1" {
+	for i := range 7 {
+		if len(locations[i]) != 1 || locations[i][0].info.GetId() != "node1" {
 			t.Errorf("Shard %d should be on node1", i)
 		}
 	}
 	for i := 7; i < erasure_coding.TotalShardsCount; i++ {
-		if len(locations[i]) != 1 || locations[i][0].info.Id != "node2" {
+		if len(locations[i]) != 1 || locations[i][0].info.GetId() != "node2" {
 			t.Errorf("Shard %d should be on node2", i)
 		}
 	}
@@ -200,18 +200,18 @@ func TestMultipleNodesWithShards(t *testing.T) {
 	}
 
 	// Verify each shard is on the correct node
-	for i := 0; i < 4; i++ {
-		if len(locations[i]) != 1 || locations[i][0].info.Id != "node1" {
+	for i := range 4 {
+		if len(locations[i]) != 1 || locations[i][0].info.GetId() != "node1" {
 			t.Errorf("Shard %d should be on node1", i)
 		}
 	}
 	for i := 4; i < 8; i++ {
-		if len(locations[i]) != 1 || locations[i][0].info.Id != "node2" {
+		if len(locations[i]) != 1 || locations[i][0].info.GetId() != "node2" {
 			t.Errorf("Shard %d should be on node2", i)
 		}
 	}
 	for i := 8; i < 10; i++ {
-		if len(locations[i]) != 1 || locations[i][0].info.Id != "node3" {
+		if len(locations[i]) != 1 || locations[i][0].info.GetId() != "node3" {
 			t.Errorf("Shard %d should be on node3", i)
 		}
 	}
@@ -241,10 +241,10 @@ func TestDuplicateShards(t *testing.T) {
 	foundNode1 := false
 	foundNode2 := false
 	for _, node := range locations[0] {
-		if node.info.Id == "node1" {
+		if node.info.GetId() == "node1" {
 			foundNode1 = true
 		}
-		if node.info.Id == "node2" {
+		if node.info.GetId() == "node2" {
 			foundNode2 = true
 		}
 	}
@@ -277,7 +277,7 @@ func TestPrepareDataToRecoverTargetShardCount(t *testing.T) {
 	}
 
 	locations := make(EcShardLocations, erasure_coding.MaxShardCount)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		locations[i] = []*EcNode{node1}
 	}
 
@@ -300,7 +300,7 @@ func TestPrepareDataToRecoverTargetShardCount(t *testing.T) {
 
 	for i := 14; i < erasure_coding.MaxShardCount; i++ {
 		if strings.Contains(output, "shard 1."+strings.TrimSpace(string(rune('0'+i)))) ||
-			strings.Contains(output, "shard 1."+fmt.Sprintf("%d", i)) {
+			strings.Contains(output, "shard 1."+strconv.Itoa(i)) {
 			t.Errorf("Shard 1.%d should not be reported in output", i)
 		}
 	}

@@ -7,13 +7,14 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 // TestEndToEndOffsetFlow tests the complete offset management flow
 func TestEndToEndOffsetFlow(t *testing.T) {
 	// Create temporary database
-	tmpFile, err := os.CreateTemp("", "e2e_offset_test_*.db")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "e2e_offset_test_*.db")
 	if err != nil {
 		t.Fatalf("Failed to create temp database: %v", err)
 	}
@@ -58,12 +59,12 @@ func TestEndToEndOffsetFlow(t *testing.T) {
 			t.Fatalf("Failed to publish record batch: %v", err)
 		}
 
-		if response.BaseOffset != 0 {
-			t.Errorf("Expected base offset 0, got %d", response.BaseOffset)
+		if response.GetBaseOffset() != 0 {
+			t.Errorf("Expected base offset 0, got %d", response.GetBaseOffset())
 		}
 
-		if response.LastOffset != 2 {
-			t.Errorf("Expected last offset 2, got %d", response.LastOffset)
+		if response.GetLastOffset() != 2 {
+			t.Errorf("Expected last offset 2, got %d", response.GetLastOffset())
 		}
 
 		// Verify high water mark
@@ -197,7 +198,7 @@ func TestEndToEndOffsetFlow(t *testing.T) {
 // TestOffsetPersistenceAcrossRestarts tests that offsets persist across system restarts
 func TestOffsetPersistenceAcrossRestarts(t *testing.T) {
 	// Create temporary database
-	tmpFile, err := os.CreateTemp("", "persistence_test_*.db")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "persistence_test_*.db")
 	if err != nil {
 		t.Fatalf("Failed to create temp database: %v", err)
 	}
@@ -239,7 +240,7 @@ func TestOffsetPersistenceAcrossRestarts(t *testing.T) {
 			t.Fatalf("Failed to publish records: %v", err)
 		}
 
-		lastOffset = response.LastOffset
+		lastOffset = response.GetLastOffset()
 
 		// Close connections - Close integration first to trigger final checkpoint
 		integration.Close()
@@ -280,8 +281,8 @@ func TestOffsetPersistenceAcrossRestarts(t *testing.T) {
 		}
 
 		expectedNextOffset := lastOffset + 1
-		if newResponse.BaseOffset != expectedNextOffset {
-			t.Errorf("Expected next offset %d after restart, got %d", expectedNextOffset, newResponse.BaseOffset)
+		if newResponse.GetBaseOffset() != expectedNextOffset {
+			t.Errorf("Expected next offset %d after restart, got %d", expectedNextOffset, newResponse.GetBaseOffset())
 		}
 	}
 }
@@ -289,7 +290,7 @@ func TestOffsetPersistenceAcrossRestarts(t *testing.T) {
 // TestConcurrentOffsetOperations tests concurrent offset operations
 func TestConcurrentOffsetOperations(t *testing.T) {
 	// Create temporary database
-	tmpFile, err := os.CreateTemp("", "concurrent_test_*.db")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "concurrent_test_*.db")
 	if err != nil {
 		t.Fatalf("Failed to create temp database: %v", err)
 	}
@@ -323,15 +324,16 @@ func TestConcurrentOffsetOperations(t *testing.T) {
 
 	done := make(chan bool, numPublishers)
 
-	for i := 0; i < numPublishers; i++ {
+	for i := range numPublishers {
 		go func(publisherID int) {
 			defer func() { done <- true }()
 
-			for j := 0; j < recordsPerPublisher; j++ {
+			for j := range recordsPerPublisher {
 				key := fmt.Sprintf("publisher-%d-msg-%d", publisherID, j)
 				_, err := integration.PublishRecord("test-namespace", "test-topic", partition, []byte(key), &schema_pb.RecordValue{})
 				if err != nil {
 					t.Errorf("Publisher %d failed to publish message %d: %v", publisherID, j, err)
+
 					return
 				}
 			}
@@ -339,7 +341,7 @@ func TestConcurrentOffsetOperations(t *testing.T) {
 	}
 
 	// Wait for all publishers to complete
-	for i := 0; i < numPublishers; i++ {
+	for range numPublishers {
 		<-done
 	}
 
@@ -368,7 +370,7 @@ func TestConcurrentOffsetOperations(t *testing.T) {
 // TestOffsetValidationAndErrorHandling tests error conditions and validation
 func TestOffsetValidationAndErrorHandling(t *testing.T) {
 	// Create temporary database
-	tmpFile, err := os.CreateTemp("", "validation_test_*.db")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "validation_test_*.db")
 	if err != nil {
 		t.Fatalf("Failed to create temp database: %v", err)
 	}

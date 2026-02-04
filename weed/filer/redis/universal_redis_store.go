@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -34,16 +35,15 @@ func (store *UniversalRedisStore) RollbackTransaction(ctx context.Context) error
 }
 
 func (store *UniversalRedisStore) InsertEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	if err = store.doInsertEntry(ctx, entry); err != nil {
 		return err
 	}
 
-	dir, name := entry.FullPath.DirAndName()
+	dir, name := entry.DirAndName()
 	if name != "" {
 		_, err = store.Client.SAdd(ctx, genDirectoryListKey(dir), name).Result()
 		if err != nil {
-			return fmt.Errorf("persisting %s in parent dir: %v", entry.FullPath, err)
+			return fmt.Errorf("persisting %s in parent dir: %w", entry.FullPath, err)
 		}
 	}
 
@@ -53,7 +53,7 @@ func (store *UniversalRedisStore) InsertEntry(ctx context.Context, entry *filer.
 func (store *UniversalRedisStore) doInsertEntry(ctx context.Context, entry *filer.Entry) error {
 	value, err := entry.EncodeAttributesAndChunks()
 	if err != nil {
-		return fmt.Errorf("encoding %s %+v: %v", entry.FullPath, entry.Attr, err)
+		return fmt.Errorf("encoding %s %+v: %w", entry.FullPath, entry.Attr, err)
 	}
 
 	if len(entry.GetChunks()) > filer.CountEntryChunksForGzip {
@@ -63,25 +63,24 @@ func (store *UniversalRedisStore) doInsertEntry(ctx context.Context, entry *file
 	_, err = store.Client.Set(ctx, string(entry.FullPath), value, time.Duration(entry.TtlSec)*time.Second).Result()
 
 	if err != nil {
-		return fmt.Errorf("persisting %s : %v", entry.FullPath, err)
+		return fmt.Errorf("persisting %s : %w", entry.FullPath, err)
 	}
+
 	return nil
 }
 
 func (store *UniversalRedisStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (err error) {
-
 	return store.doInsertEntry(ctx, entry)
 }
 
 func (store *UniversalRedisStore) FindEntry(ctx context.Context, fullpath util.FullPath) (entry *filer.Entry, err error) {
-
 	data, err := store.Client.Get(ctx, string(fullpath)).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, filer_pb.ErrNotFound
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("get %s : %v", fullpath, err)
+		return nil, fmt.Errorf("get %s : %w", fullpath, err)
 	}
 
 	entry = &filer.Entry{
@@ -89,25 +88,24 @@ func (store *UniversalRedisStore) FindEntry(ctx context.Context, fullpath util.F
 	}
 	err = entry.DecodeAttributesAndChunks(util.MaybeDecompressData([]byte(data)))
 	if err != nil {
-		return entry, fmt.Errorf("decode %s : %v", entry.FullPath, err)
+		return entry, fmt.Errorf("decode %s : %w", entry.FullPath, err)
 	}
 
 	return entry, nil
 }
 
 func (store *UniversalRedisStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (err error) {
-
 	_, err = store.Client.Del(ctx, string(fullpath)).Result()
 
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return fmt.Errorf("delete %s : %w", fullpath, err)
 	}
 
 	dir, name := fullpath.DirAndName()
 	if name != "" {
 		_, err = store.Client.SRem(ctx, genDirectoryListKey(dir), name).Result()
 		if err != nil {
-			return fmt.Errorf("delete %s in parent dir: %v", fullpath, err)
+			return fmt.Errorf("delete %s in parent dir: %w", fullpath, err)
 		}
 	}
 
@@ -115,17 +113,16 @@ func (store *UniversalRedisStore) DeleteEntry(ctx context.Context, fullpath util
 }
 
 func (store *UniversalRedisStore) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) (err error) {
-
 	members, err := store.Client.SMembers(ctx, genDirectoryListKey(string(fullpath))).Result()
 	if err != nil {
-		return fmt.Errorf("delete folder %s : %v", fullpath, err)
+		return fmt.Errorf("delete folder %s : %w", fullpath, err)
 	}
 
 	for _, fileName := range members {
 		path := util.NewFullPath(string(fullpath), fileName)
 		_, err = store.Client.Del(ctx, string(path)).Result()
 		if err != nil {
-			return fmt.Errorf("delete %s in parent dir: %v", fullpath, err)
+			return fmt.Errorf("delete %s in parent dir: %w", fullpath, err)
 		}
 		// not efficient, but need to remove if it is a directory
 		store.Client.Del(ctx, genDirectoryListKey(string(path)))
@@ -139,11 +136,10 @@ func (store *UniversalRedisStore) ListDirectoryPrefixedEntries(ctx context.Conte
 }
 
 func (store *UniversalRedisStore) ListDirectoryEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, eachEntryFunc filer.ListEachEntryFunc) (lastFileName string, err error) {
-
 	dirListKey := genDirectoryListKey(string(dirPath))
 	members, err := store.Client.SMembers(ctx, dirListKey).Result()
 	if err != nil {
-		return lastFileName, fmt.Errorf("list %s : %v", dirPath, err)
+		return lastFileName, fmt.Errorf("list %s : %w", dirPath, err)
 	}
 
 	// skip
@@ -180,7 +176,7 @@ func (store *UniversalRedisStore) ListDirectoryEntries(ctx context.Context, dirP
 		lastFileName = fileName
 		if err != nil {
 			glog.V(0).InfofCtx(ctx, "list %s : %v", path, err)
-			if err == filer_pb.ErrNotFound {
+			if errors.Is(err, filer_pb.ErrNotFound) {
 				continue
 			}
 		} else {
@@ -188,6 +184,7 @@ func (store *UniversalRedisStore) ListDirectoryEntries(ctx context.Context, dirP
 				if entry.Attr.Crtime.Add(time.Duration(entry.TtlSec) * time.Second).Before(time.Now()) {
 					store.Client.Del(ctx, string(path)).Result()
 					store.Client.SRem(ctx, dirListKey, fileName).Result()
+
 					continue
 				}
 			}
@@ -195,6 +192,7 @@ func (store *UniversalRedisStore) ListDirectoryEntries(ctx context.Context, dirP
 			resEachEntryFunc, resEachEntryFuncErr := eachEntryFunc(entry)
 			if resEachEntryFuncErr != nil {
 				err = fmt.Errorf("failed to process eachEntryFunc: %w", resEachEntryFuncErr)
+
 				break
 			}
 

@@ -44,6 +44,7 @@ func TestBuildUnionFromMultipleIndexDatabases(t *testing.T) {
 		if _, found := replicaA.Get(nv.Key); !found {
 			missingFromA = append(missingFromA, nv.Key)
 		}
+
 		return nil
 	})
 
@@ -57,6 +58,7 @@ func TestBuildUnionFromMultipleIndexDatabases(t *testing.T) {
 		if _, found := replicaA.Get(nv.Key); !found {
 			missingFromAinC = append(missingFromAinC, nv.Key)
 		}
+
 		return nil
 	})
 
@@ -76,6 +78,7 @@ func TestBuildUnionFromMultipleIndexDatabases(t *testing.T) {
 	count := 0
 	replicaA.AscendingVisit(func(nv needle_map.NeedleValue) error {
 		count++
+
 		return nil
 	})
 
@@ -187,6 +190,7 @@ func TestDeletedEntriesAreSkipped(t *testing.T) {
 		if _, found := replicaA.Get(nv.Key); !found {
 			missingFromA = append(missingFromA, nv.Key)
 		}
+
 		return nil
 	})
 
@@ -264,6 +268,7 @@ func TestAvoidDuplicateCopies(t *testing.T) {
 	count := 0
 	bestDB.AscendingVisit(func(nv needle_map.NeedleValue) error {
 		count++
+
 		return nil
 	})
 	if count != 5 {

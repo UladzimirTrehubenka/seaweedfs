@@ -3,9 +3,11 @@ package schema
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -84,6 +86,7 @@ func (rc *RegistryClient) GetSchemaByID(schemaID uint32) (*CachedSchema, error) 
 	if cached, exists := rc.schemaCache[schemaID]; exists {
 		if time.Since(cached.CachedAt) < rc.cacheTTL {
 			rc.cacheMu.RUnlock()
+
 			return cached, nil
 		}
 	}
@@ -99,6 +102,7 @@ func (rc *RegistryClient) GetSchemaByID(schemaID uint32) (*CachedSchema, error) 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+
 		return nil, fmt.Errorf("schema registry error %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -139,6 +143,7 @@ func (rc *RegistryClient) GetLatestSchema(subject string) (*CachedSubject, error
 	if cached, exists := rc.subjectCache[subject]; exists {
 		if time.Since(cached.CachedAt) < rc.cacheTTL {
 			rc.cacheMu.RUnlock()
+
 			return cached, nil
 		}
 	}
@@ -147,7 +152,8 @@ func (rc *RegistryClient) GetLatestSchema(subject string) (*CachedSubject, error
 	if cachedAt, exists := rc.negativeCache[subject]; exists {
 		if time.Since(cachedAt) < rc.negativeCacheTTL {
 			rc.cacheMu.RUnlock()
-			return nil, fmt.Errorf("schema registry error 404: subject not found (cached)")
+
+			return nil, errors.New("schema registry error 404: subject not found (cached)")
 		}
 	}
 	rc.cacheMu.RUnlock()
@@ -222,6 +228,7 @@ func (rc *RegistryClient) RegisterSchema(subject, schema string) (uint32, error)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+
 		return 0, fmt.Errorf("schema registry error %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -264,6 +271,7 @@ func (rc *RegistryClient) CheckCompatibility(subject, schema string) (bool, erro
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+
 		return false, fmt.Errorf("schema registry error %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -280,7 +288,7 @@ func (rc *RegistryClient) CheckCompatibility(subject, schema string) (bool, erro
 
 // ListSubjects returns all subjects in the registry
 func (rc *RegistryClient) ListSubjects() ([]string, error) {
-	url := fmt.Sprintf("%s/subjects", rc.baseURL)
+	url := rc.baseURL + "/subjects"
 	resp, err := rc.httpClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list subjects: %w", err)
@@ -289,6 +297,7 @@ func (rc *RegistryClient) ListSubjects() ([]string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+
 		return nil, fmt.Errorf("schema registry error %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -321,27 +330,23 @@ func (rc *RegistryClient) GetCacheStats() (schemaCount, subjectCount, negativeCa
 // detectSchemaFormat attempts to determine the schema format from content
 func (rc *RegistryClient) detectSchemaFormat(schema string) Format {
 	// Try to parse as JSON first (Avro schemas are JSON)
-	var jsonObj interface{}
+	var jsonObj any
 	if err := json.Unmarshal([]byte(schema), &jsonObj); err == nil {
 		// Check for Avro-specific fields
-		if schemaMap, ok := jsonObj.(map[string]interface{}); ok {
+		if schemaMap, ok := jsonObj.(map[string]any); ok {
 			if schemaType, exists := schemaMap["type"]; exists {
 				if typeStr, ok := schemaType.(string); ok {
 					// Common Avro types
 					avroTypes := []string{"record", "enum", "array", "map", "union", "fixed"}
-					for _, avroType := range avroTypes {
-						if typeStr == avroType {
-							return FormatAvro
-						}
+					if slices.Contains(avroTypes, typeStr) {
+						return FormatAvro
 					}
 					// Common JSON Schema types (that are not Avro types)
 					// Note: "string" is ambiguous - it could be Avro primitive or JSON Schema
 					// We need to check other indicators first
 					jsonSchemaTypes := []string{"object", "number", "integer", "boolean", "null"}
-					for _, jsonSchemaType := range jsonSchemaTypes {
-						if typeStr == jsonSchemaType {
-							return FormatJSONSchema
-						}
+					if slices.Contains(jsonSchemaTypes, typeStr) {
+						return FormatJSONSchema
 					}
 				}
 			}
@@ -366,7 +371,7 @@ func (rc *RegistryClient) detectSchemaFormat(schema string) Format {
 
 // HealthCheck verifies the registry is accessible
 func (rc *RegistryClient) HealthCheck() error {
-	url := fmt.Sprintf("%s/subjects", rc.baseURL)
+	url := rc.baseURL + "/subjects"
 	resp, err := rc.httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("schema registry health check failed: %w", err)

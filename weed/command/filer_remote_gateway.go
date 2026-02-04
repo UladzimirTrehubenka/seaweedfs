@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -13,7 +15,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/replication/source"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc"
 )
 
 type RemoteGatewayOptions struct {
@@ -41,7 +42,7 @@ func (option *RemoteGatewayOptions) WithFilerClient(streamingMode bool, fn func(
 	})
 }
 func (option *RemoteGatewayOptions) AdjustedUrl(location *filer_pb.Location) string {
-	return location.Url
+	return location.GetUrl()
 }
 
 func (option *RemoteGatewayOptions) GetDataCenter() string {
@@ -78,7 +79,6 @@ var cmdFilerRemoteGateway = &Command{
 }
 
 func runFilerRemoteGateway(cmd *Command, args []string) bool {
-
 	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	remoteGatewayOptions.grpcDialOption = grpcDialOption
@@ -100,13 +100,15 @@ func runFilerRemoteGateway(cmd *Command, args []string) bool {
 		if err != nil {
 			return err
 		}
-		remoteGatewayOptions.bucketsDir = resp.DirBuckets
+		remoteGatewayOptions.bucketsDir = resp.GetDirBuckets()
+
 		return nil
 	})
 
 	// read filer remote storage mount mappings
 	if detectErr := remoteGatewayOptions.collectRemoteStorageConf(); detectErr != nil {
 		fmt.Fprintf(os.Stderr, "read mount info: %v\n", detectErr)
+
 		return true
 	}
 
@@ -118,8 +120,9 @@ func runFilerRemoteGateway(cmd *Command, args []string) bool {
 		if err != nil {
 			glog.Errorf("synchronize %s: %v", remoteGatewayOptions.bucketsDir, err)
 		}
+
 		return true
 	})
-	return true
 
+	return true
 }

@@ -44,6 +44,7 @@ func (l *ExclusiveLocker) GetToken() (token int64, lockTsNs int64) {
 		// wait until now is within the safe lock period, no immediate renewal to change the token
 		time.Sleep(100 * time.Millisecond)
 	}
+
 	return atomic.LoadInt64(&l.token), atomic.LoadInt64(&l.lockTsNs)
 }
 
@@ -65,9 +66,10 @@ func (l *ExclusiveLocker) RequestLock(clientName string) {
 				ClientName:       clientName,
 			})
 			if err == nil {
-				atomic.StoreInt64(&l.token, resp.Token)
-				atomic.StoreInt64(&l.lockTsNs, resp.LockTsNs)
+				atomic.StoreInt64(&l.token, resp.GetToken())
+				atomic.StoreInt64(&l.lockTsNs, resp.GetLockTsNs())
 			}
+
 			return err
 		}); err != nil {
 			println("lock:", err.Error())
@@ -98,14 +100,16 @@ func (l *ExclusiveLocker) RequestLock(clientName string) {
 							Message:          l.message,
 						})
 						if err == nil {
-							atomic.StoreInt64(&l.token, resp.Token)
-							atomic.StoreInt64(&l.lockTsNs, resp.LockTsNs)
+							atomic.StoreInt64(&l.token, resp.GetToken())
+							atomic.StoreInt64(&l.lockTsNs, resp.GetLockTsNs())
 							// println("ts", l.lockTsNs, "token", l.token)
 						}
+
 						return err
 					}); err != nil {
 						glog.Errorf("failed to renew lock: %v", err)
 						l.isLocked.Store(false)
+
 						return
 					} else {
 						time.Sleep(RenewInterval)
@@ -116,7 +120,6 @@ func (l *ExclusiveLocker) RequestLock(clientName string) {
 			}
 		}()
 	}
-
 }
 
 func (l *ExclusiveLocker) ReleaseLock() {
@@ -132,6 +135,7 @@ func (l *ExclusiveLocker) ReleaseLock() {
 			PreviousLockTime: atomic.LoadInt64(&l.lockTsNs),
 			LockName:         l.lockName,
 		})
+
 		return nil
 	})
 	atomic.StoreInt64(&l.token, 0)

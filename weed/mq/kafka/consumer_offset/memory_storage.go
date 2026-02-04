@@ -1,6 +1,7 @@
 package consumer_offset
 
 import (
+	"maps"
 	"sync"
 )
 
@@ -95,9 +96,7 @@ func (m *MemoryStorage) FetchAllOffsets(group string) (map[TopicPartition]Offset
 
 	// Return a copy to prevent external modification
 	result := make(map[TopicPartition]OffsetMetadata, len(groupOffsets))
-	for tp, offset := range groupOffsets {
-		result[tp] = offset
-	}
+	maps.Copy(result, groupOffsets)
 
 	return result, nil
 }
@@ -112,6 +111,7 @@ func (m *MemoryStorage) DeleteGroup(group string) error {
 	}
 
 	delete(m.groups, group)
+
 	return nil
 }
 

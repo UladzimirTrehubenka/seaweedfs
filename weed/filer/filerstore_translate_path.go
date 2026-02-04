@@ -41,6 +41,7 @@ func (t *FilerStorePathTranslator) translatePath(fp util.FullPath) (newPath util
 	if newPath == "" {
 		newPath = "/"
 	}
+
 	return
 }
 func (t *FilerStorePathTranslator) changeEntryPath(entry *Entry) (previousPath util.FullPath) {
@@ -49,6 +50,7 @@ func (t *FilerStorePathTranslator) changeEntryPath(entry *Entry) (previousPath u
 		return
 	}
 	entry.FullPath = t.translatePath(previousPath)
+
 	return
 }
 func (t *FilerStorePathTranslator) recoverEntryPath(entry *Entry, previousPath util.FullPath) {
@@ -86,16 +88,17 @@ func (t *FilerStorePathTranslator) FindEntry(ctx context.Context, fp util.FullPa
 	if err == nil {
 		entry.FullPath = fp[:len(t.storeRoot)-1] + entry.FullPath
 	}
+
 	return
 }
 
 func (t *FilerStorePathTranslator) DeleteEntry(ctx context.Context, fp util.FullPath) (err error) {
 	newFullPath := t.translatePath(fp)
+
 	return t.actualStore.DeleteEntry(ctx, newFullPath)
 }
 
 func (t *FilerStorePathTranslator) DeleteOneEntry(ctx context.Context, existingEntry *Entry) (err error) {
-
 	previousPath := t.changeEntryPath(existingEntry)
 	defer t.recoverEntryPath(existingEntry, previousPath)
 
@@ -109,17 +112,16 @@ func (t *FilerStorePathTranslator) DeleteFolderChildren(ctx context.Context, fp 
 }
 
 func (t *FilerStorePathTranslator) ListDirectoryEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, eachEntryFunc ListEachEntryFunc) (string, error) {
-
 	newFullPath := t.translatePath(dirPath)
 
 	return t.actualStore.ListDirectoryEntries(ctx, newFullPath, startFileName, includeStartFile, limit, func(entry *Entry) (bool, error) {
 		entry.FullPath = dirPath[:len(t.storeRoot)-1] + entry.FullPath
+
 		return eachEntryFunc(entry)
 	})
 }
 
 func (t *FilerStorePathTranslator) ListDirectoryPrefixedEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, prefix string, eachEntryFunc ListEachEntryFunc) (string, error) {
-
 	newFullPath := t.translatePath(dirPath)
 
 	if limit > math.MaxInt32-1 {
@@ -128,6 +130,7 @@ func (t *FilerStorePathTranslator) ListDirectoryPrefixedEntries(ctx context.Cont
 
 	return t.actualStore.ListDirectoryPrefixedEntries(ctx, newFullPath, startFileName, includeStartFile, limit, prefix, func(entry *Entry) (bool, error) {
 		entry.FullPath = dirPath[:len(t.storeRoot)-1] + entry.FullPath
+
 		return eachEntryFunc(entry)
 	})
 }

@@ -22,6 +22,7 @@ func TestBasicParsing(t *testing.T) {
 			stmt, err := ParseSQL(sql)
 			if err != nil {
 				t.Errorf("Parse error: %v", err)
+
 				return
 			}
 
