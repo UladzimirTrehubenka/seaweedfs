@@ -1,4 +1,4 @@
-.PHONY: test admin-generate admin-build admin-clean admin-dev admin-run admin-test admin-fmt admin-help
+.PHONY: vendor test admin-generate admin-build admin-clean admin-dev admin-run admin-test admin-fmt admin-help
 
 BINARY = weed
 ADMIN_DIR = weed/admin
@@ -8,11 +8,36 @@ debug ?= 0
 
 all: install
 
+vendor:
+	go mod vendor
+
+lint_install:
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.7.2
+
+lint: vendor
+	golangci-lint run --color always weed/...
+
+lint_fix: vendor
+	golangci-lint run --color always --fix weed/...
+
+lint_clear:
+	golangci-lint cache clean
+
+build: vendor
+	cd weed; go build -mod=vendor -ldflags="-s -w" -o ../bin/weed
+
+bench_mini: build
+	pkill weed || true
+	nohup bin/weed mini -debug=$(debug) -dir=/tmp -master.volumeSizeLimitMB=1024 -volume.preStopSeconds=1 -s3.port=8000 -s3.allowDeleteBucketNotEmpty=false -s3.config=./docker/compose/s3.json >/tmp/weed.log 2>&1 &
+	while ! nc -z localhost 8000 ; do sleep 1 ; done
+	warp mixed --host=127.0.0.1:8000 --access-key=some_access_key1 --secret-key=some_secret_key1 --duration 5s --analyze.v
+	pkill weed
+
 install: admin-generate
 	cd weed; go install
 
 warp_install:
-	go install github.com/minio/warp@v0.7.6
+	go install github.com/minio/warp@v1.4.0
 
 full_install: admin-generate
 	cd weed; go install -tags "elastic gocdk sqlite ydb tarantool tikv rclone"
@@ -36,6 +61,9 @@ benchmark_with_pprof: benchmark
 
 test: admin-generate
 	cd weed; go test -tags "elastic gocdk sqlite ydb tarantool tikv rclone" -v ./...
+
+test_race: admin-generate
+	cd weed; go test -tags "elastic gocdk sqlite ydb tarantool tikv rclone" -race ./...
 
 # Admin component targets
 admin-generate:
